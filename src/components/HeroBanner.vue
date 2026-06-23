@@ -1,7 +1,10 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 const activeSlide = ref(0)
+const animatedVotes = ref(0)
+const animatedPercent = ref(0)
+const animatedProgress = ref(0)
 
 const bannerSlides = [
   {
@@ -57,13 +60,67 @@ const goToNextSlide = () => {
 }
 
 let autoplayTimer
+let statsAnimationFrame
+
+const parseVotes = (value) => Number(value.replaceAll(',', ''))
+const parsePercent = (value) => Number(value.replace('%', ''))
+
+const formatVotes = (value) => Math.round(value).toLocaleString('en-US')
+const formatPercent = (value) => `${value.toFixed(2)}%`
+
+const easeOutCubic = (progress) => 1 - Math.pow(1 - progress, 3)
+
+const animateBannerStats = () => {
+  if (statsAnimationFrame) {
+    window.cancelAnimationFrame(statsAnimationFrame)
+  }
+
+  const slide = bannerSlides[activeSlide.value]
+  const targetVotes = parseVotes(slide.votes)
+  const targetPercent = parsePercent(slide.percent)
+  const targetProgress = slide.progress
+  const duration = 1300
+  const startTime = performance.now()
+
+  animatedVotes.value = 0
+  animatedPercent.value = 0
+  animatedProgress.value = 0
+
+  const tick = (currentTime) => {
+    const progress = Math.min((currentTime - startTime) / duration, 1)
+    const easedProgress = easeOutCubic(progress)
+
+    animatedVotes.value = targetVotes * easedProgress
+    animatedPercent.value = targetPercent * easedProgress
+    animatedProgress.value = targetProgress * easedProgress
+
+    if (progress < 1) {
+      statsAnimationFrame = window.requestAnimationFrame(tick)
+      return
+    }
+
+    animatedVotes.value = targetVotes
+    animatedPercent.value = targetPercent
+    animatedProgress.value = targetProgress
+  }
+
+  statsAnimationFrame = window.requestAnimationFrame(tick)
+}
+
+watch(activeSlide, () => {
+  animateBannerStats()
+})
 
 onMounted(() => {
+  animateBannerStats()
   autoplayTimer = window.setInterval(goToNextSlide, 5000)
 })
 
 onUnmounted(() => {
   window.clearInterval(autoplayTimer)
+  if (statsAnimationFrame) {
+    window.cancelAnimationFrame(statsAnimationFrame)
+  }
 })
 </script>
 
@@ -125,12 +182,12 @@ onUnmounted(() => {
               {{ bannerSlides[activeSlide].category }}
             </p>
             <div class="mt-1 flex items-center gap-3">
-              <span class="text-4xl font-black text-white">❤ {{ bannerSlides[activeSlide].votes }}</span>
+              <span class="text-4xl font-black text-white">❤ {{ formatVotes(animatedVotes) }}</span>
               <span class="text-sm font-bold text-slate-300">votos</span>
             </div>
           </div>
           <div>
-            <p class="text-2xl font-black text-fuchsia-300">{{ bannerSlides[activeSlide].percent }}</p>
+            <p class="text-2xl font-black text-fuchsia-300">{{ formatPercent(animatedPercent) }}</p>
             <p class="text-xs text-slate-400">del top actual</p>
           </div>
         </div>
@@ -138,7 +195,7 @@ onUnmounted(() => {
         <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10 sm:max-w-md">
           <div
             class="h-full rounded-full bg-linear-to-r from-violet-400 to-fuchsia-400 transition-all duration-700 ease-out"
-            :style="{ width: `${bannerSlides[activeSlide].progress}%` }"
+            :style="{ width: `${animatedProgress}%` }"
           ></div>
         </div>
 

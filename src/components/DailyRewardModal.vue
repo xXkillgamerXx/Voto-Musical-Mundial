@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 const rewards = [
   { day: 1, points: 10, status: 'claimed' },
@@ -18,9 +18,23 @@ const closeModal = () => {
   isOpen.value = false
 }
 
+const handleEscape = (event) => {
+  if (event.key === 'Escape') {
+    closeModal()
+  }
+}
+
 const claimReward = () => {
   claimed.value = true
 }
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEscape)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscape)
+})
 </script>
 
 <template>
@@ -28,6 +42,7 @@ const claimReward = () => {
     <div
       v-if="isOpen"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      @click.self="closeModal"
     >
       <div class="daily-modal relative w-full max-w-4xl overflow-hidden rounded-3xl border border-violet-300/25 bg-[#090b19] p-5 text-white shadow-2xl shadow-fuchsia-950/40 sm:p-7">
         <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,0.24),transparent_32%),radial-gradient(circle_at_95%_100%,rgba(124,58,237,0.35),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(24,8,45,0.96))]"></div>
@@ -36,7 +51,7 @@ const claimReward = () => {
 
         <button
           type="button"
-          class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
+          class="absolute right-4 top-4 z-20 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
           aria-label="Cerrar modal"
           @click="closeModal"
         >

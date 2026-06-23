@@ -1,12 +1,19 @@
 <script setup>
 import { ref } from 'vue'
+import AuthModal from './AuthModal.vue'
 
 const navItems = ['Inicio', 'Votaciones', 'Rankings', 'Misiones', 'Noticias']
 const isMenuOpen = ref(false)
+const isAuthModalOpen = ref(false)
+
+const openAuthModal = () => {
+  isAuthModalOpen.value = true
+  isMenuOpen.value = false
+}
 </script>
 
 <template>
-  <header class="sticky top-0 z-50 border-b border-violet-400/15 bg-slate-950/85 backdrop-blur-xl">
+  <header class="fixed inset-x-0 top-0 z-50 border-b border-violet-400/15 bg-slate-950/85 backdrop-blur-xl">
     <nav class="mx-auto flex max-w-352 items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4">
       <a href="#" class="group flex items-center gap-3">
         <span class="grid h-10 w-14 shrink-0 place-items-center sm:h-12 sm:w-16">
@@ -41,15 +48,16 @@ const isMenuOpen = ref(false)
           <span>2,450 pts</span>
         </div>
 
-        <a
-          href="#"
+        <button
+          type="button"
           class="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-300 transition hover:text-white lg:inline-flex"
+          @click="openAuthModal"
         >
           Iniciar sesion
-        </a>
+        </button>
 
         <a
-          href="#"
+          href="/registro"
           class="hidden rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-bold shadow-lg shadow-fuchsia-500/25 transition hover:shadow-fuchsia-500/40 sm:inline-flex"
         >
           Registrarse
@@ -86,14 +94,15 @@ const isMenuOpen = ref(false)
             <span class="text-amber-300">◆</span>
             <span>2,450 pts</span>
           </div>
-          <a
-            href="#"
+          <button
+            type="button"
             class="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200"
+            @click="openAuthModal"
           >
             Iniciar sesion
-          </a>
+          </button>
           <a
-            href="#"
+            href="/registro"
             class="rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-3 text-center text-sm font-bold"
           >
             Registrarse
@@ -101,5 +110,10 @@ const isMenuOpen = ref(false)
         </div>
       </div>
     </div>
+
+    <AuthModal
+      v-if="isAuthModalOpen"
+      @close="isAuthModalOpen = false"
+    />
   </header>
 </template>
