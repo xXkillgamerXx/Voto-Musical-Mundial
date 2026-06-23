@@ -145,5 +145,6 @@ const topArtists = [
     rotate: 12deg;
   }
 }
+
 </style>
 

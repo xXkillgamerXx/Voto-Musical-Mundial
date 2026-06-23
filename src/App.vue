@@ -2,6 +2,7 @@
 import ActivePolls from './components/ActivePolls.vue'
 import AppNavbar from './components/AppNavbar.vue'
 import BannerFeatures from './components/BannerFeatures.vue'
+import DailyRewardModal from './components/DailyRewardModal.vue'
 import HeroBanner from './components/HeroBanner.vue'
 import LiveActivity from './components/LiveActivity.vue'
 import MainCategories from './components/MainCategories.vue'
@@ -33,5 +34,7 @@ import TopRanking from './components/TopRanking.vue'
     <footer class="relative z-10 border-t border-white/10 px-6 py-8 text-center text-sm text-slate-400">
       <p>© 2026 Voto Música Mundial. Todos los derechos reservados.</p>
     </footer>
+
+    <DailyRewardModal />
   </div>
 </template>
