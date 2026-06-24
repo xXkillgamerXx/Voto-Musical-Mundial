@@ -26,6 +26,7 @@ const handleEscape = (event) => {
 
 const claimReward = () => {
   claimed.value = true
+  closeModal()
 }
 
 onMounted(() => {
@@ -41,10 +42,10 @@ onUnmounted(() => {
   <Teleport to="body">
     <div
       v-if="isOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-3 py-4 backdrop-blur-md sm:px-4 sm:py-6"
       @click.self="closeModal"
     >
-      <div class="daily-modal relative w-full max-w-4xl overflow-hidden rounded-3xl border border-violet-300/25 bg-[#090b19] p-5 text-white shadow-2xl shadow-fuchsia-950/40 sm:p-7">
+      <div class="daily-modal relative w-full max-w-4xl overflow-hidden rounded-3xl border border-violet-300/25 bg-[#090b19] p-4 text-white shadow-2xl shadow-fuchsia-950/40 sm:p-7">
         <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,0.24),transparent_32%),radial-gradient(circle_at_95%_100%,rgba(124,58,237,0.35),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(24,8,45,0.96))]"></div>
         <div class="pointer-events-none absolute -right-16 -top-16 size-44 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
         <div class="pointer-events-none absolute -bottom-20 left-1/4 size-56 rounded-full bg-cyan-400/10 blur-3xl"></div>
@@ -59,12 +60,12 @@ onUnmounted(() => {
         </button>
 
         <div class="relative z-10">
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="flex flex-col gap-4 pr-10 sm:flex-row sm:items-start sm:justify-between sm:pr-0">
             <div>
               <p class="text-xs font-black uppercase tracking-[0.32em] text-pink-300">
                 Recompensa diaria
               </p>
-              <h2 class="mt-3 text-3xl font-black leading-tight sm:text-4xl">
+              <h2 class="mt-3 text-2xl font-black leading-tight sm:text-4xl">
                 Racha de 7 días
               </h2>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
@@ -73,7 +74,7 @@ onUnmounted(() => {
               </p>
             </div>
 
-            <div class="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-center">
+            <div class="self-start rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-left">
               <p class="text-[10px] font-black uppercase tracking-widest text-emerald-300">Hoy</p>
               <p class="mt-1 text-lg font-black text-emerald-100">
                 {{ claimed ? '✓ Reclamado' : '+15 pts' }}
@@ -81,11 +82,11 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="mt-7 grid gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <div class="daily-rewards-slider mt-6 flex snap-x gap-3 overflow-x-auto pb-2 pl-4 pr-4 sm:grid sm:grid-cols-4 sm:overflow-visible sm:px-0 lg:grid-cols-7">
             <article
               v-for="reward in rewards"
               :key="reward.day"
-              class="relative overflow-hidden rounded-2xl border p-4 text-center transition"
+              class="relative min-w-28 snap-start overflow-hidden rounded-2xl border p-4 text-center transition sm:min-w-0"
               :class="[
                 reward.status === 'claimed' && 'border-emerald-300/50 bg-emerald-400/10',
                 reward.status === 'today' && 'daily-today border-fuchsia-300/70 bg-fuchsia-400/25 shadow-lg shadow-fuchsia-950/40',
@@ -119,7 +120,7 @@ onUnmounted(() => {
             </article>
           </div>
 
-          <div class="mt-6 overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+          <div class="mt-5 overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-4">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div class="flex items-center gap-3">
                 <span class="grid size-12 place-items-center rounded-full bg-emerald-400/15 text-2xl text-emerald-300 ring-1 ring-emerald-300/30">
@@ -135,7 +136,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="min-h-12 rounded-2xl bg-linear-to-r from-cyan-400 to-violet-500 px-6 text-sm font-black uppercase text-white shadow-lg shadow-violet-950/40 transition hover:scale-[1.02]"
+                class="min-h-12 w-full rounded-2xl bg-linear-to-r from-cyan-400 to-violet-500 px-6 text-sm font-black uppercase text-white shadow-lg shadow-violet-950/40 transition hover:scale-[1.02] sm:w-auto"
                 @click="claimReward"
               >
                 {{ claimed ? 'Reclamado' : 'Reclamar ahora' }}
@@ -151,6 +152,14 @@ onUnmounted(() => {
 <style scoped>
 .daily-modal {
   animation: daily-modal-enter 0.32s ease-out both;
+}
+
+.daily-rewards-slider::-webkit-scrollbar {
+  display: none;
+}
+
+.daily-rewards-slider {
+  scrollbar-width: none;
 }
 
 .daily-today {

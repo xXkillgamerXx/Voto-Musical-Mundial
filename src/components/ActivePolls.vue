@@ -35,7 +35,49 @@ const timeLabels = ['Dias', 'Hrs', 'Min', 'Seg']
       </a>
     </div>
 
-    <div class="space-y-3">
+    <div class="mobile-active-polls-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 md:hidden">
+      <article
+        v-for="poll in activePolls"
+        :key="poll.title"
+        class="min-w-[90%] snap-center overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25"
+      >
+        <div
+          class="relative h-56 overflow-hidden bg-linear-to-br"
+          :class="poll.visual"
+        >
+          <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.26),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
+          <div class="absolute inset-0 bg-linear-to-t from-[#080a17] via-transparent to-white/5"></div>
+          <div class="absolute left-1/2 top-1/2 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-2xl border border-white/20 bg-black/25 shadow-2xl shadow-fuchsia-500/20 backdrop-blur">
+            <span class="text-2xl text-white/90">✦</span>
+          </div>
+        </div>
+
+        <div class="p-5">
+          <h3 class="text-lg font-black uppercase">{{ poll.title }}</h3>
+          <p class="mt-1 text-sm text-slate-400">{{ poll.question }}</p>
+
+          <div class="mt-5 grid grid-cols-4 gap-2">
+            <div
+              v-for="(value, index) in poll.time"
+              :key="`${poll.title}-mobile-${index}`"
+              class="rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-center shadow-inner shadow-black/30"
+            >
+              <p class="text-lg font-black">{{ value }}</p>
+              <p class="text-[10px] font-bold uppercase text-slate-500">{{ timeLabels[index] }}</p>
+            </div>
+          </div>
+
+          <a
+            href="#"
+            class="mt-5 flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-9 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/25"
+          >
+            Votar
+          </a>
+        </div>
+      </article>
+    </div>
+
+    <div class="hidden space-y-3 md:block">
       <article
         v-for="poll in activePolls"
         :key="poll.title"
@@ -78,3 +120,13 @@ const timeLabels = ['Dias', 'Hrs', 'Min', 'Seg']
     </div>
   </section>
 </template>
+
+<style scoped>
+.mobile-active-polls-slider {
+  scrollbar-width: none;
+}
+
+.mobile-active-polls-slider::-webkit-scrollbar {
+  display: none;
+}
+</style>

@@ -35,13 +35,15 @@ onUnmounted(() => {
 
     <AppNavbar v-if="!isRegisterPage" />
 
-    <main class="relative z-10" :class="!isRegisterPage && 'pt-20 sm:pt-24'">
+    <main class="relative z-10" :class="!isRegisterPage && 'pt-11 sm:pt-24'">
       <RegisterPage v-if="isRegisterPage" />
 
       <template v-else>
         <section class="mx-auto max-w-352 px-0 py-4 sm:px-6 sm:py-6 lg:py-8">
           <HeroBanner />
-          <BannerFeatures />
+          <div class="hidden md:block">
+            <BannerFeatures />
+          </div>
         </section>
 
         <PopularPolls />

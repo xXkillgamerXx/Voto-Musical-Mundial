@@ -37,6 +37,7 @@ const popularPolls = [
     visual: 'from-slate-900 via-purple-700 to-violet-950',
   },
 ]
+
 </script>
 
 <template>
@@ -56,11 +57,94 @@ const popularPolls = [
       </a>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-3">
+    <div class="mobile-polls-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:hidden">
       <article
         v-for="poll in popularPolls"
         :key="poll.title"
-        class="group relative overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/30 transition hover:-translate-y-1 hover:border-fuchsia-300/30 hover:bg-[#101226]"
+        class="group relative min-w-[90%] snap-center overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/30 sm:min-w-[72%]"
+      >
+        <div class="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-fuchsia-300/50 to-transparent"></div>
+        <div class="absolute -right-16 -top-16 size-36 rounded-full bg-fuchsia-500/10 blur-3xl"></div>
+
+        <div
+          class="relative h-52 overflow-hidden bg-linear-to-br"
+          :class="poll.visual"
+        >
+          <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.26),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
+          <div class="absolute inset-0 bg-linear-to-t from-[#090b19] via-transparent to-white/5"></div>
+          <div
+            v-if="poll.type === 'VS'"
+            class="absolute inset-x-5 top-1/2 grid -translate-y-1/2 grid-cols-[1fr_auto_1fr] items-center gap-3"
+          >
+            <div class="grid h-24 place-items-center rounded-3xl border border-violet-200/20 bg-black/30 shadow-2xl shadow-violet-500/20 backdrop-blur">
+              <span class="text-3xl">A</span>
+            </div>
+            <div class="grid size-12 place-items-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 text-xs font-black shadow-xl shadow-fuchsia-500/30">
+              VS
+            </div>
+            <div class="grid h-24 place-items-center rounded-3xl border border-fuchsia-200/20 bg-black/30 shadow-2xl shadow-fuchsia-500/20 backdrop-blur">
+              <span class="text-3xl">B</span>
+            </div>
+          </div>
+
+          <div
+            v-else
+            class="absolute left-1/2 top-1/2 grid size-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-3xl border border-white/20 bg-black/25 shadow-2xl shadow-fuchsia-500/20 backdrop-blur"
+          >
+            <span class="text-4xl text-white/90">☷</span>
+          </div>
+          <div class="absolute left-4 top-4 rounded-full bg-violet-500/20 px-3 py-1 text-xs font-black uppercase text-violet-100 backdrop-blur">
+            {{ poll.category }}
+          </div>
+          <div class="absolute right-4 top-4 rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-black uppercase text-emerald-300 backdrop-blur">
+            {{ poll.status }}
+          </div>
+          <div class="absolute bottom-4 left-4 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs font-black uppercase text-white/85 backdrop-blur">
+            Tipo {{ poll.typeLabel }}
+          </div>
+        </div>
+
+        <div class="p-5">
+          <h3 class="text-xl font-black leading-tight">{{ poll.title }}</h3>
+          <p class="mt-2 text-sm text-slate-400">
+            {{ poll.type === 'VS' ? 'Ganando ahora' : 'Lider actual' }}:
+            <span class="font-bold text-white">{{ poll.leader }}</span>
+          </p>
+
+          <div class="mt-5 grid grid-cols-2 gap-3">
+            <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p class="text-xs uppercase tracking-widest text-slate-500">Votos</p>
+              <p class="mt-1 text-lg font-black">{{ poll.votes }}</p>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p class="text-xs uppercase tracking-widest text-slate-500">Cierra en</p>
+              <p class="mt-1 text-lg font-black">{{ poll.endsIn }}</p>
+            </div>
+          </div>
+
+          <div class="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+            <div
+              class="h-full rounded-full bg-linear-to-r from-violet-400 to-fuchsia-400"
+              :style="{ width: `${poll.progress}%` }"
+            ></div>
+          </div>
+
+          <a
+            href="#"
+            class="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/20"
+          >
+            <span>Votar</span>
+            <span aria-hidden="true">→</span>
+          </a>
+        </div>
+      </article>
+    </div>
+
+    <div class="hidden gap-4 lg:grid lg:grid-cols-3">
+      <article
+        v-for="poll in popularPolls"
+        :key="poll.title"
+        class="group relative overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/30 transition hover:border-fuchsia-300/30 hover:bg-[#101226]"
       >
         <div class="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-fuchsia-300/50 to-transparent"></div>
         <div class="absolute -right-16 -top-16 size-36 rounded-full bg-fuchsia-500/10 blur-3xl"></div>
@@ -140,3 +224,14 @@ const popularPolls = [
     </div>
   </section>
 </template>
+
+<style scoped>
+.mobile-polls-slider {
+  scrollbar-width: none;
+}
+
+.mobile-polls-slider::-webkit-scrollbar {
+  display: none;
+}
+
+</style>
