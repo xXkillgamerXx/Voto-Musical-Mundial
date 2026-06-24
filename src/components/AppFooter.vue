@@ -7,7 +7,7 @@ const footerLinks = [
 ]
 
 const legalLinks = [
-  { title: 'Términos', href: '#' },
+  { title: 'Términos', href: '/terminos-y-condiciones' },
   { title: 'Privacidad', href: '#' },
   { title: 'Reglas de voto', href: '#' },
 ]

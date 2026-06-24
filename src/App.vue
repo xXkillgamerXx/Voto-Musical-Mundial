@@ -13,12 +13,14 @@ import MainCategories from './components/MainCategories.vue'
 import MissionsSection from './components/MissionsSection.vue'
 import PopularPolls from './components/PopularPolls.vue'
 import RegisterPage from './components/RegisterPage.vue'
+import TermsPage from './components/TermsPage.vue'
 import TopRanking from './components/TopRanking.vue'
 import VersusEmbed from './components/VersusEmbed.vue'
 import VersusPollPage from './components/VersusPollPage.vue'
 
 const currentPath = ref(window.location.pathname)
 const isRegisterPage = computed(() => currentPath.value === '/registro')
+const isTermsPage = computed(() => currentPath.value === '/terminos-y-condiciones')
 const isListPollPage = computed(() => currentPath.value === '/votacion/lista')
 const isVersusPollPage = computed(() => currentPath.value === '/votacion/versus')
 const isVersusEmbedPage = computed(() => currentPath.value === '/embed/versus')
@@ -47,6 +49,7 @@ onUnmounted(() => {
 
     <main class="relative z-10" :class="!isPlainPage && 'pt-11 sm:pt-24'">
       <RegisterPage v-if="isRegisterPage" />
+      <TermsPage v-else-if="isTermsPage" />
       <VersusEmbed v-else-if="isVersusEmbedPage" />
       <ListPollPage v-else-if="isListPollPage" />
       <VersusPollPage v-else-if="isVersusPollPage" />
@@ -72,6 +75,6 @@ onUnmounted(() => {
 
     <AppFooter v-if="!isPlainPage" />
 
-    <DailyRewardModal v-if="!isPlainPage && !isListPollPage && !isVersusPollPage && !isArtistProfilePage" />
+    <DailyRewardModal v-if="!isPlainPage && !isTermsPage && !isListPollPage && !isVersusPollPage && !isArtistProfilePage" />
   </div>
 </template>

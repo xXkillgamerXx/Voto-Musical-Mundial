@@ -1,15 +1,52 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { auth } from '../firebase'
 import AuthModal from './AuthModal.vue'
 
 const navItems = ['Inicio', 'Votaciones', 'Rankings', 'Misiones', 'Noticias']
 const isMenuOpen = ref(false)
 const isAuthModalOpen = ref(false)
+const isAccountMenuOpen = ref(false)
+const avatarImageFailed = ref(false)
+const currentUser = ref(null)
+let unsubscribeAuth = null
+
+const userName = computed(() => currentUser.value?.displayName || 'Cuenta fan')
+const userEmail = computed(() => currentUser.value?.email || '')
+const shouldShowAvatarImage = computed(() => currentUser.value?.photoURL && !avatarImageFailed.value)
+const userInitial = computed(() => {
+  const source = currentUser.value?.displayName || currentUser.value?.email || 'U'
+
+  return source.trim().charAt(0).toUpperCase()
+})
 
 const openAuthModal = () => {
   isAuthModalOpen.value = true
   isMenuOpen.value = false
 }
+
+const handleLogout = async () => {
+  await signOut(auth)
+  isAccountMenuOpen.value = false
+  isMenuOpen.value = false
+}
+
+const handleAvatarError = () => {
+  avatarImageFailed.value = true
+}
+
+onMounted(() => {
+  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    currentUser.value = user
+    avatarImageFailed.value = false
+    isAccountMenuOpen.value = false
+  })
+})
+
+onUnmounted(() => {
+  unsubscribeAuth?.()
+})
 </script>
 
 <template>
@@ -42,13 +79,72 @@ const openAuthModal = () => {
 
       <div class="flex items-center gap-2">
         <div
+          v-if="currentUser"
           class="hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
         >
           <span class="text-amber-300">◆</span>
           <span>2,450 pts</span>
         </div>
 
+        <div v-if="currentUser" class="relative">
+          <button
+            type="button"
+            class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white shadow-lg shadow-fuchsia-950/30"
+            aria-label="Cuenta de usuario"
+            :aria-expanded="isAccountMenuOpen"
+            @click="isAccountMenuOpen = !isAccountMenuOpen"
+          >
+            <img
+              v-if="shouldShowAvatarImage"
+              :src="currentUser.photoURL"
+              alt=""
+              class="size-full object-cover"
+              referrerpolicy="no-referrer"
+              @error="handleAvatarError"
+            />
+            <span v-else>{{ userInitial }}</span>
+          </button>
+
+          <div
+            v-if="isAccountMenuOpen"
+            class="absolute right-0 top-12 z-70 w-72 overflow-hidden rounded-3xl border border-white/10 bg-[#080a18] p-3 text-white shadow-2xl shadow-black/40"
+          >
+            <div class="flex items-center gap-3 border-b border-white/10 pb-3">
+              <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black">
+                <img
+                  v-if="shouldShowAvatarImage"
+                  :src="currentUser.photoURL"
+                  alt=""
+                  class="size-full object-cover"
+                  referrerpolicy="no-referrer"
+                  @error="handleAvatarError"
+                />
+                <span v-else>{{ userInitial }}</span>
+              </span>
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-black">{{ userName }}</span>
+                <span class="block truncate text-xs text-slate-400">{{ userEmail }}</span>
+              </span>
+            </div>
+
+            <a
+              href="#"
+              class="mt-3 block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              Mi perfil
+            </a>
+            <button
+              type="button"
+              class="block w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-200 transition hover:bg-red-500/10"
+              @click="handleLogout"
+            >
+              Cerrar sesión
+            </button>
+          </div>
+        </div>
+
         <button
+          v-if="!currentUser"
           type="button"
           class="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-300 transition hover:text-white lg:inline-flex"
           @click="openAuthModal"
@@ -57,6 +153,7 @@ const openAuthModal = () => {
         </button>
 
         <a
+          v-if="!currentUser"
           href="/registro"
           class="hidden rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-bold shadow-lg shadow-fuchsia-500/25 transition hover:shadow-fuchsia-500/40 sm:inline-flex"
         >
@@ -89,12 +186,35 @@ const openAuthModal = () => {
 
         <div class="mt-3 grid gap-2 border-t border-white/10 pt-3 sm:grid-cols-3">
           <div
+            v-if="currentUser"
+            class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 sm:col-span-3"
+          >
+            <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black">
+              <img
+                v-if="shouldShowAvatarImage"
+                :src="currentUser.photoURL"
+                alt=""
+                class="size-full object-cover"
+                referrerpolicy="no-referrer"
+                @error="handleAvatarError"
+              />
+              <span v-else>{{ userInitial }}</span>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-black text-white">{{ userName }}</span>
+              <span class="block truncate text-xs text-slate-400">{{ userEmail }}</span>
+            </span>
+          </div>
+
+          <div
+            v-if="currentUser"
             class="flex items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
           >
             <span class="text-amber-300">◆</span>
             <span>2,450 pts</span>
           </div>
           <button
+            v-if="!currentUser"
             type="button"
             class="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200"
             @click="openAuthModal"
@@ -102,11 +222,20 @@ const openAuthModal = () => {
             Iniciar sesion
           </button>
           <a
+            v-if="!currentUser"
             href="/registro"
             class="rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-3 text-center text-sm font-bold"
           >
             Registrarse
           </a>
+          <button
+            v-if="currentUser"
+            type="button"
+            class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-center text-sm font-bold text-red-100"
+            @click="handleLogout"
+          >
+            Cerrar sesión
+          </button>
         </div>
       </div>
     </div>
