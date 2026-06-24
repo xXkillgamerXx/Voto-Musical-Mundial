@@ -5,12 +5,13 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
-import { auth, googleProvider } from "../firebase";
+import { auth, googleProvider } from "../../firebase";
 
 const emit = defineEmits(["close"]);
 
 const email = ref("");
 const password = ref("");
+const showPassword = ref(false);
 const rememberPassword = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
@@ -192,14 +193,29 @@ const handlePasswordReset = async () => {
                 class="text-xs font-bold uppercase tracking-widest text-slate-400"
                 >Contraseña</span
               >
-              <input
-                v-model="password"
-                type="password"
-                required
-                minlength="6"
-                class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                placeholder="Mínimo 6 caracteres"
-              />
+              <div class="relative mt-2">
+                <input
+                  v-model="password"
+                  :type="showPassword ? 'text' : 'password'"
+                  required
+                  minlength="6"
+                  class="min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 pr-24 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
+                  placeholder="Mínimo 6 caracteres"
+                />
+                <button
+                  type="button"
+                  class="absolute inset-y-0 right-4 my-auto grid size-9 place-items-center rounded-full text-slate-300 transition hover:bg-white/10 hover:text-white"
+                  :aria-label="
+                    showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
+                  "
+                  @click="showPassword = !showPassword"
+                >
+                  <i
+                    :class="showPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"
+                    aria-hidden="true"
+                  ></i>
+                </button>
+              </div>
             </label>
 
             <div

@@ -1,72 +1,113 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { auth } from '../firebase'
-import AuthModal from './AuthModal.vue'
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../../firebase";
+import AuthModal from "../auth/AuthModal.vue";
 
-const navItems = ['Inicio', 'Votaciones', 'Rankings', 'Misiones', 'Noticias']
-const isMenuOpen = ref(false)
-const isAuthModalOpen = ref(false)
-const isAccountMenuOpen = ref(false)
-const avatarImageFailed = ref(false)
-const currentUser = ref(null)
-let unsubscribeAuth = null
+const navItems = ["Inicio", "Votaciones", "Rankings", "Misiones", "Noticias"];
+const isMenuOpen = ref(false);
+const isAuthModalOpen = ref(false);
+const isAccountMenuOpen = ref(false);
+const avatarImageFailed = ref(false);
+const currentUser = ref(null);
+const userRole = ref("");
+let unsubscribeAuth = null;
 
-const userName = computed(() => currentUser.value?.displayName || 'Cuenta fan')
-const userEmail = computed(() => currentUser.value?.email || '')
-const shouldShowAvatarImage = computed(() => currentUser.value?.photoURL && !avatarImageFailed.value)
+const userName = computed(() => currentUser.value?.displayName || "Cuenta fan");
+const userEmail = computed(() => currentUser.value?.email || "");
+const isAdmin = computed(() => userRole.value === "admin");
+const shouldShowAvatarImage = computed(
+  () => currentUser.value?.photoURL && !avatarImageFailed.value,
+);
 const userInitial = computed(() => {
-  const source = currentUser.value?.displayName || currentUser.value?.email || 'U'
+  const source =
+    currentUser.value?.displayName || currentUser.value?.email || "U";
 
-  return source.trim().charAt(0).toUpperCase()
-})
+  return source.trim().charAt(0).toUpperCase();
+});
 
 const openAuthModal = () => {
-  isAuthModalOpen.value = true
-  isMenuOpen.value = false
-}
+  isAuthModalOpen.value = true;
+  isMenuOpen.value = false;
+};
 
 const handleLogout = async () => {
-  await signOut(auth)
-  isAccountMenuOpen.value = false
-  isMenuOpen.value = false
-}
+  await signOut(auth);
+  isAccountMenuOpen.value = false;
+  isMenuOpen.value = false;
+};
 
 const handleAvatarError = () => {
-  avatarImageFailed.value = true
-}
+  avatarImageFailed.value = true;
+};
+
+const loadUserRole = async (user) => {
+  userRole.value = "";
+
+  if (!user) {
+    return;
+  }
+
+  try {
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+
+    if (currentUser.value?.uid === user.uid) {
+      userRole.value = userSnap.data()?.role || "";
+    }
+  } catch {
+    userRole.value = "";
+  }
+};
 
 onMounted(() => {
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    currentUser.value = user
-    avatarImageFailed.value = false
-    isAccountMenuOpen.value = false
-  })
-})
+    currentUser.value = user;
+    avatarImageFailed.value = false;
+    isAccountMenuOpen.value = false;
+    loadUserRole(user);
+  });
+});
 
 onUnmounted(() => {
-  unsubscribeAuth?.()
-})
+  unsubscribeAuth?.();
+});
 </script>
 
 <template>
-  <header class="fixed inset-x-0 top-0 z-50 border-b border-violet-400/15 bg-slate-950/85 backdrop-blur-xl">
-    <nav class="mx-auto flex max-w-352 items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4">
+  <header
+    class="fixed inset-x-0 top-0 z-50 border-b border-violet-400/15 bg-slate-950/85 backdrop-blur-xl"
+  >
+    <nav
+      class="mx-auto flex max-w-352 items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4"
+    >
       <a href="#" class="group flex items-center gap-3">
-        <span class="grid h-10 w-14 shrink-0 place-items-center sm:h-12 sm:w-16">
-          <img src="/logo-votos.png" alt="Votos Musica Mundial logo" class="h-full w-full object-contain" />
+        <span
+          class="grid h-10 w-14 shrink-0 place-items-center sm:h-12 sm:w-16"
+        >
+          <img
+            src="/logo-votos.png"
+            alt="Votos Musica Mundial logo"
+            class="h-full w-full object-contain"
+          />
         </span>
         <span>
-          <span class="block text-base font-black uppercase leading-none tracking-wide sm:text-lg">
+          <span
+            class="block text-base font-black uppercase leading-none tracking-wide sm:text-lg"
+          >
             Votos Musica Mundial
           </span>
-          <span class="mt-1 hidden text-[10px] uppercase tracking-[0.28em] text-violet-200/70 sm:block">
+          <span
+            class="mt-1 hidden text-[10px] uppercase tracking-[0.28em] text-violet-200/70 sm:block"
+          >
             Awards globales
           </span>
         </span>
       </a>
 
-      <div class="hidden items-center gap-1 rounded-full border border-white/10 bg-white/3 p-1 lg:flex">
+      <div
+        class="hidden items-center gap-1 rounded-full border border-white/10 bg-white/3 p-1 lg:flex"
+      >
         <a
           v-for="item in navItems"
           :key="item"
@@ -110,7 +151,9 @@ onUnmounted(() => {
             class="absolute right-0 top-12 z-70 w-72 overflow-hidden rounded-3xl border border-white/10 bg-[#080a18] p-3 text-white shadow-2xl shadow-black/40"
           >
             <div class="flex items-center gap-3 border-b border-white/10 pb-3">
-              <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black">
+              <span
+                class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black"
+              >
                 <img
                   v-if="shouldShowAvatarImage"
                   :src="currentUser.photoURL"
@@ -122,8 +165,12 @@ onUnmounted(() => {
                 <span v-else>{{ userInitial }}</span>
               </span>
               <span class="min-w-0">
-                <span class="block truncate text-sm font-black">{{ userName }}</span>
-                <span class="block truncate text-xs text-slate-400">{{ userEmail }}</span>
+                <span class="block truncate text-sm font-black">{{
+                  userName
+                }}</span>
+                <span class="block truncate text-xs text-slate-400">{{
+                  userEmail
+                }}</span>
               </span>
             </div>
 
@@ -132,6 +179,13 @@ onUnmounted(() => {
               class="mt-3 block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
               Mi perfil
+            </a>
+            <a
+              v-if="isAdmin"
+              href="/admin"
+              class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              Panel admin
             </a>
             <button
               type="button"
@@ -167,13 +221,15 @@ onUnmounted(() => {
           :aria-expanded="isMenuOpen"
           @click="isMenuOpen = !isMenuOpen"
         >
-          {{ isMenuOpen ? '×' : '☰' }}
+          {{ isMenuOpen ? "×" : "☰" }}
         </button>
       </div>
     </nav>
 
     <div v-if="isMenuOpen" class="border-t border-white/10 px-4 pb-4 lg:hidden">
-      <div class="mx-auto max-w-352 rounded-3xl border border-white/10 bg-white/5 p-3 shadow-2xl shadow-violet-950/30">
+      <div
+        class="mx-auto max-w-352 rounded-3xl border border-white/10 bg-white/5 p-3 shadow-2xl shadow-violet-950/30"
+      >
         <a
           v-for="item in navItems"
           :key="item"
@@ -184,12 +240,16 @@ onUnmounted(() => {
           {{ item }}
         </a>
 
-        <div class="mt-3 grid gap-2 border-t border-white/10 pt-3 sm:grid-cols-3">
+        <div
+          class="mt-3 grid gap-2 border-t border-white/10 pt-3 sm:grid-cols-3"
+        >
           <div
             v-if="currentUser"
             class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 sm:col-span-3"
           >
-            <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black">
+            <span
+              class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black"
+            >
               <img
                 v-if="shouldShowAvatarImage"
                 :src="currentUser.photoURL"
@@ -201,8 +261,12 @@ onUnmounted(() => {
               <span v-else>{{ userInitial }}</span>
             </span>
             <span class="min-w-0">
-              <span class="block truncate text-sm font-black text-white">{{ userName }}</span>
-              <span class="block truncate text-xs text-slate-400">{{ userEmail }}</span>
+              <span class="block truncate text-sm font-black text-white">{{
+                userName
+              }}</span>
+              <span class="block truncate text-xs text-slate-400">{{
+                userEmail
+              }}</span>
             </span>
           </div>
 
@@ -213,6 +277,14 @@ onUnmounted(() => {
             <span class="text-amber-300">◆</span>
             <span>2,450 pts</span>
           </div>
+          <a
+            v-if="currentUser && isAdmin"
+            href="/admin"
+            class="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-3 text-center text-sm font-black text-fuchsia-100"
+            @click="isMenuOpen = false"
+          >
+            Panel admin
+          </a>
           <button
             v-if="!currentUser"
             type="button"
@@ -240,9 +312,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <AuthModal
-      v-if="isAuthModalOpen"
-      @close="isAuthModalOpen = false"
-    />
+    <AuthModal v-if="isAuthModalOpen" @close="isAuthModalOpen = false" />
   </header>
 </template>

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import PollComments from "./PollComments.vue";
+import PollComments from "../components/PollComments.vue";
 
 const remainingSeconds = ref(31 * 24 * 60 * 60 + 1 * 60 * 60 + 4 * 60 + 21);
 let countdownTimer;

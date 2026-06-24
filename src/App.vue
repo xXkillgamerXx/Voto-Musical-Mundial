@@ -1,22 +1,23 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import AdminDashboardPage from './admin/pages/AdminDashboardPage.vue'
 import ActivePolls from './components/ActivePolls.vue'
-import ArtistProfilePage from './components/ArtistProfilePage.vue'
-import AppFooter from './components/AppFooter.vue'
-import AppNavbar from './components/AppNavbar.vue'
+import AppFooter from './components/layout/AppFooter.vue'
+import AppNavbar from './components/layout/AppNavbar.vue'
 import BannerFeatures from './components/BannerFeatures.vue'
 import DailyRewardModal from './components/DailyRewardModal.vue'
 import HeroBanner from './components/HeroBanner.vue'
-import ListPollPage from './components/ListPollPage.vue'
 import LiveActivity from './components/LiveActivity.vue'
 import MainCategories from './components/MainCategories.vue'
 import MissionsSection from './components/MissionsSection.vue'
 import PopularPolls from './components/PopularPolls.vue'
-import RegisterPage from './components/RegisterPage.vue'
-import TermsPage from './components/TermsPage.vue'
 import TopRanking from './components/TopRanking.vue'
-import VersusEmbed from './components/VersusEmbed.vue'
-import VersusPollPage from './components/VersusPollPage.vue'
+import ArtistProfilePage from './pages/ArtistProfilePage.vue'
+import ListPollPage from './pages/ListPollPage.vue'
+import RegisterPage from './pages/RegisterPage.vue'
+import TermsPage from './pages/TermsPage.vue'
+import VersusEmbed from './pages/VersusEmbed.vue'
+import VersusPollPage from './pages/VersusPollPage.vue'
 
 const currentPath = ref(window.location.pathname)
 const isRegisterPage = computed(() => currentPath.value === '/registro')
@@ -25,7 +26,8 @@ const isListPollPage = computed(() => currentPath.value === '/votacion/lista')
 const isVersusPollPage = computed(() => currentPath.value === '/votacion/versus')
 const isVersusEmbedPage = computed(() => currentPath.value === '/embed/versus')
 const isArtistProfilePage = computed(() => currentPath.value === '/artista/jungkook')
-const isPlainPage = computed(() => isRegisterPage.value || isVersusEmbedPage.value)
+const isAdminPage = computed(() => currentPath.value.startsWith('/admin'))
+const isPlainPage = computed(() => isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
 
 const syncCurrentPath = () => {
   currentPath.value = window.location.pathname
@@ -51,6 +53,7 @@ onUnmounted(() => {
       <RegisterPage v-if="isRegisterPage" />
       <TermsPage v-else-if="isTermsPage" />
       <VersusEmbed v-else-if="isVersusEmbedPage" />
+      <AdminDashboardPage v-else-if="isAdminPage" />
       <ListPollPage v-else-if="isListPollPage" />
       <VersusPollPage v-else-if="isVersusPollPage" />
       <ArtistProfilePage v-else-if="isArtistProfilePage" />
