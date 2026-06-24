@@ -11,6 +11,7 @@ const popularPolls = [
     type: 'Lista',
     typeLabel: 'Lista',
     visual: 'from-violet-950 via-fuchsia-700 to-indigo-950',
+    image: '/contestants/jungkook.png',
   },
   {
     title: 'Best Kpop Leaders 2026',
@@ -23,6 +24,7 @@ const popularPolls = [
     type: 'Lista',
     typeLabel: 'Lista',
     visual: 'from-indigo-950 via-violet-700 to-fuchsia-900',
+    image: '/contestants/lisa.png',
   },
   {
     title: 'Karina vs Wonyoung',
@@ -35,6 +37,10 @@ const popularPolls = [
     type: 'VS',
     typeLabel: 'Versus',
     visual: 'from-slate-900 via-purple-700 to-violet-950',
+    opponents: [
+      { name: 'Jungkook', image: '/contestants/jungkook.png' },
+      { name: 'Lisa', image: '/contestants/lisa.png' },
+    ],
   },
 ]
 
@@ -70,25 +76,33 @@ const popularPolls = [
           class="relative h-52 overflow-hidden bg-linear-to-br"
           :class="poll.visual"
         >
+          <img
+            v-if="poll.image"
+            :src="poll.image"
+            :alt="poll.leader"
+            class="absolute inset-0 size-full object-cover"
+          />
           <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.26),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
           <div class="absolute inset-0 bg-linear-to-t from-[#090b19] via-transparent to-white/5"></div>
           <div
             v-if="poll.type === 'VS'"
-            class="absolute inset-x-5 top-1/2 grid -translate-y-1/2 grid-cols-[1fr_auto_1fr] items-center gap-3"
+            class="absolute inset-0 grid grid-cols-2"
           >
-            <div class="grid h-24 place-items-center rounded-3xl border border-violet-200/20 bg-black/30 shadow-2xl shadow-violet-500/20 backdrop-blur">
-              <span class="text-3xl">A</span>
+            <div class="relative overflow-hidden">
+              <img :src="poll.opponents[0].image" :alt="poll.opponents[0].name" class="size-full object-cover object-center" />
+              <div class="absolute inset-0 bg-linear-to-t from-[#090b19]/80 via-transparent to-transparent"></div>
             </div>
-            <div class="grid size-12 place-items-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 text-xs font-black shadow-xl shadow-fuchsia-500/30">
+            <div class="absolute left-1/2 top-1/2 z-10 grid size-13 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white/20 bg-linear-to-r from-violet-500 to-fuchsia-500 text-xs font-black shadow-xl shadow-fuchsia-500/30">
               VS
             </div>
-            <div class="grid h-24 place-items-center rounded-3xl border border-fuchsia-200/20 bg-black/30 shadow-2xl shadow-fuchsia-500/20 backdrop-blur">
-              <span class="text-3xl">B</span>
+            <div class="relative overflow-hidden">
+              <img :src="poll.opponents[1].image" :alt="poll.opponents[1].name" class="size-full object-cover object-center" />
+              <div class="absolute inset-0 bg-linear-to-t from-[#090b19]/80 via-transparent to-transparent"></div>
             </div>
           </div>
 
           <div
-            v-else
+            v-else-if="!poll.image"
             class="absolute left-1/2 top-1/2 grid size-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-3xl border border-white/20 bg-black/25 shadow-2xl shadow-fuchsia-500/20 backdrop-blur"
           >
             <span class="text-4xl text-white/90">☷</span>
@@ -130,7 +144,7 @@ const popularPolls = [
           </div>
 
           <a
-            href="#"
+            :href="poll.type === 'Lista' ? '/votacion/lista' : '/votacion/versus'"
             class="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/20"
           >
             <span>Votar</span>
@@ -153,25 +167,31 @@ const popularPolls = [
           class="relative h-56 overflow-hidden bg-linear-to-br"
           :class="poll.visual"
         >
+          <img
+            v-if="poll.image"
+            :src="poll.image"
+            :alt="poll.leader"
+            class="absolute inset-0 size-full object-cover"
+          />
           <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.26),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
           <div class="absolute inset-0 bg-linear-to-t from-[#090b19] via-transparent to-white/5"></div>
           <div
             v-if="poll.type === 'VS'"
-            class="absolute inset-x-5 top-1/2 grid -translate-y-1/2 grid-cols-[1fr_auto_1fr] items-center gap-3"
+            class="absolute inset-0 grid grid-cols-2"
           >
-            <div class="grid h-28 place-items-center rounded-3xl border border-violet-200/20 bg-black/30 shadow-2xl shadow-violet-500/20 backdrop-blur">
-              <span class="text-4xl">A</span>
+            <div class="relative overflow-hidden">
+              <img :src="poll.opponents[0].image" :alt="poll.opponents[0].name" class="size-full object-cover" />
             </div>
-            <div class="grid size-14 place-items-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 text-sm font-black shadow-xl shadow-fuchsia-500/30">
+            <div class="absolute left-1/2 top-1/2 z-10 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 text-sm font-black shadow-xl shadow-fuchsia-500/30">
               VS
             </div>
-            <div class="grid h-28 place-items-center rounded-3xl border border-fuchsia-200/20 bg-black/30 shadow-2xl shadow-fuchsia-500/20 backdrop-blur">
-              <span class="text-4xl">B</span>
+            <div class="relative overflow-hidden">
+              <img :src="poll.opponents[1].image" :alt="poll.opponents[1].name" class="size-full object-cover" />
             </div>
           </div>
 
           <div
-            v-else
+            v-else-if="!poll.image"
             class="absolute left-1/2 top-1/2 grid size-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-3xl border border-white/20 bg-black/25 shadow-2xl shadow-fuchsia-500/20 backdrop-blur"
           >
             <span class="text-4xl text-white/90">☷</span>
@@ -213,7 +233,7 @@ const popularPolls = [
           </div>
 
           <a
-            href="#"
+            :href="poll.type === 'Lista' ? '/votacion/lista' : '/votacion/versus'"
             class="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/20 transition group-hover:shadow-fuchsia-500/35"
           >
             <span>Votar</span>

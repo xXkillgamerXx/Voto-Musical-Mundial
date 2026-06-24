@@ -12,21 +12,21 @@ const activities = [
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-0 sm:px-6 lg:py-8">
-    <div class="relative overflow-hidden border-y border-violet-300/10 bg-[#090b19]/90 py-4 pl-5 pr-4 shadow-2xl shadow-violet-950/30 sm:border sm:p-6">
-      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_84%_2%,rgba(168,85,247,0.35),transparent_26%),radial-gradient(circle_at_12%_100%,rgba(14,165,233,0.12),transparent_28%)]"></div>
-
-      <div class="relative mb-4">
-        <div class="flex items-center gap-3">
-          <h2 class="text-lg font-black uppercase tracking-wide text-violet-100">En tiempo real</h2>
+  <section class="mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
+    <div class="relative">
+      <div class="relative mb-4 flex items-end justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-black uppercase tracking-tight text-violet-100">En tiempo real</h2>
+          <p class="mt-1 text-sm text-slate-400">Usuarios votando ahora</p>
+        </div>
+        <div>
           <span class="rounded-md border border-red-300/30 bg-red-500/15 px-2 py-0.5 text-[10px] font-black uppercase text-red-200">
             Live
           </span>
         </div>
-        <p class="mt-2 text-sm text-slate-400">Usuarios votando ahora</p>
       </div>
 
-      <div class="live-scroll relative max-h-[520px] space-y-2 overflow-y-auto pr-1 sm:max-h-[650px] sm:space-y-3 sm:pr-2">
+      <div class="live-scroll relative max-h-[520px] space-y-2 overflow-y-auto sm:max-h-[650px] sm:space-y-3 sm:pr-2">
         <article
           v-for="activity in activities"
           :key="`${activity.user}-${activity.time}`"

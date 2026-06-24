@@ -68,7 +68,7 @@ const timeLabels = ['Dias', 'Hrs', 'Min', 'Seg']
           </div>
 
           <a
-            href="#"
+            href="/votacion/lista"
             class="mt-5 flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-9 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/25"
           >
             Votar
@@ -111,7 +111,7 @@ const timeLabels = ['Dias', 'Hrs', 'Min', 'Seg']
         </div>
 
         <a
-          href="#"
+          href="/votacion/lista"
           class="m-4 flex min-h-12 min-w-28 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-9 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/25 md:ml-2"
         >
           Votar
