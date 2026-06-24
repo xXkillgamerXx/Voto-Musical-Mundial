@@ -62,6 +62,33 @@ const sanitizeFileName = (value) =>
     .replace(/[^a-z0-9.]+/g, '-')
     .replace(/(^-|-$)/g, '')
 
+const isAcceptedImageFile = (file) => {
+  const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  const acceptedExtensions = ['.jpg', '.jpeg', '.png', '.webp']
+  const fileName = file.name.toLowerCase()
+
+  return acceptedTypes.includes(file.type)
+    || acceptedExtensions.some((extension) => fileName.endsWith(extension))
+}
+
+const getImageContentType = (file) => {
+  const fileName = file.name.toLowerCase()
+
+  if (file.type) {
+    return file.type
+  }
+
+  if (fileName.endsWith('.webp')) {
+    return 'image/webp'
+  }
+
+  if (fileName.endsWith('.png')) {
+    return 'image/png'
+  }
+
+  return 'image/jpeg'
+}
+
 const uploadArtistImage = async (file, field) => {
   if (!file) {
     return
@@ -70,8 +97,8 @@ const uploadArtistImage = async (file, field) => {
   errorMessage.value = ''
   successMessage.value = ''
 
-  if (!file.type.startsWith('image/')) {
-    errorMessage.value = 'Solo puedes subir imagenes.'
+  if (!isAcceptedImageFile(file)) {
+    errorMessage.value = 'Solo puedes subir imagenes JPG, PNG o WebP.'
     return
   }
 
@@ -87,7 +114,7 @@ const uploadArtistImage = async (file, field) => {
   }
 
   try {
-    await uploadBytes(imageRef, file)
+    await uploadBytes(imageRef, file, { contentType: getImageContentType(file) })
     artistForm.value[field] = await getDownloadURL(imageRef)
     successMessage.value = isBanner ? 'Banner subido.' : 'Foto de perfil subida.'
   } catch {
@@ -324,7 +351,7 @@ onMounted(loadArtist)
                 </span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                   class="sr-only"
                   :disabled="isUploadingBanner"
                   @change="handleImageInput($event, 'banner')"
@@ -346,7 +373,7 @@ onMounted(loadArtist)
                 </span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                   class="sr-only"
                   :disabled="isUploadingProfile"
                   @change="handleImageInput($event, 'image')"

@@ -12,7 +12,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'Admin'];
     }
 
     match /usernames/{username} {
@@ -35,6 +35,47 @@ service cloud.firestore {
     match /artists/{artistId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
+    }
+
+    match /polls/{pollId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+
+      match /contestants/{contestantId} {
+        allow read: if true;
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin()
+          || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'totalVotes'])
+            && request.resource.data.votes == resource.data.votes + 1
+            && request.resource.data.totalVotes == resource.data.totalVotes + 1);
+      }
+
+      match /votes/{voteId} {
+        allow read: if isAdmin();
+        allow create: if isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.amount == 1;
+      }
+
+      match /adjustments/{adjustmentId} {
+        allow read, create, update, delete: if isAdmin();
+      }
+
+      match /rounds/{roundId} {
+        allow read: if true;
+        allow create, update, delete: if isAdmin();
+
+        match /contestants/{contestantId} {
+          allow read: if true;
+          allow create, delete: if isAdmin();
+          allow update: if isAdmin()
+            || (isSignedIn()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'totalVotes'])
+              && request.resource.data.votes == resource.data.votes + 1
+              && request.resource.data.totalVotes == resource.data.totalVotes + 1);
+        }
+      }
     }
   }
 }

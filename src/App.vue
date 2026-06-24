@@ -10,7 +10,6 @@ import HeroBanner from './components/HeroBanner.vue'
 import LiveActivity from './components/LiveActivity.vue'
 import MainCategories from './components/MainCategories.vue'
 import MissionsSection from './components/MissionsSection.vue'
-import PopularPolls from './components/PopularPolls.vue'
 import TopRanking from './components/TopRanking.vue'
 import ArtistProfilePage from './pages/ArtistProfilePage.vue'
 import ListPollPage from './pages/ListPollPage.vue'
@@ -23,6 +22,7 @@ const currentPath = ref(window.location.pathname)
 const isRegisterPage = computed(() => currentPath.value === '/registro')
 const isTermsPage = computed(() => currentPath.value === '/terminos-y-condiciones')
 const isListPollPage = computed(() => currentPath.value === '/votacion/lista')
+const isDynamicListPollPage = computed(() => /^\/votacion\/\d{4}\/[^/]+$/.test(currentPath.value))
 const isVersusPollPage = computed(() => currentPath.value === '/votacion/versus')
 const isVersusEmbedPage = computed(() => currentPath.value === '/embed/versus')
 const isArtistProfilePage = computed(() => currentPath.value === '/artista/jungkook')
@@ -54,7 +54,7 @@ onUnmounted(() => {
       <TermsPage v-else-if="isTermsPage" />
       <VersusEmbed v-else-if="isVersusEmbedPage" />
       <AdminDashboardPage v-else-if="isAdminPage" />
-      <ListPollPage v-else-if="isListPollPage" />
+      <ListPollPage v-else-if="isListPollPage || isDynamicListPollPage" />
       <VersusPollPage v-else-if="isVersusPollPage" />
       <ArtistProfilePage v-else-if="isArtistProfilePage" />
 
@@ -66,9 +66,8 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <PopularPolls />
-        <MainCategories />
         <ActivePolls />
+        <MainCategories />
         <TopRanking />
         <LiveActivity />
         <MissionsSection />
@@ -78,6 +77,6 @@ onUnmounted(() => {
 
     <AppFooter v-if="!isPlainPage" />
 
-    <DailyRewardModal v-if="!isPlainPage && !isTermsPage && !isListPollPage && !isVersusPollPage && !isArtistProfilePage" />
+    <DailyRewardModal v-if="!isPlainPage && !isTermsPage && !isListPollPage && !isDynamicListPollPage && !isVersusPollPage && !isArtistProfilePage" />
   </div>
 </template>

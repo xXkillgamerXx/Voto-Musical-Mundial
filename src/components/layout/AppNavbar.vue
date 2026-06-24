@@ -53,7 +53,7 @@ const loadUserRole = async (user) => {
     const userSnap = await getDoc(doc(db, "users", user.uid));
 
     if (currentUser.value?.uid === user.uid) {
-      userRole.value = userSnap.data()?.role || "";
+      userRole.value = (userSnap.data()?.role || "").toLowerCase();
     }
   } catch {
     userRole.value = "";

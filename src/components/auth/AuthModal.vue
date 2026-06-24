@@ -39,8 +39,18 @@ const friendlyAuthError = (error) => {
   const messages = {
     "auth/invalid-email": "Escribe un correo válido.",
     "auth/invalid-credential": "Correo o contraseña incorrectos.",
+    "auth/user-not-found": "No existe una cuenta con ese correo.",
+    "auth/wrong-password": "La contraseña no es correcta.",
+    "auth/too-many-requests":
+      "Demasiados intentos. Espera unos minutos e intenta de nuevo.",
+    "auth/operation-not-allowed":
+      "El inicio con correo y contraseña no está activo en Firebase.",
+    "auth/network-request-failed":
+      "No se pudo conectar con Firebase. Revisa tu conexión.",
     "auth/popup-closed-by-user":
       "Cerraste la ventana de Google antes de terminar.",
+    "auth/unauthorized-domain":
+      "Este dominio no está autorizado en Firebase Authentication.",
   };
 
   return (
@@ -54,7 +64,11 @@ const handleEmailAccess = async () => {
   isLoading.value = true;
 
   try {
-    await signInWithEmailAndPassword(auth, email.value, password.value);
+    await signInWithEmailAndPassword(
+      auth,
+      email.value.trim().toLowerCase(),
+      password.value,
+    );
     emit("close");
   } catch (error) {
     errorMessage.value = friendlyAuthError(error);

@@ -1,20 +1,69 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '../../firebase'
 import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
+import AdminPollContestantsView from '../components/AdminPollContestantsView.vue'
+import AdminPollFormView from '../components/AdminPollFormView.vue'
+import AdminPollMonitorView from '../components/AdminPollMonitorView.vue'
+import AdminPollsView from '../components/AdminPollsView.vue'
+import AdminPollRoundView from '../components/AdminPollRoundView.vue'
+import AdminPollWinnersView from '../components/AdminPollWinnersView.vue'
 import AdminUsersView from '../components/AdminUsersView.vue'
 
 const currentPath = window.location.pathname
+const isPollsView = computed(() => currentPath === '/admin/votaciones')
+const isPollCreateView = computed(() => currentPath === '/admin/votaciones/crear')
+const isPollEditView = computed(() => currentPath.startsWith('/admin/votaciones/editar/'))
+const pollEditId = computed(() => currentPath.replace('/admin/votaciones/editar/', ''))
+const isPollParticipantsView = computed(() => currentPath.startsWith('/admin/votaciones/') && currentPath.endsWith('/participantes'))
+const isPollMonitorView = computed(() => currentPath.startsWith('/admin/votaciones/') && currentPath.endsWith('/monitor'))
+const isPollWinnersView = computed(() => currentPath.startsWith('/admin/votaciones/') && currentPath.endsWith('/ganadores'))
+const isPollRoundView = computed(() => /^\/admin\/votaciones\/[^/]+\/rondas\/[^/]+$/.test(currentPath))
+const isPollDetailView = computed(() => /^\/admin\/votaciones\/[^/]+$/.test(currentPath))
+const pollActionId = computed(() => currentPath.split('/')[3] || '')
+const roundActionId = computed(() => currentPath.split('/')[5] || '')
 const isArtistsView = computed(() => currentPath === '/admin/artistas')
 const isArtistCreateView = computed(() => currentPath === '/admin/artistas/crear')
 const isArtistEditView = computed(() => currentPath.startsWith('/admin/artistas/editar/'))
 const artistEditId = computed(() => currentPath.replace('/admin/artistas/editar/', ''))
 const isUsersView = computed(() => currentPath === '/admin/usuarios')
 const pageTitle = computed(() => {
+  if (isPollCreateView.value) {
+    return 'Crear votacion'
+  }
+
+  if (isPollEditView.value) {
+    return 'Editar votacion'
+  }
+
+  if (isPollParticipantsView.value) {
+    return 'Participantes'
+  }
+
+  if (isPollMonitorView.value) {
+    return 'Monitor'
+  }
+
+  if (isPollWinnersView.value) {
+    return 'Ganadores'
+  }
+
+  if (isPollRoundView.value) {
+    return 'Configurar ronda'
+  }
+
+  if (isPollDetailView.value) {
+    return 'Gestionar votacion'
+  }
+
+  if (isPollsView.value) {
+    return 'Votaciones'
+  }
+
   if (isArtistCreateView.value) {
     return 'Crear artista'
   }
@@ -35,6 +84,17 @@ const pageTitle = computed(() => {
 })
 const isCheckingAccess = ref(true)
 const hasAdminAccess = ref(false)
+const currentUser = ref(null)
+const avatarImageFailed = ref(false)
+
+const userName = computed(() => currentUser.value?.displayName || 'Admin')
+const userEmail = computed(() => currentUser.value?.email || '')
+const shouldShowAvatarImage = computed(() => currentUser.value?.photoURL && !avatarImageFailed.value)
+const userInitial = computed(() => {
+  const source = currentUser.value?.displayName || currentUser.value?.email || 'A'
+
+  return source.trim().charAt(0).toUpperCase()
+})
 
 const navItems = [
   { label: 'Dashboard', href: '/admin', icon: 'fa-solid fa-chart-line' },
@@ -48,8 +108,20 @@ const navItems = [
 const isActiveItem = (item) =>
   currentPath === item.href || (item.href !== '/admin' && currentPath.startsWith(`${item.href}/`))
 
+const handleAvatarError = () => {
+  avatarImageFailed.value = true
+}
+
+const handleLogout = async () => {
+  await signOut(auth)
+  window.location.href = '/'
+}
+
 onMounted(() => {
   onAuthStateChanged(auth, async (user) => {
+    currentUser.value = user
+    avatarImageFailed.value = false
+
     if (!user) {
       hasAdminAccess.value = false
       isCheckingAccess.value = false
@@ -58,7 +130,7 @@ onMounted(() => {
 
     try {
       const userSnap = await getDoc(doc(db, 'users', user.uid))
-      hasAdminAccess.value = userSnap.data()?.role === 'admin'
+      hasAdminAccess.value = (userSnap.data()?.role || '').toLowerCase() === 'admin'
     } catch {
       hasAdminAccess.value = false
     } finally {
@@ -106,7 +178,7 @@ onMounted(() => {
     </div>
 
     <div v-else class="relative z-10 flex min-h-screen">
-      <aside class="hidden w-72 shrink-0 border-r border-white/10 bg-slate-950/65 p-5 backdrop-blur-xl lg:block">
+      <aside class="hidden w-72 shrink-0 flex-col border-r border-white/10 bg-slate-950/65 p-5 backdrop-blur-xl lg:flex">
         <a href="/" class="flex items-center gap-3">
           <span class="grid size-12 place-items-center rounded-2xl bg-white/10">
             <img src="/logo-votos.png" alt="Votos Musica Mundial" class="size-10 object-contain" />
@@ -121,7 +193,7 @@ onMounted(() => {
           </span>
         </a>
 
-        <nav class="mt-8 space-y-2">
+        <nav class="mt-8 flex-1 space-y-2">
           <a
             v-for="item in navItems"
             :key="item.label"
@@ -137,6 +209,44 @@ onMounted(() => {
             {{ item.label }}
           </a>
         </nav>
+
+        <div class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-3">
+          <div class="flex items-center gap-3">
+            <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white">
+              <img
+                v-if="shouldShowAvatarImage"
+                :src="currentUser.photoURL"
+                alt=""
+                class="size-full object-cover"
+                referrerpolicy="no-referrer"
+                @error="handleAvatarError"
+              />
+              <span v-else>{{ userInitial }}</span>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-black text-white">{{ userName }}</span>
+              <span class="block truncate text-xs text-slate-400">{{ userEmail }}</span>
+            </span>
+          </div>
+
+          <div class="mt-3 grid gap-2">
+            <a
+              href="/"
+              class="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black text-slate-100 transition hover:bg-white/10"
+            >
+              <i class="fa-solid fa-globe" aria-hidden="true"></i>
+              Ir a la web
+            </a>
+            <button
+              type="button"
+              class="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-red-300/20 bg-red-500/10 px-4 text-sm font-black text-red-100 transition hover:bg-red-500/20"
+              @click="handleLogout"
+            >
+              <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+              Cerrar sesión
+            </button>
+          </div>
+        </div>
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
@@ -170,8 +280,37 @@ onMounted(() => {
         </header>
 
         <main class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <AdminPollFormView
+            v-if="isPollCreateView"
+          />
+          <AdminPollFormView
+            v-else-if="isPollEditView"
+            :poll-id="pollEditId"
+          />
+          <AdminPollContestantsView
+            v-else-if="isPollParticipantsView"
+            :poll-id="pollActionId"
+          />
+          <AdminPollMonitorView
+            v-else-if="isPollMonitorView"
+            :poll-id="pollActionId"
+          />
+          <AdminPollWinnersView
+            v-else-if="isPollWinnersView"
+            :poll-id="pollActionId"
+          />
+          <AdminPollRoundView
+            v-else-if="isPollRoundView"
+            :poll-id="pollActionId"
+            :round-id="roundActionId"
+          />
+          <AdminPollMonitorView
+            v-else-if="isPollDetailView"
+            :poll-id="pollActionId"
+          />
+          <AdminPollsView v-else-if="isPollsView" />
           <AdminArtistFormView
-            v-if="isArtistCreateView"
+            v-else-if="isArtistCreateView"
           />
           <AdminArtistFormView
             v-else-if="isArtistEditView"
