@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
@@ -23,9 +24,13 @@ const emptyPoll = {
   description: '',
   banner: '',
   status: 'draft',
+  categoryId: '',
+  categoryName: '',
+  year: new Date().getFullYear(),
 }
 
 const pollForm = ref({ ...emptyPoll })
+const categories = ref([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const isUploadingBanner = ref(false)
@@ -34,6 +39,9 @@ const successMessage = ref('')
 
 const isEditing = computed(() => Boolean(props.pollId))
 const formTitle = computed(() => (isEditing.value ? 'Editar votacion' : 'Crear votacion'))
+const selectedCategory = computed(() =>
+  categories.value.find((category) => category.id === pollForm.value.categoryId) || null,
+)
 
 const createSlug = (value) =>
   value
@@ -119,6 +127,31 @@ const handleBannerDrop = (event) => {
   uploadPollBanner(file)
 }
 
+const loadCategories = async () => {
+  const categoriesSnap = await getDocs(collection(db, 'pollCategories'))
+  categories.value = categoriesSnap.docs.map((categoryDoc) => ({
+    id: categoryDoc.id,
+    ...categoryDoc.data(),
+  })).sort((current, next) =>
+    Number(next.year || 0) - Number(current.year || 0)
+      || String(current.name || '').localeCompare(String(next.name || '')),
+  )
+}
+
+const applySelectedCategory = () => {
+  if (!selectedCategory.value) {
+    pollForm.value.categoryName = ''
+    return
+  }
+
+  pollForm.value.categoryName = selectedCategory.value.name || ''
+  pollForm.value.year = Number(selectedCategory.value.year || new Date().getFullYear())
+
+  if (!pollForm.value.title.trim()) {
+    pollForm.value.title = selectedCategory.value.name || ''
+  }
+}
+
 const loadPoll = async () => {
   if (!props.pollId) {
     return
@@ -141,6 +174,9 @@ const loadPoll = async () => {
       description: poll.description || '',
       banner: poll.banner || '',
       status: poll.status || 'draft',
+      categoryId: poll.categoryId || '',
+      categoryName: poll.categoryName || poll.title || '',
+      year: Number(poll.year || new Date().getFullYear()),
     }
   } catch {
     errorMessage.value = 'No se pudo cargar la votacion.'
@@ -165,9 +201,11 @@ const savePoll = async () => {
     description: pollForm.value.description.trim(),
     banner: pollForm.value.banner.trim(),
     status: pollForm.value.status,
+    categoryId: pollForm.value.categoryId || '',
+    categoryName: selectedCategory.value?.name || pollForm.value.categoryName.trim() || pollForm.value.title.trim(),
     type: 'list',
     phase: 'initial',
-    year: new Date().getFullYear(),
+    year: Number(pollForm.value.year || selectedCategory.value?.year || new Date().getFullYear()),
     slug: createSlug(pollForm.value.title),
     isLive: pollForm.value.status === 'live',
     winnersStatus: pollForm.value.status === 'closed' ? 'selected' : 'pending',
@@ -195,7 +233,10 @@ const savePoll = async () => {
   }
 }
 
-onMounted(loadPoll)
+onMounted(async () => {
+  await loadCategories()
+  await loadPoll()
+})
 </script>
 
 <template>
@@ -262,6 +303,39 @@ onMounted(loadPoll)
         </div>
 
         <div class="space-y-4">
+          <div class="grid gap-4 sm:grid-cols-[1fr_0.4fr]">
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Categoría</span>
+              <select
+                v-model="pollForm.categoryId"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
+                @change="applySelectedCategory"
+              >
+                <option value="">Sin categoría</option>
+                <option
+                  v-for="category in categories"
+                  :key="category.id"
+                  :value="category.id"
+                >
+                  {{ category.year }} · {{ category.name }}
+                </option>
+              </select>
+              <span class="mt-2 block text-xs font-bold text-slate-500">
+                Sirve para ordenar el salón de la fama por año.
+              </span>
+            </label>
+
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Año</span>
+              <input
+                v-model.number="pollForm.year"
+                type="number"
+                min="2000"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              />
+            </label>
+          </div>
+
           <label class="block">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Titulo</span>
             <input
@@ -270,6 +344,16 @@ onMounted(loadPoll)
               required
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
               placeholder="Best Global Artist 2026"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Nombre para salón de la fama</span>
+            <input
+              v-model="pollForm.categoryName"
+              type="text"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              placeholder="VOCALIST OF THE YEAR"
             />
           </label>
 

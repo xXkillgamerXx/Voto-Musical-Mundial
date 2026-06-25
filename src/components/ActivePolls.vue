@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
 
 const polls = ref([])
@@ -18,10 +18,10 @@ const countdownFor = (poll) => {
     return ['EN', 'PRO', 'CE', 'SO']
   }
 
-  const endDate = poll.endAt?.toDate?.()
+  const endDate = poll.activeEndAt?.toDate?.() || poll.endAt?.toDate?.()
 
   if (!endDate) {
-    return ['EN', 'VI', 'VO', '']
+    return ['LIVE', '', '', '']
   }
 
   const remainingSeconds = Math.max(Math.floor((endDate.getTime() - now.value) / 1000), 0)
@@ -54,11 +54,31 @@ const activePolls = computed(() =>
 onMounted(() => {
   unsubscribePolls = onSnapshot(
     query(collection(db, 'polls'), where('status', 'in', ['live', 'selecting_winners'])),
-    (pollsSnap) => {
-      polls.value = pollsSnap.docs.map((pollDoc) => ({
-        id: pollDoc.id,
-        ...pollDoc.data(),
-      }))
+    async (pollsSnap) => {
+      const pollRows = await Promise.all(
+        pollsSnap.docs.map(async (pollDoc) => {
+          const poll = {
+            id: pollDoc.id,
+            ...pollDoc.data(),
+          }
+          const roundsSnap = await getDocs(collection(db, 'polls', pollDoc.id, 'rounds'))
+          const rounds = roundsSnap.docs.map((roundDoc) => ({
+            id: roundDoc.id,
+            ...roundDoc.data(),
+          }))
+          const activeRound = rounds.find((round) => round.id === poll.activeRoundId)
+            || rounds.find((round) => round.status === 'live')
+            || rounds[0]
+            || null
+
+          return {
+            ...poll,
+            activeEndAt: activeRound?.endAt || poll.endAt || null,
+          }
+        }),
+      )
+
+      polls.value = pollRows
     },
   )
 
@@ -85,12 +105,61 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <p
+    <div
       v-if="!activePolls.length"
-      class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400"
+      class="relative overflow-hidden rounded-4xl border border-violet-300/15 bg-[#080a18]/90 p-6 shadow-2xl shadow-violet-950/20 sm:p-8"
     >
-      Todavia no hay votaciones en vivo o en proceso. Cuando lances una desde el panel admin aparecera aqui.
-    </p>
+      <div class="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-fuchsia-400/15 blur-3xl"></div>
+      <div class="pointer-events-none absolute -bottom-24 right-0 size-72 rounded-full bg-cyan-400/10 blur-3xl"></div>
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_46%,rgba(217,70,239,0.16),transparent_24%)]"></div>
+      <div class="relative grid gap-5 md:grid-cols-[auto_1fr_auto] md:items-center">
+        <div class="grid size-18 place-items-center rounded-3xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-3xl text-fuchsia-100 shadow-xl shadow-fuchsia-950/20">
+          <i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i>
+        </div>
+
+        <div>
+          <div class="flex flex-wrap gap-2">
+            <span class="rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-100">
+              Próximamente
+            </span>
+            <span class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300">
+              Sin live ahora
+            </span>
+          </div>
+          <h3 class="mt-2 text-2xl font-black text-white">
+            La próxima votación se está preparando
+          </h3>
+          <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+            Cuando el panel admin lance una votación aparecerá aquí en tiempo real con contador, banner y botón para votar.
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-xs font-black text-fuchsia-100">
+              <i class="fa-solid fa-bell mr-1" aria-hidden="true"></i>
+              Mantente atento
+            </span>
+            <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-xs font-black text-cyan-100">
+              <i class="fa-solid fa-ranking-star mr-1" aria-hidden="true"></i>
+              Revisa rankings
+            </span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row md:flex-col">
+          <a
+            href="/ranking-popularity"
+            class="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-white/12"
+          >
+            Ver ranking
+          </a>
+          <a
+            href="/salon-de-la-fama"
+            class="inline-flex min-h-11 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/25 transition hover:scale-[1.01]"
+          >
+            Salón de la fama
+          </a>
+        </div>
+      </div>
+    </div>
 
     <div v-else class="mobile-active-polls-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 md:hidden">
       <article
@@ -110,16 +179,22 @@ onUnmounted(() => {
           />
           <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.26),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
           <div class="absolute inset-0 bg-linear-to-t from-[#080a17] via-transparent to-white/5"></div>
-          <div class="absolute left-1/2 top-1/2 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-2xl border border-white/20 bg-black/25 shadow-2xl shadow-fuchsia-500/20 backdrop-blur">
-            <span class="text-2xl text-white/90">✦</span>
-          </div>
         </div>
 
         <div class="p-5">
           <h3 class="text-lg font-black uppercase">{{ poll.title }}</h3>
           <p class="mt-1 text-sm text-slate-400">{{ poll.question }}</p>
 
-          <div class="mt-5 grid grid-cols-4 gap-2">
+          <div
+            v-if="poll.time[0] === 'LIVE'"
+            class="mt-5 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30"
+          >
+            <p class="text-lg font-black text-emerald-100">En vivo</p>
+            <p class="text-[10px] font-bold uppercase text-emerald-200/70">
+              Sin cierre definido
+            </p>
+          </div>
+          <div v-else class="mt-5 grid grid-cols-4 gap-2">
             <div
               v-for="(value, index) in poll.time"
               :key="`${poll.id}-mobile-${index}`"
@@ -127,7 +202,7 @@ onUnmounted(() => {
             >
               <p class="text-lg font-black">{{ value }}</p>
               <p class="text-[10px] font-bold uppercase text-slate-500">
-                {{ poll.status === 'selecting_winners' ? '' : timeLabels[index] }}
+                {{ poll.status === 'selecting_winners' || value === 'LIVE' ? '' : timeLabels[index] }}
               </p>
             </div>
           </div>
@@ -160,9 +235,6 @@ onUnmounted(() => {
           />
           <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.26),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
           <div class="absolute inset-0 bg-linear-to-t from-[#080a17] via-transparent to-white/5"></div>
-          <div class="absolute left-1/2 top-1/2 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-2xl border border-white/20 bg-black/25 shadow-2xl shadow-fuchsia-500/20 backdrop-blur">
-            <span class="text-2xl text-white/90">✦</span>
-          </div>
         </div>
 
         <div class="px-5 py-5 md:px-6">
@@ -170,7 +242,18 @@ onUnmounted(() => {
           <p class="mt-1 text-sm text-slate-400">{{ poll.question }}</p>
         </div>
 
-        <div class="grid grid-cols-4 gap-2 px-4 md:px-2">
+        <div
+          v-if="poll.time[0] === 'LIVE'"
+          class="px-4 md:px-2"
+        >
+          <div class="min-w-40 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30">
+            <p class="text-xl font-black text-emerald-100">En vivo</p>
+            <p class="text-[10px] font-bold uppercase text-emerald-200/70">
+              Sin cierre definido
+            </p>
+          </div>
+        </div>
+        <div v-else class="grid grid-cols-4 gap-2 px-4 md:px-2">
           <div
             v-for="(value, index) in poll.time"
             :key="`${poll.id}-${index}`"
@@ -178,7 +261,7 @@ onUnmounted(() => {
           >
             <p class="text-xl font-black">{{ value }}</p>
             <p class="text-[10px] font-bold uppercase text-slate-500">
-              {{ poll.status === 'selecting_winners' ? '' : timeLabels[index] }}
+              {{ poll.status === 'selecting_winners' || value === 'LIVE' ? '' : timeLabels[index] }}
             </p>
           </div>
         </div>

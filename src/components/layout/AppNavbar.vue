@@ -5,18 +5,29 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../firebase";
 import AuthModal from "../auth/AuthModal.vue";
 
-const navItems = ["Inicio", "Votaciones", "Rankings", "Misiones", "Noticias"];
+const navItems = [
+  { label: "Inicio", href: "/" },
+  { label: "Votaciones", href: "/votaciones" },
+  { label: "Artistas", href: "/artistas" },
+  { label: "Ranking Popularity", href: "/ranking-popularity" },
+  { label: "Salón de la fama", href: "/salon-de-la-fama" },
+  { label: "Noticias", href: "/noticias" },
+];
 const isMenuOpen = ref(false);
 const isAuthModalOpen = ref(false);
 const isAccountMenuOpen = ref(false);
 const avatarImageFailed = ref(false);
 const currentUser = ref(null);
 const userRole = ref("");
+const userUsername = ref("");
 let unsubscribeAuth = null;
 
 const userName = computed(() => currentUser.value?.displayName || "Cuenta fan");
 const userEmail = computed(() => currentUser.value?.email || "");
 const isAdmin = computed(() => userRole.value === "admin");
+const profileHref = computed(() =>
+  userUsername.value ? `/user/${userUsername.value}` : "/perfil",
+);
 const shouldShowAvatarImage = computed(
   () => currentUser.value?.photoURL && !avatarImageFailed.value,
 );
@@ -44,6 +55,7 @@ const handleAvatarError = () => {
 
 const loadUserRole = async (user) => {
   userRole.value = "";
+  userUsername.value = "";
 
   if (!user) {
     return;
@@ -53,10 +65,13 @@ const loadUserRole = async (user) => {
     const userSnap = await getDoc(doc(db, "users", user.uid));
 
     if (currentUser.value?.uid === user.uid) {
-      userRole.value = (userSnap.data()?.role || "").toLowerCase();
+      const userData = userSnap.data() || {};
+      userRole.value = (userData.role || "").toLowerCase();
+      userUsername.value = userData.username || "";
     }
   } catch {
     userRole.value = "";
+    userUsername.value = "";
   }
 };
 
@@ -81,7 +96,7 @@ onUnmounted(() => {
     <nav
       class="mx-auto flex max-w-352 items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4"
     >
-      <a href="#" class="group flex items-center gap-3">
+      <a href="/" class="group flex items-center gap-3">
         <span
           class="grid h-10 w-14 shrink-0 place-items-center sm:h-12 sm:w-16"
         >
@@ -110,11 +125,11 @@ onUnmounted(() => {
       >
         <a
           v-for="item in navItems"
-          :key="item"
-          href="#"
+          :key="item.label"
+          :href="item.href"
           class="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
         >
-          {{ item }}
+          {{ item.label }}
         </a>
       </div>
 
@@ -175,7 +190,7 @@ onUnmounted(() => {
             </div>
 
             <a
-              href="#"
+              :href="profileHref"
               class="mt-3 block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
               Mi perfil
@@ -232,12 +247,12 @@ onUnmounted(() => {
       >
         <a
           v-for="item in navItems"
-          :key="item"
-          href="#"
+          :key="item.label"
+          :href="item.href"
           class="block rounded-2xl px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
           @click="isMenuOpen = false"
         >
-          {{ item }}
+          {{ item.label }}
         </a>
 
         <div
@@ -277,6 +292,14 @@ onUnmounted(() => {
             <span class="text-amber-300">◆</span>
             <span>2,450 pts</span>
           </div>
+          <a
+            v-if="currentUser"
+            :href="profileHref"
+            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
+            @click="isMenuOpen = false"
+          >
+            Mi perfil
+          </a>
           <a
             v-if="currentUser && isAdmin"
             href="/admin"

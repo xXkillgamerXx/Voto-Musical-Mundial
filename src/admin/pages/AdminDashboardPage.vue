@@ -6,6 +6,7 @@ import { auth, db } from '../../firebase'
 import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
+import AdminPollCategoriesView from '../components/AdminPollCategoriesView.vue'
 import AdminPollContestantsView from '../components/AdminPollContestantsView.vue'
 import AdminPollFormView from '../components/AdminPollFormView.vue'
 import AdminPollMonitorView from '../components/AdminPollMonitorView.vue'
@@ -31,6 +32,8 @@ const isArtistCreateView = computed(() => currentPath === '/admin/artistas/crear
 const isArtistEditView = computed(() => currentPath.startsWith('/admin/artistas/editar/'))
 const artistEditId = computed(() => currentPath.replace('/admin/artistas/editar/', ''))
 const isUsersView = computed(() => currentPath === '/admin/usuarios')
+const isCategoriesView = computed(() => currentPath === '/admin/categorias')
+const isCategoryCreateView = computed(() => currentPath === '/admin/categorias/crear')
 const pageTitle = computed(() => {
   if (isPollCreateView.value) {
     return 'Crear votacion'
@@ -80,6 +83,14 @@ const pageTitle = computed(() => {
     return 'Usuarios'
   }
 
+  if (isCategoriesView.value) {
+    return 'Categorías'
+  }
+
+  if (isCategoryCreateView.value) {
+    return 'Crear categoría'
+  }
+
   return 'Dashboard'
 })
 const isCheckingAccess = ref(true)
@@ -99,6 +110,7 @@ const userInitial = computed(() => {
 const navItems = [
   { label: 'Dashboard', href: '/admin', icon: 'fa-solid fa-chart-line' },
   { label: 'Votaciones', href: '/admin/votaciones', icon: 'fa-solid fa-check-to-slot' },
+  { label: 'Categorías', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
   { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
   { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-flag' },
@@ -318,6 +330,10 @@ onMounted(() => {
           />
           <AdminArtistsView v-else-if="isArtistsView" />
           <AdminUsersView v-else-if="isUsersView" />
+          <AdminPollCategoriesView
+            v-else-if="isCategoriesView || isCategoryCreateView"
+            :show-form="isCategoryCreateView"
+          />
           <AdminDashboardView v-else />
         </main>
       </div>

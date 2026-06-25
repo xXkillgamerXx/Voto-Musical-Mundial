@@ -28,6 +28,7 @@ const currentUser = ref(null)
 const isLoading = ref(true)
 const isVoting = ref('')
 const errorMessage = ref('')
+const shareMessage = ref('')
 const now = ref(Date.now())
 
 let unsubscribeAuth = null
@@ -72,6 +73,57 @@ const rankedContestants = computed(() =>
     .sort((current, next) => next.totalVotes - current.totalVotes),
 )
 
+const activeContestants = computed(() =>
+  contestants.value
+    .map((contestant, index) => {
+      const totalVotes = Number(contestant.totalVotes ?? ((contestant.votes || 0) + (contestant.manualVotes || 0)))
+      return {
+        ...contestant,
+        order: Number(contestant.order ?? index),
+        matchGroup: Number(contestant.matchGroup || 0),
+        matchOrder: Number(contestant.matchOrder ?? index),
+        artist: getArtist(contestant.artistId),
+        totalVotes,
+      }
+    })
+    .sort((current, next) => current.order - next.order),
+)
+
+const versusMatches = computed(() => {
+  const manualGroups = activeContestants.value.reduce((groups, contestant) => {
+    if (!contestant.matchGroup) {
+      return groups
+    }
+
+    const group = groups.get(contestant.matchGroup) || []
+    group.push(contestant)
+    groups.set(contestant.matchGroup, group)
+    return groups
+  }, new Map())
+
+  if (manualGroups.size) {
+    return [...manualGroups.entries()]
+      .sort(([currentGroup], [nextGroup]) => currentGroup - nextGroup)
+      .map(([groupNumber, contestants]) => ({
+        id: `${activeRound.value?.id || 'round'}-${groupNumber}`,
+        title: `Duelo ${groupNumber}`,
+        contestants: contestants.sort((current, next) => current.matchOrder - next.matchOrder),
+      }))
+  }
+
+  const matches = []
+
+  for (let index = 0; index < activeContestants.value.length; index += 2) {
+    matches.push({
+      id: `${activeRound.value?.id || 'round'}-${index}`,
+      title: `Duelo ${Math.floor(index / 2) + 1}`,
+      contestants: activeContestants.value.slice(index, index + 2),
+    })
+  }
+
+  return matches
+})
+
 const totalVotes = computed(() =>
   rankedContestants.value.reduce((total, contestant) => total + contestant.totalVotes, 0),
 )
@@ -90,6 +142,79 @@ const finalWinnerArtists = computed(() => {
 
   return winnerIds.slice(0, 1).map((artistId) => getArtist(artistId)).filter(Boolean)
 })
+
+const finalWinnerEntries = computed(() => {
+  const finalRound = rounds.value
+    .filter((round) => round.status === 'closed' && round.winnerIds?.length)
+    .at(-1)
+  const winnerIds = poll.value?.winnerIds?.length ? poll.value.winnerIds : finalRound?.winnerIds || []
+
+  return winnerIds.slice(0, 1).map((artistId) => {
+    const artist = getArtist(artistId)
+    const contestant = rankedContestants.value.find((item) => item.artistId === artistId)
+    const votes = Number(contestant?.totalVotes || 0)
+    const percent = totalVotes.value ? (votes / totalVotes.value) * 100 : 0
+
+    return {
+      id: artistId,
+      artist,
+      votes,
+      percent,
+      percentLabel: `${percent.toFixed(2)}%`,
+      percentWidth: `${Math.min(percent, 100)}%`,
+    }
+  }).filter((entry) => entry.artist)
+})
+
+const finalRankingEntries = computed(() =>
+  rankedContestants.value
+    .map((contestant, index) => {
+      const votes = Number(contestant.totalVotes || 0)
+      const percent = totalVotes.value ? (votes / totalVotes.value) * 100 : 0
+
+      return {
+        id: contestant.id,
+        rank: index + 1,
+        artist: contestant.artist,
+        votes,
+        percent,
+        percentLabel: `${percent.toFixed(2)}%`,
+        percentWidth: `${Math.min(percent, 100)}%`,
+      }
+    })
+    .filter((entry) => entry.artist),
+)
+
+const podiumEntries = computed(() => finalRankingEntries.value.slice(1, 3))
+const remainingRankingEntries = computed(() => finalRankingEntries.value.slice(3))
+
+const shareFinalWinner = async (winner) => {
+  shareMessage.value = ''
+  errorMessage.value = ''
+
+  const title = `${winner.name} ganó ${poll.value?.title || 'la votación'}`
+  const text = `El ganador final es ${winner.name}.`
+  const url = window.location.href
+
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url })
+      return
+    }
+
+    await navigator.clipboard.writeText(`${title}\n${text}\n${url}`)
+    shareMessage.value = 'Link del ganador copiado.'
+    window.setTimeout(() => {
+      shareMessage.value = ''
+    }, 3000)
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      return
+    }
+
+    errorMessage.value = 'No se pudo compartir el ganador.'
+  }
+}
 
 const activeRoundIndex = computed(() =>
   rounds.value.findIndex((round) => round.id === activeRound.value?.id),
@@ -175,6 +300,16 @@ const percentFor = (votes) => {
   }
 
   return `${((votes / totalVotes.value) * 100).toFixed(2)}%`
+}
+
+const percentForMatch = (contestant, match) => {
+  const totalMatchVotes = match.contestants.reduce((total, item) => total + item.totalVotes, 0)
+
+  if (!totalMatchVotes) {
+    return '0.00%'
+  }
+
+  return `${((contestant.totalVotes / totalMatchVotes) * 100).toFixed(2)}%`
 }
 
 const listenContestants = (pollId) => {
@@ -459,9 +594,15 @@ onUnmounted(() => {
       >
         {{ errorMessage }}
       </p>
+      <p
+        v-if="shareMessage"
+        class="mt-5 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-200"
+      >
+        {{ shareMessage }}
+      </p>
 
       <section
-        v-if="isClosed && finalWinnerArtists.length"
+        v-if="isClosed && finalWinnerEntries.length"
         class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div class="winner-light pointer-events-none absolute -left-24 -top-24 size-80 rounded-full bg-amber-300/20 blur-3xl"></div>
@@ -485,23 +626,23 @@ onUnmounted(() => {
 
         <div class="relative mx-auto mt-10 max-w-3xl">
           <article
-            v-for="(winner, index) in finalWinnerArtists"
-            :key="winner.id"
+            v-for="(winnerEntry, index) in finalWinnerEntries"
+            :key="winnerEntry.id"
             class="winner-card overflow-hidden rounded-4xl border border-amber-300/25 bg-slate-950/60 text-left shadow-2xl shadow-amber-950/25 md:grid md:grid-cols-[18rem_1fr]"
           >
             <span class="relative grid min-h-72 place-items-center overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950 text-5xl font-black text-white">
               <img
-                v-if="getArtistImage(winner)"
-                :src="getArtistImage(winner)"
-                :alt="winner.name"
+                v-if="getArtistImage(winnerEntry.artist)"
+                :src="getArtistImage(winnerEntry.artist)"
+                :alt="winnerEntry.artist.name"
                 class="absolute inset-0 size-full object-cover"
               />
               <span class="absolute inset-0 bg-linear-to-t from-[#080a18]/85 via-transparent to-transparent"></span>
               <span
-                v-if="!getArtistImage(winner)"
+                v-if="!getArtistImage(winnerEntry.artist)"
                 class="relative z-10"
               >
-                {{ winner.name?.charAt(0) || 'A' }}
+                {{ winnerEntry.artist.name?.charAt(0) || 'A' }}
               </span>
               <span class="absolute left-5 top-5 z-10 grid size-13 place-items-center rounded-2xl border border-amber-300/30 bg-amber-300/20 text-sm font-black text-amber-100 backdrop-blur">
                 #{{ index + 1 }}
@@ -512,18 +653,164 @@ onUnmounted(() => {
               <span class="text-xs font-black uppercase tracking-[0.28em] text-amber-200">
                 Artista ganador
               </span>
-              <span class="mt-3 block text-4xl font-black leading-none text-white sm:text-5xl">{{ winner.name }}</span>
-              <span class="mt-3 text-base font-bold uppercase text-amber-100">{{ getArtistGroup(winner) || 'Ganador final' }}</span>
+              <span class="mt-3 block text-4xl font-black leading-none text-white sm:text-5xl">{{ winnerEntry.artist.name }}</span>
+              <span class="mt-3 text-base font-bold uppercase text-amber-100">{{ getArtistGroup(winnerEntry.artist) || 'Ganador final' }}</span>
+              <span class="winner-stats mt-6 overflow-hidden rounded-3xl border border-amber-300/25 bg-amber-400/10 p-4">
+                <span class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                  <span>
+                    <span class="block text-xs font-black uppercase tracking-[0.24em] text-amber-200">
+                      Ganó con
+                    </span>
+                    <span class="mt-2 block text-4xl font-black leading-none text-white sm:text-5xl">
+                      {{ winnerEntry.votes.toLocaleString('es') }}
+                    </span>
+                    <span class="mt-1 block text-xs font-bold uppercase tracking-widest text-slate-300">
+                      votos
+                    </span>
+                  </span>
+                  <span class="text-left sm:text-right">
+                    <span class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-200">
+                      Porcentaje
+                    </span>
+                    <span class="winner-percent mt-2 block text-5xl font-black leading-none text-amber-100 sm:text-6xl">
+                      {{ winnerEntry.percentLabel }}
+                    </span>
+                  </span>
+                </span>
+                <span class="mt-5 block h-4 overflow-hidden rounded-full bg-white/10">
+                  <span
+                    class="winner-percent-bar block h-full rounded-full bg-linear-to-r from-amber-300 via-pink-400 to-fuchsia-400"
+                    :style="{ width: winnerEntry.percentWidth }"
+                  ></span>
+                </span>
+              </span>
               <span class="mt-5 rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm leading-6 text-slate-200">
                 Gracias por participar. Esta artista se queda con el primer lugar de la votación.
               </span>
             </span>
           </article>
+
+          <div
+            v-for="winnerEntry in finalWinnerEntries"
+            :key="`${winnerEntry.id}-actions`"
+            class="winner-actions relative mx-auto mt-5 max-w-2xl overflow-hidden rounded-4xl border border-white/10 bg-white/8 p-3 shadow-2xl shadow-fuchsia-950/20 backdrop-blur sm:mt-6"
+          >
+            <span class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_50%,rgba(251,191,36,0.22),transparent_30%),radial-gradient(circle_at_82%_40%,rgba(217,70,239,0.24),transparent_32%)]"></span>
+            <span class="relative flex flex-col items-stretch gap-3 sm:flex-row">
+              <a
+                href="/salon-de-la-fama"
+                class="group inline-flex min-h-16 flex-1 items-center justify-center gap-3 rounded-3xl bg-linear-to-r from-amber-300 via-pink-400 to-fuchsia-500 px-5 py-3 text-center text-sm font-black uppercase leading-tight tracking-wide text-white shadow-lg shadow-amber-950/30 transition hover:-translate-y-0.5 hover:shadow-fuchsia-900/35"
+              >
+                <span class="grid size-9 shrink-0 place-items-center rounded-2xl bg-white/18 text-base">
+                  <i class="fa-solid fa-trophy" aria-hidden="true"></i>
+                </span>
+                <span>Ver salón de la fama</span>
+              </a>
+              <button
+                type="button"
+                class="group inline-flex min-h-16 flex-1 items-center justify-center gap-3 rounded-3xl border border-white/15 bg-slate-950/55 px-5 py-3 text-center text-sm font-black uppercase leading-tight tracking-wide text-white shadow-lg shadow-slate-950/25 transition hover:-translate-y-0.5 hover:border-fuchsia-200/35 hover:bg-white/12"
+                @click="shareFinalWinner(winnerEntry.artist)"
+              >
+                <span class="grid size-9 shrink-0 place-items-center rounded-2xl bg-white/10 text-base">
+                  <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
+                </span>
+                <span>Compartir ganador</span>
+              </button>
+            </span>
+          </div>
         </div>
       </section>
 
       <section
-        v-else-if="isRoundIntroVisible"
+        v-if="isClosed && finalWinnerEntries.length && (podiumEntries.length || remainingRankingEntries.length)"
+        class="relative mt-6 rounded-4xl border border-white/10 bg-white/4 p-4 shadow-xl shadow-fuchsia-950/15 sm:p-6"
+      >
+        <p
+          v-if="podiumEntries.length"
+          class="text-center text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
+        >
+          También destacaron
+        </p>
+        <div v-if="podiumEntries.length" class="mt-4 grid gap-4 lg:grid-cols-2">
+          <article
+            v-for="entry in podiumEntries"
+            :key="entry.id"
+            class="winner-podium-card rounded-3xl border border-white/10 bg-slate-950/55 p-4"
+          >
+            <div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+              <div class="flex min-w-0 items-center gap-3">
+                <span
+                  class="grid size-12 shrink-0 place-items-center rounded-2xl border text-sm font-black"
+                  :class="entry.rank === 2 ? 'border-slate-200/35 bg-slate-200/15 text-slate-100' : 'border-amber-600/35 bg-amber-700/15 text-amber-100'"
+                >
+                  #{{ entry.rank }}
+                </span>
+                <span class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-xl font-black text-white">
+                  <img
+                    v-if="getArtistImage(entry.artist)"
+                    :src="getArtistImage(entry.artist)"
+                    :alt="entry.artist.name"
+                    class="size-full object-cover"
+                  />
+                  <span v-else>{{ entry.artist.name?.charAt(0) || 'A' }}</span>
+                </span>
+                <span class="min-w-0">
+                  <span class="block truncate text-lg font-black text-white">{{ entry.artist.name }}</span>
+                  <span class="block truncate text-xs font-bold uppercase text-slate-400">{{ getArtistGroup(entry.artist) || 'Finalista' }}</span>
+                </span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 sm:min-w-56">
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Votos</p>
+                  <p class="mt-1 text-xl font-black text-white">{{ entry.votes.toLocaleString('es') }}</p>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Porcentaje</p>
+                  <p class="mt-1 text-xl font-black text-fuchsia-100">{{ entry.percentLabel }}</p>
+                </div>
+              </div>
+            </div>
+
+            <span class="mt-3 block h-2 overflow-hidden rounded-full bg-white/10">
+              <span
+                class="winner-percent-bar block h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300"
+                :style="{ width: entry.percentWidth }"
+              ></span>
+            </span>
+          </article>
+        </div>
+
+        <div
+          v-if="remainingRankingEntries.length"
+          class="mt-4 rounded-3xl border border-white/10 bg-slate-950/35 p-4 text-left"
+        >
+          <p class="text-xs font-black uppercase tracking-[0.24em] text-slate-400">
+            Más lugares
+          </p>
+          <div class="mt-3 space-y-2">
+            <div
+              v-for="entry in remainingRankingEntries"
+              :key="entry.id"
+              class="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/45 p-3"
+            >
+              <span class="grid size-9 place-items-center rounded-xl bg-white/5 text-xs font-black text-slate-300">
+                #{{ entry.rank }}
+              </span>
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-black text-white">{{ entry.artist.name }}</span>
+                <span class="block truncate text-xs font-bold text-slate-500">{{ entry.votes.toLocaleString('es') }} votos</span>
+              </span>
+              <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-fuchsia-100">
+                {{ entry.percentLabel }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="isRoundIntroVisible"
         class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div class="winner-light pointer-events-none absolute -left-24 -top-24 size-80 rounded-full bg-amber-300/20 blur-3xl"></div>
@@ -627,6 +914,88 @@ onUnmounted(() => {
         </p>
       </section>
 
+      <section v-else-if="activeRound?.type === 'versus'" class="mt-8 space-y-6">
+        <article
+          v-for="match in versusMatches"
+          :key="match.id"
+          class="rounded-4xl border border-white/10 bg-white/5 p-4 sm:p-5"
+        >
+          <p class="mb-4 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            {{ match.title }}
+          </p>
+
+          <div class="relative space-y-3">
+            <div
+              v-for="(contestant, index) in match.contestants"
+              :key="contestant.id"
+              class="relative overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
+            >
+              <div class="grid gap-0 md:grid-cols-[14rem_1fr_auto] md:items-center">
+                <div class="relative min-h-52 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950 md:min-h-56">
+                  <img
+                    v-if="getArtistImage(contestant.artist)"
+                    :src="getArtistImage(contestant.artist)"
+                    :alt="contestant.artist?.name"
+                    class="absolute inset-0 size-full object-cover"
+                  />
+                  <div class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/30 to-transparent"></div>
+                  <span class="absolute left-4 top-4 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur">
+                    Opción {{ index === 0 ? 'A' : 'B' }}
+                  </span>
+                </div>
+
+                <div class="p-4 sm:p-5">
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <h3 class="truncate text-3xl font-black text-white">{{ contestant.artist?.name || 'Artista' }}</h3>
+                      <p class="mt-1 text-sm font-black uppercase text-fuchsia-200">
+                        {{ getArtistGroup(contestant.artist) || 'Solista' }}
+                      </p>
+                    </div>
+                    <p class="shrink-0 text-2xl font-black text-cyan-100">
+                      {{ percentForMatch(contestant, match) }}
+                    </p>
+                  </div>
+
+                  <div class="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300"
+                      :style="{ width: percentForMatch(contestant, match) }"
+                    ></div>
+                  </div>
+                  <p class="mt-2 text-sm font-bold text-slate-300">
+                    {{ contestant.totalVotes }} votos
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  class="m-4 flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:min-w-32"
+                  :disabled="!isVotingOpen || isVoting === contestant.artistId"
+                  @click="voteFor(contestant)"
+                >
+                  {{ isVoting === contestant.artistId ? 'Votando...' : 'Votar' }}
+                </button>
+              </div>
+
+              <div
+                v-if="index === 0 && match.contestants.length === 2"
+                class="absolute -bottom-7 left-1/2 z-20 grid size-14 -translate-x-1/2 place-items-center rounded-full border-4 border-white/15 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-sm font-black text-white shadow-2xl shadow-fuchsia-500/40"
+              >
+                VS
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <p
+          v-if="!versusMatches.length"
+          class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400"
+        >
+          Esta ronda versus todavía no tiene participantes.
+        </p>
+      </section>
+
       <section v-else class="mt-8 space-y-4">
         <article
           v-for="(contestant, index) in rankedContestants"
@@ -720,6 +1089,27 @@ onUnmounted(() => {
   animation: winner-card 0.7s ease-out both;
 }
 
+.winner-stats {
+  animation: winner-stats 0.8s ease-out 220ms both;
+}
+
+.winner-percent {
+  animation: winner-percent 2.2s ease-in-out infinite;
+}
+
+.winner-percent-bar {
+  animation: winner-percent-bar 1.1s ease-out 420ms both;
+  transform-origin: left center;
+}
+
+.winner-podium-card {
+  animation: winner-stats 0.75s ease-out 320ms both;
+}
+
+.winner-podium-card:nth-child(2) {
+  animation-delay: 460ms;
+}
+
 .winner-card:nth-child(2) {
   animation-delay: 120ms;
 }
@@ -774,6 +1164,43 @@ onUnmounted(() => {
   to {
     transform: translateY(0) scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes winner-stats {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes winner-percent {
+  0%,
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 24px rgba(251, 191, 36, 0.22);
+  }
+
+  50% {
+    transform: scale(1.04);
+    text-shadow: 0 0 48px rgba(217, 70, 239, 0.36);
+  }
+}
+
+@keyframes winner-percent-bar {
+  from {
+    transform: scaleX(0);
+    filter: brightness(0.8);
+  }
+
+  to {
+    transform: scaleX(1);
+    filter: brightness(1.15);
   }
 }
 

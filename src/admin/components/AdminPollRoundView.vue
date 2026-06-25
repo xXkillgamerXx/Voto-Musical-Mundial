@@ -39,9 +39,14 @@ const roundForm = ref({
   endAt: '',
 })
 const isDeleteModalOpen = ref(false)
+const isGroupModalOpen = ref(false)
+const isRemoveContestantModalOpen = ref(false)
 const isSavingRound = ref(false)
 const isDeletingRound = ref(false)
+const isRemovingContestant = ref(false)
 const roundEndAtInput = ref(null)
+const selectedGroupArtistIds = ref([])
+const contestantToRemove = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 let unsubscribePoll = null
@@ -67,10 +72,66 @@ const availableArtists = computed(() => {
   return sourceArtists.filter((artist) => !roundArtistIds.value.has(artist.id))
 })
 const currentContestants = computed(() =>
-  roundContestants.value.map((contestant) => ({
-    ...contestant,
-    artist: artists.value.find((artist) => artist.id === contestant.artistId),
-  })),
+  roundContestants.value
+    .map((contestant, index) => ({
+      ...contestant,
+      order: Number(contestant.order ?? index),
+      artist: artists.value.find((artist) => artist.id === contestant.artistId),
+    }))
+    .sort((current, next) => current.order - next.order),
+)
+
+const orderedVersusContestants = computed(() =>
+  currentContestants.value
+    .map((contestant, index) => ({
+      ...contestant,
+      matchGroup: Number(contestant.matchGroup || 0),
+      matchOrder: Number(contestant.matchOrder ?? index),
+    }))
+    .sort((current, next) => {
+      if (current.matchGroup !== next.matchGroup) {
+        return current.matchGroup - next.matchGroup
+      }
+
+      return current.matchOrder - next.matchOrder
+    }),
+)
+
+const versusGroups = computed(() => {
+  const manualGroups = orderedVersusContestants.value.reduce((groups, contestant) => {
+    if (!contestant.matchGroup) {
+      return groups
+    }
+
+    const group = groups.get(contestant.matchGroup) || []
+    group.push(contestant)
+    groups.set(contestant.matchGroup, group)
+    return groups
+  }, new Map())
+
+  if (manualGroups.size) {
+    return [...manualGroups.entries()]
+      .sort(([currentGroup], [nextGroup]) => currentGroup - nextGroup)
+      .map(([groupNumber, contestants]) => ({
+        groupNumber,
+        contestants: contestants.sort((current, next) => current.matchOrder - next.matchOrder),
+      }))
+  }
+
+  const groups = []
+
+  for (let index = 0; index < currentContestants.value.length; index += 2) {
+    groups.push({
+      groupNumber: Math.floor(index / 2) + 1,
+      contestants: currentContestants.value.slice(index, index + 2),
+    })
+  }
+
+  return groups
+})
+
+const ungroupedContestants = computed(() =>
+  currentContestants.value.filter((contestant) => !contestant.matchGroup),
 )
 
 const getArtistImage = (artist) =>
@@ -171,11 +232,114 @@ const addRoundContestant = async (artist) => {
       totalVotes: 0,
       isWinner: false,
       winnerRank: null,
+      order: roundContestants.value.length,
+      matchGroup: null,
+      matchOrder: null,
       addedAt: serverTimestamp(),
     })
     successMessage.value = 'Artista agregado a la ronda.'
   } catch {
     errorMessage.value = 'No se pudo agregar el artista a la ronda.'
+  }
+}
+
+const toggleGroupArtist = (contestantId) => {
+  if (selectedGroupArtistIds.value.includes(contestantId)) {
+    selectedGroupArtistIds.value = selectedGroupArtistIds.value.filter((id) => id !== contestantId)
+    return
+  }
+
+  if (selectedGroupArtistIds.value.length >= 2) {
+    errorMessage.value = 'Solo puedes seleccionar 2 artistas por grupo.'
+    return
+  }
+
+  selectedGroupArtistIds.value = [...selectedGroupArtistIds.value, contestantId]
+}
+
+const openGroupModal = () => {
+  selectedGroupArtistIds.value = []
+  errorMessage.value = ''
+  successMessage.value = ''
+  isGroupModalOpen.value = true
+}
+
+const createVersusGroup = async () => {
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  if (selectedGroupArtistIds.value.length !== 2) {
+    errorMessage.value = 'Selecciona exactamente 2 artistas para crear el grupo.'
+    return
+  }
+
+  const nextGroupNumber = Math.max(0, ...currentContestants.value.map((contestant) => Number(contestant.matchGroup || 0))) + 1
+
+  try {
+    const batch = writeBatch(db)
+
+    selectedGroupArtistIds.value.forEach((contestantId, index) => {
+      batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestantId), {
+        matchGroup: nextGroupNumber,
+        matchOrder: index,
+      })
+    })
+
+    await batch.commit()
+    selectedGroupArtistIds.value = []
+    isGroupModalOpen.value = false
+    successMessage.value = `Grupo ${nextGroupNumber} creado.`
+  } catch {
+    errorMessage.value = 'No se pudo crear el grupo.'
+  }
+}
+
+const removeVersusGroup = async (group) => {
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const batch = writeBatch(db)
+
+    group.contestants.forEach((contestant) => {
+      batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestant.id), {
+        matchGroup: null,
+        matchOrder: null,
+      })
+    })
+
+    await batch.commit()
+    successMessage.value = `Grupo ${group.groupNumber} eliminado.`
+  } catch {
+    errorMessage.value = 'No se pudo eliminar el grupo.'
+  }
+}
+
+const moveRoundContestant = async (contestant, direction) => {
+  const currentIndex = currentContestants.value.findIndex((item) => item.id === contestant.id)
+  const targetIndex = currentIndex + direction
+
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= currentContestants.value.length) {
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const targetContestant = currentContestants.value[targetIndex]
+    const batch = writeBatch(db)
+
+    batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestant.id), {
+      order: targetContestant.order,
+    })
+    batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', targetContestant.id), {
+      order: contestant.order,
+    })
+
+    await batch.commit()
+  } catch {
+    errorMessage.value = 'No se pudo reordenar el artista.'
   }
 }
 
@@ -205,21 +369,31 @@ const saveRoundSettings = async () => {
   }
 }
 
-const removeRoundContestant = async (contestant) => {
-  const shouldRemove = window.confirm(`Quitar a ${contestant.artist?.name || 'este artista'} de la ronda?`)
+const removeRoundContestant = (contestant) => {
+  contestantToRemove.value = contestant
+  errorMessage.value = ''
+  successMessage.value = ''
+  isRemoveContestantModalOpen.value = true
+}
 
-  if (!shouldRemove) {
+const confirmRemoveRoundContestant = async () => {
+  if (!contestantToRemove.value) {
     return
   }
 
   errorMessage.value = ''
   successMessage.value = ''
+  isRemovingContestant.value = true
 
   try {
-    await deleteDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestant.id))
+    await deleteDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestantToRemove.value.id))
+    isRemoveContestantModalOpen.value = false
+    contestantToRemove.value = null
     successMessage.value = 'Artista quitado de la ronda.'
   } catch {
     errorMessage.value = 'No se pudo quitar el artista.'
+  } finally {
+    isRemovingContestant.value = false
   }
 }
 
@@ -394,16 +568,7 @@ onUnmounted(() => {
         </form>
       </article>
 
-      <template v-if="roundForm.type === 'versus'">
-        <article class="rounded-3xl border border-white/10 bg-white/4 p-6">
-          <h3 class="text-2xl font-black text-white">Asignación de duelos versus</h3>
-          <p class="mt-2 text-sm text-slate-400">
-            La configuracion de duelos versus se agregara despues. Primero estamos preparando rondas tipo lista.
-          </p>
-        </article>
-      </template>
-
-      <article v-else class="rounded-3xl border border-white/10 bg-white/4 p-4 sm:p-5">
+      <article class="rounded-3xl border border-white/10 bg-white/4 p-4 sm:p-5">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300">
@@ -411,7 +576,10 @@ onUnmounted(() => {
           </p>
           <h3 class="mt-1 text-xl font-black text-white">Asignar artistas a la ronda</h3>
           <p class="mt-1 text-xs text-slate-400">
-            {{ availableArtistsHelp }}
+            <span v-if="roundForm.type === 'versus'">
+              {{ availableArtistsHelp }} Luego crea grupos de 2 artistas para cada duelo.
+            </span>
+            <span v-else>{{ availableArtistsHelp }}</span>
           </p>
         </div>
         <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-300">
@@ -474,7 +642,7 @@ onUnmounted(() => {
           </div>
           <div class="mt-3 max-h-[300px] space-y-2 overflow-y-auto pr-1">
             <div
-              v-for="contestant in currentContestants"
+              v-for="(contestant, index) in currentContestants"
               :key="contestant.id"
               class="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-slate-950/45 p-3"
             >
@@ -493,13 +661,41 @@ onUnmounted(() => {
                   <span class="block truncate text-xs text-slate-400">{{ contestant.totalVotes || 0 }} votos</span>
                 </span>
               </div>
-              <button
-                type="button"
-                class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
-                @click="removeRoundContestant(contestant)"
-              >
-                Quitar
-              </button>
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  v-if="roundForm.type !== 'versus'"
+                  type="button"
+                  class="grid size-9 place-items-center rounded-full border border-white/10 bg-white/5 text-xs font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="index === 0"
+                  title="Subir"
+                  @click="moveRoundContestant(contestant, -1)"
+                >
+                  ↑
+                </button>
+                <button
+                  v-if="roundForm.type !== 'versus'"
+                  type="button"
+                  class="grid size-9 place-items-center rounded-full border border-white/10 bg-white/5 text-xs font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="index === currentContestants.length - 1"
+                  title="Bajar"
+                  @click="moveRoundContestant(contestant, 1)"
+                >
+                  ↓
+                </button>
+                <span
+                  v-if="roundForm.type === 'versus' && contestant.matchGroup"
+                  class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-fuchsia-100"
+                >
+                  Grupo {{ contestant.matchGroup }}
+                </span>
+                <button
+                  type="button"
+                  class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                  @click="removeRoundContestant(contestant)"
+                >
+                  Quitar
+                </button>
+              </div>
             </div>
             <p v-if="!currentContestants.length" class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400">
               Esta ronda aun no tiene artistas.
@@ -507,8 +703,225 @@ onUnmounted(() => {
           </div>
         </section>
       </div>
+      <section
+        v-if="roundForm.type === 'versus'"
+        class="mt-4 rounded-2xl border border-white/10 bg-slate-950/35 p-3"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <h4 class="text-lg font-black text-white">Duelos generados</h4>
+          <div class="flex items-center gap-2">
+            <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
+              {{ versusGroups.length }} grupos
+            </span>
+            <button
+              type="button"
+              class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              @click="openGroupModal"
+            >
+              Crear grupo
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-3 grid gap-3 lg:grid-cols-2">
+          <article
+            v-for="group in versusGroups"
+            :key="`group-${group.groupNumber}`"
+            class="rounded-2xl border border-white/10 bg-slate-950/45 p-3"
+          >
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <p class="text-xs font-black uppercase tracking-widest text-fuchsia-300">
+                Grupo {{ group.groupNumber }}
+              </p>
+              <button
+                v-if="group.contestants.some((contestant) => contestant.matchGroup)"
+                type="button"
+                class="rounded-full border border-red-300/25 bg-red-500/10 px-3 py-1 text-[10px] font-black text-red-100 transition hover:bg-red-500/20"
+                @click="removeVersusGroup(group)"
+              >
+                Eliminar grupo
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="(contestant, index) in group.contestants"
+                :key="contestant.id"
+                class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3"
+              >
+                <span class="grid size-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-[10px] font-black text-slate-300">
+                  {{ index === 0 ? 'A' : 'B' }}
+                </span>
+                <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-xs font-black text-white">
+                  <img
+                    v-if="getArtistImage(contestant.artist)"
+                    :src="getArtistImage(contestant.artist)"
+                    :alt="contestant.artist?.name"
+                    class="size-full object-cover"
+                  />
+                  <span v-else>{{ contestant.artist?.name?.charAt(0) || 'A' }}</span>
+                </span>
+                <span class="min-w-0">
+                  <span class="block truncate font-black text-white">{{ contestant.artist?.name || 'Artista' }}</span>
+                  <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(contestant.artist) || 'Sin grupo' }}</span>
+                </span>
+              </div>
+
+              <p
+                v-if="group.contestants.length === 1"
+                class="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-xs font-bold text-amber-100"
+              >
+                Falta 1 artista para completar este duelo.
+              </p>
+            </div>
+          </article>
+
+          <p
+            v-if="!versusGroups.length"
+            class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400"
+          >
+            Agrega artistas para formar duelos de 2 en 2.
+          </p>
+        </div>
+        <p
+          v-if="roundForm.type === 'versus' && ungroupedContestants.length"
+          class="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-xs font-bold text-amber-100"
+        >
+          Tienes {{ ungroupedContestants.length }} artista(s) sin grupo. Usa "Crear grupo" para armar los duelos.
+        </p>
+      </section>
       </article>
     </div>
+    <Teleport to="body">
+      <div
+        v-if="isGroupModalOpen"
+        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
+        @click.self="isGroupModalOpen = false"
+      >
+        <article class="w-full max-w-2xl rounded-4xl border border-cyan-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-cyan-950/30">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+            Nuevo grupo versus
+          </p>
+          <h2 class="mt-3 text-3xl font-black">
+            Crear grupo
+          </h2>
+          <p class="mt-3 text-sm leading-6 text-slate-300">
+            Selecciona exactamente 2 artistas de esta ronda para crear un duelo.
+          </p>
+
+          <div class="mt-5 grid max-h-96 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+            <button
+              v-for="contestant in ungroupedContestants"
+              :key="contestant.id"
+              type="button"
+              class="flex items-center gap-3 rounded-2xl border p-3 text-left transition"
+              :class="
+                selectedGroupArtistIds.includes(contestant.id)
+                  ? 'border-cyan-300/45 bg-cyan-400/15'
+                  : 'border-white/10 bg-white/5 hover:bg-white/10'
+              "
+              @click="toggleGroupArtist(contestant.id)"
+            >
+              <span class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white">
+                <img
+                  v-if="getArtistImage(contestant.artist)"
+                  :src="getArtistImage(contestant.artist)"
+                  :alt="contestant.artist?.name"
+                  class="size-full object-cover"
+                />
+                <span v-else>{{ contestant.artist?.name?.charAt(0) || 'A' }}</span>
+              </span>
+              <span class="min-w-0">
+                <span class="block truncate font-black text-white">{{ contestant.artist?.name || 'Artista' }}</span>
+                <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(contestant.artist) || 'Sin grupo' }}</span>
+              </span>
+            </button>
+
+            <p
+              v-if="!ungroupedContestants.length"
+              class="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm font-bold text-slate-400 sm:col-span-2"
+            >
+              No hay artistas disponibles para agrupar. Agrega artistas o elimina un grupo existente para volver a usar sus participantes.
+            </p>
+          </div>
+
+          <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-black text-slate-200 transition hover:bg-white/10"
+              @click="isGroupModalOpen = false"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="rounded-full bg-linear-to-r from-cyan-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-cyan-950/30 transition hover:scale-[1.01]"
+              @click="createVersusGroup"
+            >
+              Crear grupo
+            </button>
+          </div>
+        </article>
+      </div>
+    </Teleport>
+    <Teleport to="body">
+      <div
+        v-if="isRemoveContestantModalOpen"
+        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
+        @click.self="isRemoveContestantModalOpen = false"
+      >
+        <article class="w-full max-w-lg rounded-4xl border border-red-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-red-950/30">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-red-300">
+            Confirmar acción
+          </p>
+          <h2 class="mt-3 text-3xl font-black">
+            Quitar artista
+          </h2>
+          <p class="mt-3 text-sm leading-6 text-slate-300">
+            Vas a quitar a <strong>{{ contestantToRemove?.artist?.name || 'este artista' }}</strong> de esta ronda.
+          </p>
+
+          <div class="mt-5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+            <span class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white">
+              <img
+                v-if="getArtistImage(contestantToRemove?.artist)"
+                :src="getArtistImage(contestantToRemove?.artist)"
+                :alt="contestantToRemove?.artist?.name"
+                class="size-full object-cover"
+              />
+              <span v-else>{{ contestantToRemove?.artist?.name?.charAt(0) || 'A' }}</span>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate font-black text-white">
+                {{ contestantToRemove?.artist?.name || 'Artista' }}
+              </span>
+              <span class="block truncate text-xs text-slate-400">
+                {{ getArtistGroup(contestantToRemove?.artist) || 'Sin grupo' }}
+              </span>
+            </span>
+          </div>
+
+          <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isRemovingContestant"
+              @click="isRemoveContestantModalOpen = false"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="rounded-full bg-red-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isRemovingContestant"
+              @click="confirmRemoveRoundContestant"
+            >
+              {{ isRemovingContestant ? 'Quitando...' : 'Sí, quitar artista' }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </Teleport>
     <Teleport to="body">
       <div
         v-if="isDeleteModalOpen"

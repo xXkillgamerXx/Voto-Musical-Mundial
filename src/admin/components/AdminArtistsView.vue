@@ -22,6 +22,7 @@ const getArtistImage = (artist) =>
   || ''
 
 const getArtistGroup = (artist) => artist.group || artist.fandom || ''
+const artistProfileUrl = (artist) => `/artista/${artist.slug || artist.id}`
 
 const loadArtists = async () => {
   isLoading.value = true
@@ -175,6 +176,12 @@ onMounted(loadArtists)
                 </td>
                 <td class="px-4 py-4">
                   <div class="flex justify-end gap-2">
+                    <a
+                      :href="artistProfileUrl(artist)"
+                      class="rounded-full border border-violet-300/25 bg-violet-400/10 px-4 py-2 text-xs font-black text-violet-100 transition hover:bg-violet-400/20"
+                    >
+                      Perfil
+                    </a>
                     <a
                       :href="`/admin/artistas/editar/${artist.id}`"
                       class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"

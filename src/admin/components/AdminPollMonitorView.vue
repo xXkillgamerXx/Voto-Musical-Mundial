@@ -119,18 +119,15 @@ const activeRoundVotes = computed(() => {
   })
 })
 
-const totalActiveRoundVotes = computed(() =>
-  activeRoundVotes.value.reduce((total, vote) => total + Number(vote.amount || 1), 0),
-)
-
 const activeRoundRanking = computed(() =>
   activeRoundContestants.value
     .map((contestant) => {
       const artistVotes = activeRoundVotes.value
         .filter((vote) => vote.artistId === contestant.artistId)
         .reduce((total, vote) => total + Number(vote.amount || 1), 0)
-      const fallbackVotes = Number(contestant.totalVotes ?? ((contestant.votes || 0) + (contestant.manualVotes || 0)))
-      const totalVotes = artistVotes || fallbackVotes
+      const baseVotes = artistVotes || Number(contestant.votes || 0)
+      const manualVotes = Number(contestant.manualVotes || 0)
+      const totalVotes = Math.max(0, baseVotes + manualVotes)
 
       return {
         ...contestant,
@@ -139,6 +136,10 @@ const activeRoundRanking = computed(() =>
       }
     })
     .sort((current, next) => next.totalVotes - current.totalVotes),
+)
+
+const totalActiveRoundVotes = computed(() =>
+  activeRoundRanking.value.reduce((total, contestant) => total + contestant.totalVotes, 0),
 )
 
 const recentRoundVotes = computed(() =>
@@ -517,8 +518,13 @@ const addManualVotes = async (contestant) => {
 
   const amount = Number(manualVoteAmounts.value[contestant.id] || 0)
 
-  if (!Number.isInteger(amount) || amount <= 0) {
-    errorMessage.value = 'Escribe una cantidad válida de votos.'
+  if (!Number.isInteger(amount) || amount === 0) {
+    errorMessage.value = 'Escribe una cantidad válida de votos. Usa negativo para restar.'
+    return
+  }
+
+  if (amount < 0 && contestant.totalVotes + amount < 0) {
+    errorMessage.value = 'No puedes restar más votos de los que tiene el artista.'
     return
   }
 
@@ -540,9 +546,11 @@ const addManualVotes = async (contestant) => {
       ...manualVoteAmounts.value,
       [contestant.id]: '',
     }
-    successMessage.value = `${amount} voto(s) agregados.`
+    successMessage.value = amount > 0
+      ? `${amount} voto(s) agregados.`
+      : `${Math.abs(amount)} voto(s) restados.`
   } catch {
-    errorMessage.value = 'No se pudieron agregar los votos.'
+    errorMessage.value = 'No se pudo ajustar la cantidad de votos.'
   }
 }
 
@@ -902,16 +910,16 @@ onUnmounted(() => {
               <input
                 v-model="manualVoteAmounts[contestant.id]"
                 type="number"
-                min="1"
+                step="1"
                 class="min-h-10 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50 sm:w-32"
-                placeholder="Cantidad"
+                placeholder="+10 o -5"
               />
               <button
                 type="button"
                 class="min-h-10 rounded-2xl border border-violet-300/25 bg-violet-400/10 px-4 text-xs font-black text-violet-100 transition hover:bg-violet-400/20"
                 @click="addManualVotes(contestant)"
               >
-                Agregar votos
+                Ajustar votos
               </button>
             </div>
           </div>

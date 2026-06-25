@@ -20,7 +20,7 @@ const socialLinks = [
 </script>
 
 <template>
-  <footer class="relative z-10 w-full overflow-hidden border-t border-violet-300/10 bg-[#050716]/95 px-4 pb-8 pt-8 shadow-2xl shadow-violet-950/25 sm:px-6 lg:pt-10">
+  <footer class="relative z-10 w-full overflow-hidden border-t border-violet-300/10 bg-[#050716]/95 px-4 pb-8 pt-16 shadow-2xl shadow-violet-950/25 sm:px-6 lg:pt-24">
     <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(217,70,239,0.2),transparent_30%),radial-gradient(circle_at_85%_100%,rgba(34,211,238,0.12),transparent_32%)]"></div>
     <div class="relative mx-auto max-w-352 overflow-hidden p-2">
       <div class="relative grid gap-8 lg:grid-cols-[1.4fr_1fr_1fr]">
