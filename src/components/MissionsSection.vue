@@ -2,40 +2,40 @@
 const missions = [
   {
     icon: '✓',
-    title: 'Vota 10 veces',
-    text: 'Apoya a tu artista favorito en cualquier votación activa.',
+    titleKey: 'home.missions.items.voteTen.title',
+    textKey: 'home.missions.items.voteTen.text',
     reward: '+40 pts',
     progress: '4/10',
     percent: 40,
-    status: 'En progreso',
+    statusKey: 'common.status.inProgress',
     featured: true,
   },
   {
     icon: '♡',
-    title: 'Da like a una votación',
-    text: 'Marca como favorita una votación destacada del día.',
+    titleKey: 'home.missions.items.likePoll.title',
+    textKey: 'home.missions.items.likePoll.text',
     reward: '+15 pts',
     progress: '0/1',
     percent: 0,
-    status: 'Pendiente',
+    statusKey: 'common.status.pending',
   },
   {
     icon: '↗',
-    title: 'Comparte con tu fandom',
-    text: 'Comparte un enlace para invitar más fans a votar.',
+    titleKey: 'home.missions.items.shareFandom.title',
+    textKey: 'home.missions.items.shareFandom.text',
     reward: '+25 pts',
     progress: '0/1',
     percent: 0,
-    status: 'Pendiente',
+    statusKey: 'common.status.pending',
   },
   {
     icon: '+',
-    title: 'Sigue nuestra cuenta',
-    text: 'Sigue la página oficial para enterarte de nuevos rankings.',
+    titleKey: 'home.missions.items.followAccount.title',
+    textKey: 'home.missions.items.followAccount.text',
     reward: '+30 pts',
     progress: '1/1',
     percent: 100,
-    status: 'Listo',
+    statusKey: 'common.status.ready',
     done: true,
   },
 ]
@@ -46,22 +46,22 @@ const missions = [
     <div class="mb-5 flex items-center justify-between gap-4">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
-          Gana puntos extra
+          {{ $t('home.missions.eyebrow') }}
         </p>
         <h2 class="mt-2 text-2xl font-black uppercase tracking-tight sm:text-3xl">
-          Misiones
+          {{ $t('home.missions.title') }}
         </h2>
       </div>
 
       <span class="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-100">
-        2,450 pts
+        {{ $t('common.points', { count: '2,450' }) }}
       </span>
     </div>
 
     <div class="missions-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
       <article
         v-for="mission in missions"
-        :key="mission.title"
+        :key="mission.titleKey"
         class="relative min-w-[86%] snap-center overflow-hidden rounded-3xl border p-5 shadow-xl shadow-violet-950/25 sm:min-w-[48%] lg:min-w-0"
         :class="[
           mission.featured && 'border-fuchsia-300/35 bg-fuchsia-500/10',
@@ -84,20 +84,20 @@ const missions = [
               class="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide"
               :class="mission.done ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/5 text-slate-300'"
             >
-              {{ mission.status }}
+              {{ $t(mission.statusKey) }}
             </span>
           </div>
 
           <h3 class="mt-5 text-lg font-black uppercase leading-tight">
-            {{ mission.title }}
+            {{ $t(mission.titleKey) }}
           </h3>
           <p class="mt-2 text-sm leading-6 text-slate-400">
-            {{ mission.text }}
+            {{ $t(mission.textKey) }}
           </p>
 
           <div class="mt-5 flex items-end justify-between gap-3">
             <div>
-              <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Progreso</p>
+              <p class="text-xs font-bold uppercase tracking-widest text-slate-500">{{ $t('common.labels.progress') }}</p>
               <p class="mt-1 text-sm font-black text-white">{{ mission.progress }}</p>
             </div>
             <p class="text-xl font-black text-fuchsia-200">{{ mission.reward }}</p>
@@ -114,7 +114,7 @@ const missions = [
             type="button"
             class="mt-5 min-h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black uppercase text-slate-100 transition hover:bg-white/10"
           >
-            {{ mission.done ? 'Completada' : 'Hacer misión' }}
+            {{ mission.done ? $t('common.status.completed') : $t('home.missions.doMission') }}
           </button>
         </div>
       </article>

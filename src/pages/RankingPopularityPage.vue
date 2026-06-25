@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { collection, getDocs } from "firebase/firestore";
+import { useI18n } from "vue-i18n";
+import { translate } from "../i18n";
 import { db } from "../firebase";
 
+const { locale } = useI18n();
 const artists = ref([]);
 const isLoading = ref(true);
 const isLoadingVotes = ref(false);
@@ -61,7 +64,10 @@ const currentChartWeek = computed(() => {
     (pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7,
   );
 
-  return `${now.getFullYear()} · Semana ${String(weekNumber).padStart(2, "0")}`;
+  return translate("ranking.chartWeek", {
+    year: now.getFullYear(),
+    week: String(weekNumber).padStart(2, "0"),
+  });
 });
 
 const rankedArtists = computed(() =>
@@ -94,7 +100,7 @@ const totalChartVotes = computed(() =>
   rankedArtists.value.reduce((total, artist) => total + artist.totalVotes, 0),
 );
 
-const formatNumber = (value) => Number(value || 0).toLocaleString("es");
+const formatNumber = (value) => Number(value || 0).toLocaleString(locale.value);
 
 const barWidth = (value) =>
   `${Math.max(7, Math.round((Number(value || 0) / maxPopularityScore.value) * 100))}%`;
@@ -198,7 +204,7 @@ const loadArtists = async () => {
     applyVotesToArtists(votesByArtist);
   } catch {
     await skeletonDelay;
-    errorMessage.value = "No se pudo cargar el Ranking Popularity.";
+    errorMessage.value = translate("ranking.errors.load");
   } finally {
     isLoading.value = false;
     isLoadingVotes.value = false;
@@ -260,18 +266,17 @@ onMounted(loadArtists);
           <p
             class="text-xs font-black uppercase tracking-[0.32em] text-amber-300"
           >
-            Billboard style chart
+            {{ $t("ranking.eyebrow") }}
           </p>
           <h1
             class="mt-4 text-4xl font-black uppercase leading-none tracking-tight text-white sm:text-6xl lg:text-7xl"
           >
-            Ranking Popularity
+            {{ $t("ranking.title") }}
           </h1>
           <p
             class="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base"
           >
-            El chart oficial de artistas populares segun seguidores, votos
-            acumulados y apoyo del publico en las votaciones.
+            {{ $t("ranking.description") }}
           </p>
           <div
             class="mt-5 inline-flex rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-amber-100"
@@ -282,12 +287,12 @@ onMounted(loadArtists);
 
           <div class="rounded-3xl border border-white/10 bg-white/7 p-5 backdrop-blur">
             <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-200">
-              Chart metrics
+              {{ $t("ranking.metricsTitle") }}
             </p>
             <div class="mt-5 grid grid-cols-3 gap-3">
               <div class="rounded-2xl bg-black/25 p-4">
                 <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  Artistas
+                  {{ $t("ranking.artists") }}
                 </p>
                 <p class="mt-1 text-2xl font-black text-white">
                   {{ rankedArtists.length }}
@@ -295,7 +300,7 @@ onMounted(loadArtists);
               </div>
               <div class="rounded-2xl bg-black/25 p-4">
                 <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  Votos
+                  {{ $t("ranking.votes") }}
                 </p>
                 <p class="mt-1 text-2xl font-black text-white">
                   {{ formatNumber(totalChartVotes) }}
@@ -303,21 +308,21 @@ onMounted(loadArtists);
               </div>
               <div class="rounded-2xl bg-black/25 p-4">
                 <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  Formula
+                  {{ $t("ranking.formula") }}
                 </p>
                 <p class="mt-1 text-sm font-black text-amber-200">
-                  Fans x10 + votos
+                  {{ $t("ranking.formulaValue") }}
                 </p>
               </div>
             </div>
             <p class="mt-4 text-xs leading-5 text-slate-500">
-              Last Week, Peak y Weeks usan historial si existe; si no, el artista aparece como NEW esta semana.
+              {{ $t("ranking.historyNote") }}
             </p>
             <p
               v-if="isLoadingVotes"
               class="mt-3 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-cyan-100"
             >
-              Actualizando votos acumulados...
+              {{ $t("ranking.updatingVotes") }}
             </p>
           </div>
         </template>
@@ -446,7 +451,7 @@ onMounted(loadArtists);
                   class="text-xs font-black uppercase tracking-[0.22em]"
                   :class="artist.accent.text"
                 >
-                  Hot artist
+                  {{ $t("ranking.hotArtist") }}
                 </p>
                 <h2
                   class="mt-2 text-3xl font-black uppercase leading-none text-white"
@@ -456,7 +461,7 @@ onMounted(loadArtists);
                 <p
                   class="mt-2 text-xs font-black uppercase tracking-widest text-fuchsia-100"
                 >
-                  {{ getArtistGroup(artist) || "Sin grupo" }}
+                  {{ getArtistGroup(artist) || $t("ranking.noGroup") }}
                 </p>
               </div>
             </div>
@@ -467,7 +472,7 @@ onMounted(loadArtists);
                   <p
                     class="text-[10px] font-black uppercase tracking-widest text-slate-500"
                   >
-                    Popularity score
+                    {{ $t("ranking.popularityScore") }}
                   </p>
                   <p class="mt-1 text-4xl font-black text-white">
                     {{ formatNumber(artist.popularityScore) }}
@@ -476,7 +481,7 @@ onMounted(loadArtists);
                 <span
                   class="rounded-full bg-white/8 px-3 py-2 text-xs font-black text-slate-200"
                 >
-                  {{ formatNumber(artist.totalVotes) }} votos
+                  {{ formatNumber(artist.totalVotes) }} {{ $t("ranking.votes").toLowerCase() }}
                 </span>
               </div>
 
@@ -493,7 +498,7 @@ onMounted(loadArtists);
                   <p
                     class="text-[10px] font-black uppercase tracking-widest text-cyan-200/80"
                   >
-                    Seguidores
+                    {{ $t("ranking.followers") }}
                   </p>
                   <p class="mt-1 text-xl font-black text-white">
                     {{ formatNumber(artist.followersCount) }}
@@ -503,7 +508,7 @@ onMounted(loadArtists);
                   <p
                     class="text-[10px] font-black uppercase tracking-widest text-amber-200/80"
                   >
-                    Last week
+                    {{ $t("ranking.lastWeek") }}
                   </p>
                   <p class="mt-1 text-xl font-black text-white">
                     {{ artist.lastWeekRank }}
@@ -513,7 +518,7 @@ onMounted(loadArtists);
                   <p
                     class="text-[10px] font-black uppercase tracking-widest text-fuchsia-200/80"
                   >
-                    Peak
+                    {{ $t("ranking.peak") }}
                   </p>
                   <p class="mt-1 text-xl font-black text-white">
                     #{{ artist.peakPosition }}
@@ -523,7 +528,7 @@ onMounted(loadArtists);
                   <p
                     class="text-[10px] font-black uppercase tracking-widest text-violet-200/80"
                   >
-                    Weeks
+                    {{ $t("ranking.weeks") }}
                   </p>
                   <p class="mt-1 text-xl font-black text-white">
                     {{ artist.weeksOnChart }}
@@ -542,7 +547,7 @@ onMounted(loadArtists);
           <p
             class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300"
           >
-            Full chart
+            {{ $t("ranking.fullChart") }}
           </p>
         </div>
 
@@ -577,9 +582,11 @@ onMounted(loadArtists);
               <span
                 class="mt-1 block truncate text-xs font-black uppercase tracking-widest text-slate-500"
               >
-                {{ getArtistGroup(artist) || "Sin grupo" }} ·
-                {{ formatNumber(artist.followersCount) }} seguidores ·
-                {{ formatNumber(artist.totalVotes) }} votos
+                {{ $t("ranking.rowSummary", {
+                  group: getArtistGroup(artist) || $t("ranking.noGroup"),
+                  followers: formatNumber(artist.followersCount),
+                  votes: formatNumber(artist.totalVotes),
+                }) }}
               </span>
               <span
                 class="mt-3 block h-2 overflow-hidden rounded-full bg-white/10"
@@ -597,7 +604,7 @@ onMounted(loadArtists);
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
-              Last
+              {{ $t("ranking.last") }}
             </p>
             <p class="mt-1 text-lg font-black text-white">
               {{ artist.lastWeekRank }}
@@ -608,7 +615,7 @@ onMounted(loadArtists);
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
-              Peak
+              {{ $t("ranking.peak") }}
             </p>
             <p class="mt-1 text-lg font-black text-white">
               #{{ artist.peakPosition }}
@@ -619,7 +626,7 @@ onMounted(loadArtists);
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
-              Weeks
+              {{ $t("ranking.weeks") }}
             </p>
             <p class="mt-1 text-lg font-black text-white">
               {{ artist.weeksOnChart }}
@@ -630,7 +637,7 @@ onMounted(loadArtists);
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
-              Score
+              {{ $t("common.labels.score") }}
             </p>
             <p class="mt-1 text-2xl font-black text-white">
               {{ formatNumber(artist.popularityScore) }}
@@ -642,7 +649,7 @@ onMounted(loadArtists);
 
     <div v-else class="mt-8 rounded-4xl border border-white/10 bg-slate-950/45">
       <p class="px-4 py-10 text-center text-sm font-bold text-slate-400">
-        Todavia no hay artistas para el Ranking Popularity.
+        {{ $t("ranking.empty") }}
       </p>
     </div>
   </section>

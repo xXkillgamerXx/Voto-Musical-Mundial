@@ -1,12 +1,20 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { useI18n } from 'vue-i18n'
+import { translate } from '../i18n'
 import { db } from '../firebase'
 
+const { locale } = useI18n()
 const polls = ref([])
 const now = ref(Date.now())
 
-const timeLabels = ['Dias', 'Hrs', 'Min', 'Seg']
+const timeLabels = computed(() => [
+  translate('home.activePolls.time.days'),
+  translate('home.activePolls.time.hours'),
+  translate('home.activePolls.time.minutes'),
+  translate('home.activePolls.time.seconds'),
+])
 
 let unsubscribePolls = null
 let clockTimer = null
@@ -15,7 +23,12 @@ const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${
 
 const countdownFor = (poll) => {
   if (poll.status === 'selecting_winners') {
-    return ['EN', 'PRO', 'CE', 'SO']
+    return [
+      translate('home.activePolls.processParts.one'),
+      translate('home.activePolls.processParts.two'),
+      translate('home.activePolls.processParts.three'),
+      translate('home.activePolls.processParts.four'),
+    ]
   }
 
   const endDate = poll.activeEndAt?.toDate?.() || poll.endAt?.toDate?.()
@@ -35,20 +48,28 @@ const countdownFor = (poll) => {
 }
 
 const activePolls = computed(() =>
-  polls.value.map((poll, index) => ({
-    ...poll,
-    question: poll.status === 'selecting_winners'
-      ? 'Estamos contando los votos y eligiendo ganadores.'
-      : poll.description || 'Votacion abierta en tiempo real.',
-    statusLabel: poll.status === 'selecting_winners' ? 'En proceso' : 'En vivo',
-    actionLabel: poll.status === 'selecting_winners' ? 'Ver proceso' : 'Votar',
-    time: countdownFor(poll),
-    visual: [
-      'from-violet-950 via-fuchsia-700 to-indigo-950',
-      'from-slate-800 via-violet-700 to-slate-950',
-      'from-fuchsia-900 via-pink-700 to-slate-950',
-    ][index % 3],
-  })),
+  {
+    locale.value
+
+    return polls.value.map((poll, index) => ({
+      ...poll,
+      question: poll.status === 'selecting_winners'
+        ? translate('home.activePolls.countingQuestion')
+        : poll.description || translate('home.activePolls.defaultQuestion'),
+      statusLabel: poll.status === 'selecting_winners'
+        ? translate('polls.status.selectingWinners')
+        : translate('polls.status.live'),
+      actionLabel: poll.status === 'selecting_winners'
+        ? translate('home.activePolls.processAction')
+        : translate('common.actions.vote'),
+      time: countdownFor(poll),
+      visual: [
+        'from-violet-950 via-fuchsia-700 to-indigo-950',
+        'from-slate-800 via-violet-700 to-slate-950',
+        'from-fuchsia-900 via-pink-700 to-slate-950',
+      ][index % 3],
+    }))
+  },
 )
 
 onMounted(() => {
@@ -98,10 +119,10 @@ onUnmounted(() => {
     <div class="mb-5 flex items-center justify-between gap-4">
       <h2 class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl">
         <span class="text-fuchsia-300">✦</span>
-        Votaciones activas
+        {{ $t('home.activePolls.title') }}
       </h2>
       <span class="text-xs font-black uppercase tracking-wide text-violet-300">
-        En vivo / proceso
+        {{ $t('home.activePolls.eyebrow') }}
       </span>
     </div>
 
@@ -120,26 +141,26 @@ onUnmounted(() => {
         <div>
           <div class="flex flex-wrap gap-2">
             <span class="rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-100">
-              Próximamente
+              {{ $t('home.activePolls.emptySoon') }}
             </span>
             <span class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300">
-              Sin live ahora
+              {{ $t('home.activePolls.emptyNoLive') }}
             </span>
           </div>
           <h3 class="mt-2 text-2xl font-black text-white">
-            La próxima votación se está preparando
+            {{ $t('home.activePolls.emptyTitle') }}
           </h3>
           <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-            Cuando el panel admin lance una votación aparecerá aquí en tiempo real con contador, banner y botón para votar.
+            {{ $t('home.activePolls.emptyDescription') }}
           </p>
           <div class="mt-4 flex flex-wrap gap-2">
             <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-xs font-black text-fuchsia-100">
               <i class="fa-solid fa-bell mr-1" aria-hidden="true"></i>
-              Mantente atento
+              {{ $t('home.activePolls.stayTuned') }}
             </span>
             <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-xs font-black text-cyan-100">
               <i class="fa-solid fa-ranking-star mr-1" aria-hidden="true"></i>
-              Revisa rankings
+              {{ $t('home.activePolls.checkRankings') }}
             </span>
           </div>
         </div>
@@ -149,13 +170,13 @@ onUnmounted(() => {
             href="/ranking-popularity"
             class="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-white/12"
           >
-            Ver ranking
+            {{ $t('home.activePolls.viewRanking') }}
           </a>
           <a
             href="/salon-de-la-fama"
             class="inline-flex min-h-11 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/25 transition hover:scale-[1.01]"
           >
-            Salón de la fama
+            {{ $t('home.activePolls.hallOfFame') }}
           </a>
         </div>
       </div>
@@ -189,9 +210,9 @@ onUnmounted(() => {
             v-if="poll.time[0] === 'LIVE'"
             class="mt-5 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30"
           >
-            <p class="text-lg font-black text-emerald-100">En vivo</p>
+            <p class="text-lg font-black text-emerald-100">{{ $t('polls.status.live') }}</p>
             <p class="text-[10px] font-bold uppercase text-emerald-200/70">
-              Sin cierre definido
+              {{ $t('home.activePolls.noDefinedEnd') }}
             </p>
           </div>
           <div v-else class="mt-5 grid grid-cols-4 gap-2">
@@ -247,9 +268,9 @@ onUnmounted(() => {
           class="px-4 md:px-2"
         >
           <div class="min-w-40 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30">
-            <p class="text-xl font-black text-emerald-100">En vivo</p>
+            <p class="text-xl font-black text-emerald-100">{{ $t('polls.status.live') }}</p>
             <p class="text-[10px] font-bold uppercase text-emerald-200/70">
-              Sin cierre definido
+              {{ $t('home.activePolls.noDefinedEnd') }}
             </p>
           </div>
         </div>

@@ -1,19 +1,19 @@
 <script setup>
 const communityLinks = [
   {
-    title: 'Music Mundial en X',
-    description: 'Sigue noticias, votaciones, tendencias KPOP y actualizaciones de la comunidad.',
+    titleKey: 'home.community.x.title',
+    descriptionKey: 'home.community.x.description',
     href: 'https://x.com/MusicMundial',
     icon: 'fa-brands fa-x-twitter',
-    label: '43.5K seguidores',
+    labelKey: 'home.community.x.label',
     visual: 'from-slate-950 via-violet-950 to-black',
   },
   {
-    title: 'Comunidad Startly',
-    description: 'Entra al hub de Music Mundial para descubrir enlaces, novedades y contenido destacado.',
+    titleKey: 'home.community.startly.title',
+    descriptionKey: 'home.community.startly.description',
     href: 'https://startlyapp.com/musicmundial',
     icon: 'fa-solid fa-link',
-    label: 'Link oficial',
+    labelKey: 'home.community.startly.label',
     visual: 'from-fuchsia-950 via-purple-900 to-slate-950',
   },
 ]
@@ -24,7 +24,7 @@ const communityLinks = [
     <div class="mb-5 flex items-center justify-between gap-4">
       <h2 class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl">
         <i class="fa-solid fa-users text-fuchsia-300" aria-hidden="true"></i>
-        Comunidad
+        {{ $t('home.community.title') }}
       </h2>
       <span class="text-xs font-black uppercase tracking-wide text-violet-300">
         Music Mundial
@@ -51,16 +51,16 @@ const communityLinks = [
 
           <span class="min-w-0">
             <span class="inline-flex rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
-              {{ item.label }}
+              {{ $t(item.labelKey) }}
             </span>
             <span class="mt-3 block text-2xl font-black text-white">
-              {{ item.title }}
+              {{ $t(item.titleKey) }}
             </span>
             <span class="mt-2 block text-sm leading-6 text-slate-300">
-              {{ item.description }}
+              {{ $t(item.descriptionKey) }}
             </span>
             <span class="mt-4 inline-flex items-center gap-2 text-xs font-black uppercase tracking-wide text-fuchsia-200 transition group-hover:text-white">
-              Abrir comunidad
+              {{ $t('home.community.open') }}
               <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
             </span>
           </span>

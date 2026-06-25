@@ -2,27 +2,34 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { useI18n } from "vue-i18n";
+import { availableLocales, setLocale, translate } from "../../i18n";
 import { auth, db } from "../../firebase";
 import AuthModal from "../auth/AuthModal.vue";
+import ThemeToggle from "../theme/ThemeToggle.vue";
 
 const navItems = [
-  { label: "Inicio", href: "/" },
-  { label: "Votaciones", href: "/votaciones" },
-  { label: "Artistas", href: "/artistas" },
-  { label: "Ranking Popularity", href: "/ranking-popularity" },
-  { label: "Salón de la fama", href: "/salon-de-la-fama" },
-  { label: "Noticias", href: "/noticias" },
+  { labelKey: "nav.home", href: "/" },
+  { labelKey: "nav.polls", href: "/votaciones" },
+  { labelKey: "nav.artists", href: "/artistas" },
+  { labelKey: "nav.rankingPopularity", href: "/ranking-popularity" },
+  { labelKey: "nav.hallOfFame", href: "/salon-de-la-fama" },
+  { labelKey: "nav.news", href: "/noticias" },
 ];
+const { locale } = useI18n();
 const isMenuOpen = ref(false);
 const isAuthModalOpen = ref(false);
 const isAccountMenuOpen = ref(false);
+const isSettingsMenuOpen = ref(false);
 const avatarImageFailed = ref(false);
 const currentUser = ref(null);
 const userRole = ref("");
 const userUsername = ref("");
 let unsubscribeAuth = null;
 
-const userName = computed(() => currentUser.value?.displayName || "Cuenta fan");
+const userName = computed(
+  () => currentUser.value?.displayName || translate("nav.fanAccount"),
+);
 const userEmail = computed(() => currentUser.value?.email || "");
 const isAdmin = computed(() => userRole.value === "admin");
 const profileHref = computed(() =>
@@ -41,16 +48,27 @@ const userInitial = computed(() => {
 const openAuthModal = () => {
   isAuthModalOpen.value = true;
   isMenuOpen.value = false;
+  isSettingsMenuOpen.value = false;
 };
 
 const handleLogout = async () => {
   await signOut(auth);
   isAccountMenuOpen.value = false;
+  isSettingsMenuOpen.value = false;
   isMenuOpen.value = false;
 };
 
 const handleAvatarError = () => {
   avatarImageFailed.value = true;
+};
+
+const handleLocaleChange = (nextLocale) => {
+  setLocale(nextLocale);
+};
+
+const toggleSettingsMenu = () => {
+  isSettingsMenuOpen.value = !isSettingsMenuOpen.value;
+  isAccountMenuOpen.value = false;
 };
 
 const loadUserRole = async (user) => {
@@ -80,6 +98,7 @@ onMounted(() => {
     currentUser.value = user;
     avatarImageFailed.value = false;
     isAccountMenuOpen.value = false;
+    isSettingsMenuOpen.value = false;
     loadUserRole(user);
   });
 });
@@ -102,7 +121,7 @@ onUnmounted(() => {
         >
           <img
             src="/logo-votos.png"
-            alt="Votos Musica Mundial logo"
+            :alt="$t('common.appNamePlain') + ' logo'"
             class="h-full w-full object-contain"
           />
         </span>
@@ -110,12 +129,12 @@ onUnmounted(() => {
           <span
             class="block text-base font-black uppercase leading-none tracking-wide sm:text-lg"
           >
-            Votos Musica Mundial
+            {{ $t("common.appNamePlain") }}
           </span>
           <span
             class="mt-1 hidden text-[10px] uppercase tracking-[0.28em] text-violet-200/70 sm:block"
           >
-            Awards globales
+            {{ $t("common.tagline") }}
           </span>
         </span>
       </a>
@@ -125,11 +144,11 @@ onUnmounted(() => {
       >
         <a
           v-for="item in navItems"
-          :key="item.label"
+          :key="item.labelKey"
           :href="item.href"
           class="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
         >
-          {{ item.label }}
+          {{ $t(item.labelKey) }}
         </a>
       </div>
 
@@ -139,14 +158,58 @@ onUnmounted(() => {
           class="hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
         >
           <span class="text-amber-300">◆</span>
-          <span>2,450 pts</span>
+          <span>{{ $t("common.points", { count: "2,450" }) }}</span>
+        </div>
+
+        <div class="relative hidden md:block">
+          <button
+            type="button"
+            class="grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 hover:text-white"
+            :aria-label="$t('nav.settings')"
+            :aria-expanded="isSettingsMenuOpen"
+            @click="toggleSettingsMenu"
+          >
+            <i class="fa-solid fa-gear" aria-hidden="true"></i>
+          </button>
+
+          <div
+            v-if="isSettingsMenuOpen"
+            class="absolute right-0 top-12 z-70 w-72 rounded-3xl border border-white/10 bg-[#080a18] p-3 text-white shadow-2xl shadow-black/40"
+          >
+            <p class="px-2 pb-3 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+              {{ $t("nav.settings") }}
+            </p>
+            <div class="rounded-2xl border border-white/10 bg-white/5 p-2">
+              <p class="px-2 pb-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+                {{ $t("common.language.label") }}
+              </p>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="item in availableLocales"
+                  :key="item.code"
+                  type="button"
+                  class="rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wide transition"
+                  :class="
+                    locale === item.code
+                      ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/20'
+                      : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                  "
+                  :aria-pressed="locale === item.code"
+                  @click="handleLocaleChange(item.code)"
+                >
+                  {{ item.code }}
+                </button>
+              </div>
+            </div>
+            <ThemeToggle class="mt-2 w-full" />
+          </div>
         </div>
 
         <div v-if="currentUser" class="relative">
           <button
             type="button"
             class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white shadow-lg shadow-fuchsia-950/30"
-            aria-label="Cuenta de usuario"
+            :aria-label="$t('nav.userAccount')"
             :aria-expanded="isAccountMenuOpen"
             @click="isAccountMenuOpen = !isAccountMenuOpen"
           >
@@ -193,21 +256,21 @@ onUnmounted(() => {
               :href="profileHref"
               class="mt-3 block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
-              Mi perfil
+              {{ $t("nav.myProfile") }}
             </a>
             <a
               v-if="isAdmin"
               href="/admin"
               class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
-              Panel admin
+              {{ $t("nav.adminPanel") }}
             </a>
             <button
               type="button"
               class="block w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-200 transition hover:bg-red-500/10"
               @click="handleLogout"
             >
-              Cerrar sesión
+              {{ $t("nav.logout") }}
             </button>
           </div>
         </div>
@@ -218,7 +281,7 @@ onUnmounted(() => {
           class="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-300 transition hover:text-white lg:inline-flex"
           @click="openAuthModal"
         >
-          Iniciar sesion
+          {{ $t("nav.loginNoAccent") }}
         </button>
 
         <a
@@ -226,13 +289,13 @@ onUnmounted(() => {
           href="/registro"
           class="hidden rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-bold shadow-lg shadow-fuchsia-500/25 transition hover:shadow-fuchsia-500/40 sm:inline-flex"
         >
-          Registrarse
+          {{ $t("nav.register") }}
         </a>
 
         <button
           type="button"
           class="grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200 lg:hidden"
-          aria-label="Abrir menu"
+          :aria-label="$t('nav.openMenu')"
           :aria-expanded="isMenuOpen"
           @click="isMenuOpen = !isMenuOpen"
         >
@@ -247,12 +310,12 @@ onUnmounted(() => {
       >
         <a
           v-for="item in navItems"
-          :key="item.label"
+          :key="item.labelKey"
           :href="item.href"
           class="block rounded-2xl px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
           @click="isMenuOpen = false"
         >
-          {{ item.label }}
+          {{ $t(item.labelKey) }}
         </a>
 
         <div
@@ -290,15 +353,40 @@ onUnmounted(() => {
             class="flex items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
           >
             <span class="text-amber-300">◆</span>
-            <span>2,450 pts</span>
+            <span>{{ $t("common.points", { count: "2,450" }) }}</span>
           </div>
+          <div
+            class="rounded-2xl border border-white/10 bg-white/5 p-2 text-center sm:col-span-3"
+          >
+            <p class="px-2 pb-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+              {{ $t("common.language.label") }}
+            </p>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="item in availableLocales"
+                :key="item.code"
+                type="button"
+                class="rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wide transition"
+                :class="
+                  locale === item.code
+                    ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/20'
+                    : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                "
+                :aria-pressed="locale === item.code"
+                @click="handleLocaleChange(item.code)"
+              >
+                {{ item.code }}
+              </button>
+            </div>
+          </div>
+          <ThemeToggle class="sm:col-span-3" />
           <a
             v-if="currentUser"
             :href="profileHref"
             class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
             @click="isMenuOpen = false"
           >
-            Mi perfil
+            {{ $t("nav.myProfile") }}
           </a>
           <a
             v-if="currentUser && isAdmin"
@@ -306,7 +394,7 @@ onUnmounted(() => {
             class="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-3 text-center text-sm font-black text-fuchsia-100"
             @click="isMenuOpen = false"
           >
-            Panel admin
+            {{ $t("nav.adminPanel") }}
           </a>
           <button
             v-if="!currentUser"
@@ -314,14 +402,14 @@ onUnmounted(() => {
             class="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200"
             @click="openAuthModal"
           >
-            Iniciar sesion
+            {{ $t("nav.loginNoAccent") }}
           </button>
           <a
             v-if="!currentUser"
             href="/registro"
             class="rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-3 text-center text-sm font-bold"
           >
-            Registrarse
+            {{ $t("nav.register") }}
           </a>
           <button
             v-if="currentUser"
@@ -329,7 +417,7 @@ onUnmounted(() => {
             class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-center text-sm font-bold text-red-100"
             @click="handleLogout"
           >
-            Cerrar sesión
+            {{ $t("nav.logout") }}
           </button>
         </div>
       </div>

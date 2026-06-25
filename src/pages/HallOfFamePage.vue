@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { translate } from '../i18n'
 import { db } from '../firebase'
 
 const polls = ref([])
@@ -17,7 +18,7 @@ const getArtistImage = (artist) =>
 
 const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
 
-const categoryTitleFor = (poll) => poll.categoryName || getCategory(poll.categoryId)?.name || poll.title || 'Categoría'
+const categoryTitleFor = (poll) => poll.categoryName || getCategory(poll.categoryId)?.name || poll.title || translate('hallOfFame.fallbackCategory')
 const yearFor = (poll) => Number(poll.year || getCategory(poll.categoryId)?.year || new Date().getFullYear())
 
 const winners = computed(() =>
@@ -107,7 +108,7 @@ const loadPolls = () => {
       isLoading.value = false
     },
     () => {
-      errorMessage.value = 'No se pudo cargar el salón de la fama.'
+      errorMessage.value = translate('hallOfFame.errors.load')
       isLoading.value = false
     },
   )
@@ -131,13 +132,13 @@ onUnmounted(() => {
       <div class="pointer-events-none absolute -bottom-24 right-0 size-96 rounded-full bg-fuchsia-400/15 blur-3xl"></div>
       <div class="relative">
         <p class="text-xs font-black uppercase tracking-[0.32em] text-amber-200">
-          Ganadores
+          {{ $t('hallOfFame.eyebrow') }}
         </p>
         <h1 class="mt-3 text-4xl font-black tracking-tight text-white sm:text-6xl">
-          Salón de la fama
+          {{ $t('hallOfFame.title') }}
         </h1>
         <p class="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
-          Artistas que llegaron al primer lugar en votaciones finalizadas.
+          {{ $t('hallOfFame.description') }}
         </p>
       </div>
     </div>
@@ -153,7 +154,7 @@ onUnmounted(() => {
       v-if="isLoading"
       class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-300"
     >
-      Cargando ganadores...
+      {{ $t('hallOfFame.loading') }}
     </p>
 
     <div v-else-if="yearGroups.length" class="mt-8 space-y-10">
@@ -165,12 +166,12 @@ onUnmounted(() => {
         <div class="mb-5 flex items-center justify-between gap-4">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.28em] text-amber-200">
-              Año
+              {{ $t('hallOfFame.year') }}
             </p>
             <h2 class="mt-2 text-4xl font-black text-white">{{ group.year }}</h2>
           </div>
           <span class="rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-amber-100">
-            {{ group.entries.length }} ganadores
+            {{ $t('hallOfFame.winnersCount', { count: group.entries.length }) }}
           </span>
         </div>
 
@@ -205,7 +206,7 @@ onUnmounted(() => {
                 :href="pollUrl(entry.poll)"
                 class="mt-5 inline-flex rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-5 py-2 text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               >
-                Ver votación
+                {{ $t('hallOfFame.viewPoll') }}
               </a>
             </div>
           </article>
@@ -217,7 +218,7 @@ onUnmounted(() => {
       v-else
       class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400"
     >
-      Todavía no hay ganadores finales publicados.
+      {{ $t('hallOfFame.empty') }}
     </p>
   </section>
 </template>

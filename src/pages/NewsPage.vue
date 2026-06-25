@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translate } from '../i18n'
 
+const { locale } = useI18n()
 const feedUrl = 'https://www.musicmundial.com/en/feed/'
 const feedProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`
 const feedJsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`
@@ -36,10 +39,10 @@ const formatFeedDate = (value) => {
   const date = new Date(value)
 
   if (Number.isNaN(date.getTime())) {
-    return 'Reciente'
+    return translate('news.recent')
   }
 
-  return new Intl.DateTimeFormat('es', {
+  return new Intl.DateTimeFormat(locale.value, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
@@ -85,10 +88,10 @@ const newsFromPosts = (posts) =>
   posts.map((post, index) => {
     const featuredMedia = post._embedded?.['wp:featuredmedia']?.[0]
     const terms = post._embedded?.['wp:term']?.flat?.() || []
-    const tag = terms.find((term) => term.taxonomy === 'category')?.name || 'News'
+    const tag = terms.find((term) => term.taxonomy === 'category')?.name || translate('news.defaultTag')
 
     return {
-      title: stripHtml(post.title?.rendered || 'Noticia'),
+      title: stripHtml(post.title?.rendered || translate('news.defaultTitle')),
       tag,
       rawDate: post.date_gmt || post.date,
       time: formatFeedDate(post.date_gmt || post.date),
@@ -128,8 +131,8 @@ const fetchWordPressNews = async () => {
 
 const newsFromJsonItems = (items) =>
   items.map((item, index) => ({
-    title: item.title || 'Noticia',
-    tag: item.categories?.[0] || 'News',
+    title: item.title || translate('news.defaultTitle'),
+    tag: item.categories?.[0] || translate('news.defaultTag'),
     rawDate: item.pubDate,
     time: formatFeedDate(item.pubDate),
     link: item.link,
@@ -231,7 +234,7 @@ const loadNews = async () => {
 
     newsItems.value = sortByRecent(items.map((item, index) => ({
       title: textFromNode(item, 'title'),
-      tag: textFromNode(item, 'category') || 'News',
+      tag: textFromNode(item, 'category') || translate('news.defaultTag'),
       rawDate: textFromNode(item, 'pubDate'),
       time: formatFeedDate(textFromNode(item, 'pubDate')),
       link: textFromNode(item, 'link'),
@@ -247,7 +250,7 @@ const loadNews = async () => {
       ][index % 6],
     })))
   } catch {
-    errorMessage.value = 'No se pudieron cargar las noticias del feed.'
+    errorMessage.value = translate('news.errors.loadFeed')
   } finally {
     isLoading.value = false
   }
@@ -266,13 +269,13 @@ watch(searchQuery, () => {
       <div class="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-fuchsia-400/15 blur-3xl"></div>
       <div class="relative">
         <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-          Music Mundial Feed
+          {{ $t('news.feedEyebrow') }}
         </p>
         <h1 class="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl">
-          Noticias
+          {{ $t('news.title') }}
         </h1>
         <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
-          Últimas noticias de música y entretenimiento cargadas desde el feed oficial de Music Mundial.
+          {{ $t('news.description') }}
         </p>
       </div>
     </div>
@@ -286,7 +289,7 @@ watch(searchQuery, () => {
           v-model="searchQuery"
           type="search"
           class="min-h-13 w-full rounded-2xl border border-white/10 bg-white/5 pl-12 pr-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/45 focus:bg-white/8"
-          placeholder="Buscar noticias..."
+          :placeholder="$t('news.searchPlaceholder')"
         />
       </label>
     </div>
@@ -338,7 +341,7 @@ watch(searchQuery, () => {
               <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{{ item.description }}</p>
               <p class="mt-3 text-xs font-bold uppercase tracking-widest text-slate-500">{{ item.time }}</p>
               <span class="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition group-hover:scale-[1.01]">
-                Leer noticia
+                {{ $t('news.readArticle') }}
                 <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
               </span>
             </div>
@@ -348,7 +351,7 @@ watch(searchQuery, () => {
 
       <div class="mt-8 flex flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 sm:flex-row">
         <p class="text-sm font-bold text-slate-400">
-          Página {{ currentPage }} de {{ totalPages }} · {{ visibleNews.length }} noticias
+          {{ $t('news.pagination', { page: currentPage, total: totalPages, count: visibleNews.length }) }}
         </p>
         <div class="flex items-center gap-2">
           <button
@@ -357,7 +360,7 @@ watch(searchQuery, () => {
             :disabled="currentPage === 1"
             @click="goToPage(currentPage - 1)"
           >
-            Anterior
+            {{ $t('common.actions.previous') }}
           </button>
           <button
             v-for="page in totalPages"
@@ -375,7 +378,7 @@ watch(searchQuery, () => {
             :disabled="currentPage === totalPages"
             @click="goToPage(currentPage + 1)"
           >
-            Siguiente
+            {{ $t('common.actions.next') }}
           </button>
         </div>
       </div>
@@ -383,7 +386,7 @@ watch(searchQuery, () => {
 
     <div v-else class="mt-8 rounded-4xl border border-white/10 bg-slate-950/45">
       <p class="px-4 py-10 text-center text-sm font-bold text-slate-400">
-        No encontramos noticias con esa búsqueda.
+        {{ $t('news.emptySearch') }}
       </p>
     </div>
   </section>

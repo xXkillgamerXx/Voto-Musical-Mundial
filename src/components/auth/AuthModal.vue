@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
+import { translate } from "../../i18n";
 import { auth, googleProvider } from "../../firebase";
 
 const emit = defineEmits(["close"]);
@@ -37,24 +38,24 @@ onUnmounted(() => {
 
 const friendlyAuthError = (error) => {
   const messages = {
-    "auth/invalid-email": "Escribe un correo válido.",
-    "auth/invalid-credential": "Correo o contraseña incorrectos.",
-    "auth/user-not-found": "No existe una cuenta con ese correo.",
-    "auth/wrong-password": "La contraseña no es correcta.",
+    "auth/invalid-email": translate("auth.errors.invalidEmail"),
+    "auth/invalid-credential": translate("auth.errors.invalidCredential"),
+    "auth/user-not-found": translate("auth.errors.userNotFound"),
+    "auth/wrong-password": translate("auth.errors.wrongPassword"),
     "auth/too-many-requests":
-      "Demasiados intentos. Espera unos minutos e intenta de nuevo.",
+      translate("auth.errors.tooManyRequests"),
     "auth/operation-not-allowed":
-      "El inicio con correo y contraseña no está activo en Firebase.",
+      translate("auth.errors.operationNotAllowed"),
     "auth/network-request-failed":
-      "No se pudo conectar con Firebase. Revisa tu conexión.",
+      translate("auth.errors.networkRequestFailed"),
     "auth/popup-closed-by-user":
-      "Cerraste la ventana de Google antes de terminar.",
+      translate("auth.errors.popupClosedByUser"),
     "auth/unauthorized-domain":
-      "Este dominio no está autorizado en Firebase Authentication.",
+      translate("auth.errors.unauthorizedDomain"),
   };
 
   return (
-    messages[error.code] || "No se pudo completar la acción. Intenta de nuevo."
+    messages[error.code] || translate("auth.errors.genericAction")
   );
 };
 
@@ -97,7 +98,7 @@ const handlePasswordReset = async () => {
   successMessage.value = "";
 
   if (!email.value) {
-    errorMessage.value = "Escribe tu correo para enviarte el enlace.";
+    errorMessage.value = translate("auth.resetEmailRequired");
     return;
   }
 
@@ -105,8 +106,7 @@ const handlePasswordReset = async () => {
 
   try {
     await sendPasswordResetEmail(auth, email.value);
-    successMessage.value =
-      "Te enviamos un enlace para recuperar tu contraseña.";
+    successMessage.value = translate("auth.resetEmailSent");
   } catch (error) {
     errorMessage.value = friendlyAuthError(error);
   } finally {
@@ -137,7 +137,7 @@ const handlePasswordReset = async () => {
         <button
           type="button"
           class="absolute right-5 top-5 z-20 grid size-10 place-items-center rounded-full border border-white/10 bg-white/8 text-lg font-black text-slate-300 transition hover:bg-white/15 hover:text-white"
-          aria-label="Cerrar modal"
+          :aria-label="$t('common.actions.close')"
           @click="closeModal"
         >
           ×
@@ -147,14 +147,13 @@ const handlePasswordReset = async () => {
           <p
             class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300"
           >
-            Cuenta fan
+            {{ $t("auth.fanAccount") }}
           </p>
           <h2 class="text-3xl font-black leading-tight sm:text-4xl">
-            Iniciar sesión
+            {{ $t("auth.title") }}
           </h2>
           <p class="mb-5 mt-1 text-sm leading-6 text-slate-300">
-            Entra a tu cuenta para votar, reclamar recompensas y seguir tu
-            racha.
+            {{ $t("auth.subtitle") }}
           </p>
 
           <button
@@ -171,41 +170,41 @@ const handlePasswordReset = async () => {
                 aria-hidden="true"
               />
             </span>
-            Continuar con Google
+            {{ $t("auth.continueWithGoogle") }}
           </button>
 
           <div
             class="mt-5 flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-slate-500"
           >
             <span class="h-px flex-1 bg-white/10"></span>
-            o
+            {{ $t("common.or") }}
             <span class="h-px flex-1 bg-white/10"></span>
           </div>
           <form class="mt-5 space-y-4" @submit.prevent="handleEmailAccess">
             <p
               class="text-xs font-black uppercase tracking-[0.24em] text-slate-400"
             >
-              Datos básicos
+              {{ $t("auth.basicData") }}
             </p>
 
             <label class="block">
               <span
                 class="text-xs font-bold uppercase tracking-widest text-slate-400"
-                >Correo</span
+                >{{ $t("common.labels.email") }}</span
               >
               <input
                 v-model="email"
                 type="email"
                 required
                 class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                placeholder="tu@email.com"
+                :placeholder="$t('auth.emailPlaceholder')"
               />
             </label>
 
             <label class="block">
               <span
                 class="text-xs font-bold uppercase tracking-widest text-slate-400"
-                >Contraseña</span
+                >{{ $t("common.labels.password") }}</span
               >
               <div class="relative mt-2">
                 <input
@@ -214,13 +213,13 @@ const handlePasswordReset = async () => {
                   required
                   minlength="6"
                   class="min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 pr-24 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                  placeholder="Mínimo 6 caracteres"
+                  :placeholder="$t('auth.passwordPlaceholder')"
                 />
                 <button
                   type="button"
                   class="absolute inset-y-0 right-4 my-auto grid size-9 place-items-center rounded-full text-slate-300 transition hover:bg-white/10 hover:text-white"
                   :aria-label="
-                    showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
+                    showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')
                   "
                   @click="showPassword = !showPassword"
                 >
@@ -243,7 +242,7 @@ const handlePasswordReset = async () => {
                   type="checkbox"
                   class="size-4 rounded border border-white/10 bg-white/5 text-fuchsia-500 accent-fuchsia-500 outline-none transition focus:ring-0 focus:ring-offset-0"
                 />
-                <span>Recordar contraseña</span>
+                <span>{{ $t("auth.rememberPassword") }}</span>
               </label>
 
               <button
@@ -252,7 +251,7 @@ const handlePasswordReset = async () => {
                 :disabled="isLoading"
                 @click="handlePasswordReset"
               >
-                ¿Olvidaste tu contraseña?
+                {{ $t("auth.forgotPassword") }}
               </button>
             </div>
 
@@ -275,16 +274,16 @@ const handlePasswordReset = async () => {
               class="min-h-13 w-full rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] hover:shadow-fuchsia-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isLoading"
             >
-              {{ isLoading ? "Procesando..." : "Iniciar sesión" }}
+              {{ isLoading ? $t("auth.processing") : $t("auth.title") }}
             </button>
 
             <p class="mt-4 text-center text-sm text-slate-300">
-              ¿No tienes cuenta?
+              {{ $t("auth.noAccount") }}
               <a
                 href="/registro"
                 class="font-black text-fuchsia-300 transition hover:text-white"
               >
-                Crear cuenta
+                {{ $t("auth.createAccount") }}
               </a>
             </p>
           </form>

@@ -13,8 +13,11 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
+import { useI18n } from "vue-i18n";
+import { translate } from "../i18n";
 import { auth, db } from "../firebase";
 
+const { locale } = useI18n();
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeArtistKey = pathParts[1] || "";
 
@@ -51,7 +54,7 @@ const getArtistGroup = (artistData) =>
   artistData?.group || artistData?.fandom || "";
 
 const formattedFollowers = computed(() =>
-  followers.value.length.toLocaleString("es"),
+  followers.value.length.toLocaleString(locale.value),
 );
 
 const totalVotes = computed(() =>
@@ -79,18 +82,18 @@ const popularityScore = computed(() =>
 );
 
 const stats = computed(() => [
-  { label: "Seguidores", value: formattedFollowers.value },
-  { label: "Votos acumulados", value: totalVotes.value.toLocaleString("es") },
-  { label: "Apoyo promedio", value: averageSupport.value },
-  { label: "Popularidad", value: popularityScore.value.toLocaleString("es") },
+  { label: translate("artists.profile.followers"), value: formattedFollowers.value },
+  { label: translate("artists.profile.accumulatedVotes"), value: totalVotes.value.toLocaleString(locale.value) },
+  { label: translate("artists.profile.averageSupport"), value: averageSupport.value },
+  { label: translate("artists.profile.popularity"), value: popularityScore.value.toLocaleString(locale.value) },
 ]);
 
 const followLabel = computed(() => {
   if (!currentUser.value) {
-    return "Inicia sesión para seguir";
+    return translate("artists.profile.loginToFollow");
   }
 
-  return isFollowing.value ? "Siguiendo" : "Seguir";
+  return isFollowing.value ? translate("artists.profile.following") : translate("artists.profile.follow");
 });
 
 const loadArtist = async () => {
@@ -107,7 +110,7 @@ const loadArtist = async () => {
       : await getDoc(doc(db, "artists", routeArtistKey));
 
     if (!artistDoc && !artistSnapById?.exists()) {
-      errorMessage.value = "No encontramos ese artista.";
+      errorMessage.value = translate("artists.profileErrors.notFound");
       artist.value = null;
       return;
     }
@@ -125,7 +128,7 @@ const loadArtist = async () => {
     listenFollowers();
     await loadArtistPollStats();
   } catch {
-    errorMessage.value = "No se pudo cargar el perfil del artista.";
+    errorMessage.value = translate("artists.profileErrors.load");
   } finally {
     isLoading.value = false;
   }
@@ -243,7 +246,7 @@ const loadArtistPollStats = async () => {
         : votes;
 
       return {
-        title: poll.title || "Votación",
+        title: poll.title || translate("artists.profile.defaultPollTitle"),
         status: poll.status || "draft",
         votes,
         totalVotes: totalPollVotes,
@@ -305,7 +308,7 @@ const toggleFollow = async () => {
       ]);
     }
   } catch {
-    errorMessage.value = "No se pudo actualizar el seguimiento.";
+    errorMessage.value = translate("artists.profileErrors.follow");
   } finally {
     isTogglingFollow.value = false;
   }
@@ -334,7 +337,7 @@ onUnmounted(() => {
       href="/"
       class="inline-flex text-sm font-black text-fuchsia-300 transition hover:text-white"
     >
-      ← Volver
+      {{ $t("artists.profile.back") }}
     </a>
 
     <p
@@ -420,7 +423,7 @@ onUnmounted(() => {
                 <p
                   class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300"
                 >
-                  Perfil de artista
+                  {{ $t("artists.profile.eyebrow") }}
                 </p>
                 <h1
                   class="mt-2 text-4xl font-black leading-none text-white sm:text-6xl"
@@ -440,7 +443,7 @@ onUnmounted(() => {
                 :disabled="isTogglingFollow"
                 @click="toggleFollow"
               >
-                {{ isTogglingFollow ? "Guardando..." : followLabel }}
+                {{ isTogglingFollow ? $t("artists.profile.saving") : followLabel }}
               </button>
             </div>
           </div>
@@ -476,25 +479,25 @@ onUnmounted(() => {
             <p
               class="text-xs font-black uppercase tracking-[0.22em] text-cyan-300"
             >
-              Popularidad pública
+              {{ $t("artists.profile.publicPopularity") }}
             </p>
             <div class="mt-4 grid gap-3 sm:grid-cols-3">
               <div class="rounded-2xl bg-white/7 p-4">
-                <p class="text-xs font-bold text-slate-400">Seguidores</p>
+                <p class="text-xs font-bold text-slate-400">{{ $t("artists.profile.followers") }}</p>
                 <p class="mt-1 text-2xl font-black text-cyan-200">
                   {{ formattedFollowers }}
                 </p>
               </div>
               <div class="rounded-2xl bg-white/7 p-4">
-                <p class="text-xs font-bold text-slate-400">Votos</p>
+                <p class="text-xs font-bold text-slate-400">{{ $t("ranking.votes") }}</p>
                 <p class="mt-1 text-2xl font-black text-fuchsia-100">
-                  {{ totalVotes.toLocaleString("es") }}
+                  {{ totalVotes.toLocaleString(locale) }}
                 </p>
               </div>
               <div class="rounded-2xl bg-white/7 p-4">
-                <p class="text-xs font-bold text-slate-400">Score</p>
+                <p class="text-xs font-bold text-slate-400">{{ $t("common.labels.score") }}</p>
                 <p class="mt-1 text-2xl font-black text-emerald-200">
-                  {{ popularityScore.toLocaleString("es") }}
+                  {{ popularityScore.toLocaleString(locale) }}
                 </p>
               </div>
             </div>
@@ -505,7 +508,7 @@ onUnmounted(() => {
               <p
                 class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300"
               >
-                Datos
+                {{ $t("artists.profile.data") }}
               </p>
               <div
                 class="mt-3 flex flex-wrap gap-2 text-sm font-bold text-slate-200"
@@ -513,17 +516,17 @@ onUnmounted(() => {
                 <span
                   class="rounded-full border border-white/10 bg-white/5 px-3 py-2"
                 >
-                  Rol: {{ artist.role || "Artista" }}
+                  {{ $t("artists.profile.role", { value: artist.role || $t("artists.profile.defaultRole") }) }}
                 </span>
                 <span
                   class="rounded-full border border-white/10 bg-white/5 px-3 py-2"
                 >
-                  País: {{ artist.country || "Sin país" }}
+                  {{ $t("artists.profile.country", { value: artist.country || $t("artists.profile.noCountry") }) }}
                 </span>
                 <span
                   class="rounded-full border border-white/10 bg-white/5 px-3 py-2"
                 >
-                  Fandom: {{ getArtistGroup(artist) || "Sin grupo" }}
+                  {{ $t("artists.profile.fandom", { value: getArtistGroup(artist) || $t("artists.profile.noGroup") }) }}
                 </span>
               </div>
             </div>
@@ -534,7 +537,7 @@ onUnmounted(() => {
               <p
                 class="text-xs font-black uppercase tracking-[0.22em] text-amber-300"
               >
-                Logros
+                {{ $t("artists.profile.achievements") }}
               </p>
               <div class="mt-3 flex flex-wrap gap-2">
                 <span
@@ -548,7 +551,7 @@ onUnmounted(() => {
                   v-if="!artistPolls.length"
                   class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-slate-400"
                 >
-                  Sin logros todavía
+                  {{ $t("artists.profile.noAchievements") }}
                 </span>
               </div>
             </div>
@@ -568,7 +571,7 @@ onUnmounted(() => {
         </p>
         <h3 class="mt-2 text-lg font-black text-white">{{ poll.title }}</h3>
         <div class="mt-4 flex items-center justify-between">
-          <span class="text-xs font-bold text-slate-400">Apoyo actual</span>
+          <span class="text-xs font-bold text-slate-400">{{ $t("artists.profile.currentSupport") }}</span>
           <span class="text-xl font-black text-fuchsia-100"
             >{{ poll.percent.toFixed(2) }}%</span
           >
@@ -580,14 +583,14 @@ onUnmounted(() => {
           ></div>
         </div>
         <p class="mt-2 text-xs font-bold text-slate-500">
-          {{ poll.votes.toLocaleString("es") }} votos
+          {{ $t("artists.profile.votesCount", { count: poll.votes.toLocaleString(locale) }) }}
         </p>
       </article>
       <p
         v-if="!artistPolls.length && artist"
         class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400 lg:col-span-3"
       >
-        Este artista todavía no tiene votos registrados en rondas.
+        {{ $t("artists.profile.noRoundVotes") }}
       </p>
     </div>
   </section>

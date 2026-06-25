@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { useI18n } from "vue-i18n";
+import { translate } from "../i18n";
 import { db } from "../firebase";
 
+const { locale } = useI18n();
 const polls = ref([]);
 const isLoading = ref(true);
 const errorMessage = ref("");
@@ -13,11 +16,11 @@ const pollUrl = (poll) =>
 
 const statusLabel = (status) =>
   ({
-    live: "En vivo",
-    selecting_winners: "En proceso",
-    closed: "Cerrada",
-    draft: "Borrador",
-  })[status] || "Borrador";
+    live: translate("polls.status.live"),
+    selecting_winners: translate("polls.status.selectingWinners"),
+    closed: translate("polls.status.closed"),
+    draft: translate("polls.status.draft"),
+  })[status] || translate("polls.status.draft");
 
 const statusClass = (status) =>
   ({
@@ -30,10 +33,10 @@ const formatDate = (value) => {
   const date = value?.toDate?.();
 
   if (!date) {
-    return "Sin fecha";
+    return translate("polls.list.noDate");
   }
 
-  return new Intl.DateTimeFormat("es", {
+  return new Intl.DateTimeFormat(locale.value, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -69,7 +72,7 @@ const loadPolls = () => {
       isLoading.value = false;
     },
     () => {
-      errorMessage.value = "No se pudieron cargar las votaciones.";
+      errorMessage.value = translate("polls.errors.load");
       isLoading.value = false;
     },
   );
@@ -90,16 +93,15 @@ onUnmounted(() => {
       <p
         class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300"
       >
-        Votaciones
+        {{ $t("polls.list.eyebrow") }}
       </p>
       <h1
         class="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl"
       >
-        Votaciones abiertas y cerradas
+        {{ $t("polls.list.title") }}
       </h1>
       <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
-        Entra a votar mientras esten en vivo o revisa los resultados de
-        votaciones ya cerradas.
+        {{ $t("polls.list.description") }}
       </p>
     </div>
 
@@ -114,19 +116,19 @@ onUnmounted(() => {
       v-if="isLoading"
       class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-300"
     >
-      Cargando votaciones...
+      {{ $t("polls.list.loading") }}
     </p>
 
     <template v-else>
       <section class="mt-8">
         <div class="mb-4 flex items-center justify-between gap-3">
           <h2 class="text-xl font-black uppercase tracking-tight text-white">
-            En vivo / proceso
+            {{ $t("polls.list.openSection") }}
           </h2>
           <span
             class="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-100"
           >
-            {{ openPolls.length }} activas
+            {{ $t("polls.list.activeCount", { count: openPolls.length }) }}
           </span>
         </div>
 
@@ -158,15 +160,15 @@ onUnmounted(() => {
 
             <div class="p-5">
               <h3 class="text-2xl font-black text-white">
-                {{ poll.title || "Votacion" }}
+                {{ poll.title || $t("polls.list.defaultTitle") }}
               </h3>
               <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">
-                {{ poll.description || "Votacion en tiempo real." }}
+                {{ poll.description || $t("polls.list.defaultDescription") }}
               </p>
               <p
                 class="mt-3 text-xs font-bold uppercase tracking-widest text-slate-500"
               >
-                Finaliza: {{ formatDate(poll.endAt) }}
+                {{ $t("polls.list.endsAt", { date: formatDate(poll.endAt) }) }}
               </p>
               <a
                 :href="pollUrl(poll)"
@@ -174,8 +176,8 @@ onUnmounted(() => {
               >
                 {{
                   poll.status === "selecting_winners"
-                    ? "Ver proceso"
-                    : "Votar ahora"
+                    ? $t("polls.list.viewProcess")
+                    : $t("polls.list.voteNow")
                 }}
               </a>
             </div>
@@ -204,21 +206,19 @@ onUnmounted(() => {
                 <span
                   class="rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-100"
                 >
-                  Próximamente
+                  {{ $t("polls.list.comingSoon") }}
                 </span>
                 <span
                   class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300"
                 >
-                  En vivo / proceso
+                  {{ $t("polls.list.openSection") }}
                 </span>
               </div>
               <h3 class="mt-3 text-3xl font-black text-white">
-                No hay votaciones activas ahora
+                {{ $t("polls.list.noActiveTitle") }}
               </h3>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                Estamos preparando las próximas batallas. Mientras tanto puedes
-                explorar resultados cerrados, visitar el ranking popularity o
-                volver cuando el contador vuelva a encenderse.
+                {{ $t("polls.list.noActiveDescription") }}
               </p>
 
               <div class="mt-5 grid gap-3 sm:grid-cols-3">
@@ -230,9 +230,9 @@ onUnmounted(() => {
                   <p
                     class="mt-2 text-xs font-black uppercase tracking-widest text-slate-500"
                   >
-                    Estado
+                    {{ $t("polls.list.state") }}
                   </p>
-                  <p class="mt-1 text-lg font-black text-white">En espera</p>
+                  <p class="mt-1 text-lg font-black text-white">{{ $t("polls.list.waiting") }}</p>
                 </div>
                 <div class="rounded-2xl border border-white/10 bg-white/6 p-4">
                   <i
@@ -242,7 +242,7 @@ onUnmounted(() => {
                   <p
                     class="mt-2 text-xs font-black uppercase tracking-widest text-slate-500"
                   >
-                    Resultados
+                    {{ $t("polls.list.results") }}
                   </p>
                   <p class="mt-1 text-lg font-black text-white">
                     {{ closedPolls.length }}
@@ -256,9 +256,9 @@ onUnmounted(() => {
                   <p
                     class="mt-2 text-xs font-black uppercase tracking-widest text-slate-500"
                   >
-                    Próximo live
+                    {{ $t("polls.list.nextLive") }}
                   </p>
-                  <p class="mt-1 text-lg font-black text-white">Pendiente</p>
+                  <p class="mt-1 text-lg font-black text-white">{{ $t("polls.list.pending") }}</p>
                 </div>
               </div>
             </div>
@@ -268,13 +268,13 @@ onUnmounted(() => {
                 href="/ranking-popularity"
                 class="inline-flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/25 transition hover:scale-[1.01]"
               >
-                Ver ranking
+                {{ $t("polls.list.viewRanking") }}
               </a>
               <a
                 href="/salon-de-la-fama"
                 class="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-white/12"
               >
-                Salón de la fama
+                {{ $t("polls.list.hallOfFame") }}
               </a>
             </div>
           </div>
@@ -284,12 +284,12 @@ onUnmounted(() => {
       <section class="mt-10">
         <div class="mb-4 flex items-center justify-between gap-3">
           <h2 class="text-xl font-black uppercase tracking-tight text-white">
-            Cerradas
+            {{ $t("polls.list.closedSection") }}
           </h2>
           <span
             class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300"
           >
-            {{ closedPolls.length }} cerradas
+            {{ $t("polls.list.closedCount", { count: closedPolls.length }) }}
           </span>
         </div>
 
@@ -324,18 +324,18 @@ onUnmounted(() => {
 
             <div class="p-5">
               <h3 class="line-clamp-2 text-lg font-black text-white">
-                {{ poll.title || "Votacion" }}
+                {{ poll.title || $t("polls.list.defaultTitle") }}
               </h3>
               <p
                 class="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500"
               >
-                Finalizo: {{ formatDate(poll.endAt) }}
+                {{ $t("polls.list.endedAt", { date: formatDate(poll.endAt) }) }}
               </p>
               <a
                 :href="pollUrl(poll)"
                 class="mt-4 inline-flex rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-5 py-2 text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               >
-                Ver resultados
+                {{ $t("polls.list.viewResults") }}
               </a>
             </div>
           </article>
@@ -345,7 +345,7 @@ onUnmounted(() => {
           v-else
           class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400"
         >
-          Todavia no hay votaciones cerradas.
+          {{ $t("polls.list.noClosed") }}
         </p>
       </section>
     </template>

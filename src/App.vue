@@ -11,6 +11,7 @@ import LatestNews from './components/LatestNews.vue'
 import LiveActivity from './components/LiveActivity.vue'
 import MainCategories from './components/MainCategories.vue'
 import MissionsSection from './components/MissionsSection.vue'
+import ThemeToggle from './components/theme/ThemeToggle.vue'
 import TopRanking from './components/TopRanking.vue'
 import ArtistsPage from './pages/ArtistsPage.vue'
 import ArtistProfilePage from './pages/ArtistProfilePage.vue'
@@ -57,11 +58,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative min-h-screen overflow-hidden bg-[#03040d] text-white">
-    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(168,85,247,0.18),transparent_28%),radial-gradient(circle_at_82%_18%,rgba(217,70,239,0.12),transparent_26%),linear-gradient(180deg,#050719_0%,#03040d_42%,#03040d_100%)]"></div>
-    <div class="pointer-events-none absolute left-1/2 top-0 h-px w-full max-w-352 -translate-x-1/2 bg-linear-to-r from-transparent via-fuchsia-300/40 to-transparent"></div>
+  <div class="app-shell relative min-h-screen overflow-hidden">
+    <div class="app-background pointer-events-none absolute inset-0"></div>
+    <div class="app-top-divider pointer-events-none absolute left-1/2 top-0 h-px w-full max-w-352 -translate-x-1/2"></div>
 
     <AppNavbar v-if="!isPlainPage" />
+    <ThemeToggle
+      v-if="isPlainPage && !isVersusEmbedPage"
+      compact
+      class="fixed right-4 top-4 z-60"
+    />
 
     <main class="relative z-10" :class="!isPlainPage && 'pt-11 sm:pt-24'">
       <RegisterPage v-if="isRegisterPage" />

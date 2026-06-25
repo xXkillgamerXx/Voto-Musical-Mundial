@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore'
+import { translate } from '../i18n'
 import { auth, db } from '../firebase'
 
 const pathParts = window.location.pathname.split('/').filter(Boolean)
@@ -21,14 +22,14 @@ const isPublicProfile = computed(() => Boolean(routeUsername))
 const isOwnProfile = computed(() => currentUser.value?.uid && currentUser.value.uid === profileUserId.value)
 
 const displayName = computed(() =>
-  userProfile.value?.name || (!isPublicProfile.value ? currentUser.value?.displayName || currentUser.value?.email : '') || 'Usuario',
+  userProfile.value?.name || (!isPublicProfile.value ? currentUser.value?.displayName || currentUser.value?.email : '') || translate('profile.fallbackName'),
 )
 
 const userInitial = computed(() => displayName.value.trim().charAt(0).toUpperCase())
 
 const artistUrl = (artist) => `/artista/${artist.artistSlug || artist.artistId}`
 
-const listenUserProfileById = (userId, errorText = 'No se pudo cargar el perfil.') => {
+const listenUserProfileById = (userId, errorText = translate('profile.loadError')) => {
   unsubscribeUser?.()
   unsubscribeFollowedArtists?.()
   profileUserId.value = userId || ''
@@ -71,16 +72,16 @@ const loadPublicProfile = async () => {
     const usernameSnap = await getDoc(doc(db, 'usernames', routeUsername))
 
     if (!usernameSnap.exists()) {
-      errorMessage.value = 'No encontramos ese usuario.'
+      errorMessage.value = translate('profile.notFound')
       userProfile.value = null
       followedArtists.value = []
       isLoading.value = false
       return
     }
 
-    listenUserProfileById(usernameSnap.data().uid, 'Este perfil no está disponible públicamente.')
+    listenUserProfileById(usernameSnap.data().uid, translate('profile.unavailable'))
   } catch {
-    errorMessage.value = 'No se pudo cargar el perfil de usuario.'
+    errorMessage.value = translate('profile.userLoadError')
     isLoading.value = false
   }
 }
@@ -93,7 +94,7 @@ onMounted(() => {
       return
     }
 
-    listenUserProfileById(user?.uid, 'No se pudo cargar tu perfil.')
+    listenUserProfileById(user?.uid, translate('profile.ownLoadError'))
   })
 
   if (isPublicProfile.value) {
@@ -114,7 +115,7 @@ onUnmounted(() => {
       v-if="isLoading"
       class="rounded-3xl border border-white/10 bg-white/5 p-8 text-sm font-bold text-slate-300"
     >
-      Cargando perfil...
+      {{ $t('profile.loading') }}
     </div>
 
     <div
@@ -122,17 +123,17 @@ onUnmounted(() => {
       class="rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
     >
       <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-        Perfil
+        {{ $t('profile.title') }}
       </p>
-      <h1 class="mt-3 text-3xl font-black text-white">Inicia sesión</h1>
+      <h1 class="mt-3 text-3xl font-black text-white">{{ $t('profile.loginTitle') }}</h1>
       <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-400">
-        Necesitas iniciar sesión para ver tu perfil y tus artistas seguidos.
+        {{ $t('profile.loginDescription') }}
       </p>
       <a
         href="/registro"
         class="mt-6 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 py-3 text-sm font-black uppercase tracking-wide text-white"
       >
-        Crear cuenta
+        {{ $t('profile.createAccount') }}
       </a>
     </div>
 
@@ -141,17 +142,17 @@ onUnmounted(() => {
       class="rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
     >
       <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-        Perfil de usuario
+        {{ $t('profile.publicTitle') }}
       </p>
-      <h1 class="mt-3 text-3xl font-black text-white">Usuario no disponible</h1>
+      <h1 class="mt-3 text-3xl font-black text-white">{{ $t('profile.unavailableTitle') }}</h1>
       <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-400">
-        {{ errorMessage || 'No encontramos ese perfil de usuario.' }}
+        {{ errorMessage || $t('profile.notFoundDescription') }}
       </p>
       <a
         href="/"
         class="mt-6 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 py-3 text-sm font-black uppercase tracking-wide text-white"
       >
-        Volver al inicio
+        {{ $t('profile.backHome') }}
       </a>
     </div>
 
@@ -180,13 +181,13 @@ onUnmounted(() => {
               </span>
               <div>
                 <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
-                  Perfil de usuario
+                  {{ $t('profile.publicTitle') }}
                 </p>
                 <h1 class="mt-2 text-4xl font-black leading-none text-white sm:text-6xl">
                   {{ displayName }}
                 </h1>
                 <p class="mt-2 text-sm font-bold text-slate-300">
-                  @{{ userProfile?.username || 'usuario' }} · {{ userProfile?.country || 'Sin país' }}
+                  @{{ userProfile?.username || $t('profile.fallbackUsername') }} · {{ userProfile?.country || $t('profile.noCountry') }}
                 </p>
               </div>
             </div>
@@ -195,20 +196,20 @@ onUnmounted(() => {
 
         <div class="grid gap-4 p-5 sm:grid-cols-3 sm:p-8">
           <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Artistas seguidos</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">{{ $t('profile.followedArtists') }}</p>
             <p class="mt-1 text-3xl font-black text-white">{{ followedArtists.length }}</p>
           </div>
           <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
-              {{ isPublicProfile && !isOwnProfile ? 'Usuario' : 'Correo' }}
+              {{ isPublicProfile && !isOwnProfile ? $t('profile.user') : $t('profile.email') }}
             </p>
             <p class="mt-1 truncate text-sm font-black text-white">
               {{ isPublicProfile && !isOwnProfile ? `@${userProfile?.username || routeUsername}` : currentUser?.email }}
             </p>
           </div>
           <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Rol</p>
-            <p class="mt-1 text-3xl font-black capitalize text-fuchsia-100">{{ userProfile?.role || 'fan' }}</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">{{ $t('profile.role') }}</p>
+            <p class="mt-1 text-3xl font-black capitalize text-fuchsia-100">{{ userProfile?.role || $t('profile.defaultRole') }}</p>
           </div>
         </div>
       </div>
@@ -217,15 +218,15 @@ onUnmounted(() => {
         <div class="flex items-center justify-between gap-4">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-              Favoritos
+              {{ $t('profile.favorites') }}
             </p>
-            <h2 class="mt-2 text-2xl font-black text-white">Artistas seguidos</h2>
+            <h2 class="mt-2 text-2xl font-black text-white">{{ $t('profile.followedArtists') }}</h2>
           </div>
           <a
             href="/artistas"
             class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10"
           >
-            Ver populares
+            {{ $t('profile.viewPopular') }}
           </a>
         </div>
 
@@ -246,14 +247,14 @@ onUnmounted(() => {
               <span v-else>{{ artist.artistName?.charAt(0) || 'A' }}</span>
             </span>
             <span class="min-w-0">
-              <span class="block truncate font-black text-white">{{ artist.artistName || 'Artista' }}</span>
-              <span class="block text-xs font-bold text-slate-500">Siguiendo</span>
+              <span class="block truncate font-black text-white">{{ artist.artistName || $t('profile.defaultArtist') }}</span>
+              <span class="block text-xs font-bold text-slate-500">{{ $t('profile.following') }}</span>
             </span>
           </a>
         </div>
 
         <p v-else class="mt-5 rounded-3xl border border-white/10 bg-slate-950/45 p-6 text-sm font-bold text-slate-400">
-          Todavía no sigues artistas. Entra a un perfil de artista y pulsa seguir.
+          {{ $t('profile.emptyFollowing') }}
         </p>
       </section>
     </template>
