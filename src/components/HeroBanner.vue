@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 
@@ -7,10 +8,14 @@ const activeSlide = ref(0)
 const animatedVotes = ref(0)
 const animatedPercent = ref(0)
 const animatedProgress = ref(0)
-const liveSlides = ref([])
+const livePolls = ref([])
+const livePollResults = ref({})
+const activeRoundIds = ref({})
 const artists = ref([])
 
 let unsubscribePolls = null
+const roundListeners = new Map()
+const pollResultListeners = new Map()
 
 const fallbackSlides = [
   {
@@ -75,6 +80,9 @@ const fallbackSlides = [
   },
 ]
 
+const liveSlides = computed(() =>
+  livePolls.value.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index)),
+)
 const bannerSlides = computed(() => liveSlides.value.length ? liveSlides.value : fallbackSlides)
 const currentSlide = computed(() => bannerSlides.value[activeSlide.value] || bannerSlides.value[0])
 
@@ -97,6 +105,13 @@ const formatPercent = (value) => `${value.toFixed(2)}%`
 const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
 const getArtistName = (artistId) =>
   artists.value.find((artist) => artist.id === artistId)?.name || 'Tu artista favorito'
+const getArtistFieldId = (row) => row?.artistId || row?.id || ''
+const getEffectiveRoundId = (poll) => poll.activeRoundId || activeRoundIds.value[poll.id] || ''
+
+const pollRoundCollection = (poll, collectionName) =>
+  getEffectiveRoundId(poll)
+    ? collection(db, 'polls', poll.id, 'rounds', getEffectiveRoundId(poll), collectionName)
+    : collection(db, 'polls', poll.id, collectionName)
 
 const estimatedStats = (votes) => {
   const safeVotes = Math.max(Number(votes || 0), 1)
@@ -112,6 +127,201 @@ const estimatedStats = (votes) => {
 }
 
 const easeOutCubic = (progress) => 1 - Math.pow(1 - progress, 3)
+
+const clearPollResult = (pollId) => {
+  if (!pollId || !livePollResults.value[pollId]) {
+    return
+  }
+
+  const nextResults = { ...livePollResults.value }
+  delete nextResults[pollId]
+  livePollResults.value = nextResults
+}
+
+const setPollResult = (pollId, result) => {
+  livePollResults.value = {
+    ...livePollResults.value,
+    [pollId]: result,
+  }
+}
+
+const setActiveRoundId = (pollId, roundId) => {
+  activeRoundIds.value = {
+    ...activeRoundIds.value,
+    [pollId]: roundId || '',
+  }
+}
+
+const clearActiveRoundId = (pollId) => {
+  if (!pollId || !activeRoundIds.value[pollId]) {
+    return
+  }
+
+  const nextRoundIds = { ...activeRoundIds.value }
+  delete nextRoundIds[pollId]
+  activeRoundIds.value = nextRoundIds
+}
+
+const buildResultFromSnapshots = (contestants, shardVotesByArtist) => {
+  const totalsByArtist = new Map()
+
+  contestants.forEach((contestant) => {
+    const artistId = getArtistFieldId(contestant)
+    if (!artistId) {
+      return
+    }
+
+    totalsByArtist.set(artistId, {
+      artistId,
+      votes: Number(contestant.votes || 0),
+      manualVotes: Number(contestant.manualVotes || 0),
+      totalVotes: Number(contestant.totalVotes ?? ((contestant.votes || 0) + (contestant.manualVotes || 0))),
+    })
+  })
+
+  shardVotesByArtist.forEach((shardVotes, artistId) => {
+    const current = totalsByArtist.get(artistId) || {
+      artistId,
+      votes: 0,
+      manualVotes: 0,
+      totalVotes: 0,
+    }
+    const legacyVotes = Number(current.votes || 0)
+    const manualVotes = Number(current.manualVotes || 0)
+
+    totalsByArtist.set(artistId, {
+      artistId,
+      votes: legacyVotes + shardVotes,
+      manualVotes,
+      totalVotes: legacyVotes + manualVotes + shardVotes,
+    })
+  })
+
+  const rankedResults = [...totalsByArtist.values()]
+    .sort((current, next) => next.totalVotes - current.totalVotes)
+  const totalVotes = rankedResults.reduce((total, result) => total + result.totalVotes, 0)
+  const leader = rankedResults[0] || null
+
+  return {
+    totalVotes,
+    leaderArtistId: leader?.artistId || null,
+    leaderVotes: Number(leader?.totalVotes || 0),
+  }
+}
+
+const syncRoundListeners = (pollRows) => {
+  const visiblePolls = pollRows.slice(0, 3)
+  const visiblePollIds = new Set(visiblePolls.map((poll) => poll.id))
+
+  roundListeners.forEach((unsubscribe, pollId) => {
+    if (!visiblePollIds.has(pollId)) {
+      unsubscribe()
+      roundListeners.delete(pollId)
+      clearActiveRoundId(pollId)
+    }
+  })
+
+  visiblePolls.forEach((poll) => {
+    if (roundListeners.has(poll.id)) {
+      return
+    }
+
+    const unsubscribe = onSnapshot(
+      collection(db, 'polls', poll.id, 'rounds'),
+      (roundsSnap) => {
+        const rounds = roundsSnap.docs.map((roundDoc) => ({
+          id: roundDoc.id,
+          ...roundDoc.data(),
+        }))
+        const activeRound = rounds.find((round) => round.id === poll.activeRoundId)
+          || rounds.find((round) => round.status === 'live')
+          || rounds[0]
+          || null
+
+        setActiveRoundId(poll.id, activeRound?.id || '')
+        syncPollResultListeners(livePolls.value)
+      },
+      () => {
+        clearActiveRoundId(poll.id)
+        syncPollResultListeners(livePolls.value)
+      },
+    )
+
+    roundListeners.set(poll.id, unsubscribe)
+  })
+}
+
+const syncPollResultListeners = (pollRows) => {
+  const visiblePolls = pollRows.slice(0, 3)
+  const nextKeys = new Set(
+    visiblePolls.map((poll) => `${poll.id}:${getEffectiveRoundId(poll) || '_root'}`),
+  )
+
+  pollResultListeners.forEach((listener, key) => {
+    if (!nextKeys.has(key)) {
+      listener.unsubscribers.forEach((unsubscribe) => unsubscribe())
+      pollResultListeners.delete(key)
+      clearPollResult(listener.pollId)
+    }
+  })
+
+  visiblePolls.forEach((poll) => {
+    const key = `${poll.id}:${getEffectiveRoundId(poll) || '_root'}`
+
+    if (pollResultListeners.has(key)) {
+      return
+    }
+
+    let latestContestants = []
+    let latestShardVotesByArtist = new Map()
+    const applyResult = () => {
+      setPollResult(
+        poll.id,
+        buildResultFromSnapshots(latestContestants, latestShardVotesByArtist),
+      )
+    }
+    const contestantsUnsubscribe = onSnapshot(
+      pollRoundCollection(poll, 'contestants'),
+      (contestantsSnap) => {
+        latestContestants = contestantsSnap.docs.map((contestantDoc) => ({
+          id: contestantDoc.id,
+          ...contestantDoc.data(),
+        }))
+        applyResult()
+      },
+      () => clearPollResult(poll.id),
+    )
+    const shardsUnsubscribe = onSnapshot(
+      pollRoundCollection(poll, 'voteShards'),
+      (shardsSnap) => {
+        const shardVotesByArtist = new Map()
+
+        shardsSnap.docs.forEach((shardDoc) => {
+          const shard = shardDoc.data()
+          const artistId = shard.artistId
+
+          if (!artistId) {
+            return
+          }
+
+          shardVotesByArtist.set(
+            artistId,
+            (shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
+          )
+        })
+
+        latestShardVotesByArtist = shardVotesByArtist
+        applyResult()
+      },
+      () => clearPollResult(poll.id),
+    )
+
+    pollResultListeners.set(key, {
+      pollId: poll.id,
+      unsubscribers: [contestantsUnsubscribe, shardsUnsubscribe],
+    })
+  })
+}
 
 const animateBannerStats = () => {
   if (statsAnimationFrame) {
@@ -155,16 +365,18 @@ const animateBannerStats = () => {
 }
 
 const buildLiveSlide = (poll, index) => {
-  const totalVotes = Number(poll.totalVotes || 0)
-  const leaderVotes = Number(poll.leaderVotes || 0)
+  const liveResult = livePollResults.value[poll.id] || {}
+  const totalVotes = Number(liveResult.totalVotes ?? poll.totalVotes ?? 0)
+  const leaderVotes = Number(liveResult.leaderVotes ?? poll.leaderVotes ?? 0)
   const percent = totalVotes ? (leaderVotes / totalVotes) * 100 : 0
-  const leaderName = getArtistName(poll.leaderArtistId)
+  const leaderArtistId = liveResult.leaderArtistId || poll.leaderArtistId
+  const leaderName = getArtistName(leaderArtistId)
 
   return {
     badge: index === 0 ? '#1 en vivo' : 'Votacion en vivo',
     status: poll.status === 'selecting_winners' ? 'En proceso' : 'En vivo',
     eyebrow: poll.title || 'Votacion activa',
-    title: poll.leaderArtistId ? `${leaderName} lidera la votacion` : poll.title || 'Vota por tu artista favorito',
+    title: leaderArtistId ? `${leaderName} lidera la votacion` : poll.title || 'Vota por tu artista favorito',
     description: poll.description || 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
     category: poll.category || 'Lista',
     leader: leaderName,
@@ -181,12 +393,16 @@ const listenLivePolls = () => {
   unsubscribePolls = subscribeLivePollsCached(
     db,
     (pollRows) => {
-      liveSlides.value = pollRows.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index))
+      livePolls.value = pollRows
+      syncRoundListeners(pollRows)
+      syncPollResultListeners(pollRows)
       activeSlide.value = Math.min(activeSlide.value, Math.max(bannerSlides.value.length - 1, 0))
       animateBannerStats()
     },
     () => {
-      liveSlides.value = []
+      livePolls.value = []
+      syncRoundListeners([])
+      syncPollResultListeners([])
     },
   )
 }
@@ -209,6 +425,12 @@ onMounted(() => {
 onUnmounted(() => {
   unsubscribeArtists?.()
   unsubscribePolls?.()
+  roundListeners.forEach((unsubscribe) => unsubscribe())
+  roundListeners.clear()
+  pollResultListeners.forEach((listener) => {
+    listener.unsubscribers.forEach((unsubscribe) => unsubscribe())
+  })
+  pollResultListeners.clear()
   window.clearInterval(autoplayTimer)
   if (statsAnimationFrame) {
     window.cancelAnimationFrame(statsAnimationFrame)

@@ -28,6 +28,7 @@ const currentUser = ref(null);
 const isFollowing = ref(false);
 const isLoading = ref(true);
 const isTogglingFollow = ref(false);
+const isUnfollowModalOpen = ref(false);
 const errorMessage = ref("");
 
 let unsubscribeAuth = null;
@@ -51,6 +52,8 @@ const getArtistBanner = (artistData) =>
 
 const getArtistGroup = (artistData) =>
   artistData?.group || artistData?.fandom || "";
+const getContestantArtistId = (contestant, docId) =>
+  contestant?.artistId || docId || "";
 
 const formattedFollowers = computed(() =>
   followersCount.value.toLocaleString(locale.value),
@@ -77,7 +80,7 @@ const averageSupport = computed(() => {
 });
 
 const popularityScore = computed(() =>
-  Number(artist.value?.popularityScore || Math.round(followersCount.value * 10 + totalVotes.value)),
+  Math.round(followersCount.value * 10 + totalVotes.value),
 );
 
 const stats = computed(() => [
@@ -94,6 +97,14 @@ const followLabel = computed(() => {
 
   return isFollowing.value ? translate("artists.profile.following") : translate("artists.profile.follow");
 });
+
+const closeUnfollowModal = () => {
+  if (isTogglingFollow.value) {
+    return;
+  }
+
+  isUnfollowModalOpen.value = false;
+};
 
 const loadArtist = async () => {
   isLoading.value = true;
@@ -125,7 +136,7 @@ const loadArtist = async () => {
         };
 
     followersCount.value = Number(artist.value.followersCount || 0);
-    loadArtistPollStats();
+    await loadArtistPollStats();
   } catch {
     errorMessage.value = translate("artists.profileErrors.load");
   } finally {
@@ -149,18 +160,156 @@ const listenFollowState = () => {
   );
 };
 
-const loadArtistPollStats = () => {
+const loadFollowersCount = async () => {
+  if (!artist.value?.id) {
+    followersCount.value = 0;
+    return;
+  }
+
+  try {
+    const followersSnap = await getDocs(
+      collection(db, "artists", artist.value.id, "followers"),
+    );
+    followersCount.value = followersSnap.size;
+  } catch {
+    followersCount.value = Number(artist.value?.followersCount || 0);
+  }
+};
+
+const loadContestantVotesForArtist = async (contestantsRef, voteShardsRef, artistId) => {
+  const [contestantsSnap, shardsSnap] = await Promise.all([
+    getDocs(contestantsRef),
+    getDocs(voteShardsRef),
+  ]);
+  const shardVotesByArtist = new Map();
+  let votes = 0;
+  let totalVotes = 0;
+
+  shardsSnap.docs.forEach((shardDoc) => {
+    const shard = shardDoc.data();
+    const shardArtistId = shard.artistId;
+
+    if (!shardArtistId) {
+      return;
+    }
+
+    shardVotesByArtist.set(
+      shardArtistId,
+      Number(shardVotesByArtist.get(shardArtistId) || 0) + Number(shard.votes || 0),
+    );
+  });
+
+  contestantsSnap.docs.forEach((contestantDoc) => {
+    const contestant = contestantDoc.data();
+    const contestantArtistId = getContestantArtistId(contestant, contestantDoc.id);
+    const contestantVotes = Number(contestant.votes || 0)
+      + Number(contestant.manualVotes || 0)
+      + Number(shardVotesByArtist.get(contestantArtistId) || 0);
+
+    totalVotes += contestantVotes;
+
+    if (contestantArtistId === artistId) {
+      votes += contestantVotes;
+    }
+
+    shardVotesByArtist.delete(contestantArtistId);
+  });
+
+  shardVotesByArtist.forEach((shardVotes, shardArtistId) => {
+    totalVotes += shardVotes;
+
+    if (shardArtistId === artistId) {
+      votes += shardVotes;
+    }
+  });
+
+  return {
+    votes,
+    totalVotes,
+    percent: totalVotes ? (votes / totalVotes) * 100 : 0,
+  };
+};
+
+const normalizeStoredPollStats = () => {
+  const storedStats = artist.value?.pollStats || artist.value?.recentPollStats || [];
+
+  return storedStats
+    .filter(Boolean)
+    .map((stat) => ({
+      ...stat,
+      votes: Number(stat.votes || 0),
+      totalVotes: Number(stat.totalVotes || 0),
+      percent: Number(stat.percent || 0),
+    }))
+    .sort((current, next) => next.votes - current.votes)
+    .slice(0, 6);
+};
+
+const loadArtistPollStats = async () => {
   if (!artist.value?.id) {
     artistPolls.value = [];
     return;
   }
 
-  const stats = artist.value.pollStats || artist.value.recentPollStats || [];
+  try {
+    const pollsSnap = await getDocs(collection(db, "polls"));
+    const calculatedStats = [];
 
-  artistPolls.value = stats
-    .filter(Boolean)
-    .sort((current, next) => next.votes - current.votes)
-    .slice(0, 6);
+    await Promise.all(
+      pollsSnap.docs.map(async (pollDoc) => {
+        const pollId = pollDoc.id;
+        const poll = { id: pollId, ...pollDoc.data() };
+        const rootResult = await loadContestantVotesForArtist(
+          collection(db, "polls", pollId, "contestants"),
+          collection(db, "polls", pollId, "voteShards"),
+          artist.value.id,
+        ).catch(() => null);
+
+        if (rootResult?.votes) {
+          calculatedStats.push({
+            title: poll.title || "Votación",
+            status: poll.status || "",
+            ...rootResult,
+          });
+        }
+
+        const roundsSnap = await getDocs(collection(db, "polls", pollId, "rounds")).catch(
+          () => null,
+        );
+
+        if (!roundsSnap) {
+          return;
+        }
+
+        await Promise.all(
+          roundsSnap.docs.map(async (roundDoc) => {
+            const round = { id: roundDoc.id, ...roundDoc.data() };
+            const roundResult = await loadContestantVotesForArtist(
+              collection(db, "polls", pollId, "rounds", roundDoc.id, "contestants"),
+              collection(db, "polls", pollId, "rounds", roundDoc.id, "voteShards"),
+              artist.value.id,
+            ).catch(() => null);
+
+            if (!roundResult?.votes) {
+              return;
+            }
+
+            calculatedStats.push({
+              title: round.title ? `${poll.title || "Votación"} · ${round.title}` : poll.title || "Votación",
+              status: round.status || poll.status || "",
+              ...roundResult,
+            });
+          }),
+        );
+      }),
+    );
+
+    artistPolls.value = calculatedStats
+      .sort((current, next) => next.votes - current.votes)
+      .slice(0, 6);
+  } catch {
+    artistPolls.value = normalizeStoredPollStats();
+  }
 };
 
 const toggleFollow = async () => {
@@ -170,6 +319,11 @@ const toggleFollow = async () => {
   }
 
   if (!artist.value?.id || isTogglingFollow.value) {
+    return;
+  }
+
+  if (isFollowing.value) {
+    isUnfollowModalOpen.value = true;
     return;
   }
 
@@ -192,25 +346,54 @@ const toggleFollow = async () => {
       artist.value.id,
     );
 
-    if (isFollowing.value) {
-      await Promise.all([deleteDoc(artistFollowRef), deleteDoc(userFollowRef)]);
-      followersCount.value = Math.max(0, followersCount.value - 1);
-    } else {
-      const followData = {
-        artistId: artist.value.id,
-        artistSlug: artist.value.slug || artist.value.id,
-        userId: currentUser.value.uid,
-        artistName: artist.value.name || "",
-        artistImage: getArtistImage(artist.value),
-        createdAt: serverTimestamp(),
-      };
+    const followData = {
+      artistId: artist.value.id,
+      artistSlug: artist.value.slug || artist.value.id,
+      userId: currentUser.value.uid,
+      artistName: artist.value.name || "",
+      artistImage: getArtistImage(artist.value),
+      createdAt: serverTimestamp(),
+    };
 
-      await Promise.all([
-        setDoc(artistFollowRef, followData),
-        setDoc(userFollowRef, followData),
-      ]);
-      followersCount.value += 1;
-    }
+    await Promise.all([
+      setDoc(artistFollowRef, followData),
+      setDoc(userFollowRef, followData),
+    ]);
+    followersCount.value += 1;
+  } catch {
+    errorMessage.value = translate("artists.profileErrors.follow");
+  } finally {
+    isTogglingFollow.value = false;
+  }
+};
+
+const confirmUnfollow = async () => {
+  if (!currentUser.value || !artist.value?.id || isTogglingFollow.value) {
+    return;
+  }
+
+  isTogglingFollow.value = true;
+  errorMessage.value = "";
+
+  try {
+    const artistFollowRef = doc(
+      db,
+      "artists",
+      artist.value.id,
+      "followers",
+      currentUser.value.uid,
+    );
+    const userFollowRef = doc(
+      db,
+      "users",
+      currentUser.value.uid,
+      "followingArtists",
+      artist.value.id,
+    );
+
+    await Promise.all([deleteDoc(artistFollowRef), deleteDoc(userFollowRef)]);
+    followersCount.value = Math.max(0, followersCount.value - 1);
+    isUnfollowModalOpen.value = false;
   } catch {
     errorMessage.value = translate("artists.profileErrors.follow");
   } finally {
@@ -225,6 +408,7 @@ onMounted(async () => {
   });
 
   await loadArtist();
+  await loadFollowersCount();
   listenFollowState();
 });
 
@@ -341,7 +525,12 @@ onUnmounted(() => {
 
             <div class="flex gap-3">
               <button
-                class="rounded-full bg-linear-to-r from-pink-500 to-fuchsia-600 px-7 py-3 text-sm font-black uppercase text-white shadow-lg shadow-fuchsia-500/30 transition hover:scale-105"
+                class="rounded-full px-7 py-3 text-sm font-black uppercase transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-70"
+                :class="
+                  isFollowing
+                    ? 'border border-fuchsia-300/45 bg-black/20 text-fuchsia-100 shadow-lg shadow-black/20 hover:bg-fuchsia-400/10'
+                    : 'bg-linear-to-r from-pink-500 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30'
+                "
                 type="button"
                 :disabled="isTogglingFollow"
                 @click="toggleFollow"
@@ -373,36 +562,6 @@ onUnmounted(() => {
               <p class="mt-1 text-2xl font-black text-white">
                 {{ stat.value }}
               </p>
-            </div>
-          </div>
-
-          <div
-            class="mt-5 rounded-3xl border border-cyan-300/10 bg-cyan-500/5 p-4"
-          >
-            <p
-              class="text-xs font-black uppercase tracking-[0.22em] text-cyan-300"
-            >
-              {{ $t("artists.profile.publicPopularity") }}
-            </p>
-            <div class="mt-4 grid gap-3 sm:grid-cols-3">
-              <div class="rounded-2xl bg-white/7 p-4">
-                <p class="text-xs font-bold text-slate-400">{{ $t("artists.profile.followers") }}</p>
-                <p class="mt-1 text-2xl font-black text-cyan-200">
-                  {{ formattedFollowers }}
-                </p>
-              </div>
-              <div class="rounded-2xl bg-white/7 p-4">
-                <p class="text-xs font-bold text-slate-400">{{ $t("ranking.votes") }}</p>
-                <p class="mt-1 text-2xl font-black text-fuchsia-100">
-                  {{ totalVotes.toLocaleString(locale) }}
-                </p>
-              </div>
-              <div class="rounded-2xl bg-white/7 p-4">
-                <p class="text-xs font-bold text-slate-400">{{ $t("common.labels.score") }}</p>
-                <p class="mt-1 text-2xl font-black text-emerald-200">
-                  {{ popularityScore.toLocaleString(locale) }}
-                </p>
-              </div>
             </div>
           </div>
 
@@ -496,8 +655,59 @@ onUnmounted(() => {
         {{ $t("artists.profile.noRoundVotes") }}
       </p>
     </div>
+
   </section>
   <div class="mb-8"></div>
+
+  <Teleport to="body">
+    <div
+      v-if="isUnfollowModalOpen"
+      class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      @click="closeUnfollowModal"
+    >
+      <div
+        class="relative w-full max-w-md overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#090b19] p-6 text-white shadow-2xl shadow-fuchsia-950/50"
+        @click.stop
+      >
+        <div class="pointer-events-none absolute -right-20 -top-20 size-56 rounded-full bg-fuchsia-500/20 blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 left-0 size-64 rounded-full bg-cyan-400/10 blur-3xl"></div>
+        <div class="relative">
+          <div class="mx-auto grid size-16 place-items-center rounded-3xl border border-fuchsia-300/30 bg-fuchsia-400/10 text-2xl text-fuchsia-100">
+            <i class="fa-solid fa-user-minus" aria-hidden="true"></i>
+          </div>
+          <p class="mt-5 text-center text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            Confirmar accion
+          </p>
+          <h2 class="mt-3 text-center text-3xl font-black text-white">
+            Dejar de seguir
+          </h2>
+          <p class="mx-auto mt-3 max-w-sm text-center text-sm leading-6 text-slate-300">
+            Seguro quieres dejar de seguir a
+            <strong class="text-fuchsia-100">{{ artist?.name || "este artista" }}</strong>?
+          </p>
+
+          <div class="mt-6 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isTogglingFollow"
+              @click="closeUnfollowModal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="min-h-12 rounded-2xl bg-linear-to-r from-pink-500 to-fuchsia-600 px-5 text-sm font-black uppercase text-white shadow-lg shadow-fuchsia-950/35 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isTogglingFollow"
+              @click="confirmUnfollow"
+            >
+              {{ isTogglingFollow ? "Quitando..." : "Dejar de seguir" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>

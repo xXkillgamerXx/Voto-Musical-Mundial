@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { getArtistsCached } from '../services/firebaseCache'
 
 const artists = ref([])
+const WEEKLY_ROTATION_POOL_SIZE = 12
 
 const accents = [
   { accent: 'from-amber-300 to-fuchsia-500', border: 'border-amber-300/45' },
@@ -16,14 +18,33 @@ const getArtistImage = (artist) =>
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 
+const getWeeklyRotationIndex = (itemsLength) => {
+  if (!itemsLength) {
+    return 0
+  }
+
+  const now = new Date()
+  const yearStart = new Date(now.getFullYear(), 0, 1)
+  const weekNumber = Math.floor((now - yearStart) / (7 * 24 * 60 * 60 * 1000))
+
+  return weekNumber % itemsLength
+}
+
+const rotateWeekly = (items) => {
+  const offset = getWeeklyRotationIndex(items.length)
+
+  return [...items.slice(offset), ...items.slice(0, offset)]
+}
+
 const topArtists = computed(() =>
-  artists.value
+  rotateWeekly(artists.value
     .slice()
     .sort((current, next) =>
       next.followersCount - current.followersCount
         || next.popularityScore - current.popularityScore
         || current.name.localeCompare(next.name),
     )
+    .slice(0, WEEKLY_ROTATION_POOL_SIZE))
     .slice(0, 3)
     .map((artist, index) => ({
       ...artist,
@@ -40,13 +61,28 @@ const podiumArtists = computed(() => {
 
 const mobileTopArtists = computed(() => topArtists.value)
 
+const loadFollowersCount = async (artistId, fallbackCount = 0) => {
+  try {
+    const followersSnap = await getDocs(collection(db, 'artists', artistId, 'followers'))
+    return followersSnap.size
+  } catch {
+    return Number(fallbackCount || 0)
+  }
+}
+
 const loadArtists = async () => {
   const artistRows = await getArtistsCached(db)
-  artists.value = artistRows.map((artist) => ({
-    ...artist,
-    followersCount: Number(artist.followersCount || 0),
-    popularityScore: Number(artist.popularityScore || artist.followersCount * 10 || 0),
-  }))
+  artists.value = await Promise.all(
+    artistRows.map(async (artist) => {
+      const followersCount = await loadFollowersCount(artist.id, artist.followersCount)
+
+      return {
+        ...artist,
+        followersCount,
+        popularityScore: Number(artist.popularityScore || followersCount * 10 || 0),
+      }
+    }),
+  )
 }
 
 onMounted(loadArtists)
@@ -57,7 +93,7 @@ onMounted(loadArtists)
     <div class="mb-5 flex items-center justify-between gap-4">
       <h2 class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl">
         <span class="text-amber-300">✦</span>
-        Artistas populares
+        Artistas populares de la semana
       </h2>
       <a href="/artistas" class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
         Ver artistas
@@ -130,14 +166,25 @@ onMounted(loadArtists)
             <h3 class="text-3xl font-black uppercase leading-none tracking-tight">{{ artist.name }}</h3>
             <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || $t('artists.list.noGroup') }}</p>
 
-            <div class="mt-5 inline-flex items-end gap-2 rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
-              <p
-                class="text-4xl font-black leading-none"
-                :class="artist.rank === 1 ? 'text-amber-300' : 'text-violet-200'"
-              >
-                {{ artist.followersCount.toLocaleString('es') }}
-              </p>
-              <p class="pb-1 text-xs font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
+            <div class="mt-5 inline-grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/8 p-2 backdrop-blur">
+              <div class="rounded-xl bg-black/25 px-3 py-2">
+                <p
+                  class="text-2xl font-black leading-none"
+                  :class="artist.rank === 1 ? 'text-amber-300' : 'text-violet-200'"
+                >
+                  {{ artist.followersCount.toLocaleString('es') }}
+                </p>
+                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
+              </div>
+              <div class="rounded-xl bg-black/25 px-3 py-2">
+                <p
+                  class="text-2xl font-black leading-none"
+                  :class="artist.rank === 1 ? 'text-fuchsia-200' : 'text-cyan-200'"
+                >
+                  {{ artist.popularityScore.toLocaleString('es') }}
+                </p>
+                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">pts</p>
+              </div>
             </div>
           </div>
 
@@ -206,14 +253,25 @@ onMounted(loadArtists)
             <h3 class="text-3xl font-black uppercase leading-none tracking-tight">{{ artist.name }}</h3>
             <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || $t('artists.list.noGroup') }}</p>
 
-            <div class="mt-5 inline-flex items-end gap-2 rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
-              <p
-                class="text-4xl font-black leading-none"
-                :class="artist.rank === 1 ? 'text-amber-300' : 'text-violet-200'"
-              >
-                {{ artist.followersCount.toLocaleString('es') }}
-              </p>
-              <p class="pb-1 text-xs font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
+            <div class="mt-5 inline-grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/8 p-2 backdrop-blur">
+              <div class="rounded-xl bg-black/25 px-3 py-2">
+                <p
+                  class="text-2xl font-black leading-none"
+                  :class="artist.rank === 1 ? 'text-amber-300' : 'text-violet-200'"
+                >
+                  {{ artist.followersCount.toLocaleString('es') }}
+                </p>
+                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
+              </div>
+              <div class="rounded-xl bg-black/25 px-3 py-2">
+                <p
+                  class="text-2xl font-black leading-none"
+                  :class="artist.rank === 1 ? 'text-fuchsia-200' : 'text-cyan-200'"
+                >
+                  {{ artist.popularityScore.toLocaleString('es') }}
+                </p>
+                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">pts</p>
+              </div>
             </div>
           </div>
 
