@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { db } from '../firebase'
+import { getArtistsCached } from '../services/firebaseCache'
 
 const { locale } = useI18n()
 const artists = ref([])
@@ -52,25 +52,11 @@ const loadArtists = async () => {
   errorMessage.value = ''
 
   try {
-    const artistsSnap = await getDocs(collection(db, 'artists'))
-    const artistRows = await Promise.all(
-      artistsSnap.docs.map(async (artistDoc) => {
-        const artist = {
-          id: artistDoc.id,
-          ...artistDoc.data(),
-        }
-        const followersSnap = await getDocs(collection(db, 'artists', artistDoc.id, 'followers'))
-        const followersCount = followersSnap.size
-
-        return {
-          ...artist,
-          followersCount,
-          popularityScore: Number(artist.popularityScore || followersCount * 10),
-        }
-      }),
-    )
-
-    artists.value = artistRows
+    artists.value = (await getArtistsCached(db)).map((artist) => ({
+      ...artist,
+      followersCount: Number(artist.followersCount || 0),
+      popularityScore: Number(artist.popularityScore || artist.followersCount * 10 || 0),
+    }))
   } catch {
     errorMessage.value = translate('artists.errors.loadPopular')
   } finally {

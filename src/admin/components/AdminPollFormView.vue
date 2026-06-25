@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { db, storage } from '../../firebase'
+import { translate } from '../../i18n'
 
 const props = defineProps({
   pollId: {
@@ -38,7 +39,7 @@ const errorMessage = ref('')
 const successMessage = ref('')
 
 const isEditing = computed(() => Boolean(props.pollId))
-const formTitle = computed(() => (isEditing.value ? 'Editar votacion' : 'Crear votacion'))
+const formTitle = computed(() => (isEditing.value ? translate('admin.pollForm.editTitle') : translate('admin.pollForm.createTitle')))
 const selectedCategory = computed(() =>
   categories.value.find((category) => category.id === pollForm.value.categoryId) || null,
 )
@@ -95,7 +96,7 @@ const uploadPollBanner = async (file) => {
   successMessage.value = ''
 
   if (!isAcceptedImageFile(file)) {
-    errorMessage.value = 'Solo puedes subir imagenes JPG, PNG o WebP.'
+    errorMessage.value = translate('admin.pollForm.errors.imageType')
     return
   }
 
@@ -108,9 +109,9 @@ const uploadPollBanner = async (file) => {
   try {
     await uploadBytes(bannerRef, file, { contentType: getImageContentType(file) })
     pollForm.value.banner = await getDownloadURL(bannerRef)
-    successMessage.value = 'Banner subido.'
+    successMessage.value = translate('admin.pollForm.uploaded')
   } catch {
-    errorMessage.value = 'No se pudo subir el banner.'
+    errorMessage.value = translate('admin.pollForm.errors.upload')
   } finally {
     isUploadingBanner.value = false
   }
@@ -164,7 +165,7 @@ const loadPoll = async () => {
     const pollSnap = await getDoc(doc(db, 'polls', props.pollId))
 
     if (!pollSnap.exists()) {
-      errorMessage.value = 'Esa votacion no existe.'
+      errorMessage.value = translate('admin.pollForm.errors.missingPoll')
       return
     }
 
@@ -179,7 +180,7 @@ const loadPoll = async () => {
       year: Number(poll.year || new Date().getFullYear()),
     }
   } catch {
-    errorMessage.value = 'No se pudo cargar la votacion.'
+    errorMessage.value = translate('admin.pollForm.errors.load')
   } finally {
     isLoading.value = false
   }
@@ -190,7 +191,7 @@ const savePoll = async () => {
   successMessage.value = ''
 
   if (!pollForm.value.title.trim()) {
-    errorMessage.value = 'El titulo de la votacion es obligatorio.'
+    errorMessage.value = translate('admin.pollForm.errors.titleRequired')
     return
   }
 
@@ -215,7 +216,7 @@ const savePoll = async () => {
   try {
     if (isEditing.value) {
       await updateDoc(doc(db, 'polls', props.pollId), pollData)
-      successMessage.value = 'Votacion actualizada.'
+      successMessage.value = translate('admin.pollForm.updated')
     } else {
       await addDoc(collection(db, 'polls'), {
         ...pollData,
@@ -223,11 +224,11 @@ const savePoll = async () => {
         startAt: serverTimestamp(),
         createdAt: serverTimestamp(),
       })
-      successMessage.value = 'Votacion creada.'
+      successMessage.value = translate('admin.pollForm.created')
       pollForm.value = { ...emptyPoll }
     }
   } catch {
-    errorMessage.value = 'No se pudo guardar la votacion.'
+    errorMessage.value = translate('admin.pollForm.errors.save')
   } finally {
     isSaving.value = false
   }
@@ -244,13 +245,13 @@ onMounted(async () => {
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-          Votaciones
+          {{ $t('admin.pollForm.eyebrow') }}
         </p>
         <h2 class="mt-2 text-3xl font-black text-white">
           {{ formTitle }}
         </h2>
         <p class="mt-2 text-sm text-slate-400">
-          Define la base visual y el estado general de la votacion.
+          {{ $t('admin.pollForm.formDescription') }}
         </p>
       </div>
 
@@ -258,7 +259,7 @@ onMounted(async () => {
         href="/admin/votaciones"
         class="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
       >
-        Volver a la lista
+        {{ $t('admin.pollForm.backToList') }}
       </a>
     </div>
 
@@ -267,7 +268,7 @@ onMounted(async () => {
         v-if="isLoading"
         class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-300"
       >
-        Cargando votacion...
+        {{ $t('admin.pollForm.loading') }}
       </div>
 
       <form v-else class="grid gap-6 xl:grid-cols-[0.72fr_1fr]" @submit.prevent="savePoll">
@@ -276,14 +277,14 @@ onMounted(async () => {
             <img
               v-if="pollForm.banner"
               :src="pollForm.banner"
-              :alt="pollForm.title || 'Banner de la votacion'"
+              :alt="pollForm.title || $t('admin.pollForm.bannerAlt')"
               class="size-full object-cover"
             />
             <div v-else class="grid size-full place-items-center px-6 text-center">
               <div>
                 <i class="fa-solid fa-image text-5xl text-white/30" aria-hidden="true"></i>
                 <p class="mt-4 text-sm font-bold text-slate-400">
-                  El banner aparece aqui cuando subas una imagen.
+                  {{ $t('admin.pollForm.bannerHelp') }}
                 </p>
               </div>
             </div>
@@ -294,10 +295,10 @@ onMounted(async () => {
           </div>
           <div class="p-5">
             <h3 class="text-2xl font-black text-white">
-              {{ pollForm.title || 'Titulo de la votacion' }}
+              {{ pollForm.title || $t('admin.pollForm.previewTitle') }}
             </h3>
             <p class="mt-2 line-clamp-3 text-sm leading-6 text-slate-300">
-              {{ pollForm.description || 'Descripcion de la votacion' }}
+              {{ pollForm.description || $t('admin.pollForm.previewDescription') }}
             </p>
           </div>
         </div>
@@ -305,13 +306,13 @@ onMounted(async () => {
         <div class="space-y-4">
           <div class="grid gap-4 sm:grid-cols-[1fr_0.4fr]">
             <label class="block">
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Categoría</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.category') }}</span>
               <select
                 v-model="pollForm.categoryId"
                 class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
                 @change="applySelectedCategory"
               >
-                <option value="">Sin categoría</option>
+                <option value="">{{ $t('admin.pollForm.noCategory') }}</option>
                 <option
                   v-for="category in categories"
                   :key="category.id"
@@ -321,12 +322,12 @@ onMounted(async () => {
                 </option>
               </select>
               <span class="mt-2 block text-xs font-bold text-slate-500">
-                Sirve para ordenar el salón de la fama por año.
+                {{ $t('admin.pollForm.categoryHelp') }}
               </span>
             </label>
 
             <label class="block">
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Año</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.year') }}</span>
               <input
                 v-model.number="pollForm.year"
                 type="number"
@@ -337,45 +338,45 @@ onMounted(async () => {
           </div>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Titulo</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.title') }}</span>
             <input
               v-model="pollForm.title"
               type="text"
               required
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              placeholder="Best Global Artist 2026"
+              :placeholder="$t('admin.pollForm.titlePlaceholder')"
             />
           </label>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Nombre para salón de la fama</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.hallName') }}</span>
             <input
               v-model="pollForm.categoryName"
               type="text"
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              placeholder="VOCALIST OF THE YEAR"
+              :placeholder="$t('admin.pollForm.hallNamePlaceholder')"
             />
           </label>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Descripcion</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.description') }}</span>
             <textarea
               v-model="pollForm.description"
               rows="4"
               class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              placeholder="Describe la votacion para los usuarios."
+              :placeholder="$t('admin.pollForm.descriptionPlaceholder')"
             ></textarea>
           </label>
 
           <div>
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Banner</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.banner') }}</span>
             <label
               class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-fuchsia-300/35 bg-fuchsia-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               @dragover.prevent
               @drop.prevent="handleBannerDrop"
             >
               <i class="fa-solid fa-cloud-arrow-up mb-2 text-2xl" aria-hidden="true"></i>
-              {{ isUploadingBanner ? 'Subiendo banner...' : 'Arrastra o selecciona banner' }}
+              {{ isUploadingBanner ? $t('admin.pollForm.uploadingBanner') : $t('admin.pollForm.selectBanner') }}
               <span class="mt-1 text-[10px] font-bold normal-case tracking-normal text-slate-400">
                 JPG, PNG o WebP
               </span>
@@ -390,15 +391,15 @@ onMounted(async () => {
           </div>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Estado</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.status') }}</span>
             <select
               v-model="pollForm.status"
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
             >
-              <option value="draft">Borrador</option>
-              <option value="scheduled">Programada</option>
-              <option value="live">En vivo</option>
-              <option value="closed">Finalizada</option>
+              <option value="draft">{{ $t('common.status.draft') }}</option>
+              <option value="scheduled">{{ $t('admin.pollForm.scheduled') }}</option>
+              <option value="live">{{ $t('common.status.live') }}</option>
+              <option value="closed">{{ $t('common.status.closed') }}</option>
             </select>
           </label>
 
@@ -421,13 +422,13 @@ onMounted(async () => {
               class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isSaving || isUploadingBanner"
             >
-              {{ isSaving ? 'Guardando...' : isEditing ? 'Actualizar votacion' : 'Crear votacion' }}
+              {{ isSaving ? $t('admin.common.saving') : isEditing ? $t('admin.pollForm.saveEdit') : $t('admin.pollForm.saveCreate') }}
             </button>
             <a
               href="/admin/votaciones"
               class="grid min-h-12 place-items-center rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
             >
-              Cancelar
+              {{ $t('common.actions.cancel') }}
             </a>
           </div>
         </div>

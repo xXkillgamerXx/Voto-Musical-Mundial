@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const polls = ref([])
 const isLoading = ref(true)
@@ -38,14 +39,14 @@ const loadPolls = () => {
       isLoading.value = false
     },
     () => {
-      errorMessage.value = 'No se pudieron cargar las votaciones.'
+      errorMessage.value = translate('admin.polls.errors.load')
       isLoading.value = false
     },
   )
 }
 
 const removePoll = async (poll) => {
-  const shouldDelete = window.confirm(`Eliminar la votacion "${poll.title}"?`)
+  const shouldDelete = window.confirm(translate('admin.polls.confirmDelete', { title: poll.title }))
 
   if (!shouldDelete) {
     return
@@ -56,9 +57,9 @@ const removePoll = async (poll) => {
 
   try {
     await deleteDoc(doc(db, 'polls', poll.id))
-    successMessage.value = 'Votacion eliminada.'
+    successMessage.value = translate('admin.polls.deleted')
   } catch {
-    errorMessage.value = 'No se pudo eliminar la votacion.'
+    errorMessage.value = translate('admin.polls.errors.delete')
   }
 }
 
@@ -75,13 +76,13 @@ onUnmounted(() => {
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-            Tiempo real
+            {{ $t('admin.polls.eyebrow') }}
           </p>
           <h2 class="mt-2 text-3xl font-black text-white">
-            Lista de votaciones
+            {{ $t('admin.polls.listTitle') }}
           </h2>
           <p class="mt-2 text-sm text-slate-400">
-            Esta tabla escucha Firestore en vivo y se actualiza automaticamente.
+            {{ $t('admin.polls.listDescription') }}
           </p>
         </div>
 
@@ -90,7 +91,7 @@ onUnmounted(() => {
           class="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
         >
           <i class="fa-solid fa-plus mr-2" aria-hidden="true"></i>
-          Crear votacion
+          {{ $t('admin.polls.create') }}
         </a>
       </div>
 
@@ -111,7 +112,7 @@ onUnmounted(() => {
         v-if="isLoading"
         class="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-300"
       >
-        Cargando votaciones...
+        {{ $t('admin.polls.loading') }}
       </div>
 
       <div v-else class="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-slate-950/45">
@@ -119,12 +120,12 @@ onUnmounted(() => {
           <table class="min-w-full text-left">
             <thead class="bg-white/5 text-xs font-black uppercase tracking-widest text-slate-400">
               <tr>
-                <th class="px-4 py-4">Banner</th>
-                <th class="px-4 py-4">Titulo</th>
-                <th class="px-4 py-4">Inicio</th>
-                <th class="px-4 py-4">Finaliza</th>
-                <th class="px-4 py-4">Estado</th>
-                <th class="px-4 py-4 text-right">Acciones</th>
+                <th class="px-4 py-4">{{ $t('admin.polls.banner') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.polls.title') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.polls.start') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.polls.ends') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.polls.status') }}</th>
+                <th class="px-4 py-4 text-right">{{ $t('admin.polls.actions') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-white/10">
@@ -147,7 +148,7 @@ onUnmounted(() => {
                 <td class="max-w-80 px-4 py-4">
                   <p class="truncate font-black text-white">{{ poll.title }}</p>
                   <p class="mt-1 line-clamp-1 text-xs text-slate-500">
-                    {{ poll.description || 'Sin descripcion' }}
+                    {{ poll.description || $t('admin.polls.noDescription') }}
                   </p>
                 </td>
                 <td class="px-4 py-4">{{ formatDate(poll.startAt) }}</td>
@@ -163,35 +164,35 @@ onUnmounted(() => {
                       :href="`/admin/votaciones/${poll.id}`"
                       class="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
                     >
-                      Gestionar
+                      {{ $t('admin.polls.manage') }}
                     </a>
                     <a
                       :href="`/admin/votaciones/editar/${poll.id}`"
                       class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
                     >
-                      Editar
+                      {{ $t('admin.common.edit') }}
                     </a>
                     <button
                       type="button"
                       class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
                       @click="removePoll(poll)"
                     >
-                      Eliminar
+                      {{ $t('admin.common.delete') }}
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="!polls.length">
                 <td colspan="6" class="px-4 py-10 text-center">
-                  <p class="text-lg font-black text-white">Todavia no hay votaciones.</p>
+                  <p class="text-lg font-black text-white">{{ $t('admin.polls.empty') }}</p>
                   <p class="mt-2 text-sm text-slate-400">
-                    Crea la primera votacion para lanzarla en vivo.
+                    {{ $t('admin.polls.emptyDescription') }}
                   </p>
                   <a
                     href="/admin/votaciones/crear"
                     class="mt-5 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white"
                   >
-                    Crear votacion
+                    {{ $t('admin.polls.create') }}
                   </a>
                 </td>
               </tr>

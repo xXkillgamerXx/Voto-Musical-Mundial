@@ -4,16 +4,21 @@ import {
   collection,
   doc,
   getDocs,
-  increment,
   onSnapshot,
   orderBy,
   query,
-  runTransaction,
-  serverTimestamp,
   where,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../firebase";
+import { translate } from "../i18n";
+import { getArtistsCached } from "../services/firebaseCache";
+import {
+  loadContestantMetadata,
+  mergeContestantsWithPublicResults,
+  subscribePublicResults,
+} from "../services/pollResults";
+import { createVoteQueue, shardCountForConcurrency } from "../services/voteQueue";
 
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeYear = Number(pathParts[1]) || new Date().getFullYear();
@@ -44,7 +49,10 @@ let unsubscribePoll = null;
 let unsubscribeContestants = null;
 let unsubscribeRounds = null;
 let unsubscribeUserPoints = null;
+let unsubscribePublicResults = null;
 let clockTimer = null;
+let voteQueue = null;
+let listeningContestantsKey = "";
 const POINTS_PER_VOTE = 1;
 
 const getArtist = (artistId) =>
@@ -396,7 +404,7 @@ const shareFinalWinner = async (winner) => {
     }
 
     await navigator.clipboard.writeText(`${title}\n${text}\n${url}`);
-    shareMessage.value = "Link del ganador copiado.";
+    shareMessage.value = translate("polls.detail.shareFinalCopied");
     window.setTimeout(() => {
       shareMessage.value = "";
     }, 3000);
@@ -405,7 +413,7 @@ const shareFinalWinner = async (winner) => {
       return;
     }
 
-    errorMessage.value = "No se pudo compartir el ganador.";
+    errorMessage.value = translate("polls.detail.shareFinalError");
   }
 };
 
@@ -632,60 +640,41 @@ const getRoundContestants = async (round) => {
     .sort((current, next) => next.totalVotes - current.totalVotes);
 };
 
-const getVoteTotalsByArtist = async (roundIds = []) => {
-  const selectedPollId = poll.value?.id || currentPollId.value;
+const listenContestants = async (pollId) => {
+  unsubscribeContestants?.();
+  unsubscribePublicResults?.();
 
-  if (!selectedPollId) {
-    return new Map();
+  const roundId = activeRound.value?.id || null;
+  const contestantsKey = `${pollId}:${roundId || "root"}`;
+
+  if (listeningContestantsKey === contestantsKey && contestants.value.length) {
+    return;
   }
 
-  const allowedRoundIds = new Set(roundIds.filter(Boolean));
-  const votesSnap = await getDocs(collection(db, "polls", selectedPollId, "votes"));
-  const totals = new Map();
+  listeningContestantsKey = contestantsKey;
 
-  votesSnap.docs.forEach((voteDoc) => {
-    const vote = voteDoc.data();
+  try {
+    contestants.value = await loadContestantMetadata(db, pollId, roundId);
+    unsubscribePublicResults = subscribePublicResults(db, {
+      pollId,
+      roundId,
+      onData: (publicResults) => {
+        if (!publicResults) {
+          return;
+        }
 
-    if (allowedRoundIds.size && !allowedRoundIds.has(vote.roundId)) {
-      return;
-    }
-
-    if (!vote.artistId) {
-      return;
-    }
-
-    totals.set(vote.artistId, (totals.get(vote.artistId) || 0) + Number(vote.amount || 1));
-  });
-
-  return totals;
-};
-
-const listenContestants = (pollId) => {
-  unsubscribeContestants?.();
-
-  const contestantsCollection = activeRound.value
-    ? collection(
-        db,
-        "polls",
-        pollId,
-        "rounds",
-        activeRound.value.id,
-        "contestants",
-      )
-    : collection(db, "polls", pollId, "contestants");
-
-  unsubscribeContestants = onSnapshot(
-    contestantsCollection,
-    (contestantsSnap) => {
-      contestants.value = contestantsSnap.docs.map((contestantDoc) => ({
-        id: contestantDoc.id,
-        ...contestantDoc.data(),
-      }));
-    },
-    () => {
-      errorMessage.value = "No se pudieron cargar los participantes.";
-    },
-  );
+        contestants.value = mergeContestantsWithPublicResults(
+          contestants.value,
+          publicResults,
+        );
+      },
+      onError: () => {
+        errorMessage.value = translate("polls.detail.liveResultsError");
+      },
+    });
+  } catch {
+    errorMessage.value = translate("polls.detail.contestantsError");
+  }
 };
 
 const loadSelectedRoundContestants = async (round) => {
@@ -715,7 +704,7 @@ const loadSelectedRoundContestants = async (round) => {
         return currentRank - nextRank || next.totalVotes - current.totalVotes;
       });
   } catch {
-    errorMessage.value = "No se pudieron cargar los participantes de la ronda.";
+    errorMessage.value = translate("polls.detail.roundContestantsError");
   } finally {
     isLoadingSelectedRound.value = false;
   }
@@ -732,10 +721,6 @@ const loadFinalResultContestants = async () => {
     .filter((round) => round.status === "closed")
     .slice();
   const totalsByArtist = new Map();
-  const voteTotalsByArtist = await getVoteTotalsByArtist(
-    closedRounds.map((round) => round.id),
-  );
-  const hasVoteCollectionTotals = voteTotalsByArtist.size > 0;
 
   for (const round of closedRounds) {
     try {
@@ -744,9 +729,7 @@ const loadFinalResultContestants = async () => {
       roundContestants.forEach((contestant) => {
         const artistId = contestant.artistId || contestant.id;
         const currentTotal = totalsByArtist.get(artistId);
-        const totalVotes = hasVoteCollectionTotals
-          ? voteTotalsByArtist.get(artistId) || currentTotal?.totalVotes || 0
-          : (currentTotal?.totalVotes || 0) + contestant.totalVotes;
+        const totalVotes = (currentTotal?.totalVotes || 0) + contestant.totalVotes;
 
         totalsByArtist.set(artistId, {
           ...contestant,
@@ -778,20 +761,18 @@ const listenRounds = (pollId) => {
       }));
       listenContestants(pollId);
       syncSelectedRoundFromUrl();
-      loadFinalResultContestants();
+      if (poll.value?.status === "closed") {
+        loadFinalResultContestants();
+      }
     },
     () => {
-      errorMessage.value = "No se pudieron cargar las rondas.";
+      errorMessage.value = translate("polls.detail.roundsError");
     },
   );
 };
 
 const loadArtists = async () => {
-  const artistsSnap = await getDocs(collection(db, "artists"));
-  artists.value = artistsSnap.docs.map((artistDoc) => ({
-    id: artistDoc.id,
-    ...artistDoc.data(),
-  }));
+  artists.value = await getArtistsCached(db);
 };
 
 const loadPoll = async () => {
@@ -812,7 +793,7 @@ const loadPoll = async () => {
       }) || pollsSnap.docs[0];
 
     if (!pollDoc) {
-      errorMessage.value = "No encontramos esa votacion.";
+      errorMessage.value = translate("polls.detail.notFound");
       poll.value = null;
       currentPollId.value = "";
       return;
@@ -826,7 +807,7 @@ const loadPoll = async () => {
     });
     listenRounds(pollDoc.id);
   } catch {
-    errorMessage.value = "No se pudo cargar la votacion.";
+    errorMessage.value = translate("polls.detail.loadError");
   } finally {
     isLoading.value = false;
   }
@@ -854,17 +835,17 @@ const openVoteModal = (contestant) => {
   errorMessage.value = "";
 
   if (!currentUser.value) {
-    errorMessage.value = "Inicia sesion para votar.";
+    errorMessage.value = translate("polls.detail.loginToVote");
     return;
   }
 
   if (!poll.value?.id || !isVotingOpen.value) {
-    errorMessage.value = "La votacion no esta abierta.";
+    errorMessage.value = translate("polls.detail.closedVoting");
     return;
   }
 
   if (!hasEnoughPointsToVote.value) {
-    errorMessage.value = "No tienes puntos suficientes para votar.";
+    errorMessage.value = translate("polls.detail.notEnoughPoints");
     return;
   }
 
@@ -887,12 +868,12 @@ const voteFor = async (contestant, amount = 1) => {
   errorMessage.value = "";
 
   if (!currentUser.value) {
-    errorMessage.value = "Inicia sesion para votar.";
+    errorMessage.value = translate("polls.detail.loginToVote");
     return;
   }
 
   if (!poll.value?.id || !isVotingOpen.value) {
-    errorMessage.value = "La votacion no esta abierta.";
+    errorMessage.value = translate("polls.detail.closedVoting");
     return;
   }
 
@@ -900,57 +881,29 @@ const voteFor = async (contestant, amount = 1) => {
   const pointsToSpend = votesToAdd * POINTS_PER_VOTE;
 
   if (!Number.isInteger(votesToAdd) || votesToAdd < 1) {
-    errorMessage.value = "Indica cuantos votos quieres dar.";
+    errorMessage.value = translate("polls.detail.voteAmountRequired");
     return;
   }
 
   if (Number(userPoints.value || 0) < pointsToSpend) {
-    errorMessage.value = "No tienes puntos suficientes para votar.";
+    errorMessage.value = translate("polls.detail.notEnoughPoints");
     return;
   }
 
-  isVoting.value = contestant.artistId;
-
   try {
-    const voteRef = doc(collection(db, "polls", poll.value.id, "votes"));
-    const userRef = doc(db, "users", currentUser.value.uid);
-    const contestantRef = activeRound.value
-      ? doc(
-          db,
-          "polls",
-          poll.value.id,
-          "rounds",
-          activeRound.value.id,
-          "contestants",
-          contestant.artistId,
-        )
-      : doc(db, "polls", poll.value.id, "contestants", contestant.artistId);
-
-    await runTransaction(db, async (transaction) => {
-      const userSnap = await transaction.get(userRef);
-      const availablePoints = Number(userSnap.data()?.points || 0);
-
-      if (availablePoints < pointsToSpend) {
-        throw new Error("not-enough-points");
-      }
-
-      transaction.update(userRef, {
-        points: increment(-pointsToSpend),
-        spentPoints: increment(pointsToSpend),
-      });
-      transaction.set(voteRef, {
-        userId: currentUser.value.uid,
-        artistId: contestant.artistId,
-        roundId: activeRound.value?.id || null,
-        amount: votesToAdd,
-        pointsSpent: pointsToSpend,
-        createdAt: serverTimestamp(),
-      });
-      transaction.update(contestantRef, {
-        votes: increment(votesToAdd),
-        totalVotes: increment(votesToAdd),
-      });
+    isVoting.value = contestant.artistId;
+    voteQueue.enqueue({
+      pollId: poll.value.id,
+      roundId: activeRound.value?.id || null,
+      artistId: contestant.artistId,
+      userId: currentUser.value.uid,
+      userDisplayName: currentUser.value.displayName || currentUser.value.email || "",
+      userPhotoURL: currentUser.value.photoURL || "",
+      amount: votesToAdd,
+      pointsPerVote: POINTS_PER_VOTE,
+      shardCount: shardCountForConcurrency(100000),
     });
+    userPoints.value = Math.max(0, Number(userPoints.value || 0) - pointsToSpend);
     closeVoteModal();
   } catch (error) {
     errorMessage.value =
@@ -972,6 +925,21 @@ const confirmVoteAmount = () => {
 };
 
 onMounted(() => {
+  voteQueue = createVoteQueue({
+    db,
+    onFlushStart: (batches) => {
+      isVoting.value = batches[0]?.artistId || "";
+    },
+    onFlushEnd: () => {
+      isVoting.value = "";
+    },
+    onError: (error) => {
+      errorMessage.value =
+        error.message === "not-enough-points"
+          ? translate("polls.detail.notEnoughPoints")
+          : translate("polls.detail.batchVoteError");
+    },
+  });
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     currentUser.value = user;
     listenUserPoints(user);
@@ -986,8 +954,11 @@ onUnmounted(() => {
   unsubscribeAuth?.();
   unsubscribePoll?.();
   unsubscribeContestants?.();
+  unsubscribePublicResults?.();
   unsubscribeRounds?.();
   unsubscribeUserPoints?.();
+  voteQueue?.flush().catch(() => {});
+  voteQueue?.dispose();
   window.clearInterval(clockTimer);
 });
 </script>
@@ -998,7 +969,7 @@ onUnmounted(() => {
       v-if="isLoading"
       class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-300"
     >
-      Cargando votacion...
+      {{ $t("polls.detail.loading") }}
     </div>
 
     <div
@@ -1028,7 +999,7 @@ onUnmounted(() => {
             <p
               class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300"
             >
-              Votacion en vivo
+              {{ $t("polls.detail.liveEyebrow") }}
             </p>
             <h1
               class="mt-3 text-4xl font-black leading-none text-white sm:text-6xl"
@@ -1125,9 +1096,9 @@ onUnmounted(() => {
                       : 'bg-white/5 text-slate-500'
                 "
               >
-                <span v-if="round.isActive">En progreso</span>
-                <span v-else-if="round.status === 'closed'">Finalizada</span>
-                <span v-else>Preparando</span>
+                <span v-if="round.isActive">{{ $t("polls.detail.inProgress") }}</span>
+                <span v-else-if="round.status === 'closed'">{{ $t("polls.detail.finished") }}</span>
+                <span v-else>{{ $t("polls.detail.preparing") }}</span>
               </p>
 
               <p class="mt-3 text-xs font-bold text-slate-500">
@@ -1149,7 +1120,7 @@ onUnmounted(() => {
               >
                 Siguiente
               </p>
-              <p class="mt-1 text-sm font-black text-white">Próximamente</p>
+              <p class="mt-1 text-sm font-black text-white">{{ $t("polls.detail.comingSoon") }}</p>
             </div>
           </div>
         </div>
@@ -1321,7 +1292,7 @@ onUnmounted(() => {
                 >
                   <i class="fa-solid fa-trophy" aria-hidden="true"></i>
                 </span>
-                <span>Ver salón de la fama</span>
+                <span>{{ $t("polls.detail.viewHallOfFame") }}</span>
               </a>
               <button
                 type="button"
@@ -1333,7 +1304,7 @@ onUnmounted(() => {
                 >
                   <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
                 </span>
-                <span>Compartir ganador</span>
+                <span>{{ $t("polls.detail.shareWinner") }}</span>
               </button>
             </span>
           </div>
@@ -1549,7 +1520,7 @@ onUnmounted(() => {
             ></span>
             <span
               class="text-xs font-black uppercase tracking-widest text-slate-300"
-              >Procesando resultados en vivo</span
+              >{{ $t("polls.detail.processingLiveResults") }}</span
             >
           </div>
         </div>
@@ -1865,7 +1836,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-xl font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
-              aria-label="Cerrar"
+              :aria-label="$t('polls.detail.close')"
               @click="closeVoteModal"
             >
               ×
@@ -1905,7 +1876,7 @@ onUnmounted(() => {
                       type="button"
                       class="grid min-h-14 min-w-14 place-items-center rounded-2xl border border-white/10 bg-white/5 text-3xl font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
                       :disabled="normalizedVoteAmount <= 1"
-                      aria-label="Restar un voto"
+                      :aria-label="$t('polls.detail.decrementVote')"
                       @click="adjustVoteAmount(-1)"
                     >
                       −
@@ -1923,7 +1894,7 @@ onUnmounted(() => {
                       type="button"
                       class="grid min-h-14 min-w-14 place-items-center rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-3xl font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                       :disabled="normalizedVoteAmount >= maxVoteAmount"
-                      aria-label="Sumar un voto"
+                      :aria-label="$t('polls.detail.incrementVote')"
                       @click="adjustVoteAmount(1)"
                     >
                       +

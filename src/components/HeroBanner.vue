@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
+import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 
 const activeSlide = ref(0)
 const animatedVotes = ref(0)
@@ -154,48 +154,17 @@ const animateBannerStats = () => {
   statsAnimationFrame = window.requestAnimationFrame(tick)
 }
 
-const loadArtists = async () => {
-  const artistsSnap = await getDocs(collection(db, 'artists'))
-  artists.value = artistsSnap.docs.map((artistDoc) => ({
-    id: artistDoc.id,
-    ...artistDoc.data(),
-  }))
-}
-
-const buildLiveSlide = async (pollDoc, index) => {
-  const poll = {
-    id: pollDoc.id,
-    ...pollDoc.data(),
-  }
-  const roundsSnap = await getDocs(collection(db, 'polls', pollDoc.id, 'rounds'))
-  const contestantSnaps = await Promise.all(
-    roundsSnap.docs.map((roundDoc) =>
-      getDocs(collection(db, 'polls', pollDoc.id, 'rounds', roundDoc.id, 'contestants')),
-    ),
-  )
-  const contestants = contestantSnaps.flatMap((snap) =>
-    snap.docs.map((contestantDoc) => ({
-      id: contestantDoc.id,
-      ...contestantDoc.data(),
-    })),
-  )
-  const rankedContestants = contestants
-    .map((contestant) => ({
-      ...contestant,
-      totalVotes: Number(contestant.totalVotes ?? (contestant.votes || 0) + (contestant.manualVotes || 0)),
-    }))
-    .sort((current, next) => next.totalVotes - current.totalVotes)
-  const leader = rankedContestants[0]
-  const totalVotes = rankedContestants.reduce((total, contestant) => total + contestant.totalVotes, 0)
-  const leaderVotes = leader?.totalVotes || 0
+const buildLiveSlide = (poll, index) => {
+  const totalVotes = Number(poll.totalVotes || 0)
+  const leaderVotes = Number(poll.leaderVotes || 0)
   const percent = totalVotes ? (leaderVotes / totalVotes) * 100 : 0
-  const leaderName = getArtistName(leader?.artistId)
+  const leaderName = getArtistName(poll.leaderArtistId)
 
   return {
     badge: index === 0 ? '#1 en vivo' : 'Votacion en vivo',
     status: poll.status === 'selecting_winners' ? 'En proceso' : 'En vivo',
     eyebrow: poll.title || 'Votacion activa',
-    title: leader?.artistId ? `${leaderName} lidera la votacion` : poll.title || 'Vota por tu artista favorito',
+    title: poll.leaderArtistId ? `${leaderName} lidera la votacion` : poll.title || 'Vota por tu artista favorito',
     description: poll.description || 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
     category: poll.category || 'Lista',
     leader: leaderName,
@@ -209,13 +178,10 @@ const buildLiveSlide = async (pollDoc, index) => {
 }
 
 const listenLivePolls = () => {
-  unsubscribePolls = onSnapshot(
-    query(collection(db, 'polls'), where('status', 'in', ['live', 'selecting_winners'])),
-    async (pollsSnap) => {
-      const slides = await Promise.all(
-        pollsSnap.docs.slice(0, 3).map((pollDoc, index) => buildLiveSlide(pollDoc, index)),
-      )
-      liveSlides.value = slides.filter(Boolean)
+  unsubscribePolls = subscribeLivePollsCached(
+    db,
+    (pollRows) => {
+      liveSlides.value = pollRows.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index))
       activeSlide.value = Math.min(activeSlide.value, Math.max(bannerSlides.value.length - 1, 0))
       animateBannerStats()
     },
@@ -229,14 +195,19 @@ watch([activeSlide, bannerSlides], () => {
   animateBannerStats()
 })
 
-onMounted(async () => {
-  await loadArtists()
+let unsubscribeArtists = null
+
+onMounted(() => {
+  unsubscribeArtists = subscribeArtistsCached(db, (artistRows) => {
+    artists.value = artistRows
+  })
   listenLivePolls()
   animateBannerStats()
   autoplayTimer = window.setInterval(goToNextSlide, 5000)
 })
 
 onUnmounted(() => {
+  unsubscribeArtists?.()
   unsubscribePolls?.()
   window.clearInterval(autoplayTimer)
   if (statsAnimationFrame) {
@@ -260,7 +231,7 @@ onUnmounted(() => {
     <button
       type="button"
       class="absolute left-4 top-1/2 z-20 hidden size-11 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/35 text-xl text-white shadow-xl backdrop-blur transition hover:bg-white/15 md:grid"
-      aria-label="Banner anterior"
+      :aria-label="$t('widgets.hero.previous')"
       @click="goToPreviousSlide"
     >
       ‹
@@ -269,7 +240,7 @@ onUnmounted(() => {
     <button
       type="button"
       class="absolute right-4 top-1/2 z-20 hidden size-11 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/35 text-xl text-white shadow-xl backdrop-blur transition hover:bg-white/15 md:grid"
-      aria-label="Banner siguiente"
+      :aria-label="$t('widgets.hero.next')"
       @click="goToNextSlide"
     >
       ›
@@ -304,12 +275,12 @@ onUnmounted(() => {
             </p>
             <div class="mt-1 flex items-center gap-3">
               <span class="text-4xl font-black text-white">❤ {{ formatVotes(animatedVotes) }}</span>
-              <span class="text-sm font-bold text-slate-300">votos</span>
+              <span class="text-sm font-bold text-slate-300">{{ $t('widgets.hero.votes') }}</span>
             </div>
           </div>
           <div>
             <p class="text-2xl font-black text-fuchsia-300">{{ formatPercent(animatedPercent) }}</p>
-            <p class="text-xs text-slate-400">del top actual</p>
+            <p class="text-xs text-slate-400">{{ $t('widgets.hero.currentTop') }}</p>
           </div>
         </div>
 
@@ -340,14 +311,14 @@ onUnmounted(() => {
             :href="currentSlide.href"
             class="flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-center text-sm font-black uppercase tracking-wide shadow-xl shadow-fuchsia-500/25 transition hover:scale-[1.02]"
           >
-            <span>Votar ahora</span>
+            <span>{{ $t('common.actions.voteNow') }}</span>
             <span aria-hidden="true">→</span>
           </a>
           <a
             href="/ranking-popularity"
             class="flex min-h-14 items-center justify-center rounded-2xl border border-white/15 bg-white/5 px-6 text-center text-sm font-bold text-slate-200 transition hover:bg-white/10"
           >
-            Ver rankings
+            {{ $t('widgets.hero.viewRankings') }}
           </a>
         </div>
 
@@ -358,7 +329,7 @@ onUnmounted(() => {
             type="button"
             class="h-2 rounded-full transition-all"
             :class="activeSlide === index ? 'w-10 bg-fuchsia-300' : 'w-2 bg-white/30 hover:bg-white/60'"
-            :aria-label="`Ver banner ${index + 1}`"
+            :aria-label="$t('widgets.hero.viewBanner', { number: index + 1 })"
             @click="activeSlide = index"
           ></button>
         </div>

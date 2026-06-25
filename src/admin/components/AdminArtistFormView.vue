@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { db, storage } from '../../firebase'
+import { translate } from '../../i18n'
 
 const props = defineProps({
   artistId: {
@@ -98,7 +99,7 @@ const uploadArtistImage = async (file, field) => {
   successMessage.value = ''
 
   if (!isAcceptedImageFile(file)) {
-    errorMessage.value = 'Solo puedes subir imagenes JPG, PNG o WebP.'
+    errorMessage.value = translate('admin.artistForm.errors.imageType')
     return
   }
 
@@ -118,7 +119,7 @@ const uploadArtistImage = async (file, field) => {
     artistForm.value[field] = await getDownloadURL(imageRef)
     successMessage.value = isBanner ? 'Banner subido.' : 'Foto de perfil subida.'
   } catch {
-    errorMessage.value = 'No se pudo subir la imagen.'
+    errorMessage.value = translate('admin.artistForm.errors.upload')
   } finally {
     if (isBanner) {
       isUploadingBanner.value = false
@@ -152,7 +153,7 @@ const loadArtist = async () => {
     const artistSnap = await getDoc(doc(db, 'artists', props.artistId))
 
     if (!artistSnap.exists()) {
-      errorMessage.value = 'Ese artista no existe.'
+      errorMessage.value = translate('admin.artistForm.errors.missingArtist')
       return
     }
 
@@ -168,7 +169,7 @@ const loadArtist = async () => {
       status: artist.status || 'active',
     }
   } catch {
-    errorMessage.value = 'No se pudo cargar el artista.'
+    errorMessage.value = translate('admin.artistForm.errors.load')
   } finally {
     isLoading.value = false
   }
@@ -179,7 +180,7 @@ const saveArtist = async () => {
   successMessage.value = ''
 
   if (!artistForm.value.name.trim()) {
-    errorMessage.value = 'El nombre del artista es obligatorio.'
+    errorMessage.value = translate('admin.artistForm.errors.nameRequired')
     return
   }
 
@@ -202,17 +203,17 @@ const saveArtist = async () => {
   try {
     if (isEditing.value) {
       await updateDoc(doc(db, 'artists', props.artistId), artistData)
-      successMessage.value = 'Artista actualizado.'
+      successMessage.value = translate('admin.artistForm.updated')
     } else {
       await addDoc(collection(db, 'artists'), {
         ...artistData,
         createdAt: serverTimestamp(),
       })
-      successMessage.value = 'Artista creado.'
+      successMessage.value = translate('admin.artistForm.created')
       artistForm.value = { ...emptyArtist }
     }
   } catch {
-    errorMessage.value = 'No se pudo guardar el artista.'
+    errorMessage.value = translate('admin.artistForm.errors.save')
   } finally {
     isSaving.value = false
   }
@@ -294,51 +295,51 @@ onMounted(loadArtist)
 
         <div class="space-y-4">
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Nombre</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.name') }}</span>
             <input
               v-model="artistForm.name"
               type="text"
               required
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              placeholder="Jungkook"
+              :placeholder="$t('admin.artistForm.namePlaceholder')"
             />
           </label>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Grupo musical / Banda</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.group') }}</span>
               <input
                 v-model="artistForm.group"
                 type="text"
                 class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-                placeholder="BLACKPINK, BTS, solista..."
+                :placeholder="$t('admin.artistForm.groupPlaceholder')"
               />
             </label>
 
             <label class="block">
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Pais</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.country') }}</span>
               <input
                 v-model="artistForm.country"
                 type="text"
                 class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-                placeholder="Corea del Sur"
+                :placeholder="$t('admin.artistForm.countryPlaceholder')"
               />
             </label>
           </div>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Rol</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.role') }}</span>
             <input
               v-model="artistForm.role"
               type="text"
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              placeholder="Vocalista, bailarin, solista"
+              :placeholder="$t('admin.artistForm.rolePlaceholder')"
             />
           </label>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Banner</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.banner') }}</span>
               <label
                 class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-fuchsia-300/35 bg-fuchsia-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
                 @dragover.prevent
@@ -360,7 +361,7 @@ onMounted(loadArtist)
             </div>
 
             <div>
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Foto de perfil</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.profilePhoto') }}</span>
               <label
                 class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-300/35 bg-cyan-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
                 @dragover.prevent
@@ -383,24 +384,24 @@ onMounted(loadArtist)
           </div>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Biografia</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.bio') }}</span>
             <textarea
               v-model="artistForm.bio"
               rows="4"
               class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              placeholder="Descripcion corta del artista"
+              :placeholder="$t('admin.artistForm.bioPlaceholder')"
             ></textarea>
           </label>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Estado</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.status') }}</span>
             <select
               v-model="artistForm.status"
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
             >
-              <option value="active">Activo</option>
-              <option value="draft">Borrador</option>
-              <option value="hidden">Oculto</option>
+              <option value="active">{{ $t('admin.artistForm.active') }}</option>
+              <option value="draft">{{ $t('common.status.draft') }}</option>
+              <option value="hidden">{{ $t('admin.artistForm.hidden') }}</option>
             </select>
           </label>
 

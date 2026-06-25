@@ -13,6 +13,7 @@ import {
   setDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const props = defineProps({
   pollId: {
@@ -60,7 +61,7 @@ const loadBaseData = async () => {
     ])
 
     if (!pollSnap.exists()) {
-      errorMessage.value = 'Esa votacion no existe.'
+      errorMessage.value = translate('admin.contestants.errors.missingPoll')
       return
     }
 
@@ -70,7 +71,7 @@ const loadBaseData = async () => {
       ...artistDoc.data(),
     }))
   } catch {
-    errorMessage.value = 'No se pudieron cargar los datos de la votacion.'
+    errorMessage.value = translate('admin.contestants.errors.load')
   } finally {
     isLoading.value = false
   }
@@ -86,7 +87,7 @@ const listenContestants = () => {
       }))
     },
     () => {
-      errorMessage.value = 'No se pudieron escuchar los participantes.'
+      errorMessage.value = translate('admin.contestants.errors.listen')
     },
   )
 }
@@ -105,15 +106,17 @@ const addContestant = async (artist) => {
       winnerRank: null,
       addedAt: serverTimestamp(),
     })
-    successMessage.value = 'Artista agregado a la votacion.'
+    successMessage.value = translate('admin.contestants.added')
   } catch {
-    errorMessage.value = 'No se pudo agregar el artista.'
+    errorMessage.value = translate('admin.contestants.errors.add')
   }
 }
 
 const removeContestant = async (contestant) => {
   const artist = getArtist(contestant.artistId)
-  const shouldRemove = window.confirm(`Quitar a ${artist?.name || 'este artista'} de la votacion?`)
+  const shouldRemove = window.confirm(translate('admin.contestants.confirmRemove', {
+    name: artist?.name || translate('admin.common.artist'),
+  }))
 
   if (!shouldRemove) {
     return
@@ -124,9 +127,9 @@ const removeContestant = async (contestant) => {
 
   try {
     await deleteDoc(doc(db, 'polls', props.pollId, 'contestants', contestant.id))
-    successMessage.value = 'Artista quitado de la votacion.'
+    successMessage.value = translate('admin.contestants.removed')
   } catch {
-    errorMessage.value = 'No se pudo quitar el artista.'
+    errorMessage.value = translate('admin.contestants.errors.remove')
   }
 }
 
@@ -145,13 +148,13 @@ onUnmounted(() => {
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-          Participantes
+          {{ $t('admin.contestants.eyebrow') }}
         </p>
         <h2 class="mt-2 text-3xl font-black text-white">
-          {{ poll?.title || 'Votacion' }}
+          {{ poll?.title || $t('admin.contestants.defaultPoll') }}
         </h2>
         <p class="mt-2 text-sm text-slate-400">
-          Agrega artistas globales a esta votacion tipo lista.
+          {{ $t('admin.contestants.description') }}
         </p>
       </div>
 
@@ -159,7 +162,7 @@ onUnmounted(() => {
         href="/admin/votaciones"
         class="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
       >
-        Volver a votaciones
+        {{ $t('admin.common.backToPolls') }}
       </a>
     </div>
 
@@ -180,12 +183,12 @@ onUnmounted(() => {
       v-if="isLoading"
       class="rounded-3xl border border-white/10 bg-white/4 p-5 text-sm font-bold text-slate-300"
     >
-      Cargando participantes...
+      {{ $t('admin.contestants.loading') }}
     </div>
 
     <div v-else class="grid gap-6 xl:grid-cols-2">
       <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
-        <h3 class="text-2xl font-black text-white">Artistas disponibles</h3>
+        <h3 class="text-2xl font-black text-white">{{ $t('admin.contestants.available') }}</h3>
         <div class="mt-5 space-y-3">
           <div
             v-for="artist in availableArtists"
@@ -204,7 +207,7 @@ onUnmounted(() => {
               </span>
               <span class="min-w-0">
                 <span class="block truncate font-black text-white">{{ artist.name }}</span>
-                <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(artist) || 'Sin grupo' }}</span>
+                <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(artist) || $t('admin.common.noGroup') }}</span>
               </span>
             </div>
             <button
@@ -212,17 +215,17 @@ onUnmounted(() => {
               class="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               @click="addContestant(artist)"
             >
-              Agregar
+              {{ $t('admin.contestants.add') }}
             </button>
           </div>
           <p v-if="!availableArtists.length" class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400">
-            No hay artistas disponibles para agregar.
+            {{ $t('admin.contestants.emptyAvailable') }}
           </p>
         </div>
       </article>
 
       <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
-        <h3 class="text-2xl font-black text-white">Participantes actuales</h3>
+        <h3 class="text-2xl font-black text-white">{{ $t('admin.contestants.current') }}</h3>
         <div class="mt-5 space-y-3">
           <div
             v-for="contestant in currentContestants"
@@ -240,9 +243,9 @@ onUnmounted(() => {
                 <span v-else>{{ contestant.artist?.name?.charAt(0) || 'A' }}</span>
               </span>
               <span class="min-w-0">
-                <span class="block truncate font-black text-white">{{ contestant.artist?.name || 'Artista' }}</span>
+                <span class="block truncate font-black text-white">{{ contestant.artist?.name || $t('admin.common.artist') }}</span>
                 <span class="block truncate text-xs text-slate-400">
-                  {{ contestant.totalVotes || 0 }} votos
+                  {{ $t('admin.common.votes', { count: contestant.totalVotes || 0 }) }}
                 </span>
               </span>
             </div>
@@ -251,11 +254,11 @@ onUnmounted(() => {
               class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
               @click="removeContestant(contestant)"
             >
-              Quitar
+              {{ $t('admin.contestants.remove') }}
             </button>
           </div>
           <p v-if="!currentContestants.length" class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400">
-            Esta votacion todavia no tiene participantes.
+            {{ $t('admin.contestants.emptyCurrent') }}
           </p>
         </div>
       </article>

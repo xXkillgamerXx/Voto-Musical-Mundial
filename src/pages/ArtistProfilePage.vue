@@ -23,7 +23,7 @@ const routeArtistKey = pathParts[1] || "";
 
 const artist = ref(null);
 const artistPolls = ref([]);
-const followers = ref([]);
+const followersCount = ref(0);
 const currentUser = ref(null);
 const isFollowing = ref(false);
 const isLoading = ref(true);
@@ -31,7 +31,6 @@ const isTogglingFollow = ref(false);
 const errorMessage = ref("");
 
 let unsubscribeAuth = null;
-let unsubscribeFollowers = null;
 let unsubscribeFollowDoc = null;
 
 const getArtistImage = (artistData) =>
@@ -54,7 +53,7 @@ const getArtistGroup = (artistData) =>
   artistData?.group || artistData?.fandom || "";
 
 const formattedFollowers = computed(() =>
-  followers.value.length.toLocaleString(locale.value),
+  followersCount.value.toLocaleString(locale.value),
 );
 
 const totalVotes = computed(() =>
@@ -78,7 +77,7 @@ const averageSupport = computed(() => {
 });
 
 const popularityScore = computed(() =>
-  Math.round(followers.value.length * 10 + totalVotes.value),
+  Number(artist.value?.popularityScore || Math.round(followersCount.value * 10 + totalVotes.value)),
 );
 
 const stats = computed(() => [
@@ -125,26 +124,13 @@ const loadArtist = async () => {
           ...artistSnapById.data(),
         };
 
-    listenFollowers();
-    await loadArtistPollStats();
+    followersCount.value = Number(artist.value.followersCount || 0);
+    loadArtistPollStats();
   } catch {
     errorMessage.value = translate("artists.profileErrors.load");
   } finally {
     isLoading.value = false;
   }
-};
-
-const listenFollowers = () => {
-  unsubscribeFollowers?.();
-  unsubscribeFollowers = onSnapshot(
-    collection(db, "artists", artist.value.id, "followers"),
-    (followersSnap) => {
-      followers.value = followersSnap.docs.map((followerDoc) => ({
-        id: followerDoc.id,
-        ...followerDoc.data(),
-      }));
-    },
-  );
 };
 
 const listenFollowState = () => {
@@ -163,97 +149,13 @@ const listenFollowState = () => {
   );
 };
 
-const loadArtistPollStats = async () => {
+const loadArtistPollStats = () => {
   if (!artist.value?.id) {
     artistPolls.value = [];
     return;
   }
 
-  const pollsSnap = await getDocs(collection(db, "polls"));
-  const stats = await Promise.all(
-    pollsSnap.docs.map(async (pollDoc) => {
-      const poll = {
-        id: pollDoc.id,
-        ...pollDoc.data(),
-      };
-
-      const roundsSnap = await getDocs(
-        collection(db, "polls", pollDoc.id, "rounds"),
-      );
-      const contestantDocs = await Promise.all(
-        roundsSnap.docs.map((roundDoc) =>
-          getDocs(
-            query(
-              collection(
-                db,
-                "polls",
-                pollDoc.id,
-                "rounds",
-                roundDoc.id,
-                "contestants",
-              ),
-              where("artistId", "==", artist.value.id),
-            ),
-          ),
-        ),
-      );
-      const contestants = contestantDocs.flatMap((snap) =>
-        snap.docs.map((contestantDoc) => contestantDoc.data()),
-      );
-      const votes = contestants.reduce(
-        (total, contestant) =>
-          total +
-          Number(
-            contestant.totalVotes ??
-              (contestant.votes || 0) + (contestant.manualVotes || 0),
-          ),
-        0,
-      );
-
-      if (!votes) {
-        return null;
-      }
-
-      const totalPollVotes = roundsSnap.docs.length
-        ? (
-            await Promise.all(
-              roundsSnap.docs.map((roundDoc) =>
-                getDocs(
-                  collection(
-                    db,
-                    "polls",
-                    pollDoc.id,
-                    "rounds",
-                    roundDoc.id,
-                    "contestants",
-                  ),
-                ),
-              ),
-            )
-          )
-            .flatMap((snap) =>
-              snap.docs.map((contestantDoc) => contestantDoc.data()),
-            )
-            .reduce(
-              (total, contestant) =>
-                total +
-                Number(
-                  contestant.totalVotes ??
-                    (contestant.votes || 0) + (contestant.manualVotes || 0),
-                ),
-              0,
-            )
-        : votes;
-
-      return {
-        title: poll.title || translate("artists.profile.defaultPollTitle"),
-        status: poll.status || "draft",
-        votes,
-        totalVotes: totalPollVotes,
-        percent: totalPollVotes ? (votes / totalPollVotes) * 100 : 0,
-      };
-    }),
-  );
+  const stats = artist.value.pollStats || artist.value.recentPollStats || [];
 
   artistPolls.value = stats
     .filter(Boolean)
@@ -292,6 +194,7 @@ const toggleFollow = async () => {
 
     if (isFollowing.value) {
       await Promise.all([deleteDoc(artistFollowRef), deleteDoc(userFollowRef)]);
+      followersCount.value = Math.max(0, followersCount.value - 1);
     } else {
       const followData = {
         artistId: artist.value.id,
@@ -306,6 +209,7 @@ const toggleFollow = async () => {
         setDoc(artistFollowRef, followData),
         setDoc(userFollowRef, followData),
       ]);
+      followersCount.value += 1;
     }
   } catch {
     errorMessage.value = translate("artists.profileErrors.follow");
@@ -326,7 +230,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unsubscribeAuth?.();
-  unsubscribeFollowers?.();
   unsubscribeFollowDoc?.();
 });
 </script>

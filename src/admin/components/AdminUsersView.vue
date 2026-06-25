@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { collection, doc, getDocs, increment, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const users = ref([])
 const isLoading = ref(true)
@@ -29,7 +30,7 @@ const loadUsers = async () => {
       return adjustments
     }, {})
   } catch {
-    errorMessage.value = 'No se pudieron cargar los usuarios. Revisa permisos de admin.'
+    errorMessage.value = translate('admin.users.errors.load')
   } finally {
     isLoading.value = false
   }
@@ -44,7 +45,7 @@ const adjustUserPoints = async (user) => {
   const amount = Number(pointAdjustments.value[user.id])
 
   if (!Number.isInteger(amount) || amount === 0) {
-    errorMessage.value = 'Escribe una cantidad entera diferente de 0.'
+    errorMessage.value = translate('admin.users.errors.invalidAmount')
     return
   }
 
@@ -58,9 +59,11 @@ const adjustUserPoints = async (user) => {
 
     user.points = Number(user.points || 0) + amount
     pointAdjustments.value[user.id] = ''
-    successMessage.value = `Puntos actualizados para ${user.name || user.username || user.email || 'usuario'}.`
+    successMessage.value = translate('admin.users.pointsUpdated', {
+      name: user.name || user.username || user.email || translate('admin.users.fallbackUser'),
+    })
   } catch {
-    errorMessage.value = 'No se pudieron actualizar los puntos del usuario.'
+    errorMessage.value = translate('admin.users.errors.updatePoints')
   } finally {
     updatingPointsUserId.value = ''
   }
@@ -83,9 +86,11 @@ const updateUserRole = async (user, nextRole) => {
     })
 
     user.role = nextRole
-    successMessage.value = `Rol actualizado para ${user.name || user.username || user.email || 'usuario'}.`
+    successMessage.value = translate('admin.users.roleUpdated', {
+      name: user.name || user.username || user.email || translate('admin.users.fallbackUser'),
+    })
   } catch {
-    errorMessage.value = 'No se pudo actualizar el rol del usuario.'
+    errorMessage.value = translate('admin.users.errors.updateRole')
   } finally {
     updatingRoleUserId.value = ''
   }
@@ -101,10 +106,10 @@ onMounted(loadUsers)
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-              Usuarios
+              {{ $t('admin.users.eyebrow') }}
             </p>
             <h2 class="mt-2 text-2xl font-black text-white">
-              Cuentas registradas
+              {{ $t('admin.users.title') }}
             </h2>
           </div>
           <button
@@ -112,7 +117,7 @@ onMounted(loadUsers)
             class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
             @click="loadUsers"
           >
-            Actualizar
+            {{ $t('admin.common.update') }}
           </button>
         </div>
 
@@ -130,15 +135,15 @@ onMounted(loadUsers)
         </p>
 
         <div v-if="isLoading" class="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-300">
-          Cargando usuarios...
+          {{ $t('admin.users.loading') }}
         </div>
 
         <div v-else class="mt-6 overflow-hidden rounded-2xl border border-white/10">
           <div class="hidden grid-cols-[1.2fr_1fr_0.45fr_1.15fr] gap-3 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-400 lg:grid">
-            <span>Usuario</span>
-            <span>Correo</span>
-            <span>Rol</span>
-            <span>Puntos</span>
+            <span>{{ $t('admin.common.user') }}</span>
+            <span>{{ $t('admin.common.email') }}</span>
+            <span>{{ $t('admin.common.role') }}</span>
+            <span>{{ $t('admin.common.points') }}</span>
           </div>
           <div
             v-for="user in users"
@@ -146,22 +151,22 @@ onMounted(loadUsers)
             class="grid gap-4 border-t border-white/10 px-4 py-4 text-sm text-slate-200 lg:grid-cols-[1.2fr_1fr_0.45fr_1.15fr] lg:items-center lg:gap-3"
           >
             <span>
-              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Usuario</span>
-              <span class="font-black text-white">{{ user.name || user.username || 'Sin nombre' }}</span>
+              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.user') }}</span>
+              <span class="font-black text-white">{{ user.name || user.username || $t('admin.common.noName') }}</span>
             </span>
             <span class="min-w-0">
-              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Correo</span>
-              <span class="block truncate">{{ user.email || 'Sin correo' }}</span>
+              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.email') }}</span>
+              <span class="block truncate">{{ user.email || $t('admin.common.noEmail') }}</span>
             </span>
             <span>
-              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Rol</span>
+              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.role') }}</span>
               <select
                 :value="user.role || 'user'"
                 class="min-h-10 w-full rounded-2xl border border-fuchsia-300/20 bg-slate-950 px-3 text-sm font-black capitalize text-fuchsia-100 outline-none transition focus:border-fuchsia-300/50 disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="updatingRoleUserId === user.id"
                 @change="updateUserRole(user, $event.target.value)"
               >
-                <option value="user">Usuario</option>
+                <option value="user">{{ $t('admin.common.user') }}</option>
                 <option value="admin">Admin</option>
               </select>
             </span>
@@ -174,19 +179,19 @@ onMounted(loadUsers)
                 type="number"
                 step="1"
                 class="min-h-10 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/50"
-                placeholder="+100 o -50"
+                :placeholder="$t('admin.users.pointsPlaceholder')"
               />
               <button
                 type="submit"
                 class="min-h-10 rounded-2xl bg-linear-to-r from-amber-400 to-fuchsia-500 px-4 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="updatingPointsUserId === user.id"
               >
-                {{ updatingPointsUserId === user.id ? 'Guardando...' : 'Aplicar' }}
+                {{ updatingPointsUserId === user.id ? $t('admin.common.saving') : $t('admin.common.apply') }}
               </button>
             </form>
           </div>
           <div v-if="!users.length" class="border-t border-white/10 px-4 py-6 text-sm font-bold text-slate-400">
-            No hay usuarios para mostrar.
+            {{ $t('admin.users.empty') }}
           </div>
         </div>
       </article>

@@ -114,24 +114,24 @@ const popularPolls = [
             {{ poll.status }}
           </div>
           <div class="absolute bottom-4 left-4 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs font-black uppercase text-white/85 backdrop-blur">
-            Tipo {{ poll.typeLabel }}
+            {{ $t('widgets.popularPolls.type', { type: poll.typeLabel }) }}
           </div>
         </div>
 
         <div class="p-5">
           <h3 class="text-xl font-black leading-tight">{{ poll.title }}</h3>
           <p class="mt-2 text-sm text-slate-400">
-            {{ poll.type === 'VS' ? 'Ganando ahora' : 'Lider actual' }}:
+            {{ poll.type === 'VS' ? $t('widgets.popularPolls.winningNow') : $t('widgets.popularPolls.currentLeader') }}:
             <span class="font-bold text-white">{{ poll.leader }}</span>
           </p>
 
           <div class="mt-5 grid grid-cols-2 gap-3">
             <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p class="text-xs uppercase tracking-widest text-slate-500">Votos</p>
+              <p class="text-xs uppercase tracking-widest text-slate-500">{{ $t('widgets.popularPolls.votes') }}</p>
               <p class="mt-1 text-lg font-black">{{ poll.votes }}</p>
             </div>
             <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p class="text-xs uppercase tracking-widest text-slate-500">Cierra en</p>
+              <p class="text-xs uppercase tracking-widest text-slate-500">{{ $t('widgets.popularPolls.closesIn') }}</p>
               <p class="mt-1 text-lg font-black">{{ poll.endsIn }}</p>
             </div>
           </div>
@@ -147,7 +147,7 @@ const popularPolls = [
             :href="poll.type === 'Lista' ? '/votacion/lista' : '/votacion/versus'"
             class="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/20"
           >
-            <span>Votar</span>
+            <span>{{ $t('widgets.popularPolls.vote') }}</span>
             <span aria-hidden="true">→</span>
           </a>
         </div>
@@ -203,24 +203,24 @@ const popularPolls = [
             {{ poll.status }}
           </div>
           <div class="absolute bottom-4 left-4 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs font-black uppercase text-white/85 backdrop-blur">
-            Tipo {{ poll.typeLabel }}
+            {{ $t('widgets.popularPolls.type', { type: poll.typeLabel }) }}
           </div>
         </div>
 
         <div class="p-5">
           <h3 class="text-xl font-black leading-tight">{{ poll.title }}</h3>
           <p class="mt-2 text-sm text-slate-400">
-            {{ poll.type === 'VS' ? 'Ganando ahora' : 'Lider actual' }}:
+            {{ poll.type === 'VS' ? $t('widgets.popularPolls.winningNow') : $t('widgets.popularPolls.currentLeader') }}:
             <span class="font-bold text-white">{{ poll.leader }}</span>
           </p>
 
           <div class="mt-6 grid grid-cols-2 gap-3">
             <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p class="text-xs uppercase tracking-widest text-slate-500">Votos</p>
+              <p class="text-xs uppercase tracking-widest text-slate-500">{{ $t('widgets.popularPolls.votes') }}</p>
               <p class="mt-1 text-lg font-black">{{ poll.votes }}</p>
             </div>
             <div class="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p class="text-xs uppercase tracking-widest text-slate-500">Cierra en</p>
+              <p class="text-xs uppercase tracking-widest text-slate-500">{{ $t('widgets.popularPolls.closesIn') }}</p>
               <p class="mt-1 text-lg font-black">{{ poll.endsIn }}</p>
             </div>
           </div>
@@ -236,7 +236,7 @@ const popularPolls = [
             :href="poll.type === 'Lista' ? '/votacion/lista' : '/votacion/versus'"
             class="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide shadow-lg shadow-fuchsia-500/20 transition group-hover:shadow-fuchsia-500/35"
           >
-            <span>Votar</span>
+            <span>{{ $t('widgets.popularPolls.vote') }}</span>
             <span aria-hidden="true">→</span>
           </a>
         </div>

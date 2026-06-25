@@ -3,54 +3,48 @@
     <div class="overflow-hidden rounded-4xl border border-violet-300/20 bg-white/5 p-1 text-white shadow-2xl shadow-fuchsia-950/30">
       <div class="rounded-[calc(2rem-4px)] bg-[#080a18]/95 p-6 sm:p-8">
         <a href="/" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
-          ← Volver al inicio
+          {{ $t('terms.backHome') }}
         </a>
 
-        <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">Legal</p>
-        <h1 class="mt-2 text-3xl font-black leading-tight sm:text-5xl">Términos y condiciones</h1>
+        <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">{{ $t('terms.eyebrow') }}</p>
+        <h1 class="mt-2 text-3xl font-black leading-tight sm:text-5xl">{{ $t('terms.title') }}</h1>
         <p class="mt-4 text-sm leading-6 text-slate-300">
-          Al usar Votos Música Mundial aceptas estas reglas básicas para mantener una comunidad segura,
-          justa y transparente.
+          {{ $t('terms.intro') }}
         </p>
 
         <div class="mt-8 space-y-6 text-sm leading-7 text-slate-300">
           <div>
-            <h2 class="text-lg font-black text-white">1. Uso de la plataforma</h2>
+            <h2 class="text-lg font-black text-white">{{ $t('terms.platformUseTitle') }}</h2>
             <p class="mt-2">
-              Debes usar la plataforma de forma responsable. No está permitido manipular votaciones,
-              automatizar acciones, crear cuentas falsas o afectar la experiencia de otros usuarios.
+              {{ $t('terms.platformUseText') }}
             </p>
           </div>
 
           <div>
-            <h2 class="text-lg font-black text-white">2. Cuentas de usuario</h2>
+            <h2 class="text-lg font-black text-white">{{ $t('terms.accountsTitle') }}</h2>
             <p class="mt-2">
-              Eres responsable de mantener segura tu cuenta, correo y contraseña. Podemos limitar o
-              suspender cuentas si detectamos abuso, fraude o actividad sospechosa.
+              {{ $t('terms.accountsText') }}
             </p>
           </div>
 
           <div>
-            <h2 class="text-lg font-black text-white">3. Votos, puntos y recompensas</h2>
+            <h2 class="text-lg font-black text-white">{{ $t('terms.rewardsTitle') }}</h2>
             <p class="mt-2">
-              Los votos, puntos, misiones, rachas y recompensas pueden ajustarse si se detectan errores,
-              abuso, duplicación o actividad automática.
+              {{ $t('terms.rewardsText') }}
             </p>
           </div>
 
           <div>
-            <h2 class="text-lg font-black text-white">4. Datos personales</h2>
+            <h2 class="text-lg font-black text-white">{{ $t('terms.dataTitle') }}</h2>
             <p class="mt-2">
-              Usamos tus datos de registro para iniciar sesión, guardar tu progreso, validar tu cuenta y
-              mejorar la experiencia dentro de la plataforma.
+              {{ $t('terms.dataText') }}
             </p>
           </div>
 
           <div>
-            <h2 class="text-lg font-black text-white">5. Cambios</h2>
+            <h2 class="text-lg font-black text-white">{{ $t('terms.changesTitle') }}</h2>
             <p class="mt-2">
-              Podemos actualizar estos términos cuando sea necesario. Si continúas usando la plataforma,
-              aceptas la versión vigente.
+              {{ $t('terms.changesText') }}
             </p>
           </div>
         </div>

@@ -1,14 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { collection, collectionGroup, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { db } from '../firebase'
+import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 
 const artists = ref([])
 const recentVotes = ref([])
 const publicPollActivities = ref([])
-const livePollDocs = ref([])
 let unsubscribeArtists = null
-let unsubscribeVotes = null
 let unsubscribeLivePolls = null
 
 const fallbackActivities = [
@@ -141,49 +139,17 @@ const liveStats = computed(() => [
   },
 ])
 
-const buildPublicPollActivities = async (pollDocs) => {
-  const entries = await Promise.all(
-    pollDocs.map(async (pollDoc) => {
-      const roundsSnap = await getDocs(collection(db, 'polls', pollDoc.id, 'rounds'))
-      const contestantSnaps = await Promise.all(
-        roundsSnap.docs.map((roundDoc) =>
-          getDocs(collection(db, 'polls', pollDoc.id, 'rounds', roundDoc.id, 'contestants')),
-        ),
-      )
-
-      return contestantSnaps
-        .flatMap((snap) =>
-          snap.docs.map((contestantDoc) => ({
-            id: contestantDoc.id,
-            pollId: pollDoc.id,
-            ...contestantDoc.data(),
-          })),
-        )
-        .map((contestant) => {
-          const artist = getArtist(contestant.artistId)
-          const totalVotes = Number(contestant.totalVotes ?? (contestant.votes || 0) + (contestant.manualVotes || 0))
-
-          return {
-            artistId: contestant.artistId,
-            artist: artist?.name || 'Artista',
-            artistImage: getArtistImage(artist),
-            votes: totalVotes,
-          }
-        })
-    }),
-  )
-
-  publicPollActivities.value = entries
-    .flat()
-    .filter((entry) => entry.artistId && entry.votes > 0)
-    .sort((current, next) => next.votes - current.votes)
+const buildPublicPollActivities = (pollRows) => {
+  publicPollActivities.value = pollRows
+    .flatMap((poll) => poll.publicActivity || [])
+    .filter((entry) => entry.artistId && Number(entry.amount || entry.votes || 0) > 0)
     .slice(0, 8)
     .map((entry, index) => ({
-      user: `Fandom ${entry.artist}`,
-      artist: entry.artist,
-      artistImage: entry.artistImage,
+      user: entry.userDisplayName || userLabel(entry.userId),
+      artist: getArtist(entry.artistId)?.name || 'Artista',
+      artistImage: getArtistImage(getArtist(entry.artistId)),
       time: 'en vivo',
-      votes: entry.votes,
+      votes: Number(entry.amount || entry.votes || 0),
       streak: index < 3 ? 'Top' : '+1',
       color: colorOptions[index % colorOptions.length],
       visual: visualOptions[index % visualOptions.length],
@@ -191,36 +157,14 @@ const buildPublicPollActivities = async (pollDocs) => {
 }
 
 onMounted(() => {
-  unsubscribeArtists = onSnapshot(collection(db, 'artists'), (artistsSnap) => {
-    artists.value = artistsSnap.docs.map((artistDoc) => ({
-      id: artistDoc.id,
-      ...artistDoc.data(),
-    }))
-
-    if (livePollDocs.value.length) {
-      buildPublicPollActivities(livePollDocs.value)
-    }
+  unsubscribeArtists = subscribeArtistsCached(db, (artistRows) => {
+    artists.value = artistRows
   })
 
-  unsubscribeVotes = onSnapshot(
-    query(collectionGroup(db, 'votes'), orderBy('createdAt', 'desc'), limit(12)),
-    (votesSnap) => {
-      recentVotes.value = votesSnap.docs.map((voteDoc) => ({
-        id: voteDoc.id,
-        pollId: voteDoc.ref.parent.parent?.id || '',
-        ...voteDoc.data(),
-      }))
-    },
-    () => {
-      recentVotes.value = []
-    },
-  )
-
-  unsubscribeLivePolls = onSnapshot(
-    query(collection(db, 'polls'), where('status', 'in', ['live', 'selecting_winners'])),
-    (pollsSnap) => {
-      livePollDocs.value = pollsSnap.docs
-      buildPublicPollActivities(livePollDocs.value)
+  unsubscribeLivePolls = subscribeLivePollsCached(
+    db,
+    (pollRows) => {
+      buildPublicPollActivities(pollRows)
     },
     () => {
       publicPollActivities.value = []
@@ -230,7 +174,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubscribeArtists?.()
-  unsubscribeVotes?.()
   unsubscribeLivePolls?.()
 })
 </script>
@@ -307,18 +250,18 @@ onUnmounted(() => {
               <div class="flex flex-wrap items-center gap-2">
                 <h3 class="text-sm font-black leading-tight text-white sm:text-base">{{ activity.user }}</h3>
                 <span class="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-200">
-                  Online
+                  {{ $t('widgets.activity.online') }}
                 </span>
               </div>
-              <p class="mt-0.5 text-xs leading-tight text-slate-300 sm:text-sm">acaba de votar por</p>
+              <p class="mt-0.5 text-xs leading-tight text-slate-300 sm:text-sm">{{ $t('widgets.activity.justVotedFor') }}</p>
               <p class="mt-0.5 text-sm font-black uppercase leading-tight text-white sm:text-base">{{ activity.artist }}</p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-black text-fuchsia-100">
                   <i class="fa-solid fa-heart mr-1" aria-hidden="true"></i>
-                  {{ activity.votes }} votos
+                  {{ $t('widgets.activity.votes', { count: activity.votes }) }}
                 </span>
                 <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-black text-cyan-100">
-                  {{ activity.streak }} racha
+                  {{ $t('widgets.activity.streak', { count: activity.streak }) }}
                 </span>
                 <span class="text-[11px] text-slate-500 sm:text-xs">{{ activity.time }}</span>
               </div>

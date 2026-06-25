@@ -12,6 +12,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const props = defineProps({
   pollId: {
@@ -78,7 +79,7 @@ const toggleWinner = (artistId) => {
 
 const saveWinners = async () => {
   if (!selectedWinnerIds.value.length) {
-    errorMessage.value = 'Selecciona al menos un ganador.'
+    errorMessage.value = translate('admin.winners.selectOne')
     return
   }
 
@@ -105,9 +106,9 @@ const saveWinners = async () => {
     })
 
     await batch.commit()
-    successMessage.value = 'Ganadores guardados.'
+    successMessage.value = translate('admin.winners.saved')
   } catch {
-    errorMessage.value = 'No se pudieron guardar los ganadores.'
+    errorMessage.value = translate('admin.winners.errors.save')
   }
 }
 

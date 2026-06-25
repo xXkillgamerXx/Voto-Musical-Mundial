@@ -5,6 +5,7 @@ import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore
 import { VueTelInput } from 'vue-tel-input'
 import 'vue-tel-input/vue-tel-input.css'
 import { auth, db } from '../firebase'
+import { translate } from '../i18n'
 
 const fallbackCountries = [
   { name: 'República Dominicana', code: 'DO', flag: '🇩🇴', dialCode: '+1', example: '(809) 000-0000', maxDigits: 10 },
@@ -91,7 +92,7 @@ const selectedPhoneCountry = computed(() => phoneCountry.value)
 const selectedPhoneFormat = computed(() => phoneFormats[selectedPhoneCountry.value?.code?.toUpperCase()] || {
   maxDigits: 15,
   groups: [3, 3, 4, 5],
-  example: 'Tu número',
+  example: translate('register.placeholders.phone'),
 })
 const filteredCountries = computed(() => {
   const search = countrySearch.value.trim().toLowerCase()
@@ -147,12 +148,12 @@ onUnmounted(() => {
 
 const friendlyAuthError = (error) => {
   const messages = {
-    'auth/email-already-in-use': 'Ese correo ya está registrado.',
-    'auth/invalid-email': 'Escribe un correo válido.',
-    'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+    'auth/email-already-in-use': translate('register.errors.emailInUse'),
+    'auth/invalid-email': translate('register.errors.invalidEmail'),
+    'auth/weak-password': translate('register.errors.weakPassword'),
   }
 
-  return messages[error.code] || 'No se pudo crear la cuenta. Intenta de nuevo.'
+  return messages[error.code] || translate('register.errors.createAccount')
 }
 
 const countryCodeToFlag = (countryCode) => countryCode
@@ -272,7 +273,7 @@ const handlePhoneValidate = (phoneObject) => {
   }
 
   phoneApiInternational.value = phoneObject?.formatted || phoneObject?.number || phoneInternational.value
-  phoneMessage.value = isPhoneValid.value ? 'Teléfono válido.' : 'Revisa el teléfono.'
+  phoneMessage.value = isPhoneValid.value ? translate('register.states.phoneValid') : translate('register.states.phoneInvalid')
 }
 
 const selectCountry = (selectedCountry) => {
@@ -290,8 +291,8 @@ const validatePhoneWithApi = async () => {
   }
 
   if (!isPhoneValid.value && !hasExpectedPhoneLength.value) {
-    phoneMessage.value = 'Revisa el teléfono.'
-    errorMessage.value = 'Revisa el teléfono o déjalo vacío si no quieres agregarlo.'
+    phoneMessage.value = translate('register.states.phoneInvalid')
+    errorMessage.value = translate('register.errors.invalidPhoneOptional')
     return false
   }
 
@@ -322,18 +323,18 @@ const validatePhoneWithApi = async () => {
     const isValid = data.valid === true || data.isValid === true
 
     if (!isValid) {
-      phoneMessage.value = 'Ese teléfono no parece válido para el país seleccionado.'
-      errorMessage.value = 'Revisa el teléfono o déjalo vacío si no quieres agregarlo.'
+      phoneMessage.value = translate('register.errors.invalidPhoneCountry')
+      errorMessage.value = translate('register.errors.invalidPhoneOptional')
       return false
     }
 
     phoneApiInternational.value = data.internationalFormat || data.formatInternational || phoneInternational.value
-    phoneMessage.value = 'Teléfono válido.'
+    phoneMessage.value = translate('register.states.phoneValid')
     isPhoneValid.value = true
     return true
   } catch (error) {
-    phoneMessage.value = 'No se pudo validar el teléfono. Intenta otra vez.'
-    errorMessage.value = 'No se pudo validar el teléfono. Intenta otra vez.'
+    phoneMessage.value = translate('register.errors.validatePhone')
+    errorMessage.value = translate('register.errors.validatePhone')
     return false
   } finally {
     isCheckingPhone.value = false
@@ -343,18 +344,18 @@ const validatePhoneWithApi = async () => {
 const validateUsernameFormat = (showError = true) => {
   if (!normalizedUsername.value) {
     if (showError) {
-      errorMessage.value = 'Escribe tu username.'
+      errorMessage.value = translate('register.errors.usernameRequired')
     }
 
-    return 'Escribe tu username.'
+    return translate('register.errors.usernameRequired')
   }
 
   if (!/^[a-z0-9_]{3,20}$/.test(normalizedUsername.value)) {
     if (showError) {
-      errorMessage.value = 'El username debe tener 3 a 20 caracteres: letras, números o _.'
+      errorMessage.value = translate('register.errors.usernameFormat')
     }
 
-    return 'El username debe tener 3 a 20 caracteres: letras, números o _.'
+    return translate('register.errors.usernameFormat')
   }
 
   return ''
@@ -381,23 +382,23 @@ const checkUsernameAvailable = async (showError = true) => {
     }
 
     if (usernameSnap.exists()) {
-      usernameMessage.value = 'Ese username ya está en uso.'
+      usernameMessage.value = translate('register.errors.usernameTaken')
 
       if (showError) {
-        errorMessage.value = 'Ese username ya está en uso.'
+        errorMessage.value = translate('register.errors.usernameTaken')
       }
 
       return false
     }
 
-    usernameMessage.value = 'Username válido.'
+    usernameMessage.value = translate('register.states.usernameValid')
     isUsernameAvailable.value = true
     return true
   } catch (error) {
-    usernameMessage.value = 'No se pudo validar el username.'
+    usernameMessage.value = translate('register.errors.validateUsername')
 
     if (showError) {
-      errorMessage.value = 'No se pudo validar el username. Revisa los permisos de Firestore.'
+      errorMessage.value = translate('register.errors.validateUsernamePermissions')
     }
 
     return false
@@ -428,12 +429,12 @@ watch(country, () => {
 
 const validateProfileStep = async () => {
   if (!firstName.value.trim()) {
-    errorMessage.value = 'Escribe tu nombre.'
+    errorMessage.value = translate('register.errors.firstNameRequired')
     return false
   }
 
   if (!lastName.value.trim()) {
-    errorMessage.value = 'Escribe tu apellido.'
+    errorMessage.value = translate('register.errors.lastNameRequired')
     return false
   }
 
@@ -442,12 +443,12 @@ const validateProfileStep = async () => {
 
 const validateContactStep = async () => {
   if (!email.value.trim()) {
-    errorMessage.value = 'Escribe tu correo.'
+    errorMessage.value = translate('register.errors.emailRequired')
     return false
   }
 
   if (!country.value) {
-    errorMessage.value = 'Selecciona tu país.'
+    errorMessage.value = translate('register.errors.countryRequired')
     return false
   }
 
@@ -483,12 +484,12 @@ const handleRegister = async () => {
     }
 
     if (password.value !== confirmPassword.value) {
-      errorMessage.value = 'Las contraseñas no coinciden.'
+      errorMessage.value = translate('register.errors.passwordsMismatch')
       return
     }
 
     if (!acceptedTerms.value) {
-      errorMessage.value = 'Debes aceptar los términos y condiciones.'
+      errorMessage.value = translate('register.errors.termsRequired')
       return
     }
 
@@ -530,7 +531,7 @@ const handleRegister = async () => {
     window.location.href = '/'
   } catch (error) {
     errorMessage.value = error.message === 'username-unavailable'
-      ? 'Ese username ya está en uso.'
+      ? translate('register.errors.usernameTaken')
       : friendlyAuthError(error)
   } finally {
     isLoading.value = false
@@ -548,13 +549,13 @@ const handleRegister = async () => {
 
         <div class="relative z-10">
           <a href="/" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
-            ← Volver al inicio
+            {{ $t('register.backHome') }}
           </a>
 
-          <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">Registro fan</p>
-          <h1 class="mt-2 text-3xl font-black leading-tight sm:text-5xl">Crear cuenta</h1>
+          <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">{{ $t('register.eyebrow') }}</p>
+          <h1 class="mt-2 text-3xl font-black leading-tight sm:text-5xl">{{ $t('register.title') }}</h1>
           <p class="mt-3 text-sm leading-6 text-slate-300">
-            Completa tus datos básicos para votar, reclamar puntos y guardar tu progreso.
+            {{ $t('register.description') }}
           </p>
 
           <form class="mt-7 space-y-5" @submit.prevent="handleRegister">
@@ -568,14 +569,14 @@ const handleRegister = async () => {
             </div>
 
             <p class="text-xs font-black uppercase tracking-[0.24em] text-slate-400">
-              Paso {{ currentStep }} de {{ totalSteps }}
+              {{ $t('register.step', { current: currentStep, total: totalSteps }) }}
             </p>
 
             <div v-if="currentStep === 1" class="space-y-4">
-              <p class="text-lg font-black text-white">Perfil</p>
+              <p class="text-lg font-black text-white">{{ $t('register.sections.profile') }}</p>
 
               <label class="block">
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Username</span>
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.username') }}</span>
                 <input
                   v-model="username"
                   type="text"
@@ -587,10 +588,10 @@ const handleRegister = async () => {
                     usernameMessage && !isUsernameAvailable && 'border-red-300/70 focus:border-red-300',
                     !usernameMessage && !isUsernameAvailable && 'border-white/10 focus:border-white/20',
                   ]"
-                  placeholder="ej: fan_music_01"
+                  :placeholder="$t('register.placeholders.username')"
                 />
                 <p v-if="isCheckingUsername" class="mt-2 text-xs font-bold text-slate-400">
-                  Validando username...
+                  {{ $t('register.states.checkingUsername') }}
                 </p>
                 <p
                   v-else-if="usernameMessage"
@@ -603,24 +604,24 @@ const handleRegister = async () => {
 
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="block">
-                  <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Nombre</span>
+                  <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.firstName') }}</span>
                   <input
                     v-model="firstName"
                     type="text"
                     required
                     class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                    placeholder="Tu nombre"
+                    :placeholder="$t('register.placeholders.firstName')"
                   />
                 </label>
 
                 <label class="block">
-                  <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Apellido</span>
+                  <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.lastName') }}</span>
                   <input
                     v-model="lastName"
                     type="text"
                     required
                     class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                    placeholder="Tu apellido"
+                    :placeholder="$t('register.placeholders.lastName')"
                   />
                 </label>
               </div>
@@ -628,21 +629,21 @@ const handleRegister = async () => {
             </div>
 
             <div v-else-if="currentStep === 2" class="space-y-4">
-              <p class="text-lg font-black text-white">Contacto</p>
+              <p class="text-lg font-black text-white">{{ $t('register.sections.contact') }}</p>
 
               <label class="block">
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Correo</span>
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.email') }}</span>
                 <input
                   v-model="email"
                   type="email"
                   required
                   class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                  placeholder="tu@email.com"
+                  :placeholder="$t('register.placeholders.email')"
                 />
               </label>
 
               <label class="block">
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">País donde vives</span>
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.residenceCountry') }}</span>
                 <div class="relative mt-2">
                   <button
                     type="button"
@@ -655,7 +656,7 @@ const handleRegister = async () => {
                       <span>{{ selectedResidenceCountry.name }}</span>
                     </span>
                     <span v-else class="text-slate-400">
-                      {{ isLoadingCountries ? 'Cargando países...' : 'Selecciona tu país' }}
+                      {{ isLoadingCountries ? $t('register.states.loadingCountries') : $t('register.placeholders.selectCountry') }}
                     </span>
                     <span class="text-slate-500">⌄</span>
                   </button>
@@ -668,7 +669,7 @@ const handleRegister = async () => {
                       v-model="countrySearch"
                       type="search"
                       class="min-h-12 w-full border-b border-white/10 bg-white/5 px-4 text-sm text-white outline-none placeholder:text-slate-500"
-                      placeholder="Buscar país"
+                      :placeholder="$t('register.placeholders.searchCountry')"
                     />
                     <div class="max-h-56 overflow-y-auto p-2">
                       <button
@@ -683,7 +684,7 @@ const handleRegister = async () => {
                         <span>{{ item.name }}</span>
                       </button>
                       <p v-if="!filteredCountries.length" class="px-3 py-2 text-sm text-slate-400">
-                        No encontramos ese país.
+                        {{ $t('register.states.noCountryFound') }}
                       </p>
                     </div>
                   </div>
@@ -691,7 +692,7 @@ const handleRegister = async () => {
               </label>
 
               <label class="block">
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Teléfono <span class="text-slate-500">(opcional)</span></span>
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.phone') }} <span class="text-slate-500">{{ $t('register.fields.optional') }}</span></span>
                 <VueTelInput
                   v-model="phone"
                   class="mt-2 register-phone-input"
@@ -705,7 +706,7 @@ const handleRegister = async () => {
                     showDialCodeInSelection: true,
                     showFlags: true,
                     showSearchBox: true,
-                    searchBoxPlaceholder: 'Buscar país',
+                    searchBoxPlaceholder: $t('register.placeholders.searchCountry'),
                   }"
                   :input-options="{
                     placeholder: selectedPhoneFormat.example,
@@ -716,7 +717,7 @@ const handleRegister = async () => {
                   @validate="handlePhoneValidate"
                 />
                 <p v-if="selectedPhoneCountry" class="mt-2 text-xs font-bold text-slate-400">
-                  Código seleccionado: {{ selectedPhoneCountry.name }} {{ selectedPhoneCountry.dialCode }}
+                  {{ $t('register.states.selectedCode', { country: selectedPhoneCountry.name, dialCode: selectedPhoneCountry.dialCode }) }}
                 </p>
                 <p
                   v-if="phoneMessage"
@@ -729,29 +730,29 @@ const handleRegister = async () => {
             </div>
 
             <div v-else class="space-y-4">
-              <p class="text-lg font-black text-white">Seguridad</p>
+              <p class="text-lg font-black text-white">{{ $t('register.sections.security') }}</p>
 
               <label class="block">
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Contraseña</span>
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.password') }}</span>
                 <input
                   v-model="password"
                   type="password"
                   required
                   minlength="6"
                   class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                  placeholder="Mínimo 6 caracteres"
+                  :placeholder="$t('register.placeholders.password')"
                 />
               </label>
 
               <label class="block">
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Confirmar contraseña</span>
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('register.fields.confirmPassword') }}</span>
                 <input
                   v-model="confirmPassword"
                   type="password"
                   required
                   minlength="6"
                   class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
-                  placeholder="Repite tu contraseña"
+                  :placeholder="$t('register.placeholders.confirmPassword')"
                 />
               </label>
 
@@ -763,12 +764,12 @@ const handleRegister = async () => {
                   class="mt-0.5 size-4 rounded border border-white/10 bg-white/5 text-fuchsia-500 accent-fuchsia-500 outline-none transition focus:ring-0 focus:ring-offset-0"
                 />
                 <span>
-                  Acepto los
+                  {{ $t('register.terms.acceptPrefix') }}
                   <a
                     href="/terminos-y-condiciones"
                     class="font-black text-fuchsia-300 transition hover:text-white"
                   >
-                    términos y condiciones
+                    {{ $t('register.terms.link') }}
                   </a>
                 </span>
               </label>
@@ -786,7 +787,7 @@ const handleRegister = async () => {
                 :disabled="isLoading"
                 @click="goToPreviousStep"
               >
-                Atrás
+                {{ $t('register.actions.previous') }}
               </button>
 
               <button
@@ -797,7 +798,7 @@ const handleRegister = async () => {
                 :disabled="isCheckingUsername || isCheckingPhone"
                 @click="goToNextStep"
               >
-                Siguiente
+                {{ $t('register.actions.next') }}
               </button>
 
               <button
@@ -806,7 +807,7 @@ const handleRegister = async () => {
                 class="min-h-13 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] hover:shadow-fuchsia-500/25 disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="isLoading"
               >
-                {{ isLoading ? 'Creando cuenta...' : 'Crear cuenta' }}
+                {{ isLoading ? $t('register.states.creatingAccount') : $t('register.actions.createAccount') }}
               </button>
             </div>
           </form>
@@ -822,8 +823,8 @@ const handleRegister = async () => {
       <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-[#090b19] p-6 text-white shadow-2xl shadow-black/40">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">Legal</p>
-            <h3 class="mt-2 text-2xl font-black">Términos y condiciones</h3>
+            <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">{{ $t('register.sections.legal') }}</p>
+            <h3 class="mt-2 text-2xl font-black">{{ $t('register.terms.title') }}</h3>
           </div>
           <button
             type="button"
@@ -835,9 +836,9 @@ const handleRegister = async () => {
         </div>
 
         <div class="mt-5 space-y-3 text-sm leading-6 text-slate-300">
-          <p>Al crear una cuenta aceptas usar la plataforma de forma responsable y respetar las reglas de votación.</p>
-          <p>Los puntos, recompensas y rachas pueden ajustarse si se detecta abuso, fraude o actividad automática.</p>
-          <p>Tu correo se usa para iniciar sesión, recuperar tu cuenta y guardar tu progreso.</p>
+          <p>{{ $t('register.terms.one') }}</p>
+          <p>{{ $t('register.terms.two') }}</p>
+          <p>{{ $t('register.terms.three') }}</p>
         </div>
 
         <button
@@ -845,7 +846,7 @@ const handleRegister = async () => {
           class="mt-6 min-h-12 w-full rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase text-white"
           @click="closeTermsModal"
         >
-          Entendido
+          {{ $t('register.actions.understood') }}
         </button>
       </div>
     </div>

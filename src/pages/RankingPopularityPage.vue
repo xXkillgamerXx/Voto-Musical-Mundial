@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { collection, getDocs } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { db } from "../firebase";
+import { getArtistsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
 const artists = ref([]);
@@ -105,67 +105,6 @@ const formatNumber = (value) => Number(value || 0).toLocaleString(locale.value);
 const barWidth = (value) =>
   `${Math.max(7, Math.round((Number(value || 0) / maxPopularityScore.value) * 100))}%`;
 
-const applyVotesToArtists = (votesByArtist) => {
-  artists.value = artists.value.map((artist) => {
-    const totalVotes = votesByArtist.get(artist.id) || 0;
-
-    return {
-      ...artist,
-      totalVotes,
-      popularityScore: Math.round(artist.followersCount * 10 + totalVotes),
-    };
-  });
-};
-
-const loadPollVotesByArtist = async () => {
-  const votesByArtist = new Map();
-  const pollsSnap = await getDocs(collection(db, "polls"));
-
-  await Promise.all(
-    pollsSnap.docs.map(async (pollDoc) => {
-      const roundsSnap = await getDocs(
-        collection(db, "polls", pollDoc.id, "rounds"),
-      );
-
-      await Promise.all(
-        roundsSnap.docs.map(async (roundDoc) => {
-          const contestantsSnap = await getDocs(
-            collection(
-              db,
-              "polls",
-              pollDoc.id,
-              "rounds",
-              roundDoc.id,
-              "contestants",
-            ),
-          );
-
-          contestantsSnap.docs.forEach((contestantDoc) => {
-            const contestant = contestantDoc.data();
-            const artistId = contestant.artistId;
-
-            if (!artistId) {
-              return;
-            }
-
-            const totalVotes = Number(
-              contestant.totalVotes ??
-                (contestant.votes || 0) + (contestant.manualVotes || 0),
-            );
-
-            votesByArtist.set(
-              artistId,
-              (votesByArtist.get(artistId) || 0) + totalVotes,
-            );
-          });
-        }),
-      );
-    }),
-  );
-
-  return votesByArtist;
-};
-
 const loadArtists = async () => {
   isLoading.value = true;
   isLoadingVotes.value = false;
@@ -173,35 +112,22 @@ const loadArtists = async () => {
   const skeletonDelay = wait(minimumSkeletonDuration);
 
   try {
-    const artistsSnap = await getDocs(collection(db, "artists"));
+    const artistRows = (await getArtistsCached(db)).map((artist) => {
+      const followersCount = Number(artist.followersCount || 0);
+      const totalVotes = Number(artist.totalVotes || 0);
 
-    const artistRows = await Promise.all(
-      artistsSnap.docs.map(async (artistDoc) => {
-        const artist = {
-          id: artistDoc.id,
-          ...artistDoc.data(),
-        };
-        const followersSnap = await getDocs(
-          collection(db, "artists", artistDoc.id, "followers"),
-        );
-        const followersCount = followersSnap.size;
-
-        return {
-          ...artist,
-          followersCount,
-          totalVotes: 0,
-          popularityScore: Math.round(followersCount * 10),
-        };
-      }),
-    );
+      return {
+        ...artist,
+        followersCount,
+        totalVotes,
+        popularityScore: Number(
+          artist.popularityScore || Math.round(followersCount * 10 + totalVotes),
+        ),
+      };
+    });
 
     await skeletonDelay;
     artists.value = artistRows;
-
-    isLoading.value = false;
-    isLoadingVotes.value = true;
-    const votesByArtist = await loadPollVotesByArtist();
-    applyVotesToArtists(votesByArtist);
   } catch {
     await skeletonDelay;
     errorMessage.value = translate("ranking.errors.load");

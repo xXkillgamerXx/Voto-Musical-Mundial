@@ -110,7 +110,7 @@ const closeVoteModal = () => {
           <button
             class="absolute right-4 top-4 grid size-9 place-items-center rounded-full border border-white/15 bg-white/10 text-2xl leading-none text-white/80 transition hover:bg-white/20"
             type="button"
-            aria-label="Cerrar modal"
+            :aria-label="$t('versus.closeModal')"
             @click="closeVoteModal"
           >
             ×
@@ -119,7 +119,7 @@ const closeVoteModal = () => {
             <img :src="selectedContestant.image" :alt="selectedContestant.name" class="size-full object-cover" />
           </div>
           <h3 class="mt-4 text-2xl font-black text-white">
-            Votar por {{ selectedContestant.name }}
+            {{ $t('versus.voteFor', { name: selectedContestant.name }) }}
           </h3>
           <button
             class="mt-5 flex min-h-11 w-full items-center justify-center rounded-2xl bg-linear-to-r from-pink-500 to-fuchsia-600 text-sm font-black uppercase tracking-wide text-white"

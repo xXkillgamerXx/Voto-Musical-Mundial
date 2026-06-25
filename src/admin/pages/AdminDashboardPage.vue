@@ -162,9 +162,9 @@ onMounted(() => {
     >
       <div class="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl shadow-black/30">
         <p class="text-sm font-black uppercase tracking-[0.28em] text-fuchsia-300">
-          Verificando acceso
+          {{ $t('admin.page.checkingAccess') }}
         </p>
-        <h1 class="mt-3 text-3xl font-black">Panel admin</h1>
+        <h1 class="mt-3 text-3xl font-black">{{ $t('admin.page.panelTitle') }}</h1>
       </div>
     </div>
 
@@ -174,17 +174,17 @@ onMounted(() => {
     >
       <div class="max-w-md rounded-3xl border border-red-300/20 bg-red-500/10 p-8 shadow-2xl shadow-black/30">
         <p class="text-sm font-black uppercase tracking-[0.28em] text-red-200">
-          Acceso restringido
+          {{ $t('admin.page.restricted') }}
         </p>
-        <h1 class="mt-3 text-3xl font-black">Solo admins</h1>
+        <h1 class="mt-3 text-3xl font-black">{{ $t('admin.page.adminsOnly') }}</h1>
         <p class="mt-3 text-sm leading-6 text-red-100/80">
-          Inicia sesion con una cuenta que tenga role admin para entrar al panel.
+          {{ $t('admin.page.loginWithAdmin') }}
         </p>
         <a
           href="/"
           class="mt-6 inline-flex rounded-full bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white/15"
         >
-          Volver a la web
+          {{ $t('admin.page.backToWeb') }}
         </a>
       </div>
     </div>
@@ -200,7 +200,7 @@ onMounted(() => {
               Votos Mundial
             </span>
             <span class="mt-1 block text-[10px] font-bold uppercase tracking-[0.26em] text-fuchsia-300">
-              Admin panel
+              {{ $t('admin.page.adminPanel') }}
             </span>
           </span>
         </a>
@@ -247,7 +247,7 @@ onMounted(() => {
               class="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black text-slate-100 transition hover:bg-white/10"
             >
               <i class="fa-solid fa-globe" aria-hidden="true"></i>
-              Ir a la web
+              {{ $t('admin.page.goToWeb') }}
             </a>
             <button
               type="button"
@@ -255,7 +255,7 @@ onMounted(() => {
               @click="handleLogout"
             >
               <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
-              Cerrar sesión
+              {{ $t('admin.page.logout') }}
             </button>
           </div>
         </div>
@@ -266,7 +266,7 @@ onMounted(() => {
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">
-                Panel administrativo
+                {{ $t('admin.page.administrativePanel') }}
               </p>
               <h1 class="mt-1 text-3xl font-black leading-tight sm:text-4xl">
                 {{ pageTitle }}
@@ -278,12 +278,12 @@ onMounted(() => {
                 href="/"
                 class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
               >
-                Ver web
+                {{ $t('admin.page.viewWeb') }}
               </a>
               <button
                 type="button"
                 class="grid size-11 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 hover:text-white"
-                aria-label="Notificaciones"
+                :aria-label="$t('admin.page.notifications')"
               >
                 <i class="fa-solid fa-bell" aria-hidden="true"></i>
               </button>

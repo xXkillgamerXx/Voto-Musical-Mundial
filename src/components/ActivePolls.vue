@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { db } from '../firebase'
+import { subscribeLivePollsCached } from '../services/firebaseCache'
 
 const { locale } = useI18n()
 const polls = ref([])
@@ -18,6 +19,7 @@ const timeLabels = computed(() => [
 
 let unsubscribePolls = null
 let clockTimer = null
+const activeRoundEndListeners = new Map()
 
 const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
 
@@ -31,7 +33,7 @@ const countdownFor = (poll) => {
     ]
   }
 
-  const endDate = poll.activeEndAt?.toDate?.() || poll.endAt?.toDate?.()
+  const endDate = poll.activeEndAt?.toDate?.() || poll.endAt?.toDate?.() || poll.activeRoundEndAt?.toDate?.()
 
   if (!endDate) {
     return ['LIVE', '', '', '']
@@ -45,6 +47,52 @@ const countdownFor = (poll) => {
   const formatValue = (value) => String(value).padStart(2, '0')
 
   return [formatValue(days), formatValue(hours), formatValue(minutes), formatValue(seconds)]
+}
+
+const getPollEndAt = (poll) => poll.activeEndAt || poll.endAt || null
+
+const syncActiveRoundEndListeners = (pollRows) => {
+  activeRoundEndListeners.forEach((listener, pollId) => {
+    const poll = pollRows.find((item) => item.id === pollId)
+    const activeRoundKey = poll?.activeRoundId || ''
+
+    if (!poll || getPollEndAt(poll) || listener.roundId !== activeRoundKey) {
+      listener.unsubscribe()
+      activeRoundEndListeners.delete(pollId)
+    }
+  })
+
+  pollRows.forEach((poll) => {
+    if (getPollEndAt(poll) || activeRoundEndListeners.has(poll.id)) {
+      return
+    }
+
+    const unsubscribe = onSnapshot(collection(db, 'polls', poll.id, 'rounds'), (roundsSnap) => {
+      const rounds = roundsSnap.docs.map((roundDoc) => ({
+        id: roundDoc.id,
+        ...roundDoc.data(),
+      }))
+      const activeRound = rounds.find((round) => round.id === poll.activeRoundId)
+        || rounds.find((round) => round.status === 'live')
+        || rounds[0]
+        || null
+
+      polls.value = polls.value.map((currentPoll) =>
+        currentPoll.id === poll.id
+          ? {
+              ...currentPoll,
+              activeRoundId: currentPoll.activeRoundId || activeRound?.id || '',
+              activeRoundEndAt: activeRound?.endAt || null,
+            }
+          : currentPoll,
+      )
+    })
+
+    activeRoundEndListeners.set(poll.id, {
+      roundId: poll.activeRoundId || '',
+      unsubscribe,
+    })
+  })
 }
 
 const activePolls = computed(() =>
@@ -73,35 +121,23 @@ const activePolls = computed(() =>
 )
 
 onMounted(() => {
-  unsubscribePolls = onSnapshot(
-    query(collection(db, 'polls'), where('status', 'in', ['live', 'selecting_winners'])),
-    async (pollsSnap) => {
-      const pollRows = await Promise.all(
-        pollsSnap.docs.map(async (pollDoc) => {
-          const poll = {
-            id: pollDoc.id,
-            ...pollDoc.data(),
-          }
-          const roundsSnap = await getDocs(collection(db, 'polls', pollDoc.id, 'rounds'))
-          const rounds = roundsSnap.docs.map((roundDoc) => ({
-            id: roundDoc.id,
-            ...roundDoc.data(),
-          }))
-          const activeRound = rounds.find((round) => round.id === poll.activeRoundId)
-            || rounds.find((round) => round.status === 'live')
-            || rounds[0]
-            || null
+  unsubscribePolls = subscribeLivePollsCached(db, (pollRows) => {
+    const previousPolls = new Map(polls.value.map((poll) => [poll.id, poll]))
 
-          return {
-            ...poll,
-            activeEndAt: activeRound?.endAt || poll.endAt || null,
-          }
-        }),
-      )
+    polls.value = pollRows.map((poll) => {
+      const previousPoll = previousPolls.get(poll.id)
+      const activeRoundId = poll.activeRoundId || previousPoll?.activeRoundId || ''
 
-      polls.value = pollRows
-    },
-  )
+      return {
+        ...poll,
+        activeRoundId,
+        activeEndAt: getPollEndAt(poll),
+        activeRoundEndAt: previousPoll?.activeRoundEndAt || null,
+      }
+    })
+
+    syncActiveRoundEndListeners(pollRows)
+  })
 
   clockTimer = window.setInterval(() => {
     now.value = Date.now()
@@ -110,6 +146,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubscribePolls?.()
+  activeRoundEndListeners.forEach((listener) => listener.unsubscribe())
+  activeRoundEndListeners.clear()
   window.clearInterval(clockTimer)
 })
 </script>

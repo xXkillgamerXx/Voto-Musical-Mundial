@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
+import { getArtistsCached } from '../services/firebaseCache'
 
 const artists = ref([])
 
@@ -41,25 +41,12 @@ const podiumArtists = computed(() => {
 const mobileTopArtists = computed(() => topArtists.value)
 
 const loadArtists = async () => {
-  const artistsSnap = await getDocs(collection(db, 'artists'))
-  const artistRows = await Promise.all(
-    artistsSnap.docs.map(async (artistDoc) => {
-      const artist = {
-        id: artistDoc.id,
-        ...artistDoc.data(),
-      }
-      const followersSnap = await getDocs(collection(db, 'artists', artistDoc.id, 'followers'))
-      const followersCount = followersSnap.size
-
-      return {
-        ...artist,
-        followersCount,
-        popularityScore: Number(artist.popularityScore || followersCount * 10),
-      }
-    }),
-  )
-
-  artists.value = artistRows
+  const artistRows = await getArtistsCached(db)
+  artists.value = artistRows.map((artist) => ({
+    ...artist,
+    followersCount: Number(artist.followersCount || 0),
+    popularityScore: Number(artist.popularityScore || artist.followersCount * 10 || 0),
+  }))
 }
 
 onMounted(loadArtists)
@@ -141,7 +128,7 @@ onMounted(loadArtists)
 
           <div class="absolute inset-x-0 bottom-0 z-20 p-5">
             <h3 class="text-3xl font-black uppercase leading-none tracking-tight">{{ artist.name }}</h3>
-            <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || 'Sin grupo' }}</p>
+            <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || $t('artists.list.noGroup') }}</p>
 
             <div class="mt-5 inline-flex items-end gap-2 rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
               <p
@@ -150,7 +137,7 @@ onMounted(loadArtists)
               >
                 {{ artist.followersCount.toLocaleString('es') }}
               </p>
-              <p class="pb-1 text-xs font-bold uppercase tracking-widest text-slate-300">seguidores</p>
+              <p class="pb-1 text-xs font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
             </div>
           </div>
 
@@ -217,7 +204,7 @@ onMounted(loadArtists)
 
           <div class="absolute inset-x-0 bottom-0 z-20 p-5">
             <h3 class="text-3xl font-black uppercase leading-none tracking-tight">{{ artist.name }}</h3>
-            <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || 'Sin grupo' }}</p>
+            <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || $t('artists.list.noGroup') }}</p>
 
             <div class="mt-5 inline-flex items-end gap-2 rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
               <p
@@ -226,7 +213,7 @@ onMounted(loadArtists)
               >
                 {{ artist.followersCount.toLocaleString('es') }}
               </p>
-              <p class="pb-1 text-xs font-bold uppercase tracking-widest text-slate-300">seguidores</p>
+              <p class="pb-1 text-xs font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
             </div>
           </div>
 

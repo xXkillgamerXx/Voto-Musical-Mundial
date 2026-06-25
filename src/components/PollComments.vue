@@ -15,7 +15,7 @@ const comments = ref([
     id: 2,
     user: "@Pruebitas",
     country: "Colombia",
-    time: "Hace 2 d",
+    time: "2 d",
     text: "Vamos con todo.",
     initial: "P",
   },
@@ -31,7 +31,7 @@ const publishComment = () => {
     id: Date.now(),
     user: "@invitado",
     country: "Comunidad",
-    time: "Ahora",
+    time: "",
     text,
     initial: "I",
   });
@@ -48,10 +48,10 @@ const removeComment = (id) => {
     <div class="mb-5 flex items-end justify-between">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.32em] text-cyan-300">
-          Comunidad
+          {{ $t('widgets.comments.eyebrow') }}
         </p>
         <h2 class="mt-1 text-2xl font-black text-white drop-shadow-[0_0_12px_rgba(217,70,239,0.25)]">
-          Comentarios
+          {{ $t('widgets.comments.title') }}
         </h2>
       </div>
       <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-500/10 px-3 py-1 text-sm font-black text-fuchsia-100">
@@ -70,7 +70,7 @@ const removeComment = (id) => {
           v-model="commentText"
           maxlength="500"
           class="min-h-24 flex-1 resize-none rounded-2xl border border-violet-300/15 bg-[#050817]/95 p-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50 focus:shadow-[0_0_24px_rgba(217,70,239,0.12)]"
-          placeholder="¿Qué opinas? Escribe un comentario..."
+          :placeholder="$t('widgets.comments.placeholder')"
         ></textarea>
       </div>
       <div class="mt-3 flex items-center justify-between pl-13">
@@ -83,13 +83,13 @@ const removeComment = (id) => {
           :disabled="!commentText.trim()"
           @click="publishComment"
         >
-          Publicar
+          {{ $t('widgets.comments.publish') }}
         </button>
       </div>
     </div>
 
     <p class="mt-6 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-      {{ comments.length }} comentarios de la comunidad
+      {{ $t('widgets.comments.count', { count: comments.length }) }}
     </p>
 
     <div class="mt-4 space-y-4">

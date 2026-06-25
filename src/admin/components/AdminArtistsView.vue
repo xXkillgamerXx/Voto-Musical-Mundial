@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { collection, deleteDoc, doc, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const artists = ref([])
 const isLoading = ref(true)
@@ -37,14 +38,14 @@ const loadArtists = async () => {
       ...artistDoc.data(),
     }))
   } catch {
-    errorMessage.value = 'No se pudieron cargar los artistas. Revisa permisos de admin.'
+    errorMessage.value = translate('admin.artists.errors.load')
   } finally {
     isLoading.value = false
   }
 }
 
 const removeArtist = async (artist) => {
-  const shouldDelete = window.confirm(`Eliminar a ${artist.name}?`)
+  const shouldDelete = window.confirm(translate('admin.artists.confirmDelete', { name: artist.name }))
 
   if (!shouldDelete) {
     return
@@ -55,10 +56,10 @@ const removeArtist = async (artist) => {
 
   try {
     await deleteDoc(doc(db, 'artists', artist.id))
-    successMessage.value = 'Artista eliminado.'
+    successMessage.value = translate('admin.artists.deleted')
     await loadArtists()
   } catch {
-    errorMessage.value = 'No se pudo eliminar el artista.'
+    errorMessage.value = translate('admin.artists.errors.delete')
   }
 }
 
@@ -71,13 +72,13 @@ onMounted(loadArtists)
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-            Base de datos
+            {{ $t('admin.artists.eyebrow') }}
           </p>
           <h2 class="mt-2 text-3xl font-black text-white">
-            Lista de artistas
+            {{ $t('admin.artists.title') }}
           </h2>
           <p class="mt-2 text-sm text-slate-400">
-            Tabla principal para ver, editar y eliminar artistas.
+            {{ $t('admin.artists.description') }}
           </p>
         </div>
 
@@ -87,14 +88,14 @@ onMounted(loadArtists)
             class="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
             @click="loadArtists"
           >
-            Actualizar
+            {{ $t('admin.common.update') }}
           </button>
           <a
             href="/admin/artistas/crear"
             class="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
           >
             <i class="fa-solid fa-plus mr-2" aria-hidden="true"></i>
-            Crear artista
+            {{ $t('admin.artists.create') }}
           </a>
         </div>
       </div>
@@ -116,7 +117,7 @@ onMounted(loadArtists)
         v-if="isLoading"
         class="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-300"
       >
-        Cargando artistas...
+        {{ $t('admin.artists.loading') }}
       </div>
 
       <div v-else class="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-slate-950/45">
@@ -124,13 +125,13 @@ onMounted(loadArtists)
           <table class="min-w-full text-left">
             <thead class="bg-white/5 text-xs font-black uppercase tracking-widest text-slate-400">
               <tr>
-                <th class="px-4 py-4">Foto</th>
-                <th class="px-4 py-4">Artista</th>
-                <th class="px-4 py-4">Grupo/Banda</th>
-                <th class="px-4 py-4">Pais</th>
-                <th class="px-4 py-4">Rol</th>
-                <th class="px-4 py-4">Estado</th>
-                <th class="px-4 py-4 text-right">Acciones</th>
+                <th class="px-4 py-4">{{ $t('admin.artists.photo') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.artists.artist') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.artists.group') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.artists.country') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.artists.role') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.artists.status') }}</th>
+                <th class="px-4 py-4 text-right">{{ $t('admin.artists.actions') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-white/10">
@@ -155,7 +156,7 @@ onMounted(loadArtists)
                 <td class="max-w-64 px-4 py-4">
                   <p class="truncate font-black text-white">{{ artist.name }}</p>
                   <p class="mt-1 line-clamp-1 text-xs text-slate-500">
-                    {{ artist.bio || 'Sin biografia' }}
+                    {{ artist.bio || $t('admin.artists.noBio') }}
                   </p>
                 </td>
                 <td class="px-4 py-4 font-bold text-fuchsia-200">
@@ -180,35 +181,35 @@ onMounted(loadArtists)
                       :href="artistProfileUrl(artist)"
                       class="rounded-full border border-violet-300/25 bg-violet-400/10 px-4 py-2 text-xs font-black text-violet-100 transition hover:bg-violet-400/20"
                     >
-                      Perfil
+                      {{ $t('admin.artists.profile') }}
                     </a>
                     <a
                       :href="`/admin/artistas/editar/${artist.id}`"
                       class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
                     >
-                      Editar
+                      {{ $t('admin.common.edit') }}
                     </a>
                     <button
                       type="button"
                       class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
                       @click="removeArtist(artist)"
                     >
-                      Eliminar
+                      {{ $t('admin.common.delete') }}
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="!artists.length">
                 <td colspan="7" class="px-4 py-10 text-center">
-                  <p class="text-lg font-black text-white">Todavia no hay artistas.</p>
+                  <p class="text-lg font-black text-white">{{ $t('admin.artists.empty') }}</p>
                   <p class="mt-2 text-sm text-slate-400">
-                    Crea el primer artista para verlo aqui con su foto.
+                    {{ $t('admin.artists.emptyDescription') }}
                   </p>
                   <a
                     href="/admin/artistas/crear"
                     class="mt-5 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white"
                   >
-                    Crear artista
+                    {{ $t('admin.artists.create') }}
                   </a>
                 </td>
               </tr>

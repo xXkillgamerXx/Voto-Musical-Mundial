@@ -53,7 +53,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="absolute right-4 top-4 z-20 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
-          aria-label="Cerrar modal"
+          :aria-label="$t('versus.closeModal')"
           @click="closeModal"
         >
           ×
@@ -63,21 +63,20 @@ onUnmounted(() => {
           <div class="flex flex-col gap-4 pr-10 sm:flex-row sm:items-start sm:justify-between sm:pr-0">
             <div>
               <p class="text-xs font-black uppercase tracking-[0.32em] text-pink-300">
-                Recompensa diaria
+                {{ $t('rewards.dailyReward') }}
               </p>
               <h2 class="mt-3 text-2xl font-black leading-tight sm:text-4xl">
-                Racha de 7 días
+                {{ $t('rewards.sevenDayStreak') }}
               </h2>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                Entra cada día y reclama puntos gratis para apoyar a tu artista favorito.
-                Si saltas un día, la racha reinicia.
+                {{ $t('rewards.dailyDescription') }}
               </p>
             </div>
 
             <div class="self-start rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-left">
-              <p class="text-[10px] font-black uppercase tracking-widest text-emerald-300">Hoy</p>
+              <p class="text-[10px] font-black uppercase tracking-widest text-emerald-300">{{ $t('rewards.today') }}</p>
               <p class="mt-1 text-lg font-black text-emerald-100">
-                {{ claimed ? '✓ Reclamado' : '+15 pts' }}
+                {{ claimed ? `✓ ${$t('rewards.claimed')}` : '+15 pts' }}
               </p>
             </div>
           </div>
@@ -108,7 +107,7 @@ onUnmounted(() => {
               </div>
 
               <p class="mt-3 text-xs font-black uppercase tracking-widest text-slate-400">
-                Día {{ reward.day }}
+                {{ $t('rewards.day', { day: reward.day }) }}
               </p>
               <p
                 class="mt-1 text-2xl font-black"
@@ -116,7 +115,7 @@ onUnmounted(() => {
               >
                 +{{ reward.points }}
               </p>
-              <p class="text-xs font-bold uppercase text-slate-500">pts</p>
+              <p class="text-xs font-bold uppercase text-slate-500">{{ $t('rewards.pointsShort') }}</p>
             </article>
           </div>
 
@@ -128,9 +127,9 @@ onUnmounted(() => {
                 </span>
                 <div>
                   <p class="font-black text-emerald-100">
-                    {{ claimed ? 'Reclamaste +15 pts hoy' : 'Tu recompensa de hoy está lista' }}
+                    {{ claimed ? $t('rewards.claimedToday') : $t('rewards.todayReady') }}
                   </p>
-                  <p class="mt-1 text-sm text-slate-300">Vuelve mañana por <span class="font-black text-white">+20 pts</span> · Día 3</p>
+                  <p class="mt-1 text-sm text-slate-300">{{ $t('rewards.tomorrow') }} <span class="font-black text-white">+20 pts</span> · {{ $t('rewards.day', { day: 3 }) }}</p>
                 </div>
               </div>
 
@@ -139,7 +138,7 @@ onUnmounted(() => {
                 class="min-h-12 w-full rounded-2xl bg-linear-to-r from-cyan-400 to-violet-500 px-6 text-sm font-black uppercase text-white shadow-lg shadow-violet-950/40 transition hover:scale-[1.02] sm:w-auto"
                 @click="claimReward"
               >
-                {{ claimed ? 'Reclamado' : 'Reclamar ahora' }}
+                {{ claimed ? $t('rewards.claimed') : $t('rewards.claimNow') }}
               </button>
             </div>
           </div>

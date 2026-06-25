@@ -10,6 +10,7 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const props = defineProps({
   showForm: {
@@ -70,7 +71,7 @@ const errorMessage = ref('')
 const successMessage = ref('')
 let unsubscribeCategories = null
 
-const formTitle = computed(() => editingCategoryId.value ? 'Editar categoría' : 'Crear categoría')
+const formTitle = computed(() => editingCategoryId.value ? translate('admin.categories.editTitle') : translate('admin.categories.createTitle'))
 const shouldShowForm = computed(() => props.showForm || isFormOpen.value || Boolean(editingCategoryId.value))
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
 
@@ -110,14 +111,14 @@ const saveCategory = async () => {
   successMessage.value = ''
 
   if (!categoryForm.value.name.trim()) {
-    errorMessage.value = 'Escribe el nombre de la categoría.'
+    errorMessage.value = translate('admin.categories.errors.name')
     return
   }
 
   const year = Number(categoryForm.value.year || currentYear)
 
   if (!year || year < 2000) {
-    errorMessage.value = 'Indica un año válido.'
+    errorMessage.value = translate('admin.categories.errors.year')
     return
   }
 
@@ -134,13 +135,13 @@ const saveCategory = async () => {
 
     if (editingCategoryId.value) {
       await updateDoc(doc(db, 'pollCategories', editingCategoryId.value), categoryData)
-      successMessage.value = 'Categoría actualizada.'
+      successMessage.value = translate('admin.categories.updated')
     } else {
       await addDoc(collection(db, 'pollCategories'), {
         ...categoryData,
         createdAt: serverTimestamp(),
       })
-      successMessage.value = 'Categoría creada.'
+      successMessage.value = translate('admin.categories.created')
     }
 
     resetForm()
@@ -149,14 +150,14 @@ const saveCategory = async () => {
       window.location.href = '/admin/categorias'
     }
   } catch {
-    errorMessage.value = 'No se pudo guardar la categoría.'
+    errorMessage.value = translate('admin.categories.errors.save')
   } finally {
     isSaving.value = false
   }
 }
 
 const removeCategory = async (category) => {
-  const confirmed = window.confirm(`Eliminar la categoría "${category.name}"?`)
+  const confirmed = window.confirm(translate('admin.categories.confirmDelete', { name: category.name }))
 
   if (!confirmed) {
     return
@@ -167,13 +168,13 @@ const removeCategory = async (category) => {
 
   try {
     await deleteDoc(doc(db, 'pollCategories', category.id))
-    successMessage.value = 'Categoría eliminada.'
+    successMessage.value = translate('admin.categories.deleted')
 
     if (editingCategoryId.value === category.id) {
       resetForm()
     }
   } catch {
-    errorMessage.value = 'No se pudo eliminar la categoría.'
+    errorMessage.value = translate('admin.categories.errors.delete')
   }
 }
 
@@ -211,7 +212,7 @@ onUnmounted(() => {
         <div class="flex items-start justify-between gap-4">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-              Categorías
+              {{ $t('admin.categories.eyebrow') }}
             </p>
             <h2 class="mt-2 text-3xl font-black text-white">
               {{ formTitle }}
@@ -220,14 +221,14 @@ onUnmounted(() => {
           <button
             type="button"
             class="grid size-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/5 text-xl font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
-            aria-label="Cerrar"
+            :aria-label="$t('admin.common.close')"
             @click="resetForm"
           >
             ×
           </button>
         </div>
         <p class="mt-2 text-sm leading-6 text-slate-400">
-          Crea categorías por año. Luego al crear una votación seleccionas una categoría.
+          {{ $t('admin.categories.description') }}
         </p>
 
         <a
@@ -235,12 +236,12 @@ onUnmounted(() => {
           href="/admin/categorias"
           class="mt-4 inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10"
         >
-          Volver a categorías
+          {{ $t('admin.categories.back') }}
         </a>
 
         <form class="mt-5 space-y-4" @submit.stop.prevent="saveCategory">
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Nombre</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.categories.name') }}</span>
           <input
             v-model="categoryForm.name"
             type="text"
@@ -250,7 +251,7 @@ onUnmounted(() => {
         </label>
 
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Año</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.categories.year') }}</span>
           <input
             v-model.number="categoryForm.year"
             type="number"
@@ -261,7 +262,7 @@ onUnmounted(() => {
         </label>
 
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Icono</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.categories.icon') }}</span>
           <select
             v-model="categoryForm.icon"
             class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-[#111327] px-4 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
@@ -277,7 +278,7 @@ onUnmounted(() => {
         </label>
 
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Fondo</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.categories.background') }}</span>
           <select
             v-model="categoryForm.visual"
             class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-[#111327] px-4 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
@@ -326,14 +327,14 @@ onUnmounted(() => {
             class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="isSaving"
           >
-            {{ isSaving ? 'Guardando...' : editingCategoryId ? 'Actualizar' : 'Crear' }}
+            {{ isSaving ? $t('admin.common.saving') : editingCategoryId ? $t('common.actions.update') : $t('common.actions.create') }}
           </button>
           <button
             type="button"
             class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
             @click="resetForm"
           >
-            {{ editingCategoryId ? 'Cancelar edición' : 'Cerrar' }}
+            {{ editingCategoryId ? $t('admin.common.cancelEdit') : $t('admin.common.close') }}
           </button>
         </div>
         </form>
@@ -344,9 +345,9 @@ onUnmounted(() => {
       <div class="flex items-center justify-between gap-4">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.24em] text-amber-300">
-            Salón de la fama
+            {{ $t('admin.categories.hallOfFame') }}
           </p>
-          <h3 class="mt-2 text-2xl font-black text-white">Categorías por año</h3>
+          <h3 class="mt-2 text-2xl font-black text-white">{{ $t('admin.categories.title') }}</h3>
         </div>
         <div class="flex flex-wrap justify-end gap-3">
           <button
@@ -354,10 +355,10 @@ onUnmounted(() => {
             class="inline-flex min-h-10 items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
             @click="openCreateForm"
           >
-            Crear categoría
+            {{ $t('admin.categories.createTitle') }}
           </button>
           <span class="inline-flex min-h-10 items-center rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-widest text-slate-300">
-            {{ categories.length }} categorías
+            {{ $t('admin.categories.count', { count: categories.length }) }}
           </span>
         </div>
       </div>
@@ -366,10 +367,10 @@ onUnmounted(() => {
         <table class="min-w-full text-left">
           <thead class="bg-white/5 text-xs font-black uppercase tracking-widest text-slate-400">
             <tr>
-              <th class="px-4 py-4">Categoría</th>
-              <th class="px-4 py-4">Visual</th>
-              <th class="px-4 py-4">Año</th>
-              <th class="px-4 py-4 text-right">Acciones</th>
+              <th class="px-4 py-4">{{ $t('admin.categories.eyebrow') }}</th>
+              <th class="px-4 py-4">{{ $t('admin.categories.visual') }}</th>
+              <th class="px-4 py-4">{{ $t('admin.categories.year') }}</th>
+              <th class="px-4 py-4 text-right">{{ $t('admin.categories.actions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-white/10">
@@ -402,21 +403,21 @@ onUnmounted(() => {
                     class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
                     @click="editCategory(category)"
                   >
-                    Editar
+                    {{ $t('admin.common.edit') }}
                   </button>
                   <button
                     type="button"
                     class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
                     @click="removeCategory(category)"
                   >
-                    Eliminar
+                    {{ $t('admin.common.delete') }}
                   </button>
                 </div>
               </td>
             </tr>
             <tr v-if="!categories.length">
               <td colspan="4" class="px-4 py-10 text-center text-sm font-bold text-slate-400">
-                Todavía no hay categorías.
+                {{ $t('admin.categories.empty') }}
               </td>
             </tr>
           </tbody>

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { translate } from '../i18n'
 
 const feedUrl = 'https://www.musicmundial.com/en/feed/'
 const feedProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`
@@ -249,7 +250,7 @@ const loadNews = async () => {
 
     newsItems.value = sortByRecent(newsFromItems(items))
   } catch {
-    errorMessage.value = 'No se pudieron cargar las noticias externas.'
+    errorMessage.value = translate('news.errors.loadExternal')
     newsItems.value = []
   } finally {
     isLoading.value = false

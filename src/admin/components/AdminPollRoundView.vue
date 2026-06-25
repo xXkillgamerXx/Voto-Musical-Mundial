@@ -15,6 +15,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { translate } from '../../i18n'
 
 const props = defineProps({
   pollId: {
@@ -237,9 +238,9 @@ const addRoundContestant = async (artist) => {
       matchOrder: null,
       addedAt: serverTimestamp(),
     })
-    successMessage.value = 'Artista agregado a la ronda.'
+    successMessage.value = translate('admin.round.added')
   } catch {
-    errorMessage.value = 'No se pudo agregar el artista a la ronda.'
+    errorMessage.value = translate('admin.round.errors.add')
   }
 }
 
@@ -250,7 +251,7 @@ const toggleGroupArtist = (contestantId) => {
   }
 
   if (selectedGroupArtistIds.value.length >= 2) {
-    errorMessage.value = 'Solo puedes seleccionar 2 artistas por grupo.'
+    errorMessage.value = translate('admin.round.errors.groupLimit')
     return
   }
 
@@ -269,7 +270,7 @@ const createVersusGroup = async () => {
   successMessage.value = ''
 
   if (selectedGroupArtistIds.value.length !== 2) {
-    errorMessage.value = 'Selecciona exactamente 2 artistas para crear el grupo.'
+    errorMessage.value = translate('admin.round.errors.groupExact')
     return
   }
 
@@ -290,7 +291,7 @@ const createVersusGroup = async () => {
     isGroupModalOpen.value = false
     successMessage.value = `Grupo ${nextGroupNumber} creado.`
   } catch {
-    errorMessage.value = 'No se pudo crear el grupo.'
+    errorMessage.value = translate('admin.round.errors.createGroup')
   }
 }
 
@@ -311,7 +312,7 @@ const removeVersusGroup = async (group) => {
     await batch.commit()
     successMessage.value = `Grupo ${group.groupNumber} eliminado.`
   } catch {
-    errorMessage.value = 'No se pudo eliminar el grupo.'
+    errorMessage.value = translate('admin.round.errors.deleteGroup')
   }
 }
 
@@ -339,7 +340,7 @@ const moveRoundContestant = async (contestant, direction) => {
 
     await batch.commit()
   } catch {
-    errorMessage.value = 'No se pudo reordenar el artista.'
+    errorMessage.value = translate('admin.round.errors.reorder')
   }
 }
 
@@ -348,7 +349,7 @@ const saveRoundSettings = async () => {
   successMessage.value = ''
 
   if (!roundForm.value.title.trim()) {
-    errorMessage.value = 'Escribe el nombre de la ronda.'
+    errorMessage.value = translate('admin.round.errors.nameRequired')
     return
   }
 
@@ -361,9 +362,9 @@ const saveRoundSettings = async () => {
       endAt: toTimestamp(roundForm.value.endAt),
       updatedAt: serverTimestamp(),
     })
-    successMessage.value = 'Ronda actualizada.'
+    successMessage.value = translate('admin.round.updated')
   } catch {
-    errorMessage.value = 'No se pudo actualizar la ronda.'
+    errorMessage.value = translate('admin.round.errors.update')
   } finally {
     isSavingRound.value = false
   }
@@ -389,9 +390,9 @@ const confirmRemoveRoundContestant = async () => {
     await deleteDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestantToRemove.value.id))
     isRemoveContestantModalOpen.value = false
     contestantToRemove.value = null
-    successMessage.value = 'Artista quitado de la ronda.'
+    successMessage.value = translate('admin.round.removed')
   } catch {
-    errorMessage.value = 'No se pudo quitar el artista.'
+    errorMessage.value = translate('admin.round.errors.remove')
   } finally {
     isRemovingContestant.value = false
   }
@@ -416,7 +417,7 @@ const deleteRound = async () => {
     isDeleteModalOpen.value = false
     window.location.href = `/admin/votaciones/${props.pollId}`
   } catch {
-    errorMessage.value = 'No se pudo eliminar la ronda.'
+    errorMessage.value = translate('admin.round.errors.delete')
     isDeletingRound.value = false
   }
 }
@@ -477,7 +478,7 @@ onUnmounted(() => {
             <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-300">
               Datos
             </p>
-            <h3 class="mt-1 text-xl font-black text-white">Datos y configuración de la ronda</h3>
+            <h3 class="mt-1 text-xl font-black text-white">{{ $t('admin.round.configTitle') }}</h3>
             <p class="mt-1 text-xs text-slate-400">
               Edita el nombre, tipo y estado de esta ronda.
             </p>
@@ -494,41 +495,41 @@ onUnmounted(() => {
 
         <form class="mt-4 grid gap-3 xl:grid-cols-12" @submit.prevent="saveRoundSettings">
           <label class="space-y-2 xl:col-span-6">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-300">Nombre de la ronda</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-300">{{ $t('admin.round.roundName') }}</span>
             <input
               v-model="roundForm.title"
               type="text"
               class="w-full rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-2.5 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
-              placeholder="Ronda 1"
+              :placeholder="$t('admin.round.roundNamePlaceholder')"
             />
           </label>
 
           <div class="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-2.5 xl:col-span-3">
-            <p class="text-xs font-black uppercase tracking-widest text-slate-500">Tipo</p>
+            <p class="text-xs font-black uppercase tracking-widest text-slate-500">{{ $t('admin.round.type') }}</p>
             <p class="mt-1 text-sm font-bold text-slate-200">
               {{ roundForm.type === 'versus' ? 'Versus' : 'Lista' }}
             </p>
           </div>
 
           <label class="space-y-2 xl:col-span-3">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-300">Estado</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-300">{{ $t('admin.round.status') }}</span>
             <select
               v-model="roundForm.status"
               class="w-full rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-2.5 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
             >
-              <option value="draft">Borrador</option>
-              <option value="live">En vivo</option>
-              <option value="closed">Cerrada</option>
+              <option value="draft">{{ $t('common.status.draft') }}</option>
+              <option value="live">{{ $t('common.status.live') }}</option>
+              <option value="closed">{{ $t('common.status.closed') }}</option>
             </select>
           </label>
 
           <div class="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-2.5 xl:col-span-12">
-            <p class="text-xs font-black uppercase tracking-widest text-slate-500">Finaliza</p>
+            <p class="text-xs font-black uppercase tracking-widest text-slate-500">{{ $t('admin.round.ends') }}</p>
             <p class="mt-1 text-sm font-bold text-slate-200">{{ formatDate(round?.endAt) }}</p>
           </div>
 
           <label class="space-y-2 xl:col-span-12">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-300">Fecha de finalización</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-300">{{ $t('admin.round.endDate') }}</span>
             <span class="relative block">
               <input
                 ref="roundEndAtInput"
@@ -539,7 +540,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-xl border border-white/10 bg-white/8 text-slate-200 transition hover:bg-white/15 hover:text-white"
-                aria-label="Abrir calendario"
+                :aria-label="$t('admin.monitor.openCalendar')"
                 @click="openDatePicker(roundEndAtInput)"
               >
                 <svg class="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -550,7 +551,7 @@ onUnmounted(() => {
           </label>
 
           <div class="flex flex-col gap-2 rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-2.5 xl:col-span-7">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-500">ID</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-500">{{ $t('admin.round.id') }}</span>
             <p class="truncate text-xs font-bold text-slate-500">
               {{ props.roundId }}
             </p>
@@ -574,7 +575,7 @@ onUnmounted(() => {
           <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300">
             Asignación
           </p>
-          <h3 class="mt-1 text-xl font-black text-white">Asignar artistas a la ronda</h3>
+          <h3 class="mt-1 text-xl font-black text-white">{{ $t('admin.round.assignArtists') }}</h3>
           <p class="mt-1 text-xs text-slate-400">
             <span v-if="roundForm.type === 'versus'">
               {{ availableArtistsHelp }} Luego crea grupos de 2 artistas para cada duelo.
@@ -590,7 +591,7 @@ onUnmounted(() => {
       <div class="mt-4 grid gap-4 xl:grid-cols-2">
         <section class="rounded-2xl border border-white/10 bg-slate-950/35 p-3">
           <div class="flex items-center justify-between gap-3">
-            <h4 class="text-lg font-black text-white">Disponibles</h4>
+            <h4 class="text-lg font-black text-white">{{ $t('admin.round.available') }}</h4>
             <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
               {{ availableArtists.length }} artistas
             </span>
@@ -628,14 +629,14 @@ onUnmounted(() => {
               <span v-if="previousRound && !previousWinnerIds.length">
                 La ronda anterior aun no tiene ganadores seleccionados.
               </span>
-              <span v-else>No hay artistas disponibles.</span>
+              <span v-else>{{ $t('admin.round.emptyAvailable') }}</span>
             </p>
           </div>
         </section>
 
         <section class="rounded-2xl border border-white/10 bg-slate-950/35 p-3">
           <div class="flex items-center justify-between gap-3">
-            <h4 class="text-lg font-black text-white">En esta ronda</h4>
+            <h4 class="text-lg font-black text-white">{{ $t('admin.round.inRound') }}</h4>
             <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-200">
               {{ currentContestants.length }} asignados
             </span>
@@ -708,7 +709,7 @@ onUnmounted(() => {
         class="mt-4 rounded-2xl border border-white/10 bg-slate-950/35 p-3"
       >
         <div class="flex items-center justify-between gap-3">
-          <h4 class="text-lg font-black text-white">Duelos generados</h4>
+          <h4 class="text-lg font-black text-white">{{ $t('admin.round.generatedDuels') }}</h4>
           <div class="flex items-center gap-2">
             <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
               {{ versusGroups.length }} grupos
