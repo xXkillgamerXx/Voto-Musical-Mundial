@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
-  addDoc,
   collection,
   doc,
   getDocs,
@@ -9,8 +8,8 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -27,7 +26,9 @@ const artists = ref([]);
 const contestants = ref([]);
 const rounds = ref([]);
 const selectedRoundContestants = ref([]);
+const finalResultContestants = ref([]);
 const currentUser = ref(null);
+const userPoints = ref(0);
 const isLoading = ref(true);
 const isLoadingSelectedRound = ref(false);
 const isVoting = ref("");
@@ -35,12 +36,16 @@ const errorMessage = ref("");
 const shareMessage = ref("");
 const now = ref(Date.now());
 const selectedRoundId = ref("");
+const voteModalContestant = ref(null);
+const voteAmount = ref(1);
 
 let unsubscribeAuth = null;
 let unsubscribePoll = null;
 let unsubscribeContestants = null;
 let unsubscribeRounds = null;
+let unsubscribeUserPoints = null;
 let clockTimer = null;
+const POINTS_PER_VOTE = 1;
 
 const getArtist = (artistId) =>
   artists.value.find((artist) => artist.id === artistId);
@@ -164,6 +169,23 @@ const totalVotes = computed(() =>
   ),
 );
 
+const finalResultTotalVotes = computed(() =>
+  finalResultContestants.value.reduce(
+    (total, contestant) => total + contestant.totalVotes,
+    0,
+  ),
+);
+
+const finalResultSourceContestants = computed(() =>
+  finalResultContestants.value.length
+    ? finalResultContestants.value
+    : rankedContestants.value,
+);
+
+const finalResultSourceTotalVotes = computed(() =>
+  finalResultContestants.value.length ? finalResultTotalVotes.value : totalVotes.value,
+);
+
 const displayedContestants = computed(() =>
   selectedRoundStep.value?.status === "closed"
     ? selectedRoundContestants.value
@@ -180,6 +202,22 @@ const displayedTotalVotes = computed(() =>
 const shouldShowVoteButtons = computed(
   () => isVotingOpen.value && selectedRoundStep.value?.status !== "closed",
 );
+const hasEnoughPointsToVote = computed(
+  () => Number(userPoints.value || 0) >= POINTS_PER_VOTE,
+);
+const formattedUserPoints = computed(() =>
+  Number(userPoints.value || 0).toLocaleString("es"),
+);
+const maxVoteAmount = computed(() =>
+  Math.max(0, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE)),
+);
+const normalizedVoteAmount = computed(() =>
+  Math.min(
+    maxVoteAmount.value,
+    Math.max(1, Math.floor(Number(voteAmount.value || 1))),
+  ),
+);
+const selectedVoteArtist = computed(() => voteModalContestant.value?.artist || null);
 
 const winners = computed(() =>
   rankedContestants.value.filter(
@@ -253,6 +291,13 @@ const finalWinnerArtists = computed(() => {
     ? poll.value.winnerIds
     : finalRound?.winnerIds || [];
 
+  if (!winnerIds.length && finalResultSourceContestants.value.length) {
+    return finalResultSourceContestants.value
+      .slice(0, 1)
+      .map((contestant) => contestant.artist)
+      .filter(Boolean);
+  }
+
   return winnerIds
     .slice(0, 1)
     .map((artistId) => getArtist(artistId))
@@ -267,15 +312,36 @@ const finalWinnerEntries = computed(() => {
     ? poll.value.winnerIds
     : finalRound?.winnerIds || [];
 
+  if (!winnerIds.length && finalResultSourceContestants.value.length) {
+    const contestant = finalResultSourceContestants.value[0];
+    const votes = Number(contestant?.totalVotes || 0);
+    const percent = finalResultSourceTotalVotes.value
+      ? (votes / finalResultSourceTotalVotes.value) * 100
+      : 0;
+
+    return [
+      {
+        id: contestant.artistId || contestant.id,
+        artist: contestant.artist,
+        votes,
+        percent,
+        percentLabel: `${percent.toFixed(2)}%`,
+        percentWidth: `${Math.min(percent, 100)}%`,
+      },
+    ].filter((entry) => entry.artist);
+  }
+
   return winnerIds
     .slice(0, 1)
     .map((artistId) => {
       const artist = getArtist(artistId);
-      const contestant = rankedContestants.value.find(
+      const contestant = finalResultSourceContestants.value.find(
         (item) => item.artistId === artistId,
       );
       const votes = Number(contestant?.totalVotes || 0);
-      const percent = totalVotes.value ? (votes / totalVotes.value) * 100 : 0;
+      const percent = finalResultSourceTotalVotes.value
+        ? (votes / finalResultSourceTotalVotes.value) * 100
+        : 0;
 
       return {
         id: artistId,
@@ -290,10 +356,12 @@ const finalWinnerEntries = computed(() => {
 });
 
 const finalRankingEntries = computed(() =>
-  rankedContestants.value
+  finalResultSourceContestants.value
     .map((contestant, index) => {
       const votes = Number(contestant.totalVotes || 0);
-      const percent = totalVotes.value ? (votes / totalVotes.value) * 100 : 0;
+      const percent = finalResultSourceTotalVotes.value
+        ? (votes / finalResultSourceTotalVotes.value) * 100
+        : 0;
 
       return {
         id: contestant.id,
@@ -309,8 +377,8 @@ const finalRankingEntries = computed(() =>
 );
 
 const podiumEntries = computed(() => finalRankingEntries.value.slice(1, 3));
-const remainingRankingEntries = computed(() =>
-  finalRankingEntries.value.slice(3),
+const secondaryFinalRankingEntries = computed(() =>
+  finalRankingEntries.value.slice(1),
 );
 
 const shareFinalWinner = async (winner) => {
@@ -533,6 +601,65 @@ const percentForMatch = (contestant, match) => {
   return `${((contestant.totalVotes / totalMatchVotes) * 100).toFixed(2)}%`;
 };
 
+const getRoundContestants = async (round) => {
+  const selectedPollId = poll.value?.id || currentPollId.value;
+
+  if (!selectedPollId || !round?.id) {
+    return [];
+  }
+
+  const contestantsSnap = await getDocs(
+    collection(db, "polls", selectedPollId, "rounds", round.id, "contestants"),
+  );
+
+  return contestantsSnap.docs
+    .map((contestantDoc) => {
+      const contestant = contestantDoc.data();
+      const totalVotes = Number(
+        contestant.totalVotes ??
+          (contestant.votes || 0) + (contestant.manualVotes || 0),
+      );
+
+      return {
+        id: contestantDoc.id,
+        ...contestant,
+        artistId: contestant.artistId || contestantDoc.id,
+        artist: getArtist(contestant.artistId || contestantDoc.id),
+        totalVotes,
+      };
+    })
+    .filter((contestant) => contestant.artist)
+    .sort((current, next) => next.totalVotes - current.totalVotes);
+};
+
+const getVoteTotalsByArtist = async (roundIds = []) => {
+  const selectedPollId = poll.value?.id || currentPollId.value;
+
+  if (!selectedPollId) {
+    return new Map();
+  }
+
+  const allowedRoundIds = new Set(roundIds.filter(Boolean));
+  const votesSnap = await getDocs(collection(db, "polls", selectedPollId, "votes"));
+  const totals = new Map();
+
+  votesSnap.docs.forEach((voteDoc) => {
+    const vote = voteDoc.data();
+
+    if (allowedRoundIds.size && !allowedRoundIds.has(vote.roundId)) {
+      return;
+    }
+
+    if (!vote.artistId) {
+      return;
+    }
+
+    totals.set(vote.artistId, (totals.get(vote.artistId) || 0) + Number(vote.amount || 1));
+  });
+
+  return totals;
+};
+
 const listenContestants = (pollId) => {
   unsubscribeContestants?.();
 
@@ -572,33 +699,7 @@ const loadSelectedRoundContestants = async (round) => {
   isLoadingSelectedRound.value = true;
 
   try {
-    const contestantsSnap = await getDocs(
-      collection(
-        db,
-        "polls",
-        selectedPollId,
-        "rounds",
-        round.id,
-        "contestants",
-      ),
-    );
-
-    selectedRoundContestants.value = contestantsSnap.docs
-      .map((contestantDoc) => {
-        const contestant = contestantDoc.data();
-        const totalVotes = Number(
-          contestant.totalVotes ??
-            (contestant.votes || 0) + (contestant.manualVotes || 0),
-        );
-
-        return {
-          id: contestantDoc.id,
-          ...contestant,
-          artist: getArtist(contestant.artistId || contestantDoc.id),
-          totalVotes,
-        };
-      })
-      .filter((contestant) => contestant.artist)
+    selectedRoundContestants.value = (await getRoundContestants(round))
       .sort((current, next) => {
         const currentWinnerIndex = (round.winnerIds || []).indexOf(
           current.artistId,
@@ -620,6 +721,49 @@ const loadSelectedRoundContestants = async (round) => {
   }
 };
 
+const loadFinalResultContestants = async () => {
+  finalResultContestants.value = [];
+
+  if (!currentPollId.value || !rounds.value.length) {
+    return;
+  }
+
+  const closedRounds = rounds.value
+    .filter((round) => round.status === "closed")
+    .slice();
+  const totalsByArtist = new Map();
+  const voteTotalsByArtist = await getVoteTotalsByArtist(
+    closedRounds.map((round) => round.id),
+  );
+  const hasVoteCollectionTotals = voteTotalsByArtist.size > 0;
+
+  for (const round of closedRounds) {
+    try {
+      const roundContestants = await getRoundContestants(round);
+
+      roundContestants.forEach((contestant) => {
+        const artistId = contestant.artistId || contestant.id;
+        const currentTotal = totalsByArtist.get(artistId);
+        const totalVotes = hasVoteCollectionTotals
+          ? voteTotalsByArtist.get(artistId) || currentTotal?.totalVotes || 0
+          : (currentTotal?.totalVotes || 0) + contestant.totalVotes;
+
+        totalsByArtist.set(artistId, {
+          ...contestant,
+          artistId,
+          totalVotes,
+        });
+      });
+    } catch {
+      // Skip rounds that cannot be read and continue aggregating the rest.
+    }
+  }
+
+  finalResultContestants.value = [...totalsByArtist.values()]
+    .filter((contestant) => contestant.artist)
+    .sort((current, next) => next.totalVotes - current.totalVotes);
+};
+
 const listenRounds = (pollId) => {
   unsubscribeRounds?.();
   unsubscribeRounds = onSnapshot(
@@ -634,6 +778,7 @@ const listenRounds = (pollId) => {
       }));
       listenContestants(pollId);
       syncSelectedRoundFromUrl();
+      loadFinalResultContestants();
     },
     () => {
       errorMessage.value = "No se pudieron cargar las rondas.";
@@ -687,7 +832,25 @@ const loadPoll = async () => {
   }
 };
 
-const voteFor = async (contestant) => {
+const listenUserPoints = (user) => {
+  unsubscribeUserPoints?.();
+  userPoints.value = 0;
+
+  if (!user) {
+    return;
+  }
+
+  unsubscribeUserPoints = onSnapshot(doc(db, "users", user.uid), (userSnap) => {
+    userPoints.value = Number(userSnap.data()?.points || 0);
+  });
+};
+
+const closeVoteModal = () => {
+  voteModalContestant.value = null;
+  voteAmount.value = 1;
+};
+
+const openVoteModal = (contestant) => {
   errorMessage.value = "";
 
   if (!currentUser.value) {
@@ -700,17 +863,57 @@ const voteFor = async (contestant) => {
     return;
   }
 
+  if (!hasEnoughPointsToVote.value) {
+    errorMessage.value = "No tienes puntos suficientes para votar.";
+    return;
+  }
+
+  voteModalContestant.value = contestant;
+  voteAmount.value = Math.min(1, maxVoteAmount.value);
+};
+
+const setVoteAmount = (amount) => {
+  voteAmount.value = Math.min(
+    maxVoteAmount.value,
+    Math.max(1, Math.floor(Number(amount || 1))),
+  );
+};
+
+const adjustVoteAmount = (amount) => {
+  setVoteAmount(Number(voteAmount.value || 1) + amount);
+};
+
+const voteFor = async (contestant, amount = 1) => {
+  errorMessage.value = "";
+
+  if (!currentUser.value) {
+    errorMessage.value = "Inicia sesion para votar.";
+    return;
+  }
+
+  if (!poll.value?.id || !isVotingOpen.value) {
+    errorMessage.value = "La votacion no esta abierta.";
+    return;
+  }
+
+  const votesToAdd = Math.floor(Number(amount || 1));
+  const pointsToSpend = votesToAdd * POINTS_PER_VOTE;
+
+  if (!Number.isInteger(votesToAdd) || votesToAdd < 1) {
+    errorMessage.value = "Indica cuantos votos quieres dar.";
+    return;
+  }
+
+  if (Number(userPoints.value || 0) < pointsToSpend) {
+    errorMessage.value = "No tienes puntos suficientes para votar.";
+    return;
+  }
+
   isVoting.value = contestant.artistId;
 
   try {
-    await addDoc(collection(db, "polls", poll.value.id, "votes"), {
-      userId: currentUser.value.uid,
-      artistId: contestant.artistId,
-      roundId: activeRound.value?.id || null,
-      amount: 1,
-      createdAt: serverTimestamp(),
-    });
-
+    const voteRef = doc(collection(db, "polls", poll.value.id, "votes"));
+    const userRef = doc(db, "users", currentUser.value.uid);
     const contestantRef = activeRound.value
       ? doc(
           db,
@@ -723,20 +926,55 @@ const voteFor = async (contestant) => {
         )
       : doc(db, "polls", poll.value.id, "contestants", contestant.artistId);
 
-    await updateDoc(contestantRef, {
-      votes: increment(1),
-      totalVotes: increment(1),
+    await runTransaction(db, async (transaction) => {
+      const userSnap = await transaction.get(userRef);
+      const availablePoints = Number(userSnap.data()?.points || 0);
+
+      if (availablePoints < pointsToSpend) {
+        throw new Error("not-enough-points");
+      }
+
+      transaction.update(userRef, {
+        points: increment(-pointsToSpend),
+        spentPoints: increment(pointsToSpend),
+      });
+      transaction.set(voteRef, {
+        userId: currentUser.value.uid,
+        artistId: contestant.artistId,
+        roundId: activeRound.value?.id || null,
+        amount: votesToAdd,
+        pointsSpent: pointsToSpend,
+        createdAt: serverTimestamp(),
+      });
+      transaction.update(contestantRef, {
+        votes: increment(votesToAdd),
+        totalVotes: increment(votesToAdd),
+      });
     });
-  } catch {
-    errorMessage.value = "No se pudo registrar tu voto.";
+    closeVoteModal();
+  } catch (error) {
+    errorMessage.value =
+      error.message === "not-enough-points"
+        ? "No tienes puntos suficientes para votar."
+        : "No se pudo registrar tu voto.";
   } finally {
     isVoting.value = "";
   }
 };
 
+const confirmVoteAmount = () => {
+  if (!voteModalContestant.value) {
+    return;
+  }
+
+  setVoteAmount(voteAmount.value);
+  voteFor(voteModalContestant.value, normalizedVoteAmount.value);
+};
+
 onMounted(() => {
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     currentUser.value = user;
+    listenUserPoints(user);
   });
   clockTimer = window.setInterval(() => {
     now.value = Date.now();
@@ -749,6 +987,7 @@ onUnmounted(() => {
   unsubscribePoll?.();
   unsubscribeContestants?.();
   unsubscribeRounds?.();
+  unsubscribeUserPoints?.();
   window.clearInterval(clockTimer);
 });
 </script>
@@ -1102,26 +1341,21 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-if="
-          isClosed &&
-          finalWinnerEntries.length &&
-          (podiumEntries.length || remainingRankingEntries.length)
-        "
+        v-if="isClosed && finalWinnerEntries.length && secondaryFinalRankingEntries.length"
         class="relative mt-6 rounded-4xl border border-white/10 bg-white/4 p-4 shadow-xl shadow-fuchsia-950/15 sm:p-6"
       >
         <p
-          v-if="podiumEntries.length"
-          class="text-center text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
+          class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
         >
-          También destacaron
+          Lugares finales
         </p>
-        <div v-if="podiumEntries.length" class="mt-4 grid gap-4 lg:grid-cols-2">
+        <div class="mt-4 space-y-3">
           <article
-            v-for="entry in podiumEntries"
+            v-for="entry in secondaryFinalRankingEntries"
             :key="entry.id"
-            class="winner-podium-card rounded-3xl border border-white/10 bg-slate-950/55 p-4"
+            class="winner-podium-card rounded-3xl border border-white/10 bg-slate-950/55 p-3 sm:p-4"
           >
-            <div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+            <div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
               <div class="flex min-w-0 items-center gap-3">
                 <span
                   class="grid size-12 shrink-0 place-items-center rounded-2xl border text-sm font-black"
@@ -1134,7 +1368,7 @@ onUnmounted(() => {
                   #{{ entry.rank }}
                 </span>
                 <span
-                  class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-xl font-black text-white"
+                  class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-xl font-black text-white"
                 >
                   <img
                     v-if="getArtistImage(entry.artist)"
@@ -1155,27 +1389,13 @@ onUnmounted(() => {
                 </span>
               </div>
 
-              <div class="grid grid-cols-2 gap-2 sm:min-w-56">
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p
-                    class="text-[10px] font-black uppercase tracking-widest text-slate-500"
-                  >
-                    Votos
-                  </p>
-                  <p class="mt-1 text-xl font-black text-white">
-                    {{ entry.votes.toLocaleString("es") }}
-                  </p>
-                </div>
-                <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p
-                    class="text-[10px] font-black uppercase tracking-widest text-slate-500"
-                  >
-                    Porcentaje
-                  </p>
-                  <p class="mt-1 text-xl font-black text-fuchsia-100">
-                    {{ entry.percentLabel }}
-                  </p>
-                </div>
+              <div class="sm:min-w-64 sm:text-right">
+                <p class="text-xs font-black uppercase tracking-widest text-slate-400">
+                  {{ entry.votes.toLocaleString("es") }} votos
+                </p>
+                <p class="mt-1 text-2xl font-black text-fuchsia-100">
+                  {{ entry.percentLabel }}
+                </p>
               </div>
             </div>
 
@@ -1188,43 +1408,6 @@ onUnmounted(() => {
               ></span>
             </span>
           </article>
-        </div>
-
-        <div
-          v-if="remainingRankingEntries.length"
-          class="mt-4 rounded-3xl border border-white/10 bg-slate-950/35 p-4 text-left"
-        >
-          <p
-            class="text-xs font-black uppercase tracking-[0.24em] text-slate-400"
-          >
-            Más lugares
-          </p>
-          <div class="mt-3 space-y-2">
-            <div
-              v-for="entry in remainingRankingEntries"
-              :key="entry.id"
-              class="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/45 p-3"
-            >
-              <span
-                class="grid size-9 place-items-center rounded-xl bg-white/5 text-xs font-black text-slate-300"
-              >
-                #{{ entry.rank }}
-              </span>
-              <span class="min-w-0">
-                <span class="block truncate text-sm font-black text-white">{{
-                  entry.artist.name
-                }}</span>
-                <span class="block truncate text-xs font-bold text-slate-500"
-                  >{{ entry.votes.toLocaleString("es") }} votos</span
-                >
-              </span>
-              <span
-                class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-fuchsia-100"
-              >
-                {{ entry.percentLabel }}
-              </span>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -1493,6 +1676,19 @@ onUnmounted(() => {
       </section>
 
       <section v-else class="mt-8 space-y-4">
+        <div
+          v-if="currentUser && shouldShowVoteButtons"
+          class="flex flex-col gap-2 rounded-3xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>
+            Tus puntos:
+            <strong class="text-lg text-amber-200">{{ formattedUserPoints }} pts</strong>
+          </span>
+          <span class="text-xs uppercase tracking-widest text-amber-200/75">
+            Cada voto cuesta {{ POINTS_PER_VOTE }} punto
+          </span>
+        </div>
+
         <template v-if="isLoadingSelectedRound">
           <article
             v-for="index in 4"
@@ -1627,10 +1823,20 @@ onUnmounted(() => {
                 v-if="shouldShowVoteButtons"
                 type="button"
                 class="col-span-3 min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:col-span-1"
-                :disabled="!isVotingOpen || isVoting === contestant.artistId"
-                @click="voteFor(contestant)"
+                :disabled="
+                  !isVotingOpen ||
+                  !hasEnoughPointsToVote ||
+                  isVoting === contestant.artistId
+                "
+                @click="openVoteModal(contestant)"
               >
-                {{ isVoting === contestant.artistId ? "Votando..." : "Votar" }}
+                {{
+                  isVoting === contestant.artistId
+                    ? "Votando..."
+                    : hasEnoughPointsToVote
+                      ? "Votar"
+                      : "Sin puntos"
+                }}
               </button>
             </div>
           </article>
@@ -1644,6 +1850,140 @@ onUnmounted(() => {
         </p>
       </section>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="voteModalContestant"
+        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      >
+        <div
+          class="w-full max-w-lg overflow-hidden rounded-4xl border border-fuchsia-300/30 bg-[#090b19] text-white shadow-2xl shadow-fuchsia-950/50"
+          @click.stop
+        >
+          <div class="relative p-5 sm:p-6">
+            <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,0.22),transparent_32%),radial-gradient(circle_at_95%_100%,rgba(34,211,238,0.18),transparent_34%)]"></div>
+            <button
+              type="button"
+              class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-xl font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
+              aria-label="Cerrar"
+              @click="closeVoteModal"
+            >
+              ×
+            </button>
+
+            <div class="relative z-10">
+              <div class="flex items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4">
+                <span class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-3xl border-2 border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-3xl font-black">
+                  <img
+                    v-if="getArtistImage(selectedVoteArtist)"
+                    :src="getArtistImage(selectedVoteArtist)"
+                    :alt="selectedVoteArtist?.name"
+                    class="size-full object-cover"
+                  />
+                  <span v-else>{{ selectedVoteArtist?.name?.charAt(0) || "A" }}</span>
+                </span>
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-300">
+                    Confirmar votos
+                  </p>
+                  <h2 class="mt-2 truncate text-2xl font-black">
+                    {{ selectedVoteArtist?.name || "Artista" }}
+                  </h2>
+                  <p class="mt-1 text-sm font-bold text-amber-200">
+                    Tienes {{ formattedUserPoints }} pts disponibles
+                  </p>
+                </div>
+              </div>
+
+              <form class="mt-5 space-y-4" @submit.prevent="confirmVoteAmount">
+                <label class="block rounded-3xl border border-white/10 bg-white/5 p-4">
+                  <span class="text-xs font-black uppercase tracking-widest text-slate-400">
+                    ¿Cuántos votos quieres dar?
+                  </span>
+                  <div class="mt-3 grid grid-cols-[auto_1fr_auto] gap-2">
+                    <button
+                      type="button"
+                      class="grid min-h-14 min-w-14 place-items-center rounded-2xl border border-white/10 bg-white/5 text-3xl font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="normalizedVoteAmount <= 1"
+                      aria-label="Restar un voto"
+                      @click="adjustVoteAmount(-1)"
+                    >
+                      −
+                    </button>
+                    <input
+                      v-model.number="voteAmount"
+                      type="number"
+                      min="1"
+                      :max="maxVoteAmount"
+                      step="1"
+                      class="min-h-14 w-full rounded-2xl border border-fuchsia-300/25 bg-slate-950 px-4 text-center text-3xl font-black text-white outline-none transition focus:border-fuchsia-300/70"
+                      @input="setVoteAmount(voteAmount)"
+                    />
+                    <button
+                      type="button"
+                      class="grid min-h-14 min-w-14 place-items-center rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-3xl font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="normalizedVoteAmount >= maxVoteAmount"
+                      aria-label="Sumar un voto"
+                      @click="adjustVoteAmount(1)"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span class="mt-2 block text-center text-xs font-bold text-slate-400">
+                    Máximo: {{ maxVoteAmount.toLocaleString("es") }} votos
+                  </span>
+                </label>
+
+                <div class="grid grid-cols-4 gap-2">
+                  <button
+                    v-for="quickAmount in [1, 5, 10, 25]"
+                    :key="quickAmount"
+                    type="button"
+                    class="min-h-10 rounded-2xl border border-white/10 bg-white/5 text-sm font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="quickAmount > maxVoteAmount"
+                    @click="setVoteAmount(quickAmount)"
+                  >
+                    {{ quickAmount }} {{ quickAmount === 1 ? "voto" : "votos" }}
+                  </button>
+                </div>
+
+                <p
+                  v-if="errorMessage"
+                  class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200"
+                >
+                  {{ errorMessage }}
+                </p>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
+                    @click="closeVoteModal"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="
+                      isVoting === voteModalContestant.artistId ||
+                      normalizedVoteAmount < 1 ||
+                      normalizedVoteAmount > maxVoteAmount
+                    "
+                  >
+                    {{
+                      isVoting === voteModalContestant.artistId
+                        ? "Votando..."
+                        : `Dar ${normalizedVoteAmount.toLocaleString("es")} votos`
+                    }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 

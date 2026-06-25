@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { availableLocales, setLocale, translate } from "../../i18n";
 import { auth, db } from "../../firebase";
@@ -25,13 +25,18 @@ const avatarImageFailed = ref(false);
 const currentUser = ref(null);
 const userRole = ref("");
 const userUsername = ref("");
+const userPoints = ref(0);
 let unsubscribeAuth = null;
+let unsubscribeUserProfile = null;
 
 const userName = computed(
   () => currentUser.value?.displayName || translate("nav.fanAccount"),
 );
 const userEmail = computed(() => currentUser.value?.email || "");
 const isAdmin = computed(() => userRole.value === "admin");
+const formattedUserPoints = computed(() =>
+  Number(userPoints.value || 0).toLocaleString(locale.value),
+);
 const profileHref = computed(() =>
   userUsername.value ? `/user/${userUsername.value}` : "/perfil",
 );
@@ -71,26 +76,32 @@ const toggleSettingsMenu = () => {
   isAccountMenuOpen.value = false;
 };
 
-const loadUserRole = async (user) => {
+const listenUserProfile = (user) => {
+  unsubscribeUserProfile?.();
   userRole.value = "";
   userUsername.value = "";
+  userPoints.value = 0;
 
   if (!user) {
     return;
   }
 
-  try {
-    const userSnap = await getDoc(doc(db, "users", user.uid));
-
-    if (currentUser.value?.uid === user.uid) {
-      const userData = userSnap.data() || {};
-      userRole.value = (userData.role || "").toLowerCase();
-      userUsername.value = userData.username || "";
-    }
-  } catch {
-    userRole.value = "";
-    userUsername.value = "";
-  }
+  unsubscribeUserProfile = onSnapshot(
+    doc(db, "users", user.uid),
+    (userSnap) => {
+      if (currentUser.value?.uid === user.uid) {
+        const userData = userSnap.data() || {};
+        userRole.value = (userData.role || "").toLowerCase();
+        userUsername.value = userData.username || "";
+        userPoints.value = Number(userData.points || 0);
+      }
+    },
+    () => {
+      userRole.value = "";
+      userUsername.value = "";
+      userPoints.value = 0;
+    },
+  );
 };
 
 onMounted(() => {
@@ -99,12 +110,13 @@ onMounted(() => {
     avatarImageFailed.value = false;
     isAccountMenuOpen.value = false;
     isSettingsMenuOpen.value = false;
-    loadUserRole(user);
+    listenUserProfile(user);
   });
 });
 
 onUnmounted(() => {
   unsubscribeAuth?.();
+  unsubscribeUserProfile?.();
 });
 </script>
 
@@ -158,7 +170,7 @@ onUnmounted(() => {
           class="hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
         >
           <span class="text-amber-300">◆</span>
-          <span>{{ $t("common.points", { count: "2,450" }) }}</span>
+          <span>{{ $t("common.points", { count: formattedUserPoints }) }}</span>
         </div>
 
         <div class="relative hidden md:block">
@@ -353,7 +365,7 @@ onUnmounted(() => {
             class="flex items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
           >
             <span class="text-amber-300">◆</span>
-            <span>{{ $t("common.points", { count: "2,450" }) }}</span>
+            <span>{{ $t("common.points", { count: formattedUserPoints }) }}</span>
           </div>
           <div
             class="rounded-2xl border border-white/10 bg-white/5 p-2 text-center sm:col-span-3"

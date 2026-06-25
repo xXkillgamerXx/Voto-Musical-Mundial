@@ -521,6 +521,8 @@ const handleRegister = async () => {
         phone: phone.value.trim(),
         phoneInternational: phoneForSave.value,
         email: email.value.trim(),
+        points: 25,
+        spentPoints: 0,
         createdAt: serverTimestamp(),
       })
     })
