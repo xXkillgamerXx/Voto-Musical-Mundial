@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "927668152816",
+    "firebase_url": "https://votos-3420a-default-rtdb.firebaseio.com",
+    "project_id": "votos-3420a",
+    "storage_bucket": "votos-3420a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:927668152816:android:80b38e4c249a2737acd535",
+        "android_client_info": {
+          "package_name": "com.votomusicamundial.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSyjidw1cmZRaQQCp07WaY63Pjaetdtno"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
