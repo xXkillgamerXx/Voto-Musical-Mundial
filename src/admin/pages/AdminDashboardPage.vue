@@ -197,7 +197,7 @@ onMounted(() => {
     </div>
 
     <div v-else class="relative z-10 flex min-h-screen">
-      <aside class="hidden w-72 shrink-0 flex-col border-r border-white/10 bg-slate-950/65 p-5 backdrop-blur-xl lg:flex">
+      <aside class="fixed inset-y-0 left-0 z-30 hidden h-screen w-72 shrink-0 flex-col overflow-hidden border-r border-white/10 bg-slate-950/65 p-5 backdrop-blur-xl lg:flex">
         <a href="/" class="flex items-center gap-3">
           <span class="grid size-12 place-items-center rounded-2xl bg-white/10">
             <img src="/logo-votos.png" alt="Votos Musica Mundial" class="size-10 object-contain" />
@@ -268,7 +268,7 @@ onMounted(() => {
         </div>
       </aside>
 
-      <div class="flex min-w-0 flex-1 flex-col">
+      <div class="flex min-w-0 flex-1 flex-col lg:ml-72">
         <header class="sticky top-0 z-20 border-b border-white/10 bg-[#050713]/80 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
