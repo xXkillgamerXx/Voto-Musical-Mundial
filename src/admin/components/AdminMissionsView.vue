@@ -10,22 +10,202 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+
+const missionCategories = [
+  { value: "social", label: "Redes sociales" },
+  { value: "referral", label: "Referidos" },
+  { value: "daily", label: "Diarias" },
+  { value: "general", label: "General" },
+];
 
 const missionTypes = [
   { value: "vote_count", label: "Votar varias veces" },
   { value: "daily_login", label: "Entrar varios dias" },
+  { value: "daily_open", label: "Abrir la app" },
+  { value: "daily_streak", label: "Racha diaria" },
+  { value: "daily_view_polls", label: "Ver votaciones del dia" },
+  { value: "daily_poll", label: "Participar en encuesta" },
   { value: "share_poll", label: "Compartir votacion" },
+  { value: "share_whatsapp", label: "Compartir en WhatsApp" },
+  { value: "share_facebook", label: "Compartir en Facebook" },
+  { value: "share_twitter", label: "Compartir en X/Twitter" },
+  { value: "share_instagram_story", label: "Compartir en Instagram Stories" },
+  { value: "follow_social", label: "Seguir red oficial" },
   { value: "follow_artist", label: "Seguir artista" },
   { value: "favorite_poll", label: "Dar like/favorito" },
+  { value: "like_social_post", label: "Me gusta en publicacion" },
+  { value: "comment_social_post", label: "Comentar publicacion" },
+  { value: "referral_share", label: "Compartir invitacion" },
+  { value: "referral_signup", label: "Registro referido" },
+  { value: "referral_signup_milestone", label: "Meta de registros" },
+  { value: "referral_first_vote", label: "Primer voto referido" },
   { value: "complete_profile", label: "Completar perfil" },
   { value: "manual", label: "Manual / externa" },
+];
+
+const missionTemplates = [
+  {
+    category: "social",
+    title: "Compartir la app en WhatsApp",
+    description: "Comparte el enlace de la app en WhatsApp.",
+    type: "share_whatsapp",
+    target: 1,
+    rewardPoints: 10,
+    icon: "fa-brands fa-whatsapp",
+  },
+  {
+    category: "social",
+    title: "Compartir en Facebook",
+    description: "Comparte la app o una votacion en Facebook.",
+    type: "share_facebook",
+    target: 1,
+    rewardPoints: 10,
+    icon: "fa-brands fa-facebook",
+  },
+  {
+    category: "social",
+    title: "Compartir en X/Twitter",
+    description: "Publica la app o una votacion en X/Twitter.",
+    type: "share_twitter",
+    target: 1,
+    rewardPoints: 10,
+    icon: "fa-brands fa-x-twitter",
+  },
+  {
+    category: "social",
+    title: "Compartir en Instagram Stories",
+    description: "Comparte la app o una votacion en tus stories.",
+    type: "share_instagram_story",
+    target: 1,
+    rewardPoints: 15,
+    icon: "fa-brands fa-instagram",
+  },
+  {
+    category: "social",
+    title: "Seguir las redes oficiales",
+    description: "Sigue una red oficial disponible.",
+    type: "follow_social",
+    target: 1,
+    rewardPoints: 5,
+    icon: "fa-solid fa-user-plus",
+  },
+  {
+    category: "social",
+    title: "Dar me gusta a una publicacion",
+    description: "Marca me gusta en una publicacion oficial.",
+    type: "like_social_post",
+    target: 1,
+    rewardPoints: 3,
+    icon: "fa-solid fa-heart",
+  },
+  {
+    category: "social",
+    title: "Comentar en una publicacion",
+    description: "Comenta en una publicacion oficial.",
+    type: "comment_social_post",
+    target: 1,
+    rewardPoints: 5,
+    icon: "fa-solid fa-comment",
+  },
+  {
+    category: "referral",
+    title: "Compartir enlace de invitacion",
+    description: "Comparte tu enlace de invitacion con otros fans.",
+    type: "referral_share",
+    target: 1,
+    rewardPoints: 5,
+    icon: "fa-solid fa-link",
+  },
+  {
+    category: "referral",
+    title: "Conseguir que alguien se registre",
+    description: "Gana puntos cuando un invitado cree su cuenta.",
+    type: "referral_signup",
+    target: 1,
+    rewardPoints: 50,
+    icon: "fa-solid fa-user-plus",
+  },
+  {
+    category: "referral",
+    title: "Conseguir 5 registros",
+    description: "Logra que 5 invitados se registren.",
+    type: "referral_signup_milestone",
+    target: 5,
+    rewardPoints: 300,
+    icon: "fa-solid fa-users",
+  },
+  {
+    category: "referral",
+    title: "Conseguir 10 registros",
+    description: "Logra que 10 invitados se registren.",
+    type: "referral_signup_milestone",
+    target: 10,
+    rewardPoints: 700,
+    icon: "fa-solid fa-users",
+  },
+  {
+    category: "referral",
+    title: "Que el invitado vote por primera vez",
+    description: "Gana puntos cuando tu invitado haga su primer voto.",
+    type: "referral_first_vote",
+    target: 1,
+    rewardPoints: 100,
+    icon: "fa-solid fa-check-to-slot",
+  },
+  {
+    category: "daily",
+    title: "Abrir la app",
+    description: "Abre la app durante el dia.",
+    type: "daily_open",
+    target: 1,
+    rewardPoints: 5,
+    icon: "fa-solid fa-mobile-screen",
+  },
+  {
+    category: "daily",
+    title: "Iniciar sesion diariamente",
+    description: "Entra con tu cuenta una vez al dia.",
+    type: "daily_login",
+    target: 1,
+    rewardPoints: 5,
+    icon: "fa-solid fa-calendar-check",
+  },
+  {
+    category: "daily",
+    title: "Completar 7 dias seguidos",
+    description: "Manten una racha de 7 dias consecutivos.",
+    type: "daily_streak",
+    target: 7,
+    rewardPoints: 100,
+    icon: "fa-solid fa-fire",
+  },
+  {
+    category: "daily",
+    title: "Ver las votaciones del dia",
+    description: "Revisa las votaciones disponibles hoy.",
+    type: "daily_view_polls",
+    target: 1,
+    rewardPoints: 10,
+    icon: "fa-solid fa-eye",
+  },
+  {
+    category: "daily",
+    title: "Participar en una encuesta",
+    description: "Participa en una encuesta activa.",
+    type: "daily_poll",
+    target: 1,
+    rewardPoints: 15,
+    icon: "fa-solid fa-square-poll-vertical",
+  },
 ];
 
 const emptyForm = {
   title: "",
   description: "",
+  category: "social",
   type: "vote_count",
   target: 1,
   rewardPoints: 25,
@@ -50,6 +230,12 @@ const formTitle = computed(() =>
 
 const typeLabel = (type) =>
   missionTypes.find((missionType) => missionType.value === type)?.label || "Manual";
+const categoryLabel = (category) =>
+  missionCategories.find((missionCategory) => missionCategory.value === category)?.label || "General";
+const templateKey = (mission) =>
+  `${mission.category || "general"}:${mission.type || "manual"}:${mission.title || ""}:${Number(mission.target || 1)}`;
+const isTemplateCreated = (template) =>
+  missions.value.some((mission) => templateKey(mission) === templateKey(template));
 
 const resetForm = () => {
   editingMissionId.value = "";
@@ -64,6 +250,7 @@ const editMission = (mission) => {
   form.value = {
     title: mission.title || "",
     description: mission.description || "",
+    category: mission.category || "general",
     type: mission.type || "manual",
     target: Number(mission.target || 1),
     rewardPoints: Number(mission.rewardPoints || 0),
@@ -78,6 +265,7 @@ const editMission = (mission) => {
 const missionPayload = () => ({
   title: form.value.title.trim(),
   description: form.value.description.trim(),
+  category: form.value.category || "general",
   type: form.value.type,
   target: Math.max(1, Math.floor(Number(form.value.target || 1))),
   rewardPoints: Math.max(0, Math.floor(Number(form.value.rewardPoints || 0))),
@@ -87,6 +275,64 @@ const missionPayload = () => ({
   featured: Boolean(form.value.featured),
   updatedAt: serverTimestamp(),
 });
+
+const templatePayload = (template, index) => ({
+  title: template.title,
+  description: template.description,
+  category: template.category,
+  type: template.type,
+  target: template.target,
+  rewardPoints: template.rewardPoints,
+  icon: template.icon,
+  order: missions.value.length + index + 1,
+  active: true,
+  featured: false,
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+const useTemplate = (template) => {
+  editingMissionId.value = "";
+  form.value = {
+    ...emptyForm,
+    ...template,
+    order: missions.value.length + 1,
+    active: true,
+    featured: false,
+  };
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+const createAllTemplates = async () => {
+  errorMessage.value = "";
+  successMessage.value = "";
+
+  const missingTemplates = missionTemplates.filter((template) => !isTemplateCreated(template));
+
+  if (!missingTemplates.length) {
+    successMessage.value = "Todas las plantillas ya estan creadas.";
+    return;
+  }
+
+  isSaving.value = true;
+
+  try {
+    const batch = writeBatch(db);
+
+    missingTemplates.forEach((template, index) => {
+      const missionRef = doc(collection(db, "missions"));
+      batch.set(missionRef, templatePayload(template, index));
+    });
+
+    await batch.commit();
+    successMessage.value = `${missingTemplates.length} misiones creadas.`;
+    resetForm();
+  } catch {
+    errorMessage.value = "No se pudieron crear las plantillas.";
+  } finally {
+    isSaving.value = false;
+  }
+};
 
 const saveMission = async () => {
   errorMessage.value = "";
@@ -231,6 +477,22 @@ onUnmounted(() => {
 
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="block">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Categoria</span>
+            <select
+              v-model="form.category"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+            >
+              <option
+                v-for="missionCategory in missionCategories"
+                :key="missionCategory.value"
+                :value="missionCategory.value"
+              >
+                {{ missionCategory.label }}
+              </option>
+            </select>
+          </label>
+
+          <label class="block">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Tipo</span>
             <select
               v-model="form.type"
@@ -246,7 +508,7 @@ onUnmounted(() => {
             </select>
           </label>
 
-          <label class="block">
+          <label class="block sm:col-span-2">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Icono</span>
             <input
               v-model="form.icon"
@@ -320,6 +582,49 @@ onUnmounted(() => {
           </button>
         </div>
       </form>
+
+      <div class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Plantillas rapidas</p>
+            <p class="mt-1 text-sm text-slate-400">Usa los puntos de referencia para crear misiones desde admin.</p>
+          </div>
+          <button
+            type="button"
+            class="min-h-11 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="isSaving"
+            @click="createAllTemplates"
+          >
+            Crear todas
+          </button>
+        </div>
+
+        <div class="mt-4 space-y-4">
+          <div
+            v-for="missionCategory in missionCategories.filter((category) => category.value !== 'general')"
+            :key="missionCategory.value"
+          >
+            <p class="text-xs font-black uppercase tracking-widest text-slate-500">{{ missionCategory.label }}</p>
+            <div class="mt-2 grid gap-2">
+              <button
+                v-for="template in missionTemplates.filter((item) => item.category === missionCategory.value)"
+                :key="templateKey(template)"
+                type="button"
+                class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left text-sm font-bold text-slate-200 transition hover:border-fuchsia-300/30 hover:bg-white/8"
+                @click="useTemplate(template)"
+              >
+                <span class="min-w-0">
+                  <span class="block truncate text-white">{{ template.title }}</span>
+                  <span class="block text-xs text-slate-500">{{ typeLabel(template.type) }}</span>
+                </span>
+                <span class="shrink-0 rounded-full bg-fuchsia-400/10 px-3 py-1 text-xs font-black text-fuchsia-100">
+                  +{{ template.rewardPoints }} pts
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </article>
 
     <article class="rounded-3xl border border-white/10 bg-white/4 p-5 shadow-2xl shadow-violet-950/20 sm:p-6">
@@ -361,7 +666,7 @@ onUnmounted(() => {
               <h3 class="mt-3 text-lg font-black text-white">{{ mission.title }}</h3>
               <p class="mt-1 text-sm leading-6 text-slate-400">{{ mission.description }}</p>
               <p class="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
-                {{ typeLabel(mission.type) }} · Meta {{ mission.target || 1 }} · +{{ mission.rewardPoints || 0 }} pts
+                {{ categoryLabel(mission.category) }} · {{ typeLabel(mission.type) }} · Meta {{ mission.target || 1 }} · +{{ mission.rewardPoints || 0 }} pts
               </p>
             </div>
 
