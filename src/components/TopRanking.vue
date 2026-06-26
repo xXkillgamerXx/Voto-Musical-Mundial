@@ -89,7 +89,7 @@ onMounted(loadArtists)
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
+  <section class="top-ranking-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
     <div class="mb-5 flex items-center justify-between gap-4">
       <h2 class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl">
         <span class="text-amber-300">✦</span>
@@ -112,14 +112,14 @@ onMounted(loadArtists)
         <article
           v-for="artist in mobileTopArtists"
           :key="artist.id"
-          class="relative min-w-[88%] snap-center rounded-3xl border bg-black/25 shadow-2xl shadow-black/40 backdrop-blur"
+          class="top-ranking-card relative min-w-[88%] snap-center rounded-3xl border bg-black/25 shadow-2xl shadow-black/40 backdrop-blur"
           :class="[artist.border, artist.featured ? 'min-h-112' : 'min-h-96']"
         >
-          <div class="absolute inset-x-0 bottom-0 z-10 h-68 rounded-b-3xl bg-[linear-gradient(0deg,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.68)_42%,rgba(0,0,0,0.22)_78%,transparent_100%)]"></div>
+          <div class="top-ranking-info-overlay absolute inset-x-0 bottom-0 z-10 h-68 rounded-b-3xl bg-linear-to-t from-black/90 via-black/65 to-transparent"></div>
           <div class="absolute -right-16 -top-16 size-40 rounded-full bg-white/10 blur-3xl"></div>
 
           <div
-            class="absolute inset-x-0 top-0 overflow-hidden rounded-t-3xl bg-linear-to-br"
+            class="top-ranking-photo absolute inset-x-0 top-0 overflow-hidden rounded-t-3xl bg-linear-to-br"
             :class="[artist.accent, artist.featured ? 'h-96' : 'h-80']"
           >
             <img
@@ -128,7 +128,7 @@ onMounted(loadArtists)
               :alt="artist.name"
               class="absolute inset-0 size-full object-cover object-top"
             />
-            <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.08)_44%,rgba(0,0,0,0.42)_100%)]"></div>
+            <div class="top-ranking-image-overlay absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.08)_44%,rgba(0,0,0,0.42)_100%)]"></div>
             <div
               v-if="!getArtistImage(artist)"
               class="absolute left-1/2 top-1/2 grid size-28 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/25 bg-black/25 backdrop-blur"
@@ -167,7 +167,7 @@ onMounted(loadArtists)
             <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || $t('artists.list.noGroup') }}</p>
 
             <div class="mt-5 inline-grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/8 p-2 backdrop-blur">
-              <div class="rounded-xl bg-black/25 px-3 py-2">
+              <div class="top-ranking-stat-card rounded-xl bg-black/25 px-3 py-2">
                 <p
                   class="text-2xl font-black leading-none"
                   :class="artist.rank === 1 ? 'text-amber-300' : 'text-violet-200'"
@@ -176,7 +176,7 @@ onMounted(loadArtists)
                 </p>
                 <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
               </div>
-              <div class="rounded-xl bg-black/25 px-3 py-2">
+              <div class="top-ranking-stat-card rounded-xl bg-black/25 px-3 py-2">
                 <p
                   class="text-2xl font-black leading-none"
                   :class="artist.rank === 1 ? 'text-fuchsia-200' : 'text-cyan-200'"
@@ -199,14 +199,14 @@ onMounted(loadArtists)
         <article
           v-for="artist in podiumArtists"
           :key="artist.id"
-          class="relative rounded-3xl border bg-black/25 shadow-2xl shadow-black/40 backdrop-blur"
+          class="top-ranking-card relative rounded-3xl border bg-black/25 shadow-2xl shadow-black/40 backdrop-blur"
           :class="[artist.border, artist.featured ? 'min-h-112 sm:min-h-120 sm:-translate-y-6' : 'min-h-96 sm:min-h-104 sm:scale-[0.94]']"
         >
-          <div class="absolute inset-x-0 bottom-0 z-10 h-68 rounded-b-3xl bg-[linear-gradient(0deg,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.68)_42%,rgba(0,0,0,0.22)_78%,transparent_100%)]"></div>
+          <div class="top-ranking-info-overlay absolute inset-x-0 bottom-0 z-10 h-68 rounded-b-3xl bg-linear-to-t from-black/90 via-black/65 to-transparent"></div>
           <div class="absolute -right-16 -top-16 size-40 rounded-full bg-white/10 blur-3xl"></div>
 
           <div
-            class="absolute inset-x-0 top-0 overflow-hidden rounded-t-3xl bg-linear-to-br"
+            class="top-ranking-photo absolute inset-x-0 top-0 overflow-hidden rounded-t-3xl bg-linear-to-br"
             :class="[artist.accent, artist.featured ? 'h-96' : 'h-78']"
           >
             <img
@@ -215,7 +215,7 @@ onMounted(loadArtists)
               :alt="artist.name"
               class="absolute inset-0 size-full object-cover object-top"
             />
-            <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.08)_44%,rgba(0,0,0,0.42)_100%)]"></div>
+            <div class="top-ranking-image-overlay absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.08)_44%,rgba(0,0,0,0.42)_100%)]"></div>
             <div
               v-if="!getArtistImage(artist)"
               class="absolute left-1/2 top-1/2 grid size-28 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/25 bg-black/25 backdrop-blur"
@@ -254,7 +254,7 @@ onMounted(loadArtists)
             <p class="mt-1 text-xs font-black uppercase tracking-widest text-fuchsia-100">{{ getArtistGroup(artist) || $t('artists.list.noGroup') }}</p>
 
             <div class="mt-5 inline-grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/8 p-2 backdrop-blur">
-              <div class="rounded-xl bg-black/25 px-3 py-2">
+              <div class="top-ranking-stat-card rounded-xl bg-black/25 px-3 py-2">
                 <p
                   class="text-2xl font-black leading-none"
                   :class="artist.rank === 1 ? 'text-amber-300' : 'text-violet-200'"
@@ -263,7 +263,7 @@ onMounted(loadArtists)
                 </p>
                 <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">{{ $t('artists.list.followers') }}</p>
               </div>
-              <div class="rounded-xl bg-black/25 px-3 py-2">
+              <div class="top-ranking-stat-card rounded-xl bg-black/25 px-3 py-2">
                 <p
                   class="text-2xl font-black leading-none"
                   :class="artist.rank === 1 ? 'text-fuchsia-200' : 'text-cyan-200'"

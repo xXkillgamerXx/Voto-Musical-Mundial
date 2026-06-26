@@ -22,6 +22,8 @@ const isAuthModalOpen = ref(false);
 const isAccountMenuOpen = ref(false);
 const isSettingsMenuOpen = ref(false);
 const avatarImageFailed = ref(false);
+const settingsMenuRef = ref(null);
+const accountMenuRef = ref(null);
 const currentUser = ref(null);
 const userRole = ref("");
 const userUsername = ref("");
@@ -33,6 +35,7 @@ const userName = computed(
   () => currentUser.value?.displayName || translate("nav.fanAccount"),
 );
 const userEmail = computed(() => currentUser.value?.email || "");
+const isSignedInUser = computed(() => Boolean(currentUser.value && !currentUser.value.isAnonymous));
 const isAdmin = computed(() => userRole.value === "admin");
 const formattedUserPoints = computed(() =>
   Number(userPoints.value || 0).toLocaleString(locale.value),
@@ -76,13 +79,37 @@ const toggleSettingsMenu = () => {
   isAccountMenuOpen.value = false;
 };
 
+const closeFloatingMenus = () => {
+  isSettingsMenuOpen.value = false;
+  isAccountMenuOpen.value = false;
+};
+
+const handleDocumentClick = (event) => {
+  const target = event.target;
+
+  if (
+    settingsMenuRef.value?.contains(target) ||
+    accountMenuRef.value?.contains(target)
+  ) {
+    return;
+  }
+
+  closeFloatingMenus();
+};
+
+const handleEscape = (event) => {
+  if (event.key === "Escape") {
+    closeFloatingMenus();
+  }
+};
+
 const listenUserProfile = (user) => {
   unsubscribeUserProfile?.();
   userRole.value = "";
   userUsername.value = "";
   userPoints.value = 0;
 
-  if (!user) {
+  if (!user || user.isAnonymous) {
     return;
   }
 
@@ -105,6 +132,8 @@ const listenUserProfile = (user) => {
 };
 
 onMounted(() => {
+  document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleEscape);
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     currentUser.value = user;
     avatarImageFailed.value = false;
@@ -115,6 +144,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  document.removeEventListener("click", handleDocumentClick);
+  document.removeEventListener("keydown", handleEscape);
   unsubscribeAuth?.();
   unsubscribeUserProfile?.();
 });
@@ -166,14 +197,14 @@ onUnmounted(() => {
 
       <div class="flex items-center gap-2">
         <div
-          v-if="currentUser"
+          v-if="isSignedInUser"
           class="hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
         >
           <span class="text-amber-300">◆</span>
           <span>{{ $t("common.points", { count: formattedUserPoints }) }}</span>
         </div>
 
-        <div class="relative hidden md:block">
+        <div ref="settingsMenuRef" class="relative hidden md:block">
           <button
             type="button"
             class="grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 hover:text-white"
@@ -217,7 +248,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="currentUser" class="relative">
+        <div v-if="isSignedInUser" ref="accountMenuRef" class="relative">
           <button
             type="button"
             class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white shadow-lg shadow-fuchsia-950/30"
@@ -288,7 +319,7 @@ onUnmounted(() => {
         </div>
 
         <button
-          v-if="!currentUser"
+          v-if="!isSignedInUser"
           type="button"
           class="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-300 transition hover:text-white lg:inline-flex"
           @click="openAuthModal"
@@ -297,7 +328,7 @@ onUnmounted(() => {
         </button>
 
         <a
-          v-if="!currentUser"
+          v-if="!isSignedInUser"
           href="/registro"
           class="hidden rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-bold shadow-lg shadow-fuchsia-500/25 transition hover:shadow-fuchsia-500/40 sm:inline-flex"
         >
@@ -334,7 +365,7 @@ onUnmounted(() => {
           class="mt-3 grid gap-2 border-t border-white/10 pt-3 sm:grid-cols-3"
         >
           <div
-            v-if="currentUser"
+            v-if="isSignedInUser"
             class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 sm:col-span-3"
           >
             <span
@@ -361,7 +392,7 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-if="currentUser"
+            v-if="isSignedInUser"
             class="flex items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
           >
             <span class="text-amber-300">◆</span>
@@ -393,7 +424,7 @@ onUnmounted(() => {
           </div>
           <ThemeToggle class="sm:col-span-3" />
           <a
-            v-if="currentUser"
+            v-if="isSignedInUser"
             :href="profileHref"
             class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
             @click="isMenuOpen = false"
@@ -401,7 +432,7 @@ onUnmounted(() => {
             {{ $t("nav.myProfile") }}
           </a>
           <a
-            v-if="currentUser && isAdmin"
+            v-if="isSignedInUser && isAdmin"
             href="/admin"
             class="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-3 text-center text-sm font-black text-fuchsia-100"
             @click="isMenuOpen = false"
@@ -409,7 +440,7 @@ onUnmounted(() => {
             {{ $t("nav.adminPanel") }}
           </a>
           <button
-            v-if="!currentUser"
+            v-if="!isSignedInUser"
             type="button"
             class="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200"
             @click="openAuthModal"
@@ -417,14 +448,14 @@ onUnmounted(() => {
             {{ $t("nav.loginNoAccent") }}
           </button>
           <a
-            v-if="!currentUser"
+            v-if="!isSignedInUser"
             href="/registro"
             class="rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-3 text-center text-sm font-bold"
           >
             {{ $t("nav.register") }}
           </a>
           <button
-            v-if="currentUser"
+            v-if="isSignedInUser"
             type="button"
             class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-center text-sm font-bold text-red-100"
             @click="handleLogout"

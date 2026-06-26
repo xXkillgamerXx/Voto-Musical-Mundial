@@ -28,6 +28,9 @@ const emptyPoll = {
   categoryId: '',
   categoryName: '',
   year: new Date().getFullYear(),
+  anonymousVotingEnabled: true,
+  anonymousVotingCooldownMinutes: 60,
+  anonymousVotingBlockByIp: true,
 }
 
 const pollForm = ref({ ...emptyPoll })
@@ -178,6 +181,9 @@ const loadPoll = async () => {
       categoryId: poll.categoryId || '',
       categoryName: poll.categoryName || poll.title || '',
       year: Number(poll.year || new Date().getFullYear()),
+      anonymousVotingEnabled: poll.anonymousVoting?.enabled !== false,
+      anonymousVotingCooldownMinutes: Number(poll.anonymousVoting?.cooldownMinutes || 60),
+      anonymousVotingBlockByIp: poll.anonymousVoting?.blockByIp !== false,
     }
   } catch {
     errorMessage.value = translate('admin.pollForm.errors.load')
@@ -208,6 +214,14 @@ const savePoll = async () => {
     phase: 'initial',
     year: Number(pollForm.value.year || selectedCategory.value?.year || new Date().getFullYear()),
     slug: createSlug(pollForm.value.title),
+    anonymousVoting: {
+      enabled: Boolean(pollForm.value.anonymousVotingEnabled),
+      cooldownMinutes: Math.max(
+        1,
+        Math.floor(Number(pollForm.value.anonymousVotingCooldownMinutes || 60)),
+      ),
+      blockByIp: Boolean(pollForm.value.anonymousVotingBlockByIp),
+    },
     isLive: pollForm.value.status === 'live',
     winnersStatus: pollForm.value.status === 'closed' ? 'selected' : 'pending',
     updatedAt: serverTimestamp(),
@@ -402,6 +416,47 @@ onMounted(async () => {
               <option value="closed">{{ $t('common.status.closed') }}</option>
             </select>
           </label>
+
+          <div class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-widest text-cyan-200">{{ $t('admin.pollForm.anonymousVoting') }}</span>
+                <p class="mt-1 text-sm leading-6 text-slate-300">
+                  {{ $t('admin.pollForm.anonymousVotingHelp') }}
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-3 text-sm font-black text-cyan-100">
+                <input
+                  v-model="pollForm.anonymousVotingEnabled"
+                  type="checkbox"
+                  class="size-5 accent-cyan-400"
+                />
+                {{ $t('admin.pollForm.anonymousVotingEnabled') }}
+              </label>
+            </div>
+
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+              <label class="block">
+                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.anonymousCooldown') }}</span>
+                <input
+                  v-model.number="pollForm.anonymousVotingCooldownMinutes"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40"
+                />
+              </label>
+
+              <label class="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm font-black text-slate-200">
+                <input
+                  v-model="pollForm.anonymousVotingBlockByIp"
+                  type="checkbox"
+                  class="size-5 accent-cyan-400"
+                />
+                {{ $t('admin.pollForm.anonymousBlockByIp') }}
+              </label>
+            </div>
+          </div>
 
           <p
             v-if="errorMessage"

@@ -179,7 +179,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
+  <section class="live-activity-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
     <div class="relative overflow-hidden rounded-4xl border border-violet-300/15 bg-[#070918]/90 p-4 shadow-2xl shadow-violet-950/20 sm:p-6">
       <div class="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full bg-fuchsia-400/15 blur-3xl"></div>
       <div class="pointer-events-none absolute -bottom-24 right-0 size-80 rounded-full bg-cyan-400/10 blur-3xl"></div>

@@ -8,7 +8,7 @@ const bannerFeatures = [
 </script>
 
 <template>
-  <div class="mt-4 grid gap-3 border-y border-white/10 bg-white/5 p-4 sm:rounded-3xl sm:border sm:grid-cols-2 lg:grid-cols-4">
+  <div class="light-clean-surface mt-4 grid gap-3 border-y border-white/10 bg-white/5 p-4 sm:rounded-3xl sm:border sm:grid-cols-2 lg:grid-cols-4">
     <article
       v-for="feature in bannerFeatures"
       :key="feature.titleKey"

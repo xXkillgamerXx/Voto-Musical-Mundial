@@ -440,7 +440,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="relative w-full overflow-hidden border-y border-white/10 bg-slate-950 shadow-2xl shadow-violet-950/40 sm:rounded-4xl sm:border"
+    class="dark-surface hero-surface relative w-full overflow-hidden border-y border-white/10 bg-slate-950 shadow-2xl shadow-violet-950/40 sm:rounded-4xl sm:border"
   >
     <div
       class="absolute inset-0 bg-[url('/banner-vote-bg.svg')] bg-cover bg-center transition-transform duration-1000"

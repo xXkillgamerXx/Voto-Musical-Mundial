@@ -164,7 +164,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
+  <section class="main-categories-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
     <div class="mb-5 flex items-center justify-between gap-4">
       <h2
         class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"

@@ -15,8 +15,23 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'Admin'];
     }
 
+    function isAnonymousAuth() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
     function isPositiveVoteAmount(amount) {
       return amount is int && amount > 0 && amount <= 1000;
+    }
+
+    function isDailyRewardPointsForDay(day, points) {
+      return (day == 1 && points == 10)
+        || (day == 2 && points == 15)
+        || (day == 3 && points == 20)
+        || (day == 4 && points == 25)
+        || (day == 5 && points == 30)
+        || (day == 6 && points == 40)
+        || (day == 7 && points == 50);
     }
 
     function isSafeOwnerUserUpdate() {
@@ -24,11 +39,45 @@ service cloud.firestore {
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['points'])
           || request.resource.data.points <= resource.data.points)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['spentPoints'])
-          || request.resource.data.spentPoints >= resource.data.spentPoints);
+          || (request.resource.data.spentPoints is int
+            && ((!resource.data.keys().hasAny(['spentPoints'])
+              && request.resource.data.spentPoints >= 0)
+              || (resource.data.keys().hasAny(['spentPoints'])
+                && request.resource.data.spentPoints >= resource.data.spentPoints))));
+    }
+
+    function isDailyRewardUserUpdate(userId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'points',
+          'lastDailyRewardClaimDate',
+          'dailyRewardStreak',
+          'dailyRewardStreakDay',
+          'dailyRewardClaimedAt',
+        ])
+        && request.resource.data.lastDailyRewardClaimDate is string
+        && request.resource.data.dailyRewardStreak is int
+        && request.resource.data.dailyRewardStreak >= 1
+        && request.resource.data.dailyRewardStreakDay is int
+        && request.resource.data.dailyRewardStreakDay >= 1
+        && request.resource.data.dailyRewardStreakDay <= 7
+        && (!resource.data.keys().hasAny(['lastDailyRewardClaimDate'])
+          || request.resource.data.lastDailyRewardClaimDate != resource.data.lastDailyRewardClaimDate)
+        && getAfter(/databases/$(database)/documents/users/$(userId)/dailyRewards/$(request.resource.data.lastDailyRewardClaimDate)).data.userId == userId
+        && getAfter(/databases/$(database)/documents/users/$(userId)/dailyRewards/$(request.resource.data.lastDailyRewardClaimDate)).data.streak == request.resource.data.dailyRewardStreak
+        && getAfter(/databases/$(database)/documents/users/$(userId)/dailyRewards/$(request.resource.data.lastDailyRewardClaimDate)).data.streakDay == request.resource.data.dailyRewardStreakDay
+        && isDailyRewardPointsForDay(
+          request.resource.data.dailyRewardStreakDay,
+          getAfter(/databases/$(database)/documents/users/$(userId)/dailyRewards/$(request.resource.data.lastDailyRewardClaimDate)).data.points
+        )
+        && request.resource.data.points == (
+          resource.data.points
+          + getAfter(/databases/$(database)/documents/users/$(userId)/dailyRewards/$(request.resource.data.lastDailyRewardClaimDate)).data.points
+        );
     }
 
     function isVoteShardCreate() {
       return isSignedIn()
+        && !isAnonymousAuth()
         && request.resource.data.keys().hasOnly([
           'pollId',
           'roundId',
@@ -44,6 +93,7 @@ service cloud.firestore {
 
     function isVoteShardUpdate() {
       return isSignedIn()
+        && !isAnonymousAuth()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'updatedAt'])
         && request.resource.data.pollId == resource.data.pollId
         && request.resource.data.roundId == resource.data.roundId
@@ -54,6 +104,7 @@ service cloud.firestore {
 
     function isVoteBatchCreate() {
       return isSignedIn()
+        && !isAnonymousAuth()
         && request.resource.data.keys().hasOnly([
           'userId',
           'userDisplayName',
@@ -84,10 +135,35 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow update: if isAdmin()
         || (isOwner(userId)
-          && isSafeOwnerUserUpdate());
+          && (isSafeOwnerUserUpdate() || isDailyRewardUserUpdate(userId)));
 
       match /followingArtists/{artistId} {
         allow read, create, update, delete: if isOwner(userId);
+      }
+
+      match /dailyRewards/{claimDate} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'userId',
+            'claimDate',
+            'points',
+            'streak',
+            'streakDay',
+            'claimedAt',
+          ])
+          && request.resource.data.userId == userId
+          && request.resource.data.claimDate == claimDate
+          && request.resource.data.streak is int
+          && request.resource.data.streak >= 1
+          && request.resource.data.streakDay is int
+          && request.resource.data.streakDay >= 1
+          && request.resource.data.streakDay <= 7
+          && isDailyRewardPointsForDay(
+            request.resource.data.streakDay,
+            request.resource.data.points
+          );
+        allow update, delete: if false;
       }
     }
 
@@ -133,6 +209,10 @@ service cloud.firestore {
       match /userVoteBatches/{batchId} {
         allow read: if isAdmin();
         allow create: if isVoteBatchCreate();
+      }
+
+      match /anonymousVoteLocks/{lockId} {
+        allow read, write: if false;
       }
 
       match /publicResults/{resultId} {

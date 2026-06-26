@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   collection,
   doc,
@@ -9,16 +9,21 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, db } from "../firebase";
+import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "../firebase";
 import { translate } from "../i18n";
+import ActivePolls from "../components/ActivePolls.vue";
 import { getArtistsCached } from "../services/firebaseCache";
 import {
   loadContestantMetadata,
   mergeContestantsWithPublicResults,
   subscribePublicResults,
 } from "../services/pollResults";
-import { createVoteQueue, shardCountForConcurrency } from "../services/voteQueue";
+import {
+  createVoteQueue,
+  shardCountForConcurrency,
+} from "../services/voteQueue";
 
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeYear = Number(pathParts[1]) || new Date().getFullYear();
@@ -43,6 +48,12 @@ const now = ref(Date.now());
 const selectedRoundId = ref("");
 const voteModalContestant = ref(null);
 const voteAmount = ref(1);
+const voteFeedbacks = ref({});
+const optimisticVoteTotals = ref({});
+const animatedVoteCounts = ref({});
+const animatedDisplayedTotalVotes = ref(null);
+const anonymousVoteStatus = ref(null);
+const isLoadingAnonymousStatus = ref(false);
 
 let unsubscribeAuth = null;
 let unsubscribePoll = null;
@@ -50,10 +61,21 @@ let unsubscribeContestants = null;
 let unsubscribeRounds = null;
 let unsubscribeUserPoints = null;
 let unsubscribePublicResults = null;
+let unsubscribeVoteShards = null;
 let clockTimer = null;
 let voteQueue = null;
 let listeningContestantsKey = "";
+const voteFeedbackTimers = new Map();
+const voteCountAnimationTimers = new Map();
+let displayedTotalAnimationTimer = null;
 const POINTS_PER_VOTE = 1;
+const DEFAULT_ANONYMOUS_COOLDOWN_MINUTES = 60;
+const getAnonymousVoteStatus = httpsCallable(
+  functions,
+  "getAnonymousVoteStatus",
+);
+const CAST_ANONYMOUS_VOTE_URL =
+  "https://us-central1-votos-3420a.cloudfunctions.net/castAnonymousVoteHttp";
 
 const getArtist = (artistId) =>
   artists.value.find((artist) => artist.id === artistId);
@@ -68,6 +90,17 @@ const getArtistImage = (artist) =>
   "";
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
+
+const getRoundCollectionRef = (pollId, roundId, collectionName) =>
+  roundId
+    ? collection(db, "polls", pollId, "rounds", roundId, collectionName)
+    : collection(db, "polls", pollId, collectionName);
+
+const getOptimisticVoteTotal = (artistId) =>
+  Number(optimisticVoteTotals.value[artistId] || 0);
+
+const getContestantArtistId = (contestant) =>
+  contestant?.artistId || contestant?.id || "";
 
 const activeRound = computed(() =>
   poll.value?.status === "closed"
@@ -101,13 +134,19 @@ const isClosed = computed(() => poll.value?.status === "closed");
 const rankedContestants = computed(() =>
   contestants.value
     .map((contestant) => {
-      const totalVotes = Number(
+      const artistId = contestant.artistId || contestant.id;
+      const serverTotalVotes = Number(
         contestant.totalVotes ??
           (contestant.votes || 0) + (contestant.manualVotes || 0),
       );
+      const totalVotes = Math.max(
+        serverTotalVotes,
+        getOptimisticVoteTotal(artistId),
+      );
       return {
         ...contestant,
-        artist: getArtist(contestant.artistId),
+        artist: getArtist(artistId),
+        artistId,
         totalVotes,
       };
     })
@@ -117,16 +156,22 @@ const rankedContestants = computed(() =>
 const activeContestants = computed(() =>
   contestants.value
     .map((contestant, index) => {
-      const totalVotes = Number(
+      const artistId = contestant.artistId || contestant.id;
+      const serverTotalVotes = Number(
         contestant.totalVotes ??
           (contestant.votes || 0) + (contestant.manualVotes || 0),
+      );
+      const totalVotes = Math.max(
+        serverTotalVotes,
+        getOptimisticVoteTotal(artistId),
       );
       return {
         ...contestant,
         order: Number(contestant.order ?? index),
         matchGroup: Number(contestant.matchGroup || 0),
         matchOrder: Number(contestant.matchOrder ?? index),
-        artist: getArtist(contestant.artistId),
+        artist: getArtist(artistId),
+        artistId,
         totalVotes,
       };
     })
@@ -191,7 +236,9 @@ const finalResultSourceContestants = computed(() =>
 );
 
 const finalResultSourceTotalVotes = computed(() =>
-  finalResultContestants.value.length ? finalResultTotalVotes.value : totalVotes.value,
+  finalResultContestants.value.length
+    ? finalResultTotalVotes.value
+    : totalVotes.value,
 );
 
 const displayedContestants = computed(() =>
@@ -207,11 +254,72 @@ const displayedTotalVotes = computed(() =>
   ),
 );
 
+const displayVoteCountFor = (contestant) => {
+  const artistId = getContestantArtistId(contestant);
+  const animatedCount = animatedVoteCounts.value[artistId];
+
+  return Math.max(
+    0,
+    Math.round(Number(animatedCount ?? contestant?.totalVotes ?? 0)),
+  );
+};
+
+const displayTotalVotes = computed(() =>
+  Math.max(
+    0,
+    Math.round(
+      Number(animatedDisplayedTotalVotes.value ?? displayedTotalVotes.value),
+    ),
+  ),
+);
+
 const shouldShowVoteButtons = computed(
   () => isVotingOpen.value && selectedRoundStep.value?.status !== "closed",
 );
-const hasEnoughPointsToVote = computed(
-  () => Number(userPoints.value || 0) >= POINTS_PER_VOTE,
+const anonymousVotingConfig = computed(() => ({
+  enabled:
+    activeRound.value?.anonymousVoting?.enabled ??
+    poll.value?.anonymousVoting?.enabled ??
+    true,
+  blockByIp:
+    activeRound.value?.anonymousVoting?.blockByIp ??
+    poll.value?.anonymousVoting?.blockByIp ??
+    true,
+  cooldownMinutes: Math.max(
+    1,
+    Number(
+      activeRound.value?.anonymousVoting?.cooldownMinutes ??
+        poll.value?.anonymousVoting?.cooldownMinutes ??
+        DEFAULT_ANONYMOUS_COOLDOWN_MINUTES,
+    ),
+  ),
+}));
+const anonymousNextVoteAtMs = computed(() => {
+  const nextVoteAt = anonymousVoteStatus.value?.nextVoteAt;
+
+  if (!nextVoteAt) {
+    return 0;
+  }
+
+  const parsed = new Date(nextVoteAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+});
+const anonymousRemainingMs = computed(() =>
+  Math.max(0, anonymousNextVoteAtMs.value - now.value),
+);
+const canUseAnonymousVote = computed(
+  () => anonymousVotingConfig.value.enabled && anonymousRemainingMs.value <= 0,
+);
+const isAnonymousVotingFlow = computed(() =>
+  Boolean(
+    voteModalContestant.value &&
+    (!currentUser.value || currentUser.value.isAnonymous),
+  ),
+);
+const hasEnoughPointsToVote = computed(() =>
+  currentUser.value?.isAnonymous || !currentUser.value
+    ? canUseAnonymousVote.value
+    : Number(userPoints.value || 0) >= POINTS_PER_VOTE,
 );
 const formattedUserPoints = computed(() =>
   Number(userPoints.value || 0).toLocaleString("es"),
@@ -225,7 +333,31 @@ const normalizedVoteAmount = computed(() =>
     Math.max(1, Math.floor(Number(voteAmount.value || 1))),
   ),
 );
-const selectedVoteArtist = computed(() => voteModalContestant.value?.artist || null);
+const selectedVoteArtist = computed(
+  () => voteModalContestant.value?.artist || null,
+);
+const anonymousCooldownLabel = computed(() => {
+  const totalSeconds = Math.ceil(anonymousRemainingMs.value / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+});
+const anonymousVoteMessage = computed(() => {
+  if (!anonymousVotingConfig.value.enabled) {
+    return translate("polls.detail.anonymousDisabled");
+  }
+
+  if (anonymousRemainingMs.value > 0) {
+    return translate("polls.detail.anonymousWait", {
+      time: anonymousCooldownLabel.value,
+    });
+  }
+
+  return translate("polls.detail.anonymousReady", {
+    minutes: anonymousVotingConfig.value.cooldownMinutes,
+  });
+});
 
 const winners = computed(() =>
   rankedContestants.value.filter(
@@ -589,16 +721,19 @@ const percentFor = (votes) => {
 };
 
 const percentForDisplayed = (votes) => {
-  if (!displayedTotalVotes.value) {
+  if (!displayTotalVotes.value) {
     return "0.00%";
   }
 
-  return `${((votes / displayedTotalVotes.value) * 100).toFixed(2)}%`;
+  return `${((votes / displayTotalVotes.value) * 100).toFixed(2)}%`;
 };
+
+const percentForDisplayedContestant = (contestant) =>
+  percentForDisplayed(displayVoteCountFor(contestant));
 
 const percentForMatch = (contestant, match) => {
   const totalMatchVotes = match.contestants.reduce(
-    (total, item) => total + item.totalVotes,
+    (total, item) => total + displayVoteCountFor(item),
     0,
   );
 
@@ -606,7 +741,166 @@ const percentForMatch = (contestant, match) => {
     return "0.00%";
   }
 
-  return `${((contestant.totalVotes / totalMatchVotes) * 100).toFixed(2)}%`;
+  return `${((displayVoteCountFor(contestant) / totalMatchVotes) * 100).toFixed(2)}%`;
+};
+
+const mergeContestantsWithShardVotes = (baseContestants, shardVotesByArtist) =>
+  baseContestants.map((contestant) => {
+    const artistId = contestant.artistId || contestant.id;
+    const legacyVotes = Number(contestant.votes || 0);
+    const manualVotes = Number(contestant.manualVotes || 0);
+    const shardVotes = Number(shardVotesByArtist.get(artistId) || 0);
+
+    return {
+      ...contestant,
+      votes: legacyVotes + shardVotes,
+      totalVotes: legacyVotes + manualVotes + shardVotes,
+    };
+  });
+
+const setOptimisticVoteTotal = (artistId, totalVotes) => {
+  if (!artistId) {
+    return;
+  }
+
+  optimisticVoteTotals.value = {
+    ...optimisticVoteTotals.value,
+    [artistId]: Math.max(0, Number(totalVotes || 0)),
+  };
+};
+
+const clearOptimisticVoteTotal = (artistId) => {
+  if (!artistId) {
+    return;
+  }
+
+  const nextTotals = { ...optimisticVoteTotals.value };
+  delete nextTotals[artistId];
+  optimisticVoteTotals.value = nextTotals;
+};
+
+const showVoteFeedback = (artistId, amount) => {
+  if (!artistId || amount <= 0) {
+    return;
+  }
+
+  window.clearTimeout(voteFeedbackTimers.get(artistId));
+  voteFeedbacks.value = {
+    ...voteFeedbacks.value,
+    [artistId]: {
+      amount,
+      token: Date.now(),
+    },
+  };
+  voteFeedbackTimers.set(
+    artistId,
+    window.setTimeout(() => {
+      const nextFeedbacks = { ...voteFeedbacks.value };
+      delete nextFeedbacks[artistId];
+      voteFeedbacks.value = nextFeedbacks;
+      voteFeedbackTimers.delete(artistId);
+    }, 2800),
+  );
+};
+
+const animateNumber = ({
+  from,
+  to,
+  duration = 720,
+  onUpdate,
+  onDone = () => {},
+  setTimer,
+  clearTimer,
+}) => {
+  clearTimer();
+
+  const distance = to - from;
+  const steps = Math.max(1, Math.min(Math.abs(distance), 28));
+  let currentStep = 0;
+  const intervalMs = Math.max(24, Math.floor(duration / steps));
+
+  if (!distance) {
+    onUpdate(to);
+    onDone();
+    return;
+  }
+
+  const timer = window.setInterval(() => {
+    currentStep += 1;
+    const progress = Math.min(1, currentStep / steps);
+    const value = Math.round(from + distance * progress);
+
+    onUpdate(value);
+
+    if (progress >= 1) {
+      clearTimer();
+      onDone();
+    }
+  }, intervalMs);
+
+  setTimer(timer);
+};
+
+const animateVoteCount = (artistId, from, to) => {
+  animateNumber({
+    from,
+    to,
+    onUpdate: (value) => {
+      animatedVoteCounts.value = {
+        ...animatedVoteCounts.value,
+        [artistId]: value,
+      };
+    },
+    onDone: () => {
+      window.setTimeout(() => {
+        const nextCounts = { ...animatedVoteCounts.value };
+        delete nextCounts[artistId];
+        animatedVoteCounts.value = nextCounts;
+      }, 900);
+    },
+    setTimer: (timer) => voteCountAnimationTimers.set(artistId, timer),
+    clearTimer: () => {
+      window.clearInterval(voteCountAnimationTimers.get(artistId));
+      voteCountAnimationTimers.delete(artistId);
+    },
+  });
+};
+
+const clearAnimatedVoteCount = (artistId) => {
+  window.clearInterval(voteCountAnimationTimers.get(artistId));
+  voteCountAnimationTimers.delete(artistId);
+
+  const nextCounts = { ...animatedVoteCounts.value };
+  delete nextCounts[artistId];
+  animatedVoteCounts.value = nextCounts;
+};
+
+const clearAnimatedDisplayedTotalVotes = () => {
+  window.clearInterval(displayedTotalAnimationTimer);
+  displayedTotalAnimationTimer = null;
+  animatedDisplayedTotalVotes.value = null;
+};
+
+const animateDisplayedTotalVotes = (from, to) => {
+  animateNumber({
+    from,
+    to,
+    onUpdate: (value) => {
+      animatedDisplayedTotalVotes.value = value;
+    },
+    onDone: () => {
+      window.setTimeout(() => {
+        animatedDisplayedTotalVotes.value = null;
+      }, 900);
+    },
+    setTimer: (timer) => {
+      displayedTotalAnimationTimer = timer;
+    },
+    clearTimer: () => {
+      window.clearInterval(displayedTotalAnimationTimer);
+      displayedTotalAnimationTimer = null;
+    },
+  });
 };
 
 const getRoundContestants = async (round) => {
@@ -641,9 +935,6 @@ const getRoundContestants = async (round) => {
 };
 
 const listenContestants = async (pollId) => {
-  unsubscribeContestants?.();
-  unsubscribePublicResults?.();
-
   const roundId = activeRound.value?.id || null;
   const contestantsKey = `${pollId}:${roundId || "root"}`;
 
@@ -651,10 +942,34 @@ const listenContestants = async (pollId) => {
     return;
   }
 
+  unsubscribeContestants?.();
+  unsubscribePublicResults?.();
+  unsubscribeVoteShards?.();
   listeningContestantsKey = contestantsKey;
 
   try {
-    contestants.value = await loadContestantMetadata(db, pollId, roundId);
+    const baseContestants = await loadContestantMetadata(db, pollId, roundId);
+    let latestPublicResults = null;
+    let latestShardVotesByArtist = null;
+
+    const applyLatestResults = () => {
+      if (latestShardVotesByArtist) {
+        contestants.value = mergeContestantsWithShardVotes(
+          baseContestants,
+          latestShardVotesByArtist,
+        );
+        return;
+      }
+
+      contestants.value = latestPublicResults
+        ? mergeContestantsWithPublicResults(
+            baseContestants,
+            latestPublicResults,
+          )
+        : baseContestants;
+    };
+
+    contestants.value = baseContestants;
     unsubscribePublicResults = subscribePublicResults(db, {
       pollId,
       roundId,
@@ -663,15 +978,39 @@ const listenContestants = async (pollId) => {
           return;
         }
 
-        contestants.value = mergeContestantsWithPublicResults(
-          contestants.value,
-          publicResults,
-        );
+        latestPublicResults = publicResults;
+        applyLatestResults();
       },
       onError: () => {
         errorMessage.value = translate("polls.detail.liveResultsError");
       },
     });
+    unsubscribeVoteShards = onSnapshot(
+      getRoundCollectionRef(pollId, roundId, "voteShards"),
+      (shardsSnap) => {
+        const shardVotesByArtist = new Map();
+
+        shardsSnap.docs.forEach((shardDoc) => {
+          const shard = shardDoc.data();
+          const artistId = shard.artistId;
+
+          if (!artistId) {
+            return;
+          }
+
+          shardVotesByArtist.set(
+            artistId,
+            (shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
+          );
+        });
+
+        latestShardVotesByArtist = shardVotesByArtist;
+        applyLatestResults();
+      },
+      () => {
+        errorMessage.value = translate("polls.detail.liveResultsError");
+      },
+    );
   } catch {
     errorMessage.value = translate("polls.detail.contestantsError");
   }
@@ -688,8 +1027,8 @@ const loadSelectedRoundContestants = async (round) => {
   isLoadingSelectedRound.value = true;
 
   try {
-    selectedRoundContestants.value = (await getRoundContestants(round))
-      .sort((current, next) => {
+    selectedRoundContestants.value = (await getRoundContestants(round)).sort(
+      (current, next) => {
         const currentWinnerIndex = (round.winnerIds || []).indexOf(
           current.artistId,
         );
@@ -702,7 +1041,8 @@ const loadSelectedRoundContestants = async (round) => {
           nextWinnerIndex >= 0 ? nextWinnerIndex : Number.POSITIVE_INFINITY;
 
         return currentRank - nextRank || next.totalVotes - current.totalVotes;
-      });
+      },
+    );
   } catch {
     errorMessage.value = translate("polls.detail.roundContestantsError");
   } finally {
@@ -729,7 +1069,8 @@ const loadFinalResultContestants = async () => {
       roundContestants.forEach((contestant) => {
         const artistId = contestant.artistId || contestant.id;
         const currentTotal = totalsByArtist.get(artistId);
-        const totalVotes = (currentTotal?.totalVotes || 0) + contestant.totalVotes;
+        const totalVotes =
+          (currentTotal?.totalVotes || 0) + contestant.totalVotes;
 
         totalsByArtist.set(artistId, {
           ...contestant,
@@ -826,6 +1167,88 @@ const listenUserPoints = (user) => {
   });
 };
 
+const refreshAnonymousVoteStatus = async () => {
+  if (
+    !currentUser.value?.isAnonymous ||
+    !poll.value?.id ||
+    !anonymousVotingConfig.value.enabled
+  ) {
+    anonymousVoteStatus.value = null;
+    return;
+  }
+
+  isLoadingAnonymousStatus.value = true;
+
+  try {
+    const result = await getAnonymousVoteStatus({
+      pollId: poll.value.id,
+      roundId: activeRound.value?.id || null,
+    });
+    anonymousVoteStatus.value = result.data || null;
+  } catch {
+    anonymousVoteStatus.value = null;
+  } finally {
+    isLoadingAnonymousStatus.value = false;
+  }
+};
+
+const ensureAnonymousUser = async () => {
+  if (currentUser.value) {
+    return currentUser.value;
+  }
+
+  const credential = await signInAnonymously(auth);
+  currentUser.value = credential.user;
+  return credential.user;
+};
+
+const callAnonymousVoteEndpoint = async (payload) => {
+  const token = await auth.currentUser?.getIdToken();
+
+  if (!token) {
+    throw new Error("anonymous-token-missing");
+  }
+
+  const response = await fetch(CAST_ANONYMOUS_VOTE_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || "anonymous-vote-failed");
+    error.code = data?.error?.code
+      ? `functions/${data.error.code}`
+      : "functions/internal";
+    error.details = data?.error?.details || null;
+    throw error;
+  }
+
+  return data;
+};
+
+const voteButtonLabel = (contestant) => {
+  if (isVoting.value === getContestantArtistId(contestant)) {
+    return translate("polls.detail.voting");
+  }
+
+  if (currentUser.value?.isAnonymous || !currentUser.value) {
+    return anonymousRemainingMs.value > 0
+      ? translate("polls.detail.voteCountdown", {
+          time: anonymousCooldownLabel.value,
+        })
+      : translate("polls.detail.freeVote");
+  }
+
+  return hasEnoughPointsToVote.value
+    ? translate("polls.detail.vote")
+    : translate("polls.detail.noPoints");
+};
+
 const closeVoteModal = () => {
   voteModalContestant.value = null;
   voteAmount.value = 1;
@@ -834,13 +1257,24 @@ const closeVoteModal = () => {
 const openVoteModal = (contestant) => {
   errorMessage.value = "";
 
-  if (!currentUser.value) {
+  if (!currentUser.value && !anonymousVotingConfig.value.enabled) {
     errorMessage.value = translate("polls.detail.loginToVote");
     return;
   }
 
   if (!poll.value?.id || !isVotingOpen.value) {
     errorMessage.value = translate("polls.detail.closedVoting");
+    return;
+  }
+
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    if (!canUseAnonymousVote.value) {
+      errorMessage.value = anonymousVoteMessage.value;
+      return;
+    }
+
+    voteModalContestant.value = contestant;
+    voteAmount.value = 1;
     return;
   }
 
@@ -864,11 +1298,69 @@ const adjustVoteAmount = (amount) => {
   setVoteAmount(Number(voteAmount.value || 1) + amount);
 };
 
+const voteAnonymouslyFor = async (contestant) => {
+  if (!anonymousVotingConfig.value.enabled) {
+    errorMessage.value = translate("polls.detail.anonymousDisabled");
+    return;
+  }
+
+  if (anonymousRemainingMs.value > 0) {
+    errorMessage.value = anonymousVoteMessage.value;
+    return;
+  }
+
+  const artistId = getContestantArtistId(contestant);
+  const currentContestant = displayedContestants.value.find(
+    (item) => getContestantArtistId(item) === artistId,
+  );
+  const currentVotes = displayVoteCountFor(currentContestant || contestant);
+  const currentTotalVotes = displayTotalVotes.value;
+
+  try {
+    await ensureAnonymousUser();
+    isVoting.value = artistId;
+
+    const result = await callAnonymousVoteEndpoint({
+      pollId: poll.value.id,
+      roundId: activeRound.value?.id || null,
+      artistId,
+      shardCount: shardCountForConcurrency(100000),
+    });
+
+    anonymousVoteStatus.value = result || null;
+    setOptimisticVoteTotal(artistId, currentVotes + 1);
+    animateVoteCount(artistId, currentVotes, currentVotes + 1);
+    animateDisplayedTotalVotes(currentTotalVotes, currentTotalVotes + 1);
+    showVoteFeedback(artistId, 1);
+    shareMessage.value = translate("polls.detail.anonymousVoteSuccessLogin");
+    closeVoteModal();
+  } catch (error) {
+    if (
+      error.code === "functions/resource-exhausted" ||
+      error.code === "resource-exhausted"
+    ) {
+      anonymousVoteStatus.value = {
+        ...(anonymousVoteStatus.value || {}),
+        nextVoteAt: error.details?.nextVoteAt || null,
+        remainingMs: error.details?.remainingMs || 0,
+      };
+      errorMessage.value = translate("polls.detail.anonymousWait", {
+        time: anonymousCooldownLabel.value,
+      });
+      return;
+    }
+
+    errorMessage.value = translate("polls.detail.anonymousVoteError");
+  } finally {
+    isVoting.value = "";
+  }
+};
+
 const voteFor = async (contestant, amount = 1) => {
   errorMessage.value = "";
 
-  if (!currentUser.value) {
-    errorMessage.value = translate("polls.detail.loginToVote");
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    await voteAnonymouslyFor(contestant);
     return;
   }
 
@@ -891,19 +1383,37 @@ const voteFor = async (contestant, amount = 1) => {
   }
 
   try {
+    const artistId = contestant.artistId;
+    const currentContestant = displayedContestants.value.find(
+      (item) => getContestantArtistId(item) === artistId,
+    );
+    const currentVotes = displayVoteCountFor(currentContestant || contestant);
+    const currentTotalVotes = displayTotalVotes.value;
+
     isVoting.value = contestant.artistId;
     voteQueue.enqueue({
       pollId: poll.value.id,
       roundId: activeRound.value?.id || null,
-      artistId: contestant.artistId,
+      artistId,
       userId: currentUser.value.uid,
-      userDisplayName: currentUser.value.displayName || currentUser.value.email || "",
+      userDisplayName:
+        currentUser.value.displayName || currentUser.value.email || "",
       userPhotoURL: currentUser.value.photoURL || "",
       amount: votesToAdd,
       pointsPerVote: POINTS_PER_VOTE,
       shardCount: shardCountForConcurrency(100000),
     });
-    userPoints.value = Math.max(0, Number(userPoints.value || 0) - pointsToSpend);
+    setOptimisticVoteTotal(artistId, currentVotes + votesToAdd);
+    animateVoteCount(artistId, currentVotes, currentVotes + votesToAdd);
+    animateDisplayedTotalVotes(
+      currentTotalVotes,
+      currentTotalVotes + votesToAdd,
+    );
+    showVoteFeedback(artistId, votesToAdd);
+    userPoints.value = Math.max(
+      0,
+      Number(userPoints.value || 0) - pointsToSpend,
+    );
     closeVoteModal();
   } catch (error) {
     errorMessage.value =
@@ -920,20 +1430,38 @@ const confirmVoteAmount = () => {
     return;
   }
 
+  if (isAnonymousVotingFlow.value) {
+    voteFor(voteModalContestant.value, 1);
+    return;
+  }
+
   setVoteAmount(voteAmount.value);
   voteFor(voteModalContestant.value, normalizedVoteAmount.value);
 };
 
+watch(
+  () => [currentUser.value?.uid, poll.value?.id, activeRound.value?.id],
+  () => {
+    refreshAnonymousVoteStatus();
+  },
+);
+
 onMounted(() => {
   voteQueue = createVoteQueue({
     db,
-    onFlushStart: (batches) => {
-      isVoting.value = batches[0]?.artistId || "";
+    onBatchCommitted: (batch) => {
+      window.setTimeout(() => {
+        clearOptimisticVoteTotal(batch.artistId);
+      }, 1200);
     },
-    onFlushEnd: () => {
-      isVoting.value = "";
-    },
-    onError: (error) => {
+    onError: (error, batches = []) => {
+      batches.forEach((batch) => {
+        clearOptimisticVoteTotal(batch.artistId);
+        clearAnimatedVoteCount(batch.artistId);
+        userPoints.value =
+          Number(userPoints.value || 0) + batch.amount * batch.pointsPerVote;
+      });
+      clearAnimatedDisplayedTotalVotes();
       errorMessage.value =
         error.message === "not-enough-points"
           ? translate("polls.detail.notEnoughPoints")
@@ -955,8 +1483,14 @@ onUnmounted(() => {
   unsubscribePoll?.();
   unsubscribeContestants?.();
   unsubscribePublicResults?.();
+  unsubscribeVoteShards?.();
   unsubscribeRounds?.();
   unsubscribeUserPoints?.();
+  voteFeedbackTimers.forEach((timer) => window.clearTimeout(timer));
+  voteFeedbackTimers.clear();
+  voteCountAnimationTimers.forEach((timer) => window.clearInterval(timer));
+  voteCountAnimationTimers.clear();
+  clearAnimatedDisplayedTotalVotes();
   voteQueue?.flush().catch(() => {});
   voteQueue?.dispose();
   window.clearInterval(clockTimer);
@@ -1096,8 +1630,12 @@ onUnmounted(() => {
                       : 'bg-white/5 text-slate-500'
                 "
               >
-                <span v-if="round.isActive">{{ $t("polls.detail.inProgress") }}</span>
-                <span v-else-if="round.status === 'closed'">{{ $t("polls.detail.finished") }}</span>
+                <span v-if="round.isActive">{{
+                  $t("polls.detail.inProgress")
+                }}</span>
+                <span v-else-if="round.status === 'closed'">{{
+                  $t("polls.detail.finished")
+                }}</span>
                 <span v-else>{{ $t("polls.detail.preparing") }}</span>
               </p>
 
@@ -1120,7 +1658,9 @@ onUnmounted(() => {
               >
                 Siguiente
               </p>
-              <p class="mt-1 text-sm font-black text-white">{{ $t("polls.detail.comingSoon") }}</p>
+              <p class="mt-1 text-sm font-black text-white">
+                {{ $t("polls.detail.comingSoon") }}
+              </p>
             </div>
           </div>
         </div>
@@ -1228,7 +1768,7 @@ onUnmounted(() => {
                     <span
                       class="block text-xs font-black uppercase tracking-[0.24em] text-amber-200"
                     >
-                      Ganó con
+                      {{ $t("polls.detail.wonWith") }}
                     </span>
                     <span
                       class="mt-2 block text-4xl font-black leading-none text-white sm:text-5xl"
@@ -1238,7 +1778,7 @@ onUnmounted(() => {
                     <span
                       class="mt-1 block text-xs font-bold uppercase tracking-widest text-slate-300"
                     >
-                      votos
+                      {{ $t("polls.detail.votesLabel") }}
                     </span>
                   </span>
                   <span class="text-left sm:text-right">
@@ -1312,7 +1852,11 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-if="isClosed && finalWinnerEntries.length && secondaryFinalRankingEntries.length"
+        v-if="
+          isClosed &&
+          finalWinnerEntries.length &&
+          secondaryFinalRankingEntries.length
+        "
         class="relative mt-6 rounded-4xl border border-white/10 bg-white/4 p-4 shadow-xl shadow-fuchsia-950/15 sm:p-6"
       >
         <p
@@ -1361,8 +1905,14 @@ onUnmounted(() => {
               </div>
 
               <div class="sm:min-w-64 sm:text-right">
-                <p class="text-xs font-black uppercase tracking-widest text-slate-400">
-                  {{ entry.votes.toLocaleString("es") }} votos
+                <p
+                  class="text-xs font-black uppercase tracking-widest text-slate-400"
+                >
+                  {{
+                    $t("polls.detail.votesCount", {
+                      count: entry.votes.toLocaleString("es"),
+                    })
+                  }}
                 </p>
                 <p class="mt-1 text-2xl font-black text-fuchsia-100">
                   {{ entry.percentLabel }}
@@ -1497,7 +2047,7 @@ onUnmounted(() => {
           <h2
             class="relative mx-auto mt-4 max-w-2xl text-4xl font-black text-white sm:text-6xl"
           >
-            Estamos contando los votos
+            {{ $t("polls.detail.countingVotesTitle") }}
           </h2>
           <p
             class="relative mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg"
@@ -1563,7 +2113,18 @@ onUnmounted(() => {
               v-for="(contestant, index) in match.contestants"
               :key="contestant.id"
               class="relative overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
+              :class="
+                voteFeedbacks[contestant.artistId || contestant.id] &&
+                'vote-feedback-card'
+              "
             >
+              <span
+                v-if="voteFeedbacks[contestant.artistId || contestant.id]"
+                :key="`notice-${voteFeedbacks[contestant.artistId || contestant.id].token}`"
+                class="vote-feedback-notice"
+              >
+                {{ $t("polls.detail.voteCounted") }}
+              </span>
               <div
                 class="grid gap-0 md:grid-cols-[14rem_1fr_auto] md:items-center"
               >
@@ -1582,7 +2143,7 @@ onUnmounted(() => {
                   <span
                     class="absolute left-4 top-4 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur"
                   >
-                    Opción {{ index === 0 ? "A" : "B" }}
+                    {{ $t("polls.detail.optionLabel", { option: index === 0 ? "A" : "B" }) }}
                   </span>
                 </div>
 
@@ -1590,12 +2151,12 @@ onUnmounted(() => {
                   <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
                       <h3 class="truncate text-3xl font-black text-white">
-                        {{ contestant.artist?.name || "Artista" }}
+                        {{ contestant.artist?.name || $t("polls.detail.voteFallback") }}
                       </h3>
                       <p
                         class="mt-1 text-sm font-black uppercase text-fuchsia-200"
                       >
-                        {{ getArtistGroup(contestant.artist) || "Solista" }}
+                        {{ getArtistGroup(contestant.artist) || $t("polls.detail.soloist") }}
                       </p>
                     </div>
                     <p class="shrink-0 text-2xl font-black text-cyan-100">
@@ -1611,20 +2172,48 @@ onUnmounted(() => {
                       :style="{ width: percentForMatch(contestant, match) }"
                     ></div>
                   </div>
-                  <p class="mt-2 text-sm font-bold text-slate-300">
-                    {{ contestant.totalVotes }} votos
+                  <p
+                    class="relative mt-2 text-sm font-bold text-slate-300"
+                    :class="
+                      voteFeedbacks[contestant.artistId || contestant.id] &&
+                      'text-emerald-200'
+                    "
+                  >
+                    {{
+                      $t("polls.detail.votesCount", {
+                        count: displayVoteCountFor(contestant).toLocaleString("es"),
+                      })
+                    }}
+                    <span
+                      v-if="voteFeedbacks[contestant.artistId || contestant.id]"
+                      :key="
+                        voteFeedbacks[contestant.artistId || contestant.id]
+                          .token
+                      "
+                      class="vote-feedback-badge"
+                    >
+                      {{
+                        $t("polls.detail.votesAdded", {
+                          count:
+                            voteFeedbacks[contestant.artistId || contestant.id]
+                              .amount,
+                        })
+                      }}
+                    </span>
                   </p>
                 </div>
 
                 <button
                   type="button"
                   class="m-4 flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:min-w-32"
-                  :disabled="!isVotingOpen || isVoting === contestant.artistId"
+                  :disabled="
+                    !isVotingOpen ||
+                    !hasEnoughPointsToVote ||
+                    isVoting === getContestantArtistId(contestant)
+                  "
                   @click="voteFor(contestant)"
                 >
-                  {{
-                    isVoting === contestant.artistId ? "Votando..." : "Votar"
-                  }}
+                  {{ voteButtonLabel(contestant) }}
                 </button>
               </div>
 
@@ -1648,15 +2237,37 @@ onUnmounted(() => {
 
       <section v-else class="mt-8 space-y-4">
         <div
-          v-if="currentUser && shouldShowVoteButtons"
+          v-if="
+            shouldShowVoteButtons && currentUser && !currentUser.isAnonymous
+          "
           class="flex flex-col gap-2 rounded-3xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100 sm:flex-row sm:items-center sm:justify-between"
         >
           <span>
             Tus puntos:
-            <strong class="text-lg text-amber-200">{{ formattedUserPoints }} pts</strong>
+            <strong class="text-lg text-amber-200"
+              >{{ formattedUserPoints }} pts</strong
+            >
           </span>
           <span class="text-xs uppercase tracking-widest text-amber-200/75">
             Cada voto cuesta {{ POINTS_PER_VOTE }} punto
+          </span>
+        </div>
+
+        <div
+          v-if="
+            shouldShowVoteButtons && (!currentUser || currentUser.isAnonymous)
+          "
+          class="flex flex-col gap-2 rounded-3xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-bold text-cyan-100 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>
+            {{ anonymousVoteMessage }}
+          </span>
+          <span class="text-xs uppercase tracking-widest text-cyan-200/75">
+            {{
+              isLoadingAnonymousStatus
+                ? $t("polls.detail.checkingAnonymousVote")
+                : $t("polls.detail.anonymousIpNotice")
+            }}
           </span>
         </div>
 
@@ -1704,16 +2315,27 @@ onUnmounted(() => {
           <article
             v-for="(contestant, index) in displayedContestants"
             :key="contestant.id"
-            class="rounded-3xl border p-4 transition sm:p-5"
+            class="relative rounded-3xl border p-4 transition sm:p-5"
             :class="[
               isContestantWinner(contestant)
                 ? winnerToneClasses(contestant, 'card')
                 : hasRoundWinners
                   ? 'border-white/10 bg-white/3 opacity-55 grayscale hover:opacity-75'
                   : 'border-white/10 bg-white/5 hover:bg-white/8',
+              voteFeedbacks[contestant.artistId || contestant.id] &&
+                'vote-feedback-card',
             ]"
           >
-            <div class="relative grid grid-cols-[auto_1fr] gap-3 md:flex md:flex-row md:items-center md:gap-4">
+            <span
+              v-if="voteFeedbacks[contestant.artistId || contestant.id]"
+              :key="`notice-${voteFeedbacks[contestant.artistId || contestant.id].token}`"
+              class="vote-feedback-notice"
+            >
+              {{ $t("polls.detail.voteCounted") }}
+            </span>
+            <div
+              class="relative grid grid-cols-[auto_1fr] gap-3 md:flex md:flex-row md:items-center md:gap-4"
+            >
               <span
                 class="absolute -left-1 -top-1 z-10 rounded-2xl bg-[#080a18]/80 px-2 py-1 text-xl font-black backdrop-blur sm:text-4xl md:static md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-0"
                 :class="
@@ -1738,13 +2360,13 @@ onUnmounted(() => {
                 }}</span>
               </span>
               <div class="min-w-0 flex-1 pr-1">
-                <div
-                  class="flex items-start justify-between gap-3"
-                >
+                <div class="flex items-start justify-between gap-3">
                   <span class="min-w-0">
                     <span class="flex flex-wrap items-center gap-2 sm:gap-3">
-                      <h3 class="truncate text-xl font-black leading-none text-white sm:text-3xl">
-                        {{ contestant.artist?.name || "Artista" }}
+                      <h3
+                        class="truncate text-xl font-black leading-none text-white sm:text-3xl"
+                      >
+                        {{ contestant.artist?.name || $t("polls.detail.voteFallback") }}
                       </h3>
                       <span
                         v-if="hasRoundWinners"
@@ -1757,27 +2379,55 @@ onUnmounted(() => {
                       >
                         {{
                           isContestantWinner(contestant)
-                            ? `Ganador #${contestantWinnerRank(contestant)}`
-                            : "No ganó"
+                            ? $t("polls.detail.winnerBadge", {
+                                rank: contestantWinnerRank(contestant),
+                              })
+                            : $t("polls.detail.didNotWin")
                         }}
                       </span>
                     </span>
                     <p
                       class="mt-1 text-xs font-bold uppercase text-fuchsia-200 sm:text-sm"
                     >
-                      {{ getArtistGroup(contestant.artist) || "Solista" }}
+                      {{ getArtistGroup(contestant.artist) || $t("polls.detail.soloist") }}
                     </p>
                   </span>
                   <span class="shrink-0 text-right">
-                  <span
-                    class="block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
-                  >
-                      {{ contestant.totalVotes }} votos
+                    <span
+                      class="relative block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
+                      :class="
+                        voteFeedbacks[contestant.artistId || contestant.id] &&
+                        'text-emerald-200'
+                      "
+                    >
+                      {{
+                        $t("polls.detail.votesCount", {
+                          count: displayVoteCountFor(contestant).toLocaleString("es"),
+                        })
+                      }}
+                      <span
+                        v-if="
+                          voteFeedbacks[contestant.artistId || contestant.id]
+                        "
+                        :key="
+                          voteFeedbacks[contestant.artistId || contestant.id]
+                            .token
+                        "
+                        class="vote-feedback-badge right-0"
+                      >
+                        {{
+                          $t("polls.detail.votesAdded", {
+                            count:
+                              voteFeedbacks[contestant.artistId || contestant.id]
+                                .amount,
+                          })
+                        }}
+                      </span>
                     </span>
-                  <span
-                    class="block text-2xl font-black leading-none text-fuchsia-100 sm:text-4xl"
-                  >
-                      {{ percentForDisplayed(contestant.totalVotes) }}
+                    <span
+                      class="block text-2xl font-black leading-none text-fuchsia-100 sm:text-4xl"
+                    >
+                      {{ percentForDisplayedContestant(contestant) }}
                     </span>
                   </span>
                 </div>
@@ -1785,7 +2435,7 @@ onUnmounted(() => {
                   <div
                     class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300"
                     :style="{
-                      width: percentForDisplayed(contestant.totalVotes),
+                      width: percentForDisplayedContestant(contestant),
                     }"
                   ></div>
                 </div>
@@ -1797,17 +2447,11 @@ onUnmounted(() => {
                 :disabled="
                   !isVotingOpen ||
                   !hasEnoughPointsToVote ||
-                  isVoting === contestant.artistId
+                  isVoting === getContestantArtistId(contestant)
                 "
                 @click="openVoteModal(contestant)"
               >
-                {{
-                  isVoting === contestant.artistId
-                    ? "Votando..."
-                    : hasEnoughPointsToVote
-                      ? "Votar"
-                      : "Sin puntos"
-                }}
+                {{ voteButtonLabel(contestant) }}
               </button>
             </div>
           </article>
@@ -1822,6 +2466,10 @@ onUnmounted(() => {
       </section>
     </template>
 
+    <div class="mt-12 border-t border-white/10 pt-4">
+      <ActivePolls :exclude-poll-id="currentPollId" />
+    </div>
+
     <Teleport to="body">
       <div
         v-if="voteModalContestant"
@@ -1832,7 +2480,9 @@ onUnmounted(() => {
           @click.stop
         >
           <div class="relative p-5 sm:p-6">
-            <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,0.22),transparent_32%),radial-gradient(circle_at_95%_100%,rgba(34,211,238,0.18),transparent_34%)]"></div>
+            <div
+              class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,0.22),transparent_32%),radial-gradient(circle_at_95%_100%,rgba(34,211,238,0.18),transparent_34%)]"
+            ></div>
             <button
               type="button"
               class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-xl font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
@@ -1843,33 +2493,75 @@ onUnmounted(() => {
             </button>
 
             <div class="relative z-10">
-              <div class="flex items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-                <span class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-3xl border-2 border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-3xl font-black">
+              <div
+                class="flex items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4"
+              >
+                <span
+                  class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-3xl border-2 border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-3xl font-black"
+                >
                   <img
                     v-if="getArtistImage(selectedVoteArtist)"
                     :src="getArtistImage(selectedVoteArtist)"
                     :alt="selectedVoteArtist?.name"
                     class="size-full object-cover"
                   />
-                  <span v-else>{{ selectedVoteArtist?.name?.charAt(0) || "A" }}</span>
+                  <span v-else>{{
+                    selectedVoteArtist?.name?.charAt(0) || "A"
+                  }}</span>
                 </span>
                 <div class="min-w-0">
-                  <p class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-300">
-                    Confirmar votos
+                  <p
+                    class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-300"
+                  >
+                    {{
+                      isAnonymousVotingFlow
+                        ? $t("polls.detail.anonymousConfirmTitle")
+                        : $t("polls.detail.confirmVotes")
+                    }}
                   </p>
                   <h2 class="mt-2 truncate text-2xl font-black">
-                    {{ selectedVoteArtist?.name || "Artista" }}
+                    {{ selectedVoteArtist?.name || $t("polls.detail.voteFallback") }}
                   </h2>
                   <p class="mt-1 text-sm font-bold text-amber-200">
-                    Tienes {{ formattedUserPoints }} pts disponibles
+                    {{
+                      isAnonymousVotingFlow
+                        ? $t("polls.detail.anonymousOneFreeVote")
+                        : $t("polls.detail.availablePoints", {
+                            points: formattedUserPoints,
+                          })
+                    }}
                   </p>
                 </div>
               </div>
 
               <form class="mt-5 space-y-4" @submit.prevent="confirmVoteAmount">
-                <label class="block rounded-3xl border border-white/10 bg-white/5 p-4">
-                  <span class="text-xs font-black uppercase tracking-widest text-slate-400">
-                    ¿Cuántos votos quieres dar?
+                <div
+                  v-if="isAnonymousVotingFlow"
+                  class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4"
+                >
+                  <p
+                    class="text-xs font-black uppercase tracking-widest text-cyan-200"
+                  >
+                    {{ $t("polls.detail.freeVote") }}
+                  </p>
+                  <p class="mt-2 text-sm leading-6 text-slate-200">
+                    {{ $t("polls.detail.anonymousConfirmDescription") }}
+                  </p>
+                  <p
+                    class="mt-3 rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm font-bold text-cyan-100"
+                  >
+                    {{ anonymousVoteMessage }}
+                  </p>
+                </div>
+
+                <label
+                  v-else
+                  class="block rounded-3xl border border-white/10 bg-white/5 p-4"
+                >
+                  <span
+                    class="text-xs font-black uppercase tracking-widest text-slate-400"
+                  >
+                    {{ $t("polls.detail.voteQuestion") }}
                   </span>
                   <div class="mt-3 grid grid-cols-[auto_1fr_auto] gap-2">
                     <button
@@ -1900,12 +2592,21 @@ onUnmounted(() => {
                       +
                     </button>
                   </div>
-                  <span class="mt-2 block text-center text-xs font-bold text-slate-400">
-                    Máximo: {{ maxVoteAmount.toLocaleString("es") }} votos
+                  <span
+                    class="mt-2 block text-center text-xs font-bold text-slate-400"
+                  >
+                    {{
+                      $t("polls.detail.maxVotes", {
+                        count: maxVoteAmount.toLocaleString("es"),
+                      })
+                    }}
                   </span>
                 </label>
 
-                <div class="grid grid-cols-4 gap-2">
+                <div
+                  v-if="!isAnonymousVotingFlow"
+                  class="grid grid-cols-4 gap-2"
+                >
                   <button
                     v-for="quickAmount in [1, 5, 10, 25]"
                     :key="quickAmount"
@@ -1914,7 +2615,11 @@ onUnmounted(() => {
                     :disabled="quickAmount > maxVoteAmount"
                     @click="setVoteAmount(quickAmount)"
                   >
-                    {{ quickAmount }} {{ quickAmount === 1 ? "voto" : "votos" }}
+                    {{
+                      quickAmount === 1
+                        ? $t("polls.detail.voteUnit", { count: quickAmount })
+                        : $t("polls.detail.votesCount", { count: quickAmount })
+                    }}
                   </button>
                 </div>
 
@@ -1931,21 +2636,27 @@ onUnmounted(() => {
                     class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
                     @click="closeVoteModal"
                   >
-                    Cancelar
+                    {{ $t("common.actions.cancel") }}
                   </button>
                   <button
                     type="submit"
                     class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
                     :disabled="
-                      isVoting === voteModalContestant.artistId ||
-                      normalizedVoteAmount < 1 ||
-                      normalizedVoteAmount > maxVoteAmount
+                      isVoting === getContestantArtistId(voteModalContestant) ||
+                      (isAnonymousVotingFlow
+                        ? !canUseAnonymousVote
+                        : normalizedVoteAmount < 1 ||
+                          normalizedVoteAmount > maxVoteAmount)
                     "
                   >
                     {{
-                      isVoting === voteModalContestant.artistId
-                        ? "Votando..."
-                        : `Dar ${normalizedVoteAmount.toLocaleString("es")} votos`
+                      isVoting === getContestantArtistId(voteModalContestant)
+                        ? $t("polls.detail.voting")
+                        : isAnonymousVotingFlow
+                          ? $t("polls.detail.useFreeVote")
+                          : $t("polls.detail.castVotes", {
+                              count: normalizedVoteAmount.toLocaleString("es"),
+                            })
                     }}
                   </button>
                 </div>
@@ -2015,6 +2726,59 @@ onUnmounted(() => {
 
 .winner-podium-card:nth-child(2) {
   animation-delay: 460ms;
+}
+
+.vote-feedback-card {
+  animation: vote-feedback-card 1.35s ease-out both;
+}
+
+.vote-feedback-badge {
+  position: absolute;
+  top: -1.85rem;
+  right: 0;
+  z-index: 20;
+  white-space: nowrap;
+  border-radius: 9999px;
+  border: 1px solid rgba(110, 231, 183, 0.38);
+  background: linear-gradient(
+    90deg,
+    rgba(16, 185, 129, 0.96),
+    rgba(34, 211, 238, 0.96)
+  );
+  padding: 0.28rem 0.65rem;
+  color: #052e2b;
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 0 28px rgba(45, 212, 191, 0.34);
+  animation: vote-feedback-badge 1.45s ease-out both;
+  pointer-events: none;
+}
+
+.vote-feedback-notice {
+  position: absolute;
+  right: 0.85rem;
+  top: 0.85rem;
+  z-index: 40;
+  border-radius: 9999px;
+  border: 1px solid rgba(110, 231, 183, 0.46);
+  background: linear-gradient(
+    90deg,
+    rgba(6, 78, 59, 0.96),
+    rgba(8, 47, 73, 0.96)
+  );
+  padding: 0.45rem 0.85rem;
+  color: #d1fae5;
+  font-size: 0.68rem;
+  font-weight: 1000;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 30px rgba(16, 185, 129, 0.38);
+  animation: vote-feedback-notice 2.35s ease-out both;
+  pointer-events: none;
 }
 
 .winner-card:nth-child(2) {
@@ -2108,6 +2872,75 @@ onUnmounted(() => {
   to {
     transform: scaleX(1);
     filter: brightness(1.15);
+  }
+}
+
+@keyframes vote-feedback-card {
+  0% {
+    border-color: rgba(110, 231, 183, 0.72);
+    background-color: rgba(16, 185, 129, 0.12);
+    box-shadow:
+      0 0 0 0 rgba(45, 212, 191, 0.56),
+      0 0 44px rgba(34, 211, 238, 0.28);
+    transform: translateY(0) scale(1);
+  }
+
+  30% {
+    border-color: rgba(244, 114, 182, 0.72);
+    background-color: rgba(34, 211, 238, 0.1);
+    box-shadow:
+      0 0 0 10px rgba(45, 212, 191, 0),
+      0 0 62px rgba(217, 70, 239, 0.36);
+    transform: translateY(-3px) scale(1.012);
+  }
+
+  100% {
+    box-shadow: none;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes vote-feedback-badge {
+  0% {
+    opacity: 0;
+    transform: translateY(0.45rem) scale(0.82);
+  }
+
+  18% {
+    opacity: 1;
+    transform: translateY(0) scale(1.06);
+  }
+
+  78% {
+    opacity: 1;
+    transform: translateY(-0.25rem) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-0.85rem) scale(0.96);
+  }
+}
+
+@keyframes vote-feedback-notice {
+  0% {
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.88);
+  }
+
+  14% {
+    opacity: 1;
+    transform: translateY(0) scale(1.04);
+  }
+
+  74% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-0.35rem) scale(0.96);
   }
 }
 
