@@ -2,7 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class AuthGoogleButton extends StatelessWidget {
-  const AuthGoogleButton({super.key});
+  const AuthGoogleButton({
+    required this.onPressed,
+    this.isLoading = false,
+    super.key,
+  });
+
+  final VoidCallback? onPressed;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +19,7 @@ class AuthGoogleButton extends StatelessWidget {
     return SizedBox(
       height: 50,
       child: OutlinedButton(
-        onPressed: () {},
+        onPressed: isLoading ? null : onPressed,
         style: OutlinedButton.styleFrom(
           backgroundColor: isDark
               ? Colors.white.withValues(alpha: 0.06)
@@ -25,28 +32,33 @@ class AuthGoogleButton extends StatelessWidget {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgPicture.asset(
-              'assets/icons/google_g.svg',
-              width: 24,
-              height: 24,
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  'Continuar con Google',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
+        child: isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SvgPicture.asset(
+                    'assets/icons/google_g.svg',
+                    width: 24,
+                    height: 24,
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Continuar con Google',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -108,11 +120,13 @@ class AuthGradientButton extends StatelessWidget {
   const AuthGradientButton({
     required this.label,
     required this.onPressed,
+    this.isLoading = false,
     super.key,
   });
 
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +145,7 @@ class AuthGradientButton extends StatelessWidget {
         ],
       ),
       child: ElevatedButton(
-        onPressed: onPressed,
+        onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
@@ -141,13 +155,22 @@ class AuthGradientButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
         ),
-        child: Text(
-          label.toUpperCase(),
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.6,
-          ),
-        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                label.toUpperCase(),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.6,
+                ),
+              ),
       ),
     );
   }

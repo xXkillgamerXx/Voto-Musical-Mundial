@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../features/auth/presentation/pages/login_page.dart';
+import '../features/auth/presentation/pages/auth_gate.dart';
 import 'app_theme.dart';
 
 class VotoMusicApp extends StatelessWidget {
@@ -14,7 +14,7 @@ class VotoMusicApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: const LoginPage(),
+      home: const AuthGate(),
     );
   }
 }

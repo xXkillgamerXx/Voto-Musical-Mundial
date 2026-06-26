@@ -1,5 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
 import 'terms_conditions_page.dart';
@@ -12,10 +15,19 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  final _usernameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _acceptedTerms = false;
+  bool _isLoading = false;
   int _currentStep = 1;
+  String _errorMessage = '';
 
   final _countries = const [
     _CountryOption('República Dominicana', 'DO', '🇩🇴', '+1'),
@@ -37,7 +49,38 @@ class _RegisterPageState extends State<RegisterPage> {
 
   static const _totalSteps = 3;
 
-  void _goNext() {
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  String get _normalizedUsername =>
+      _usernameController.text.trim().toLowerCase();
+
+  String get _fullName =>
+      '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
+          .trim();
+
+  Future<void> _goNext() async {
+    setState(() => _errorMessage = '');
+
+    final isValid = switch (_currentStep) {
+      1 => await _validateProfileStep(),
+      2 => _validateContactStep(),
+      _ => true,
+    };
+
+    if (!isValid) {
+      return;
+    }
+
     if (_currentStep < _totalSteps) {
       setState(() => _currentStep += 1);
     }
@@ -45,7 +88,172 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _goPrevious() {
     if (_currentStep > 1) {
-      setState(() => _currentStep -= 1);
+      setState(() {
+        _errorMessage = '';
+        _currentStep -= 1;
+      });
+    }
+  }
+
+  Future<bool> _validateProfileStep() async {
+    if (_firstNameController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Escribe tu nombre.');
+      return false;
+    }
+
+    if (_lastNameController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Escribe tu apellido.');
+      return false;
+    }
+
+    if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(_normalizedUsername)) {
+      setState(
+        () => _errorMessage =
+            'El username debe tener 3 a 20 caracteres: letras, números o _.'
+                .trim(),
+      );
+      return false;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final usernameSnap = await AuthService.db
+          .collection('usernames')
+          .doc(_normalizedUsername)
+          .get();
+
+      if (usernameSnap.exists) {
+        setState(() => _errorMessage = 'Ese username ya está en uso.');
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      setState(() => _errorMessage = 'No se pudo validar el username.');
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  bool _validateContactStep() {
+    if (_emailController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Escribe tu correo.');
+      return false;
+    }
+
+    if (_selectedCountry == null) {
+      setState(() => _errorMessage = 'Selecciona tu país.');
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _handleCreateAccount() async {
+    setState(() => _errorMessage = '');
+
+    if (!(await _validateProfileStep()) || !_validateContactStep()) {
+      return;
+    }
+
+    if (_passwordController.text.length < 6) {
+      setState(
+        () => _errorMessage = 'La contraseña debe tener al menos 6 caracteres.',
+      );
+      return;
+    }
+
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'Las contraseñas no coinciden.');
+      return;
+    }
+
+    if (!_acceptedTerms) {
+      setState(
+        () => _errorMessage = 'Debes aceptar los términos y condiciones.',
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final credential = await AuthService.auth.createUserWithEmailAndPassword(
+        email: _emailController.text.trim().toLowerCase(),
+        password: _passwordController.text,
+      );
+      final user = credential.user;
+
+      if (user == null) {
+        throw FirebaseAuthException(code: 'unknown');
+      }
+
+      await user.updateDisplayName(_fullName);
+
+      await AuthService.db.runTransaction((transaction) async {
+        final usernameRef = AuthService.db
+            .collection('usernames')
+            .doc(_normalizedUsername);
+        final usernameSnap = await transaction.get(usernameRef);
+
+        if (usernameSnap.exists) {
+          throw StateError('username-unavailable');
+        }
+
+        final selectedCountry = _selectedCountry;
+        final phone = _phoneController.text.trim();
+        final selectedPhoneCountry = phone.isEmpty
+            ? _selectedPhoneCountry
+            : (_selectedPhoneCountry ?? _countries.first);
+        final phoneInternational =
+            selectedPhoneCountry?.dialCode.isNotEmpty == true &&
+                phone.isNotEmpty
+            ? '${selectedPhoneCountry!.dialCode} $phone'
+            : phone;
+
+        transaction.set(usernameRef, {
+          'uid': user.uid,
+          'username': _normalizedUsername,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(AuthService.db.collection('users').doc(user.uid), {
+          'firstName': _firstNameController.text.trim(),
+          'lastName': _lastNameController.text.trim(),
+          'name': _fullName,
+          'username': _normalizedUsername,
+          'country': selectedCountry?.name ?? '',
+          'countryCode': selectedCountry?.code ?? '',
+          'phoneCountry': selectedPhoneCountry?.name ?? '',
+          'phoneCountryCode': selectedPhoneCountry?.code ?? '',
+          'phoneDialCode': selectedPhoneCountry?.dialCode ?? '',
+          'phone': phone,
+          'phoneInternational': phoneInternational,
+          'email': _emailController.text.trim().toLowerCase(),
+          'points': 25,
+          'spentPoints': 0,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      });
+
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _errorMessage =
+            error is StateError && error.message == 'username-unavailable'
+            ? 'Ese username ya está en uso.'
+            : AuthService.friendlyError(error),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -94,12 +302,17 @@ class _RegisterPageState extends State<RegisterPage> {
               child: _buildStep(),
             ),
             const SizedBox(height: 24),
+            if (_errorMessage.isNotEmpty) ...[
+              _AuthMessage(message: _errorMessage),
+              const SizedBox(height: 12),
+            ],
             _RegisterActions(
               currentStep: _currentStep,
               totalSteps: _totalSteps,
+              isLoading: _isLoading,
               onPrevious: _goPrevious,
-              onNext: _goNext,
-              onCreateAccount: () {},
+              onNext: () => _goNext(),
+              onCreateAccount: _handleCreateAccount,
             ),
             const SizedBox(height: 12),
             TextButton(
@@ -114,12 +327,21 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Widget _buildStep() {
     return switch (_currentStep) {
-      1 => const _ProfileStep(key: ValueKey('profile-step')),
+      1 => _ProfileStep(
+        key: const ValueKey('profile-step'),
+        usernameController: _usernameController,
+        firstNameController: _firstNameController,
+        lastNameController: _lastNameController,
+        enabled: !_isLoading,
+      ),
       2 => _ContactStep(
         key: const ValueKey('contact-step'),
         countries: _countries,
+        emailController: _emailController,
+        phoneController: _phoneController,
         selectedCountry: _selectedCountry,
         selectedPhoneCountry: _selectedPhoneCountry,
+        enabled: !_isLoading,
         onCountryChanged: (country) {
           setState(() => _selectedCountry = country);
         },
@@ -132,6 +354,9 @@ class _RegisterPageState extends State<RegisterPage> {
         obscurePassword: _obscurePassword,
         obscureConfirmPassword: _obscureConfirmPassword,
         acceptedTerms: _acceptedTerms,
+        passwordController: _passwordController,
+        confirmPasswordController: _confirmPasswordController,
+        enabled: !_isLoading,
         onTogglePassword: () {
           setState(() => _obscurePassword = !_obscurePassword);
         },
@@ -192,39 +417,81 @@ class _RegisterProgress extends StatelessWidget {
   }
 }
 
+class _AuthMessage extends StatelessWidget {
+  const _AuthMessage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          color: Colors.redAccent,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
 class _ProfileStep extends StatelessWidget {
-  const _ProfileStep({super.key});
+  const _ProfileStep({
+    required this.usernameController,
+    required this.firstNameController,
+    required this.lastNameController,
+    required this.enabled,
+    super.key,
+  });
+
+  final TextEditingController usernameController;
+  final TextEditingController firstNameController;
+  final TextEditingController lastNameController;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: const [
-        AuthFieldLabel('Username'),
-        SizedBox(height: 10),
+      children: [
+        const AuthFieldLabel('Username'),
+        const SizedBox(height: 10),
         TextField(
+          controller: usernameController,
+          enabled: enabled,
           textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: 'nombre de usuario',
             prefixIcon: Icon(Icons.person),
           ),
         ),
-        SizedBox(height: 18),
-        AuthFieldLabel('Nombre'),
-        SizedBox(height: 10),
+        const SizedBox(height: 18),
+        const AuthFieldLabel('Nombre'),
+        const SizedBox(height: 10),
         TextField(
+          controller: firstNameController,
+          enabled: enabled,
           textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: 'Tu nombre',
             prefixIcon: Icon(Icons.person),
           ),
         ),
-        SizedBox(height: 18),
-        AuthFieldLabel('Apellido'),
-        SizedBox(height: 10),
+        const SizedBox(height: 18),
+        const AuthFieldLabel('Apellido'),
+        const SizedBox(height: 10),
         TextField(
-          decoration: InputDecoration(
+          controller: lastNameController,
+          enabled: enabled,
+          decoration: const InputDecoration(
             labelText: 'Tu apellido',
             prefixIcon: Icon(Icons.person),
           ),
@@ -237,16 +504,22 @@ class _ProfileStep extends StatelessWidget {
 class _ContactStep extends StatelessWidget {
   const _ContactStep({
     required this.countries,
+    required this.emailController,
+    required this.phoneController,
     required this.selectedCountry,
     required this.selectedPhoneCountry,
+    required this.enabled,
     required this.onCountryChanged,
     required this.onPhoneCountryChanged,
     super.key,
   });
 
   final List<_CountryOption> countries;
+  final TextEditingController emailController;
+  final TextEditingController phoneController;
   final _CountryOption? selectedCountry;
   final _CountryOption? selectedPhoneCountry;
+  final bool enabled;
   final ValueChanged<_CountryOption?> onCountryChanged;
   final ValueChanged<_CountryOption?> onPhoneCountryChanged;
 
@@ -258,10 +531,12 @@ class _ContactStep extends StatelessWidget {
       children: [
         const AuthFieldLabel('Correo'),
         const SizedBox(height: 10),
-        const TextField(
+        TextField(
+          controller: emailController,
+          enabled: enabled,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: 'Correo',
             prefixIcon: Icon(Icons.mail_outline),
           ),
@@ -273,6 +548,7 @@ class _ContactStep extends StatelessWidget {
           countries: countries,
           selectedCountry: selectedCountry,
           placeholder: 'Selecciona tu país',
+          enabled: enabled,
           onChanged: onCountryChanged,
         ),
         const SizedBox(height: 18),
@@ -280,7 +556,9 @@ class _ContactStep extends StatelessWidget {
         const SizedBox(height: 10),
         _PhoneInputField(
           countries: countries,
+          controller: phoneController,
           selectedCountry: selectedPhoneCountry,
+          enabled: enabled,
           onCountryChanged: onPhoneCountryChanged,
         ),
       ],
@@ -310,12 +588,14 @@ class _CountrySelectField extends StatelessWidget {
     required this.countries,
     required this.selectedCountry,
     required this.placeholder,
+    required this.enabled,
     required this.onChanged,
   });
 
   final List<_CountryOption> countries;
   final _CountryOption? selectedCountry;
   final String placeholder;
+  final bool enabled;
   final ValueChanged<_CountryOption?> onChanged;
 
   @override
@@ -323,18 +603,20 @@ class _CountrySelectField extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return _PickerSurface(
-      onTap: () async {
-        final country = await _showCountryPicker(
-          context: context,
-          countries: countries,
-          title: 'Buscar país',
-          selectedCountry: selectedCountry,
-        );
+      onTap: enabled
+          ? () async {
+              final country = await _showCountryPicker(
+                context: context,
+                countries: countries,
+                title: 'Buscar país',
+                selectedCountry: selectedCountry,
+              );
 
-        if (country != null) {
-          onChanged(country);
-        }
-      },
+              if (country != null) {
+                onChanged(country);
+              }
+            }
+          : null,
       child: Row(
         children: [
           Icon(Icons.public, color: colorScheme.onSurfaceVariant),
@@ -360,12 +642,16 @@ class _CountrySelectField extends StatelessWidget {
 class _PhoneInputField extends StatelessWidget {
   const _PhoneInputField({
     required this.countries,
+    required this.controller,
     required this.selectedCountry,
+    required this.enabled,
     required this.onCountryChanged,
   });
 
   final List<_CountryOption> countries;
+  final TextEditingController controller;
   final _CountryOption? selectedCountry;
+  final bool enabled;
   final ValueChanged<_CountryOption?> onCountryChanged;
 
   @override
@@ -374,23 +660,27 @@ class _PhoneInputField extends StatelessWidget {
     final country = selectedCountry ?? countries.first;
 
     return TextField(
+      controller: controller,
+      enabled: enabled,
       keyboardType: TextInputType.phone,
       decoration: InputDecoration(
         labelText: 'Tu número',
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
         prefixIcon: InkWell(
-          onTap: () async {
-            final pickedCountry = await _showCountryPicker(
-              context: context,
-              countries: countries,
-              title: 'Código del teléfono',
-              selectedCountry: selectedCountry,
-            );
+          onTap: enabled
+              ? () async {
+                  final pickedCountry = await _showCountryPicker(
+                    context: context,
+                    countries: countries,
+                    title: 'Código del teléfono',
+                    selectedCountry: selectedCountry,
+                  );
 
-            if (pickedCountry != null) {
-              onCountryChanged(pickedCountry);
-            }
-          },
+                  if (pickedCountry != null) {
+                    onCountryChanged(pickedCountry);
+                  }
+                }
+              : null,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.only(left: 14, right: 10),
@@ -428,7 +718,7 @@ class _PickerSurface extends StatelessWidget {
   const _PickerSurface({required this.child, required this.onTap});
 
   final Widget child;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -600,6 +890,9 @@ class _SecurityStep extends StatelessWidget {
     required this.obscurePassword,
     required this.obscureConfirmPassword,
     required this.acceptedTerms,
+    required this.passwordController,
+    required this.confirmPasswordController,
+    required this.enabled,
     required this.onTogglePassword,
     required this.onToggleConfirmPassword,
     required this.onTermsChanged,
@@ -610,6 +903,9 @@ class _SecurityStep extends StatelessWidget {
   final bool obscurePassword;
   final bool obscureConfirmPassword;
   final bool acceptedTerms;
+  final TextEditingController passwordController;
+  final TextEditingController confirmPasswordController;
+  final bool enabled;
   final VoidCallback onTogglePassword;
   final VoidCallback onToggleConfirmPassword;
   final ValueChanged<bool?> onTermsChanged;
@@ -624,12 +920,14 @@ class _SecurityStep extends StatelessWidget {
         const AuthFieldLabel('Contraseña'),
         const SizedBox(height: 10),
         TextField(
+          controller: passwordController,
+          enabled: enabled,
           obscureText: obscurePassword,
           decoration: InputDecoration(
             labelText: 'Mínimo 6 caracteres',
             prefixIcon: const Icon(Icons.lock_outline),
             suffixIcon: IconButton(
-              onPressed: onTogglePassword,
+              onPressed: enabled ? onTogglePassword : null,
               icon: Icon(
                 obscurePassword
                     ? Icons.visibility_outlined
@@ -642,12 +940,14 @@ class _SecurityStep extends StatelessWidget {
         const AuthFieldLabel('Confirmar contraseña'),
         const SizedBox(height: 10),
         TextField(
+          controller: confirmPasswordController,
+          enabled: enabled,
           obscureText: obscureConfirmPassword,
           decoration: InputDecoration(
             labelText: 'Repite tu contraseña',
             prefixIcon: const Icon(Icons.lock_reset_outlined),
             suffixIcon: IconButton(
-              onPressed: onToggleConfirmPassword,
+              onPressed: enabled ? onToggleConfirmPassword : null,
               icon: Icon(
                 obscureConfirmPassword
                     ? Icons.visibility_outlined
@@ -658,7 +958,7 @@ class _SecurityStep extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         InkWell(
-          onTap: () => onTermsChanged(!acceptedTerms),
+          onTap: enabled ? () => onTermsChanged(!acceptedTerms) : null,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -672,7 +972,7 @@ class _SecurityStep extends StatelessWidget {
                     value: acceptedTerms,
                     activeColor: Theme.of(context).colorScheme.primary,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: onTermsChanged,
+                    onChanged: enabled ? onTermsChanged : null,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -707,6 +1007,7 @@ class _RegisterActions extends StatelessWidget {
   const _RegisterActions({
     required this.currentStep,
     required this.totalSteps,
+    required this.isLoading,
     required this.onPrevious,
     required this.onNext,
     required this.onCreateAccount,
@@ -714,6 +1015,7 @@ class _RegisterActions extends StatelessWidget {
 
   final int currentStep;
   final int totalSteps;
+  final bool isLoading;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final VoidCallback onCreateAccount;
@@ -721,14 +1023,18 @@ class _RegisterActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (currentStep == 1) {
-      return AuthGradientButton(label: 'Siguiente', onPressed: onNext);
+      return AuthGradientButton(
+        label: 'Siguiente',
+        onPressed: onNext,
+        isLoading: isLoading,
+      );
     }
 
     return Row(
       children: [
         Expanded(
           child: OutlinedButton(
-            onPressed: onPrevious,
+            onPressed: isLoading ? null : onPrevious,
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
               shape: RoundedRectangleBorder(
@@ -743,6 +1049,7 @@ class _RegisterActions extends StatelessWidget {
           child: AuthGradientButton(
             label: currentStep < totalSteps ? 'Siguiente' : 'Crear cuenta',
             onPressed: currentStep < totalSteps ? onNext : onCreateAccount,
+            isLoading: isLoading,
           ),
         ),
       ],
