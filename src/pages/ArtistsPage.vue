@@ -1,10 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { db } from '../firebase'
-import { getArtistsCached } from '../services/firebaseCache'
+import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 
 const { locale } = useI18n()
 const artists = ref([])
@@ -21,15 +20,6 @@ const getArtistBanner = (artist) =>
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 
 const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`
-
-const loadFollowersCount = async (artistId, fallbackCount = 0) => {
-  try {
-    const followersSnap = await getDocs(collection(db, 'artists', artistId, 'followers'))
-    return followersSnap.size
-  } catch {
-    return Number(fallbackCount || 0)
-  }
-}
 
 const getWeeklyRotationIndex = (itemsLength) => {
   if (!itemsLength) {
@@ -82,18 +72,7 @@ const loadArtists = async () => {
   errorMessage.value = ''
 
   try {
-    const artistRows = await getArtistsCached(db)
-    artists.value = await Promise.all(
-      artistRows.map(async (artist) => {
-        const followersCount = await loadFollowersCount(artist.id, artist.followersCount)
-
-        return {
-          ...artist,
-          followersCount,
-          popularityScore: Number(artist.popularityScore || followersCount * 10 || 0),
-        }
-      }),
-    )
+    artists.value = await getArtistsWithFollowersCached(db)
   } catch {
     errorMessage.value = translate('artists.errors.loadPopular')
   } finally {
@@ -171,6 +150,8 @@ onMounted(loadArtists)
               v-if="getArtistBanner(artist)"
               :src="getArtistBanner(artist)"
               :alt="artist.name"
+              loading="lazy"
+              decoding="async"
               class="absolute inset-0 size-full object-cover opacity-75 transition duration-500 group-hover:scale-105"
             />
             <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(255,255,255,0.22),transparent_24%),linear-gradient(180deg,rgba(8,10,24,0.12),#080a18_92%)]"></div>
@@ -185,6 +166,8 @@ onMounted(loadArtists)
                     v-if="getArtistImage(artist)"
                     :src="getArtistImage(artist)"
                     :alt="artist.name"
+                    loading="lazy"
+                    decoding="async"
                     class="size-full object-cover"
                   />
                   <span v-else>{{ artist.name?.charAt(0) || 'A' }}</span>

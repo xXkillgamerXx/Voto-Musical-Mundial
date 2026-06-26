@@ -1,17 +1,15 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { collection, getDocs } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { db } from "../firebase";
-import { getArtistsCached } from "../services/firebaseCache";
+import { getRankingPopularityCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
 const artists = ref([]);
 const isLoading = ref(true);
 const isLoadingVotes = ref(false);
 const errorMessage = ref("");
-const minimumSkeletonDuration = 900;
 
 const chartAccents = [
   {
@@ -51,111 +49,6 @@ const getArtistBanner = (artist) =>
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
 
 const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`;
-const getArtistFieldId = (row) => row?.artistId || row?.id || "";
-
-const wait = (milliseconds) =>
-  new Promise((resolve) => {
-    window.setTimeout(resolve, milliseconds);
-  });
-
-const addVotesToArtist = (totalsByArtist, artistId, amount) => {
-  if (!artistId || !amount) {
-    return;
-  }
-
-  totalsByArtist.set(
-    artistId,
-    Number(totalsByArtist.get(artistId) || 0) + Number(amount || 0),
-  );
-};
-
-const loadContestantVotes = async (contestantsRef, voteShardsRef, totalsByArtist) => {
-  const [contestantsSnap, shardsSnap] = await Promise.all([
-    getDocs(contestantsRef),
-    getDocs(voteShardsRef),
-  ]);
-  const shardVotesByArtist = new Map();
-
-  shardsSnap.docs.forEach((shardDoc) => {
-    const shard = shardDoc.data();
-    const artistId = shard.artistId;
-
-    if (!artistId) {
-      return;
-    }
-
-    shardVotesByArtist.set(
-      artistId,
-      Number(shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
-    );
-  });
-
-  contestantsSnap.docs.forEach((contestantDoc) => {
-    const contestant = contestantDoc.data();
-    const artistId = getArtistFieldId({ id: contestantDoc.id, ...contestant });
-    const legacyVotes = Number(contestant.votes || 0);
-    const manualVotes = Number(contestant.manualVotes || 0);
-    const shardVotes = Number(shardVotesByArtist.get(artistId) || 0);
-
-    addVotesToArtist(totalsByArtist, artistId, legacyVotes + manualVotes + shardVotes);
-    shardVotesByArtist.delete(artistId);
-  });
-
-  shardVotesByArtist.forEach((votes, artistId) => {
-    addVotesToArtist(totalsByArtist, artistId, votes);
-  });
-};
-
-const loadVoteTotalsByArtist = async () => {
-  const totalsByArtist = new Map();
-  const pollsSnap = await getDocs(collection(db, "polls"));
-
-  await Promise.all(
-    pollsSnap.docs.map(async (pollDoc) => {
-      const pollId = pollDoc.id;
-
-      await loadContestantVotes(
-        collection(db, "polls", pollId, "contestants"),
-        collection(db, "polls", pollId, "voteShards"),
-        totalsByArtist,
-      ).catch(() => {});
-
-      const roundsSnap = await getDocs(collection(db, "polls", pollId, "rounds")).catch(
-        () => null,
-      );
-
-      if (!roundsSnap) {
-        return;
-      }
-
-      await Promise.all(
-        roundsSnap.docs.map((roundDoc) =>
-          loadContestantVotes(
-            collection(db, "polls", pollId, "rounds", roundDoc.id, "contestants"),
-            collection(db, "polls", pollId, "rounds", roundDoc.id, "voteShards"),
-            totalsByArtist,
-          ).catch(() => {}),
-        ),
-      );
-    }),
-  );
-
-  return totalsByArtist;
-};
-
-const buildArtistRows = (artistRows, voteTotalsByArtist = new Map()) =>
-  artistRows.map((artist) => {
-    const followersCount = Number(artist.followersCount || 0);
-    const totalVotes = Number(voteTotalsByArtist.get(artist.id) ?? artist.totalVotes ?? 0);
-
-    return {
-      ...artist,
-      followersCount,
-      totalVotes,
-      popularityScore: Math.round(followersCount * 10 + totalVotes),
-    };
-  });
-
 const currentChartWeek = computed(() => {
   const now = new Date();
   const firstDayOfYear = new Date(now.getFullYear(), 0, 1);
@@ -209,20 +102,11 @@ const loadArtists = async () => {
   isLoading.value = true;
   isLoadingVotes.value = false;
   errorMessage.value = "";
-  const skeletonDelay = wait(minimumSkeletonDuration);
 
   try {
-    const artistRows = await getArtistsCached(db);
-
-    await skeletonDelay;
-    artists.value = buildArtistRows(artistRows);
-    isLoading.value = false;
-
     isLoadingVotes.value = true;
-    const voteTotalsByArtist = await loadVoteTotalsByArtist();
-    artists.value = buildArtistRows(artistRows, voteTotalsByArtist);
+    artists.value = await getRankingPopularityCached(db);
   } catch {
-    await skeletonDelay;
     errorMessage.value = translate("ranking.errors.load");
   } finally {
     isLoading.value = false;
@@ -455,6 +339,8 @@ onMounted(loadArtists);
                 v-if="getArtistBanner(artist)"
                 :src="getArtistBanner(artist)"
                 :alt="artist.name"
+                loading="lazy"
+                decoding="async"
                 class="absolute inset-0 size-full object-cover opacity-70 transition duration-500 group-hover:scale-105"
               />
               <div
@@ -590,6 +476,8 @@ onMounted(loadArtists);
                 v-if="getArtistImage(artist)"
                 :src="getArtistImage(artist)"
                 :alt="artist.name"
+                loading="lazy"
+                decoding="async"
                 class="size-full object-cover"
               />
               <span v-else>{{ artist.name?.charAt(0) || "A" }}</span>

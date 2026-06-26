@@ -1,36 +1,42 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import AdminDashboardPage from './admin/pages/AdminDashboardPage.vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import ActivePolls from './components/ActivePolls.vue'
 import AppFooter from './components/layout/AppFooter.vue'
 import AppNavbar from './components/layout/AppNavbar.vue'
 import BannerFeatures from './components/BannerFeatures.vue'
-import CommunitySection from './components/CommunitySection.vue'
-import DailyRewardModal from './components/DailyRewardModal.vue'
 import HeroBanner from './components/HeroBanner.vue'
-import LatestNews from './components/LatestNews.vue'
-import LiveActivity from './components/LiveActivity.vue'
 import MainCategories from './components/MainCategories.vue'
-import MissionsSection from './components/MissionsSection.vue'
 import ThemeToggle from './components/theme/ThemeToggle.vue'
-import TopRanking from './components/TopRanking.vue'
-import ArtistsPage from './pages/ArtistsPage.vue'
-import ArtistProfilePage from './pages/ArtistProfilePage.vue'
-import HallOfFamePage from './pages/HallOfFamePage.vue'
-import ListPollPage from './pages/ListPollPage.vue'
-import NewsPage from './pages/NewsPage.vue'
-import PollsPage from './pages/PollsPage.vue'
-import RankingPopularityPage from './pages/RankingPopularityPage.vue'
-import RegisterPage from './pages/RegisterPage.vue'
-import TermsPage from './pages/TermsPage.vue'
-import UserProfilePage from './pages/UserProfilePage.vue'
-import VersusEmbed from './pages/VersusEmbed.vue'
-import VersusPollPage from './pages/VersusPollPage.vue'
+import { preloadRouteData } from './services/firebaseCache'
+import { db } from './firebase'
+
+const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
+const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
+const DailyRewardModal = defineAsyncComponent(() => import('./components/DailyRewardModal.vue'))
+const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
+const LiveActivity = defineAsyncComponent(() => import('./components/LiveActivity.vue'))
+const MissionsSection = defineAsyncComponent(() => import('./components/MissionsSection.vue'))
+const TopRanking = defineAsyncComponent(() => import('./components/TopRanking.vue'))
+const ArtistsPage = defineAsyncComponent(() => import('./pages/ArtistsPage.vue'))
+const ArtistProfilePage = defineAsyncComponent(() => import('./pages/ArtistProfilePage.vue'))
+const HallOfFamePage = defineAsyncComponent(() => import('./pages/HallOfFamePage.vue'))
+const ListPollPage = defineAsyncComponent(() => import('./pages/ListPollPage.vue'))
+const NewsPage = defineAsyncComponent(() => import('./pages/NewsPage.vue'))
+const PollsPage = defineAsyncComponent(() => import('./pages/PollsPage.vue'))
+const RankingPopularityPage = defineAsyncComponent(() => import('./pages/RankingPopularityPage.vue'))
+const RegisterPage = defineAsyncComponent(() => import('./pages/RegisterPage.vue'))
+const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
+const UserProfilePage = defineAsyncComponent(() => import('./pages/UserProfilePage.vue'))
+const VersusEmbed = defineAsyncComponent(() => import('./pages/VersusEmbed.vue'))
+const VersusPollPage = defineAsyncComponent(() => import('./pages/VersusPollPage.vue'))
 
 const currentPath = ref(window.location.pathname)
+const currentRouteKey = ref(`${window.location.pathname}${window.location.search}${window.location.hash}`)
 const PREVIEW_PAGE_LOADING = false
 const isPageLoading = ref(true)
 let loadingTimer = null
+let loadingToken = 0
+const prefetchedRoutes = new Set()
 const isRegisterPage = computed(() => currentPath.value === '/registro')
 const isTermsPage = computed(() => currentPath.value === '/terminos-y-condiciones')
 const isPollsPage = computed(() => currentPath.value === '/votaciones')
@@ -49,13 +55,21 @@ const isAdminPage = computed(() => currentPath.value.startsWith('/admin'))
 const isPlainPage = computed(() => isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldShowDailyRewardModal = computed(() => !isPlainPage.value && !isTermsPage.value)
 
-const finishPageLoading = () => {
+const finishPageLoading = async () => {
   if (PREVIEW_PAGE_LOADING) {
     isPageLoading.value = true
     return
   }
 
+  const token = ++loadingToken
   window.clearTimeout(loadingTimer)
+
+  await preloadRouteData(db, window.location.pathname).catch(() => {})
+
+  if (token !== loadingToken) {
+    return
+  }
+
   loadingTimer = window.setTimeout(() => {
     isPageLoading.value = false
   }, 420)
@@ -64,6 +78,7 @@ const finishPageLoading = () => {
 const syncCurrentPath = () => {
   isPageLoading.value = true
   currentPath.value = window.location.pathname
+  currentRouteKey.value = `${window.location.pathname}${window.location.search}${window.location.hash}`
   finishPageLoading()
 }
 
@@ -74,7 +89,8 @@ const isInternalNavigation = (anchor) => {
 
   const url = new URL(anchor.href)
 
-  return url.origin === window.location.origin && url.pathname !== currentPath.value
+  return url.origin === window.location.origin
+    && `${url.pathname}${url.search}${url.hash}` !== `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
 
 const handleDocumentClick = (event) => {
@@ -93,15 +109,36 @@ const handleDocumentClick = (event) => {
   window.setTimeout(syncCurrentPath, 120)
 }
 
+const preloadAnchorRoute = (event) => {
+  const anchor = event.target.closest?.('a[href]')
+
+  if (!isInternalNavigation(anchor)) {
+    return
+  }
+
+  const url = new URL(anchor.href)
+
+  if (prefetchedRoutes.has(url.pathname)) {
+    return
+  }
+
+  prefetchedRoutes.add(url.pathname)
+  preloadRouteData(db, url.pathname).catch(() => {})
+}
+
 onMounted(() => {
   window.addEventListener('popstate', syncCurrentPath)
   document.addEventListener('click', handleDocumentClick)
+  document.addEventListener('pointerover', preloadAnchorRoute, { passive: true })
+  document.addEventListener('touchstart', preloadAnchorRoute, { passive: true })
   finishPageLoading()
 })
 
 onUnmounted(() => {
   window.removeEventListener('popstate', syncCurrentPath)
   document.removeEventListener('click', handleDocumentClick)
+  document.removeEventListener('pointerover', preloadAnchorRoute)
+  document.removeEventListener('touchstart', preloadAnchorRoute)
   window.clearTimeout(loadingTimer)
 })
 </script>
@@ -151,7 +188,7 @@ onUnmounted(() => {
     </Transition>
 
     <main
-      :key="currentPath"
+      :key="currentRouteKey"
       class="relative z-10"
       :class="!isPlainPage && 'pt-11 sm:pt-24'"
     >

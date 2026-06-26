@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { db } from "../firebase";
+import { subscribePollsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
 const polls = ref([]);
@@ -72,13 +72,10 @@ const loadPolls = () => {
   isLoading.value = true;
   errorMessage.value = "";
 
-  unsubscribePolls = onSnapshot(
-    query(collection(db, "polls"), orderBy("createdAt", "desc")),
+  unsubscribePolls = subscribePollsCached(
+    db,
     (pollsSnap) => {
-      polls.value = pollsSnap.docs.map((pollDoc) => ({
-        id: pollDoc.id,
-        ...pollDoc.data(),
-      }));
+      polls.value = pollsSnap;
       isLoading.value = false;
     },
     () => {
@@ -175,6 +172,8 @@ onUnmounted(() => {
                 v-if="poll.banner"
                 :src="poll.banner"
                 :alt="poll.title"
+                loading="lazy"
+                decoding="async"
                 class="absolute inset-0 size-full object-cover"
               />
               <div
@@ -339,6 +338,8 @@ onUnmounted(() => {
                 v-if="poll.banner"
                 :src="poll.banner"
                 :alt="poll.title"
+                loading="lazy"
+                decoding="async"
                 class="absolute inset-0 size-full object-cover opacity-75"
               />
               <div

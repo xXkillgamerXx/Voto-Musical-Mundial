@@ -540,7 +540,7 @@ const handleRegister = async () => {
 </script>
 
 <template>
-  <section class="sm:px-6">
+  <section class="grid min-h-screen place-items-center px-4 py-8 sm:px-6">
     <div class="mx-auto w-full max-w-2xl overflow-hidden rounded-b-4xl bg-[#080a18] p-0 text-white shadow-2xl shadow-fuchsia-950/40 sm:rounded-4xl sm:border sm:border-violet-300/25 sm:p-1">
       <div class="relative overflow-hidden rounded-b-[calc(2rem-4px)] p-6 sm:rounded-[calc(2rem-4px)] sm:p-8">
         <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(236,72,153,0.34),transparent_30%),radial-gradient(circle_at_100%_100%,rgba(34,211,238,0.2),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(15,8,32,0.98))]"></div>

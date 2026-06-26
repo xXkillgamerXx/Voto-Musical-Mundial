@@ -308,6 +308,8 @@ onMounted(loadNews)
               v-if="item.image"
               :src="item.image"
               :alt="item.title"
+              loading="lazy"
+              decoding="async"
               class="absolute inset-0 size-full object-cover opacity-80 transition duration-500 group-hover:scale-105"
             />
             <div class="absolute inset-0 bg-linear-to-t from-[#080a17] via-black/10 to-transparent"></div>

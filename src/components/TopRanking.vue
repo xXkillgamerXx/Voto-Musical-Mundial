@@ -1,8 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
-import { getArtistsCached } from '../services/firebaseCache'
+import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 
 const artists = ref([])
 const WEEKLY_ROTATION_POOL_SIZE = 12
@@ -61,28 +60,8 @@ const podiumArtists = computed(() => {
 
 const mobileTopArtists = computed(() => topArtists.value)
 
-const loadFollowersCount = async (artistId, fallbackCount = 0) => {
-  try {
-    const followersSnap = await getDocs(collection(db, 'artists', artistId, 'followers'))
-    return followersSnap.size
-  } catch {
-    return Number(fallbackCount || 0)
-  }
-}
-
 const loadArtists = async () => {
-  const artistRows = await getArtistsCached(db)
-  artists.value = await Promise.all(
-    artistRows.map(async (artist) => {
-      const followersCount = await loadFollowersCount(artist.id, artist.followersCount)
-
-      return {
-        ...artist,
-        followersCount,
-        popularityScore: Number(artist.popularityScore || followersCount * 10 || 0),
-      }
-    }),
-  )
+  artists.value = await getArtistsWithFollowersCached(db)
 }
 
 onMounted(loadArtists)
@@ -126,6 +105,8 @@ onMounted(loadArtists)
               v-if="getArtistImage(artist)"
               :src="getArtistImage(artist)"
               :alt="artist.name"
+              loading="lazy"
+              decoding="async"
               class="absolute inset-0 size-full object-cover object-top"
             />
             <div class="top-ranking-image-overlay absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.08)_44%,rgba(0,0,0,0.42)_100%)]"></div>
@@ -213,6 +194,8 @@ onMounted(loadArtists)
               v-if="getArtistImage(artist)"
               :src="getArtistImage(artist)"
               :alt="artist.name"
+              loading="lazy"
+              decoding="async"
               class="absolute inset-0 size-full object-cover object-top"
             />
             <div class="top-ranking-image-overlay absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(0,0,0,0.08)_44%,rgba(0,0,0,0.42)_100%)]"></div>
