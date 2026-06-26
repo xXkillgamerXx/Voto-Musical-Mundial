@@ -12,8 +12,10 @@ const emit = defineEmits(["close"]);
 
 const email = ref("");
 const password = ref("");
+const resetEmail = ref("");
 const showPassword = ref(false);
 const rememberPassword = ref(false);
+const isResetPasswordOpen = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
@@ -59,6 +61,19 @@ const friendlyAuthError = (error) => {
   );
 };
 
+const openPasswordReset = () => {
+  errorMessage.value = "";
+  successMessage.value = "";
+  resetEmail.value = email.value.trim().toLowerCase();
+  isResetPasswordOpen.value = true;
+};
+
+const closePasswordReset = () => {
+  errorMessage.value = "";
+  successMessage.value = "";
+  isResetPasswordOpen.value = false;
+};
+
 const handleEmailAccess = async () => {
   errorMessage.value = "";
   successMessage.value = "";
@@ -97,7 +112,7 @@ const handlePasswordReset = async () => {
   errorMessage.value = "";
   successMessage.value = "";
 
-  if (!email.value) {
+  if (!resetEmail.value.trim()) {
     errorMessage.value = translate("auth.resetEmailRequired");
     return;
   }
@@ -105,7 +120,7 @@ const handlePasswordReset = async () => {
   isLoading.value = true;
 
   try {
-    await sendPasswordResetEmail(auth, email.value);
+    await sendPasswordResetEmail(auth, resetEmail.value.trim().toLowerCase());
     successMessage.value = translate("auth.resetEmailSent");
   } catch (error) {
     errorMessage.value = friendlyAuthError(error);
@@ -144,19 +159,68 @@ const handlePasswordReset = async () => {
         </button>
 
         <div class="relative z-10 p-5 sm:p-7">
-          <p
-            class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300"
-          >
+          <p class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">
             {{ $t("auth.fanAccount") }}
           </p>
           <h2 class="text-3xl font-black leading-tight sm:text-4xl">
-            {{ $t("auth.title") }}
+            {{ isResetPasswordOpen ? $t("auth.resetTitle") : $t("auth.title") }}
           </h2>
           <p class="mb-5 mt-1 text-sm leading-6 text-slate-300">
-            {{ $t("auth.subtitle") }}
+            {{ isResetPasswordOpen ? $t("auth.resetSubtitle") : $t("auth.subtitle") }}
           </p>
 
+          <form
+            v-if="isResetPasswordOpen"
+            class="space-y-4"
+            @submit.prevent="handlePasswordReset"
+          >
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+                {{ $t("common.labels.email") }}
+              </span>
+              <input
+                v-model="resetEmail"
+                type="email"
+                required
+                class="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
+                :placeholder="$t('auth.emailPlaceholder')"
+              />
+            </label>
+
+            <p
+              v-if="errorMessage"
+              class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200"
+            >
+              {{ errorMessage }}
+            </p>
+
+            <p
+              v-if="successMessage"
+              class="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-200"
+            >
+              {{ successMessage }}
+            </p>
+
+            <button
+              type="submit"
+              class="min-h-13 w-full rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] hover:shadow-fuchsia-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isLoading"
+            >
+              {{ isLoading ? $t("auth.processing") : $t("auth.sendResetLink") }}
+            </button>
+
+            <button
+              type="button"
+              class="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase tracking-wide text-slate-100 transition hover:bg-white/10"
+              :disabled="isLoading"
+              @click="closePasswordReset"
+            >
+              {{ $t("auth.backToLogin") }}
+            </button>
+          </form>
+
           <button
+            v-else
             type="button"
             class="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-black text-white transition hover:border-white/20 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="isLoading"
@@ -174,13 +238,14 @@ const handlePasswordReset = async () => {
           </button>
 
           <div
+            v-if="!isResetPasswordOpen"
             class="mt-5 flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-slate-500"
           >
             <span class="h-px flex-1 bg-white/10"></span>
             {{ $t("common.or") }}
             <span class="h-px flex-1 bg-white/10"></span>
           </div>
-          <form class="mt-5 space-y-4" @submit.prevent="handleEmailAccess">
+          <form v-if="!isResetPasswordOpen" class="mt-5 space-y-4" @submit.prevent="handleEmailAccess">
             <p
               class="text-xs font-black uppercase tracking-[0.24em] text-slate-400"
             >
@@ -249,7 +314,7 @@ const handlePasswordReset = async () => {
                 type="button"
                 class="text-left text-sm font-black text-fuchsia-300 transition hover:text-white sm:text-right"
                 :disabled="isLoading"
-                @click="handlePasswordReset"
+                @click="openPasswordReset"
               >
                 {{ $t("auth.forgotPassword") }}
               </button>
