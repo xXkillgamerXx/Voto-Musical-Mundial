@@ -1,5 +1,12 @@
 <script setup>
-const missions = [
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { db } from '../firebase'
+
+const dbMissions = ref([])
+let unsubscribeMissions = null
+
+const fallbackMissions = [
   {
     icon: '✓',
     titleKey: 'home.missions.items.voteTen.title',
@@ -39,6 +46,53 @@ const missions = [
     done: true,
   },
 ]
+
+const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
+
+const missions = computed(() => {
+  if (!dbMissions.value.length) {
+    return fallbackMissions
+  }
+
+  return dbMissions.value
+    .filter((mission) => mission.active !== false)
+    .slice(0, 8)
+    .map((mission) => {
+      const target = Math.max(1, Number(mission.target || 1))
+
+      return {
+        id: mission.id,
+        icon: mission.icon || 'fa-solid fa-check',
+        title: mission.title || 'Mision',
+        text: mission.description || '',
+        reward: `+${Number(mission.rewardPoints || 0)} pts`,
+        progress: `0/${target}`,
+        percent: 0,
+        statusKey: 'common.status.pending',
+        featured: Boolean(mission.featured),
+        done: false,
+      }
+    })
+})
+
+onMounted(() => {
+  unsubscribeMissions = onSnapshot(
+    query(collection(db, 'missions'), orderBy('order', 'asc')),
+    (missionsSnap) => {
+      dbMissions.value = missionsSnap.docs.map((missionDoc) => ({
+        id: missionDoc.id,
+        ...missionDoc.data(),
+      }))
+    },
+    () => {
+      dbMissions.value = []
+    },
+  )
+})
+
+onUnmounted(() => {
+  unsubscribeMissions?.()
+})
 </script>
 
 <template>
@@ -61,7 +115,7 @@ const missions = [
     <div class="missions-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
       <article
         v-for="mission in missions"
-        :key="mission.titleKey"
+        :key="mission.id || mission.titleKey"
         class="relative min-w-[86%] snap-center overflow-hidden rounded-3xl border p-5 shadow-xl shadow-violet-950/25 sm:min-w-[48%] lg:min-w-0"
         :class="[
           mission.featured && 'border-fuchsia-300/35 bg-fuchsia-500/10',
@@ -77,7 +131,12 @@ const missions = [
               class="grid size-12 place-items-center rounded-2xl border text-xl font-black"
               :class="mission.done ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-200' : 'border-white/10 bg-white/5 text-fuchsia-200'"
             >
-              {{ mission.icon }}
+              <i
+                v-if="isFontAwesomeIcon(mission.icon)"
+                :class="mission.icon"
+                aria-hidden="true"
+              ></i>
+              <span v-else>{{ mission.icon }}</span>
             </span>
 
             <span
@@ -89,10 +148,10 @@ const missions = [
           </div>
 
           <h3 class="mt-5 text-lg font-black uppercase leading-tight">
-            {{ $t(mission.titleKey) }}
+            {{ mission.title || $t(mission.titleKey) }}
           </h3>
           <p class="mt-2 text-sm leading-6 text-slate-400">
-            {{ $t(mission.textKey) }}
+            {{ mission.text || $t(mission.textKey) }}
           </p>
 
           <div class="mt-5 flex items-end justify-between gap-3">

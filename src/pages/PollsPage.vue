@@ -9,6 +9,7 @@ const { locale } = useI18n();
 const polls = ref([]);
 const isLoading = ref(true);
 const errorMessage = ref("");
+const selectedCategoryId = ref(new URLSearchParams(window.location.search).get("categoria") || "");
 let unsubscribePolls = null;
 
 const pollUrl = (poll) =>
@@ -44,9 +45,18 @@ const formatDate = (value) => {
 
 const visiblePolls = computed(() =>
   polls.value.filter((poll) =>
-    ["live", "selecting_winners", "closed"].includes(poll.status),
+    ["live", "selecting_winners", "closed"].includes(poll.status) &&
+    (!selectedCategoryId.value || poll.categoryId === selectedCategoryId.value),
   ),
 );
+
+const selectedCategoryName = computed(() => {
+  if (!selectedCategoryId.value) {
+    return "";
+  }
+
+  return polls.value.find((poll) => poll.categoryId === selectedCategoryId.value)?.categoryName || "";
+});
 
 const openPolls = computed(() =>
   visiblePolls.value.filter((poll) =>
@@ -103,6 +113,26 @@ onUnmounted(() => {
       <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
         {{ $t("polls.list.description") }}
       </p>
+    </div>
+
+    <div
+      v-if="selectedCategoryId"
+      class="mt-6 flex flex-col gap-3 rounded-3xl border border-fuchsia-300/20 bg-fuchsia-400/10 p-4 shadow-xl shadow-fuchsia-950/10 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div>
+        <p class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-200">
+          Categoria seleccionada
+        </p>
+        <h2 class="mt-1 text-xl font-black text-white">
+          {{ selectedCategoryName || "Votaciones relacionadas" }}
+        </h2>
+      </div>
+      <a
+        href="/votaciones"
+        class="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10 hover:text-white"
+      >
+        Ver todas
+      </a>
     </div>
 
     <p

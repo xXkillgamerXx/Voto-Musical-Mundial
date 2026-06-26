@@ -281,7 +281,7 @@ onMounted(loadNews)
         :key="`news-skeleton-${index}`"
         class="overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25"
       >
-        <div class="h-40 animate-pulse bg-white/10"></div>
+        <div class="h-48 animate-pulse bg-white/10"></div>
         <div class="p-5">
           <div class="h-4 w-40 animate-pulse rounded-full bg-white/15"></div>
           <div class="mt-3 h-3 w-24 animate-pulse rounded-full bg-fuchsia-300/20"></div>
@@ -300,30 +300,31 @@ onMounted(loadNews)
       <article
         v-for="item in visibleNews"
         :key="item.title"
-        class="overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30"
+        class="group overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30"
       >
         <a :href="item.link" target="_blank" rel="noreferrer" class="block">
-        <div class="relative h-44 overflow-hidden bg-linear-to-br" :class="item.visual">
-          <img
-            v-if="item.image"
-            :src="item.image"
-            :alt="item.title"
-            class="absolute inset-0 size-full object-cover opacity-80 transition duration-500 hover:scale-105"
-          />
-          <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.22),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(217,70,239,0.35),transparent_28%)]"></div>
-          <div class="absolute inset-0 bg-linear-to-t from-[#080a17] via-black/10 to-transparent"></div>
-          <span class="absolute left-4 top-4 rounded-full bg-black/35 px-3 py-1 text-xs font-black uppercase text-white backdrop-blur">
-            {{ item.tag }}
-          </span>
-        </div>
+          <div class="relative h-48 overflow-hidden bg-linear-to-br" :class="item.visual">
+            <img
+              v-if="item.image"
+              :src="item.image"
+              :alt="item.title"
+              class="absolute inset-0 size-full object-cover opacity-80 transition duration-500 group-hover:scale-105"
+            />
+            <div class="absolute inset-0 bg-linear-to-t from-[#080a17] via-black/10 to-transparent"></div>
+            <span class="absolute left-4 top-4 rounded-full bg-black/35 px-3 py-1 text-xs font-black uppercase text-white backdrop-blur">
+              {{ item.tag }}
+            </span>
+          </div>
 
-        <div class="p-5">
-          <h3 class="line-clamp-2 text-lg font-black text-white">{{ item.title }}</h3>
-          <p class="mt-2 text-sm text-slate-500">{{ item.time }}</p>
-          <span class="mt-4 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300">
-            Leer noticia
-          </span>
-        </div>
+          <div class="p-5">
+            <h3 class="line-clamp-2 text-lg font-black text-white">{{ item.title }}</h3>
+            <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{{ item.description }}</p>
+            <p class="mt-3 text-xs font-bold uppercase tracking-widest text-slate-500">{{ item.time }}</p>
+            <span class="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition group-hover:scale-[1.01]">
+              {{ $t('news.readArticle') }}
+              <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            </span>
+          </div>
         </a>
       </article>
     </div>

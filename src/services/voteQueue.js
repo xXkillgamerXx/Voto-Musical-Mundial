@@ -57,7 +57,7 @@ export const createVoteQueue = ({
   const scheduleFlush = () => {
     clearFlushTimer();
     flushTimer = window.setTimeout(() => {
-      flush();
+      flush().catch(() => {});
     }, flushMs);
   };
 
@@ -74,7 +74,10 @@ export const createVoteQueue = ({
     );
 
     await runTransaction(db, async (transaction) => {
-      const userSnap = await transaction.get(userRef);
+      const [userSnap, shardSnap] = await Promise.all([
+        transaction.get(userRef),
+        transaction.get(shardRef),
+      ]);
       const availablePoints = Number(userSnap.data()?.points || 0);
       const pointsToSpend = batch.amount * batch.pointsPerVote;
 
@@ -87,18 +90,21 @@ export const createVoteQueue = ({
         spentPoints: increment(pointsToSpend),
       });
 
-      transaction.set(
-        shardRef,
-        {
+      if (shardSnap.exists()) {
+        transaction.update(shardRef, {
+          votes: increment(batch.amount),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        transaction.set(shardRef, {
           pollId: batch.pollId,
           roundId: batch.roundId || null,
           artistId: batch.artistId,
           shardIndex,
           votes: increment(batch.amount),
           updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
+        });
+      }
 
       transaction.set(ledgerRef, {
         userId: batch.userId,
@@ -135,7 +141,7 @@ export const createVoteQueue = ({
       batches.forEach((batch) => {
         pendingVotes.set(buildBatchKey(batch), batch);
       });
-      onError(error);
+      onError(error, batches);
       throw error;
     } finally {
       isFlushing = false;

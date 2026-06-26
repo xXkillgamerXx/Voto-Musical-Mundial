@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { collection, getDocs } from 'firebase/firestore'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { db } from '../firebase'
@@ -21,6 +22,33 @@ const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 
 const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`
 
+const loadFollowersCount = async (artistId, fallbackCount = 0) => {
+  try {
+    const followersSnap = await getDocs(collection(db, 'artists', artistId, 'followers'))
+    return followersSnap.size
+  } catch {
+    return Number(fallbackCount || 0)
+  }
+}
+
+const getWeeklyRotationIndex = (itemsLength) => {
+  if (!itemsLength) {
+    return 0
+  }
+
+  const now = new Date()
+  const yearStart = new Date(now.getFullYear(), 0, 1)
+  const weekNumber = Math.floor((now - yearStart) / (7 * 24 * 60 * 60 * 1000))
+
+  return weekNumber % itemsLength
+}
+
+const rotateWeekly = (items) => {
+  const offset = getWeeklyRotationIndex(items.length)
+
+  return [...items.slice(offset), ...items.slice(0, offset)]
+}
+
 const popularArtists = computed(() => {
   const normalizedQuery = searchQuery.value.trim().toLowerCase()
   const sourceArtists = normalizedQuery
@@ -38,13 +66,15 @@ const popularArtists = computed(() => {
     })
     : artists.value
 
-  return sourceArtists
+  const sortedArtists = sourceArtists
     .slice()
     .sort((current, next) =>
       next.followersCount - current.followersCount
         || next.popularityScore - current.popularityScore
         || current.name.localeCompare(next.name),
     )
+
+  return normalizedQuery ? sortedArtists : rotateWeekly(sortedArtists)
 })
 
 const loadArtists = async () => {
@@ -52,11 +82,18 @@ const loadArtists = async () => {
   errorMessage.value = ''
 
   try {
-    artists.value = (await getArtistsCached(db)).map((artist) => ({
-      ...artist,
-      followersCount: Number(artist.followersCount || 0),
-      popularityScore: Number(artist.popularityScore || artist.followersCount * 10 || 0),
-    }))
+    const artistRows = await getArtistsCached(db)
+    artists.value = await Promise.all(
+      artistRows.map(async (artist) => {
+        const followersCount = await loadFollowersCount(artist.id, artist.followersCount)
+
+        return {
+          ...artist,
+          followersCount,
+          popularityScore: Number(artist.popularityScore || followersCount * 10 || 0),
+        }
+      }),
+    )
   } catch {
     errorMessage.value = translate('artists.errors.loadPopular')
   } finally {

@@ -6,6 +6,7 @@ import { auth, db } from '../../firebase'
 import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
+import AdminMissionsView from '../components/AdminMissionsView.vue'
 import AdminPollCategoriesView from '../components/AdminPollCategoriesView.vue'
 import AdminPollContestantsView from '../components/AdminPollContestantsView.vue'
 import AdminPollFormView from '../components/AdminPollFormView.vue'
@@ -32,6 +33,7 @@ const isArtistCreateView = computed(() => currentPath === '/admin/artistas/crear
 const isArtistEditView = computed(() => currentPath.startsWith('/admin/artistas/editar/'))
 const artistEditId = computed(() => currentPath.replace('/admin/artistas/editar/', ''))
 const isUsersView = computed(() => currentPath === '/admin/usuarios')
+const isMissionsView = computed(() => currentPath === '/admin/misiones')
 const isCategoriesView = computed(() => currentPath === '/admin/categorias')
 const isCategoryCreateView = computed(() => currentPath === '/admin/categorias/crear')
 const pageTitle = computed(() => {
@@ -83,6 +85,10 @@ const pageTitle = computed(() => {
     return 'Usuarios'
   }
 
+  if (isMissionsView.value) {
+    return 'Misiones'
+  }
+
   if (isCategoriesView.value) {
     return 'Categorías'
   }
@@ -112,6 +118,7 @@ const navItems = [
   { label: 'Votaciones', href: '/admin/votaciones', icon: 'fa-solid fa-check-to-slot' },
   { label: 'Categorías', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
+  { label: 'Misiones', href: '/admin/misiones', icon: 'fa-solid fa-bullseye' },
   { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
   { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-flag' },
   { label: 'Ajustes', href: '/admin/ajustes', icon: 'fa-solid fa-gear' },
@@ -329,6 +336,7 @@ onMounted(() => {
             :artist-id="artistEditId"
           />
           <AdminArtistsView v-else-if="isArtistsView" />
+          <AdminMissionsView v-else-if="isMissionsView" />
           <AdminUsersView v-else-if="isUsersView" />
           <AdminPollCategoriesView
             v-else-if="isCategoriesView || isCategoryCreateView"

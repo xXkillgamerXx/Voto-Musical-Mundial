@@ -11,6 +11,7 @@ const dragState = ref({
   scrollLeft: 0,
   hasMoved: false,
 });
+const suppressCategoryClickUntil = ref(0);
 let unsubscribeCategories = null;
 
 const fallbackCategories = [
@@ -69,6 +70,8 @@ const fallbackIcons = [
   "fa-solid fa-bolt",
 ];
 const isFontAwesomeIcon = (icon) => String(icon || "").startsWith("fa-");
+const categoryHref = (categoryId) =>
+  `/votaciones?categoria=${encodeURIComponent(categoryId)}`;
 const wait = (milliseconds) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
@@ -107,15 +110,20 @@ const moveCategoryDrag = (event) => {
 const stopCategoryDrag = (event) => {
   event.currentTarget?.classList.remove("is-dragging");
   event.currentTarget?.releasePointerCapture?.(event.pointerId);
+
+  if (dragState.value.hasMoved) {
+    suppressCategoryClickUntil.value = Date.now() + 250;
+  }
+
   dragState.value.isDragging = false;
 
   window.setTimeout(() => {
     dragState.value.hasMoved = false;
-  }, 0);
+  }, 250);
 };
 
 const preventClickAfterDrag = (event) => {
-  if (!dragState.value.hasMoved) {
+  if (!dragState.value.hasMoved && Date.now() > suppressCategoryClickUntil.value) {
     return;
   }
 
@@ -125,13 +133,18 @@ const preventClickAfterDrag = (event) => {
 
 const categories = computed(() => {
   if (!dbCategories.value.length) {
-    return fallbackCategories;
+    return fallbackCategories.map((category) => ({
+      ...category,
+      action: "Ver categoria",
+      href: categoryHref(category.id),
+    }));
   }
 
   return dbCategories.value.slice(0, 10).map((category, index) => ({
     id: category.id,
     title: category.name || "Categoria",
-    action: "Votar",
+    action: "Ver categoria",
+    href: categoryHref(category.id),
     icon: category.icon || fallbackIcons[index % fallbackIcons.length],
     visual: category.visual || fallbackVisuals[index % fallbackVisuals.length],
   }));
@@ -139,23 +152,26 @@ const categories = computed(() => {
 
 onMounted(() => {
   const skeletonDelay = wait(700);
-  unsubscribeCategories = onSnapshot(collection(db, "pollCategories"), (categoriesSnap) => {
-    const categoryRows = categoriesSnap.docs
-      .map((categoryDoc) => ({
-        id: categoryDoc.id,
-        ...categoryDoc.data(),
-      }))
-      .sort(
-        (current, next) =>
-          Number(next.year || 0) - Number(current.year || 0) ||
-          String(current.name || "").localeCompare(String(next.name || "")),
-      );
+  unsubscribeCategories = onSnapshot(
+    collection(db, "pollCategories"),
+    (categoriesSnap) => {
+      const categoryRows = categoriesSnap.docs
+        .map((categoryDoc) => ({
+          id: categoryDoc.id,
+          ...categoryDoc.data(),
+        }))
+        .sort(
+          (current, next) =>
+            Number(next.year || 0) - Number(current.year || 0) ||
+            String(current.name || "").localeCompare(String(next.name || "")),
+        );
 
-    skeletonDelay.then(() => {
-      dbCategories.value = categoryRows;
-      isLoadingCategories.value = false;
-    });
-  });
+      skeletonDelay.then(() => {
+        dbCategories.value = categoryRows;
+        isLoadingCategories.value = false;
+      });
+    },
+  );
 });
 
 onUnmounted(() => {
@@ -164,7 +180,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="main-categories-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
+  <section
+    class="main-categories-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8"
+  >
     <div class="mb-5 flex items-center justify-between gap-4">
       <h2
         class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"
@@ -189,16 +207,28 @@ onUnmounted(() => {
         :key="`mobile-category-skeleton-${index}`"
         class="min-w-[52%] snap-start overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 sm:min-w-[36%]"
       >
-        <div class="relative h-52 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
+        <div
+          class="relative h-52 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950"
+        >
           <div class="absolute inset-0 animate-pulse bg-white/8"></div>
-          <div class="absolute left-1/2 top-1/2 size-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full bg-white/15"></div>
-          <div class="absolute left-[24%] top-[24%] size-3 animate-pulse rounded-full bg-amber-200/40"></div>
-          <div class="absolute bottom-[24%] right-[23%] size-3 animate-pulse rounded-full bg-cyan-100/40"></div>
+          <div
+            class="absolute left-1/2 top-1/2 size-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full bg-white/15"
+          ></div>
+          <div
+            class="absolute left-[24%] top-[24%] size-3 animate-pulse rounded-full bg-amber-200/40"
+          ></div>
+          <div
+            class="absolute bottom-[24%] right-[23%] size-3 animate-pulse rounded-full bg-cyan-100/40"
+          ></div>
         </div>
         <div class="px-4 py-4">
           <div class="h-6 w-8 animate-pulse rounded-xl bg-white/15"></div>
-          <div class="mt-3 h-4 w-32 animate-pulse rounded-full bg-white/15"></div>
-          <div class="mt-3 h-3 w-16 animate-pulse rounded-full bg-fuchsia-300/20"></div>
+          <div
+            class="mt-3 h-4 w-32 animate-pulse rounded-full bg-white/15"
+          ></div>
+          <div
+            class="mt-3 h-3 w-16 animate-pulse rounded-full bg-fuchsia-300/20"
+          ></div>
         </div>
       </article>
     </div>
@@ -210,8 +240,15 @@ onUnmounted(() => {
       <article
         v-for="category in categories"
         :key="category.title"
-        class="group min-w-[52%] snap-start overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition sm:min-w-[36%]"
+        class="group min-w-[52%] snap-start cursor-pointer overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition sm:min-w-[36%]"
       >
+        <a
+          :href="category.href"
+          class="block"
+          draggable="false"
+          @click="preventClickAfterDrag"
+          @dragstart.prevent
+        >
         <div
           class="relative h-52 overflow-hidden bg-linear-to-br shadow-lg shadow-violet-950/30"
           :class="category.visual"
@@ -243,7 +280,9 @@ onUnmounted(() => {
               :class="category.icon"
               aria-hidden="true"
             ></i>
-            <span v-else class="text-4xl text-white/90">{{ category.icon }}</span>
+            <span v-else class="text-4xl text-white/90">{{
+              category.icon
+            }}</span>
           </div>
           <i
             class="fa-solid fa-star absolute left-[24%] top-[24%] text-xs text-amber-200 drop-shadow-[0_0_8px_rgba(253,224,71,0.9)]"
@@ -267,13 +306,13 @@ onUnmounted(() => {
           <h3 class="text-sm font-black uppercase leading-tight text-white">
             {{ category.title }}
           </h3>
-          <a
-            href="/votaciones"
-            class="mt-2 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300 transition hover:text-white"
+          <span
+            class="mt-2 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300 transition group-hover:text-white"
           >
             {{ category.action }}
-          </a>
+          </span>
         </div>
+        </a>
       </article>
     </div>
 
@@ -286,17 +325,31 @@ onUnmounted(() => {
         :key="`desktop-category-skeleton-${index}`"
         class="min-w-60 snap-start overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 xl:min-w-64"
       >
-        <div class="relative h-52 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950 sm:h-60">
+        <div
+          class="relative h-52 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950 sm:h-60"
+        >
           <div class="absolute inset-0 animate-pulse bg-white/8"></div>
-          <div class="absolute left-1/2 top-1/2 h-28 w-36 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-3xl bg-white/10"></div>
-          <div class="absolute left-1/2 top-1/2 size-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full bg-white/15"></div>
-          <div class="absolute left-[24%] top-[24%] size-3 animate-pulse rounded-full bg-amber-200/40"></div>
-          <div class="absolute bottom-[24%] right-[23%] size-3 animate-pulse rounded-full bg-cyan-100/40"></div>
+          <div
+            class="absolute left-1/2 top-1/2 h-28 w-36 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-3xl bg-white/10"
+          ></div>
+          <div
+            class="absolute left-1/2 top-1/2 size-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full bg-white/15"
+          ></div>
+          <div
+            class="absolute left-[24%] top-[24%] size-3 animate-pulse rounded-full bg-amber-200/40"
+          ></div>
+          <div
+            class="absolute bottom-[24%] right-[23%] size-3 animate-pulse rounded-full bg-cyan-100/40"
+          ></div>
         </div>
         <div class="px-4 py-4">
           <div class="h-6 w-8 animate-pulse rounded-xl bg-white/15"></div>
-          <div class="mt-3 h-4 w-36 animate-pulse rounded-full bg-white/15"></div>
-          <div class="mt-3 h-3 w-16 animate-pulse rounded-full bg-fuchsia-300/20"></div>
+          <div
+            class="mt-3 h-4 w-36 animate-pulse rounded-full bg-white/15"
+          ></div>
+          <div
+            class="mt-3 h-3 w-16 animate-pulse rounded-full bg-fuchsia-300/20"
+          ></div>
         </div>
       </article>
     </div>
@@ -313,8 +366,15 @@ onUnmounted(() => {
       <article
         v-for="category in categories"
         :key="category.title"
-        class="group min-w-60 snap-start overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30 hover:bg-[#101226] xl:min-w-64"
+        class="group min-w-60 snap-start cursor-pointer overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30 hover:bg-[#101226] xl:min-w-64"
       >
+        <a
+          :href="category.href"
+          class="block"
+          draggable="false"
+          @click="preventClickAfterDrag"
+          @dragstart.prevent
+        >
         <div
           class="relative h-52 overflow-hidden bg-linear-to-br shadow-lg shadow-violet-950/30 sm:h-60"
           :class="category.visual"
@@ -346,7 +406,9 @@ onUnmounted(() => {
               :class="category.icon"
               aria-hidden="true"
             ></i>
-            <span v-else class="text-4xl text-white/90">{{ category.icon }}</span>
+            <span v-else class="text-4xl text-white/90">{{
+              category.icon
+            }}</span>
           </div>
           <i
             class="fa-solid fa-star absolute left-[24%] top-[24%] text-xs text-amber-200 drop-shadow-[0_0_8px_rgba(253,224,71,0.9)]"
@@ -370,14 +432,13 @@ onUnmounted(() => {
           <h3 class="text-sm font-black uppercase leading-tight text-white">
             {{ category.title }}
           </h3>
-          <a
-            href="/votaciones"
-            class="mt-2 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300 transition hover:text-white"
-            @click="preventClickAfterDrag"
+          <span
+            class="mt-2 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300 transition group-hover:text-white"
           >
             {{ category.action }}
-          </a>
+          </span>
         </div>
+        </a>
       </article>
     </div>
   </section>
