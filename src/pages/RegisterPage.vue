@@ -81,6 +81,8 @@ const errorMessage = ref('')
 const usernameMessage = ref('')
 const phoneMessage = ref('')
 const phoneApiInternational = ref('')
+const referralCode = ref('')
+const referralMessage = ref('')
 let isFormattingPhone = false
 let usernameCheckTimeout
 
@@ -138,6 +140,10 @@ const handleEscape = (event) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleEscape)
+  referralCode.value = new URLSearchParams(window.location.search).get('ref')?.trim().toLowerCase() || ''
+  referralMessage.value = referralCode.value
+    ? `Registro invitado por codigo ${referralCode.value.toUpperCase()}.`
+    : ''
   loadResidenceCountries()
 })
 
@@ -498,15 +504,34 @@ const handleRegister = async () => {
 
     await runTransaction(db, async (transaction) => {
       const usernameRef = doc(db, 'usernames', normalizedUsername.value)
+      const ownReferralCode = normalizedUsername.value
+      const ownReferralRef = doc(db, 'referralCodes', ownReferralCode)
+      const invitedByCode = referralCode.value && referralCode.value !== ownReferralCode
+        ? referralCode.value
+        : ''
+      const invitedByRef = invitedByCode ? doc(db, 'referralCodes', invitedByCode) : null
       const usernameSnap = await transaction.get(usernameRef)
+      const invitedBySnap = invitedByRef ? await transaction.get(invitedByRef) : null
 
       if (usernameSnap.exists()) {
         throw new Error('username-unavailable')
       }
 
+      if (invitedByRef && !invitedBySnap.exists()) {
+        throw new Error('referral-code-unavailable')
+      }
+
+      const invitedBy = invitedBySnap?.data() || null
+
       transaction.set(usernameRef, {
         uid: credential.user.uid,
         username: normalizedUsername.value,
+        createdAt: serverTimestamp(),
+      })
+      transaction.set(ownReferralRef, {
+        uid: credential.user.uid,
+        username: normalizedUsername.value,
+        code: ownReferralCode,
         createdAt: serverTimestamp(),
       })
       transaction.set(doc(db, 'users', credential.user.uid), {
@@ -524,6 +549,15 @@ const handleRegister = async () => {
         email: email.value.trim(),
         points: 25,
         spentPoints: 0,
+        referralCode: ownReferralCode,
+        referredBy: invitedBy
+          ? {
+              uid: invitedBy.uid,
+              username: invitedBy.username || '',
+              code: invitedBy.code || invitedByCode,
+            }
+          : null,
+        referralSignupProcessed: false,
         createdAt: serverTimestamp(),
       })
     })
@@ -532,7 +566,9 @@ const handleRegister = async () => {
   } catch (error) {
     errorMessage.value = error.message === 'username-unavailable'
       ? translate('register.errors.usernameTaken')
-      : friendlyAuthError(error)
+      : error.message === 'referral-code-unavailable'
+        ? 'El codigo de invitacion no existe o ya no esta disponible.'
+        : friendlyAuthError(error)
   } finally {
     isLoading.value = false
   }
@@ -556,6 +592,12 @@ const handleRegister = async () => {
           <h1 class="mt-2 text-3xl font-black leading-tight sm:text-5xl">{{ $t('register.title') }}</h1>
           <p class="mt-3 text-sm leading-6 text-slate-300">
             {{ $t('register.description') }}
+          </p>
+          <p
+            v-if="referralMessage"
+            class="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm font-bold text-cyan-100"
+          >
+            {{ referralMessage }}
           </p>
 
           <form class="mt-7 space-y-5" @submit.prevent="handleRegister">

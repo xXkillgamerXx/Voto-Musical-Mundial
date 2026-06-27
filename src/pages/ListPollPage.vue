@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   collection,
   doc,
@@ -14,6 +14,7 @@ import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "../firebase";
 import { translate } from "../i18n";
 import ActivePolls from "../components/ActivePolls.vue";
+import PollComments from "../components/PollComments.vue";
 import { getArtistsCached } from "../services/firebaseCache";
 import {
   loadContestantMetadata,
@@ -29,6 +30,8 @@ const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeYear = Number(pathParts[1]) || new Date().getFullYear();
 const routeSlug = pathParts[2] || "";
 const roundQueryParam = "ronda";
+const embedQueryParam = "embed";
+const matchQueryParam = "duelo";
 
 const poll = ref(null);
 const currentPollId = ref("");
@@ -65,6 +68,7 @@ let unsubscribeVoteShards = null;
 let clockTimer = null;
 let voteQueue = null;
 let listeningContestantsKey = "";
+let embedResizeObserver = null;
 const voteFeedbackTimers = new Map();
 const voteCountAnimationTimers = new Map();
 let displayedTotalAnimationTimer = null;
@@ -76,6 +80,51 @@ const getAnonymousVoteStatus = httpsCallable(
 );
 const CAST_ANONYMOUS_VOTE_URL =
   "https://us-central1-votos-3420a.cloudfunctions.net/castAnonymousVoteHttp";
+
+const isEmbeddedPage = computed(() => {
+  const embedParam = new URLSearchParams(window.location.search).get(
+    embedQueryParam,
+  );
+
+  return embedParam === "1" || embedParam === "true";
+});
+const routeRoundId = computed(
+  () => new URLSearchParams(window.location.search).get(roundQueryParam) || "",
+);
+const routeMatchGroup = computed(
+  () => new URLSearchParams(window.location.search).get(matchQueryParam) || "",
+);
+
+const postEmbedHeight = () => {
+  if (!isEmbeddedPage.value || window.parent === window) {
+    return;
+  }
+
+  window.parent.postMessage(
+    {
+      type: "wmv-embed-height",
+      height: Math.max(
+        document.documentElement.scrollHeight,
+        document.body?.scrollHeight || 0,
+      ),
+      src: window.location.href,
+    },
+    "*",
+  );
+};
+
+const startEmbedHeightSync = () => {
+  if (!isEmbeddedPage.value || typeof ResizeObserver === "undefined") {
+    nextTick(postEmbedHeight);
+    return;
+  }
+
+  embedResizeObserver = new ResizeObserver(() => {
+    postEmbedHeight();
+  });
+  embedResizeObserver.observe(document.body);
+  nextTick(postEmbedHeight);
+};
 
 const getArtist = (artistId) =>
   artists.value.find((artist) => artist.id === artistId);
@@ -102,16 +151,28 @@ const getOptimisticVoteTotal = (artistId) =>
 const getContestantArtistId = (contestant) =>
   contestant?.artistId || contestant?.id || "";
 
-const activeRound = computed(() =>
-  poll.value?.status === "closed"
+const activeRound = computed(() => {
+  if (isEmbeddedPage.value && routeRoundId.value) {
+    const embeddedRound = rounds.value.find(
+      (round) =>
+        round.id === routeRoundId.value ||
+        String(round.number) === routeRoundId.value,
+    );
+
+    if (embeddedRound) {
+      return embeddedRound;
+    }
+  }
+
+  return poll.value?.status === "closed"
     ? rounds.value.filter((round) => round.status === "closed").at(-1) ||
-      rounds.value.at(-1) ||
-      null
+        rounds.value.at(-1) ||
+        null
     : rounds.value.find((round) => round.id === poll.value?.activeRoundId) ||
-      rounds.value.find((round) => round.status === "live") ||
-      rounds.value[0] ||
-      null,
-);
+        rounds.value.find((round) => round.status === "live") ||
+        rounds.value[0] ||
+        null;
+});
 const pollEndDate = computed(
   () =>
     activeRound.value?.endAt?.toDate?.() ||
@@ -195,6 +256,7 @@ const versusMatches = computed(() => {
       .sort(([currentGroup], [nextGroup]) => currentGroup - nextGroup)
       .map(([groupNumber, contestants]) => ({
         id: `${activeRound.value?.id || "round"}-${groupNumber}`,
+        groupNumber,
         title: `Duelo ${groupNumber}`,
         contestants: contestants.sort(
           (current, next) => current.matchOrder - next.matchOrder,
@@ -205,14 +267,29 @@ const versusMatches = computed(() => {
   const matches = [];
 
   for (let index = 0; index < activeContestants.value.length; index += 2) {
+    const groupNumber = Math.floor(index / 2) + 1;
+
     matches.push({
       id: `${activeRound.value?.id || "round"}-${index}`,
-      title: `Duelo ${Math.floor(index / 2) + 1}`,
+      groupNumber,
+      title: `Duelo ${groupNumber}`,
       contestants: activeContestants.value.slice(index, index + 2),
     });
   }
 
   return matches;
+});
+
+const displayedVersusMatches = computed(() => {
+  if (!routeMatchGroup.value) {
+    return versusMatches.value;
+  }
+
+  return versusMatches.value.filter(
+    (match) =>
+      String(match.groupNumber) === routeMatchGroup.value ||
+      match.id === routeMatchGroup.value,
+  );
 });
 
 const totalVotes = computed(() =>
@@ -274,7 +351,11 @@ const displayTotalVotes = computed(() =>
 );
 
 const shouldShowVoteButtons = computed(
-  () => isVotingOpen.value && selectedRoundStep.value?.status !== "closed",
+  () =>
+    isVotingOpen.value &&
+    (isEmbeddedPage.value
+      ? activeRound.value?.status !== "closed"
+      : selectedRoundStep.value?.status !== "closed"),
 );
 const anonymousVotingConfig = computed(() => ({
   enabled:
@@ -1443,6 +1524,7 @@ watch(
   () => [currentUser.value?.uid, poll.value?.id, activeRound.value?.id],
   () => {
     refreshAnonymousVoteStatus();
+    nextTick(postEmbedHeight);
   },
 );
 
@@ -1476,6 +1558,7 @@ onMounted(() => {
     now.value = Date.now();
   }, 1000);
   loadPoll();
+  startEmbedHeightSync();
 });
 
 onUnmounted(() => {
@@ -1486,6 +1569,7 @@ onUnmounted(() => {
   unsubscribeVoteShards?.();
   unsubscribeRounds?.();
   unsubscribeUserPoints?.();
+  embedResizeObserver?.disconnect();
   voteFeedbackTimers.forEach((timer) => window.clearTimeout(timer));
   voteFeedbackTimers.clear();
   voteCountAnimationTimers.forEach((timer) => window.clearInterval(timer));
@@ -1498,7 +1582,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-4 pb-16 sm:px-6">
+  <section
+    class="mx-auto"
+    :class="
+      isEmbeddedPage
+        ? 'max-w-5xl px-3 py-3 sm:px-4'
+        : 'max-w-352 px-4 pb-16 sm:px-6'
+    "
+  >
     <div
       v-if="isLoading"
       class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-300"
@@ -1515,6 +1606,7 @@ onUnmounted(() => {
 
     <template v-else>
       <article
+        v-if="!isEmbeddedPage"
         class="overflow-hidden rounded-4xl border border-violet-300/20 bg-[#080a18] shadow-2xl shadow-fuchsia-950/25"
       >
         <div
@@ -1549,7 +1641,7 @@ onUnmounted(() => {
         </div>
       </article>
 
-      <div class="mt-6 flex justify-center">
+      <div v-if="!isEmbeddedPage" class="mt-6 flex justify-center">
         <div
           class="grid w-full max-w-2xl grid-cols-4 gap-2 rounded-3xl border border-white/10 bg-white/5 p-4"
         >
@@ -1569,7 +1661,7 @@ onUnmounted(() => {
       </div>
 
       <section
-        v-if="roundSteps.length && !isClosed"
+        v-if="!isEmbeddedPage && roundSteps.length && !isClosed"
         class="mt-6 rounded-4xl border border-white/10 bg-white/5 p-4 sm:p-5"
       >
         <div class="flex items-center justify-between gap-4">
@@ -1680,7 +1772,7 @@ onUnmounted(() => {
       </p>
 
       <section
-        v-if="isClosed && finalWinnerEntries.length"
+        v-if="!isEmbeddedPage && isClosed && finalWinnerEntries.length"
         class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div
@@ -1853,6 +1945,7 @@ onUnmounted(() => {
 
       <section
         v-if="
+          !isEmbeddedPage &&
           isClosed &&
           finalWinnerEntries.length &&
           secondaryFinalRankingEntries.length
@@ -1933,7 +2026,7 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-if="isRoundIntroVisible"
+        v-if="!isEmbeddedPage && isRoundIntroVisible"
         class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div
@@ -2014,7 +2107,7 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="isSelectingWinners"
+        v-else-if="!isEmbeddedPage && isSelectingWinners"
         class="waiting-card relative mt-8 grid min-h-[460px] place-items-center overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#080a18] p-8 text-center shadow-2xl shadow-fuchsia-950/25 sm:min-h-[560px] sm:p-12"
       >
         <div
@@ -2077,7 +2170,7 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="isClosed"
+        v-else-if="!isEmbeddedPage && isClosed"
         class="mt-8 rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
       >
         <p
@@ -2095,20 +2188,45 @@ onUnmounted(() => {
 
       <section
         v-else-if="activeRound?.type === 'versus'"
-        class="mt-8 space-y-6"
+        class="space-y-6"
+        :class="!isEmbeddedPage && 'mt-8'"
       >
         <article
-          v-for="match in versusMatches"
+          v-for="match in displayedVersusMatches"
           :key="match.id"
-          class="rounded-4xl border border-white/10 bg-white/5 p-4 sm:p-5"
+          class="rounded-4xl border border-white/10 bg-white/5"
+          :class="
+            !isEmbeddedPage && match.contestants.length === 2
+              ? 'mx-auto max-w-5xl p-3 sm:p-4'
+              : 'p-4 sm:p-5'
+          "
         >
-          <p
-            class="mb-4 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300"
-          >
-            {{ match.title }}
-          </p>
+          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p
+              class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300"
+            >
+              {{ match.title }}
+            </p>
+          </div>
 
-          <div class="relative space-y-3">
+          <div
+            class="relative"
+            :class="
+              match.contestants.length === 2
+                ? 'grid gap-4 md:grid-cols-2'
+                : 'space-y-3'
+            "
+          >
+            <div
+              v-if="match.contestants.length === 2"
+              class="pointer-events-none absolute inset-0 z-50 hidden place-items-center md:grid"
+            >
+              <span
+                class="embed-vs-badge grid size-20 place-items-center rounded-full border-4 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-2xl font-black text-white shadow-2xl shadow-fuchsia-500/60 ring-4 ring-fuchsia-500/20"
+              >
+                VS
+              </span>
+            </div>
             <div
               v-for="(contestant, index) in match.contestants"
               :key="contestant.id"
@@ -2126,10 +2244,22 @@ onUnmounted(() => {
                 {{ $t("polls.detail.voteCounted") }}
               </span>
               <div
-                class="grid gap-0 md:grid-cols-[14rem_1fr_auto] md:items-center"
+                class="grid gap-0"
+                :class="
+                  match.contestants.length === 2
+                    ? 'h-full grid-rows-[auto_1fr_auto]'
+                    : 'md:grid-cols-[14rem_1fr_auto] md:items-center'
+                "
               >
                 <div
-                  class="relative min-h-52 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950 md:min-h-56"
+                  class="relative overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950"
+                  :class="
+                    match.contestants.length === 2
+                      ? isEmbeddedPage
+                        ? 'aspect-square min-h-80'
+                        : 'min-h-52 md:min-h-78'
+                      : 'min-h-52 md:min-h-56'
+                  "
                 >
                   <img
                     v-if="getArtistImage(contestant.artist)"
@@ -2143,29 +2273,65 @@ onUnmounted(() => {
                   <span
                     class="absolute left-4 top-4 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur"
                   >
-                    {{ $t("polls.detail.optionLabel", { option: index === 0 ? "A" : "B" }) }}
+                    {{
+                      $t("polls.detail.optionLabel", {
+                        option: index === 0 ? "A" : "B",
+                      })
+                    }}
                   </span>
                 </div>
 
-                <div class="p-4 sm:p-5">
+                <div
+                  class="p-3"
+                  :class="
+                    match.contestants.length === 2 && !isEmbeddedPage
+                      ? 'sm:p-3'
+                      : 'sm:p-5'
+                  "
+                >
                   <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
-                      <h3 class="truncate text-3xl font-black text-white">
-                        {{ contestant.artist?.name || $t("polls.detail.voteFallback") }}
+                      <h3
+                        class="truncate font-black text-white"
+                        :class="
+                          match.contestants.length === 2 && !isEmbeddedPage
+                            ? 'text-2xl'
+                            : 'text-3xl'
+                        "
+                      >
+                        {{
+                          contestant.artist?.name ||
+                          $t("polls.detail.voteFallback")
+                        }}
                       </h3>
                       <p
                         class="mt-1 text-sm font-black uppercase text-fuchsia-200"
                       >
-                        {{ getArtistGroup(contestant.artist) || $t("polls.detail.soloist") }}
+                        {{
+                          getArtistGroup(contestant.artist) ||
+                          $t("polls.detail.soloist")
+                        }}
                       </p>
                     </div>
-                    <p class="shrink-0 text-2xl font-black text-cyan-100">
+                    <p
+                      class="shrink-0 font-black text-cyan-100"
+                      :class="
+                        match.contestants.length === 2 && !isEmbeddedPage
+                          ? 'text-xl'
+                          : 'text-2xl'
+                      "
+                    >
                       {{ percentForMatch(contestant, match) }}
                     </p>
                   </div>
 
                   <div
-                    class="mt-4 h-3 overflow-hidden rounded-full bg-white/10"
+                    class="overflow-hidden rounded-full bg-white/10"
+                    :class="
+                      match.contestants.length === 2 && !isEmbeddedPage
+                        ? 'mt-3 h-2.5'
+                        : 'mt-4 h-3'
+                    "
                   >
                     <div
                       class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300"
@@ -2181,7 +2347,8 @@ onUnmounted(() => {
                   >
                     {{
                       $t("polls.detail.votesCount", {
-                        count: displayVoteCountFor(contestant).toLocaleString("es"),
+                        count:
+                          displayVoteCountFor(contestant).toLocaleString("es"),
                       })
                     }}
                     <span
@@ -2205,37 +2372,36 @@ onUnmounted(() => {
 
                 <button
                   type="button"
-                  class="m-4 flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:min-w-32"
+                  class="flex items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  :class="[
+                    match.contestants.length === 2 && !isEmbeddedPage
+                      ? 'm-3 min-h-10'
+                      : 'm-4 min-h-12',
+                    match.contestants.length !== 2 && 'md:min-w-32',
+                  ]"
                   :disabled="
                     !isVotingOpen ||
                     !hasEnoughPointsToVote ||
                     isVoting === getContestantArtistId(contestant)
                   "
-                  @click="voteFor(contestant)"
+                  @click="openVoteModal(contestant)"
                 >
                   {{ voteButtonLabel(contestant) }}
                 </button>
-              </div>
-
-              <div
-                v-if="index === 0 && match.contestants.length === 2"
-                class="absolute -bottom-7 left-1/2 z-20 grid size-14 -translate-x-1/2 place-items-center rounded-full border-4 border-white/15 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-sm font-black text-white shadow-2xl shadow-fuchsia-500/40"
-              >
-                VS
               </div>
             </div>
           </div>
         </article>
 
         <p
-          v-if="!versusMatches.length"
+          v-if="!displayedVersusMatches.length"
           class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400"
         >
           Esta ronda versus todavía no tiene participantes.
         </p>
       </section>
 
-      <section v-else class="mt-8 space-y-4">
+      <section v-else class="space-y-4" :class="!isEmbeddedPage && 'mt-8'">
         <div
           v-if="
             shouldShowVoteButtons && currentUser && !currentUser.isAnonymous
@@ -2366,7 +2532,10 @@ onUnmounted(() => {
                       <h3
                         class="truncate text-xl font-black leading-none text-white sm:text-3xl"
                       >
-                        {{ contestant.artist?.name || $t("polls.detail.voteFallback") }}
+                        {{
+                          contestant.artist?.name ||
+                          $t("polls.detail.voteFallback")
+                        }}
                       </h3>
                       <span
                         v-if="hasRoundWinners"
@@ -2389,7 +2558,10 @@ onUnmounted(() => {
                     <p
                       class="mt-1 text-xs font-bold uppercase text-fuchsia-200 sm:text-sm"
                     >
-                      {{ getArtistGroup(contestant.artist) || $t("polls.detail.soloist") }}
+                      {{
+                        getArtistGroup(contestant.artist) ||
+                        $t("polls.detail.soloist")
+                      }}
                     </p>
                   </span>
                   <span class="shrink-0 text-right">
@@ -2402,7 +2574,10 @@ onUnmounted(() => {
                     >
                       {{
                         $t("polls.detail.votesCount", {
-                          count: displayVoteCountFor(contestant).toLocaleString("es"),
+                          count:
+                            displayVoteCountFor(contestant).toLocaleString(
+                              "es",
+                            ),
                         })
                       }}
                       <span
@@ -2418,8 +2593,9 @@ onUnmounted(() => {
                         {{
                           $t("polls.detail.votesAdded", {
                             count:
-                              voteFeedbacks[contestant.artistId || contestant.id]
-                                .amount,
+                              voteFeedbacks[
+                                contestant.artistId || contestant.id
+                              ].amount,
                           })
                         }}
                       </span>
@@ -2466,7 +2642,12 @@ onUnmounted(() => {
       </section>
     </template>
 
-    <div class="mt-12 border-t border-white/10 pt-4">
+    <PollComments
+      v-if="!isEmbeddedPage && currentPollId"
+      :poll-id="currentPollId"
+    />
+
+    <div v-if="!isEmbeddedPage" class="mt-12 border-t border-white/10 pt-4">
       <ActivePolls :exclude-poll-id="currentPollId" />
     </div>
 
@@ -2520,7 +2701,10 @@ onUnmounted(() => {
                     }}
                   </p>
                   <h2 class="mt-2 truncate text-2xl font-black">
-                    {{ selectedVoteArtist?.name || $t("polls.detail.voteFallback") }}
+                    {{
+                      selectedVoteArtist?.name ||
+                      $t("polls.detail.voteFallback")
+                    }}
                   </h2>
                   <p class="mt-1 text-sm font-bold text-amber-200">
                     {{
@@ -2941,6 +3125,51 @@ onUnmounted(() => {
   100% {
     opacity: 0;
     transform: translateY(-0.35rem) scale(0.96);
+  }
+}
+
+.embed-vs-badge {
+  animation: embed-vs-pulse 2.2s ease-in-out infinite;
+}
+
+.embed-vs-badge::before {
+  position: absolute;
+  inset: -0.65rem;
+  z-index: -1;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(34, 211, 238, 0.45),
+    rgba(217, 70, 239, 0.85),
+    rgba(251, 191, 36, 0.55),
+    rgba(34, 211, 238, 0.45)
+  );
+  content: "";
+  filter: blur(10px);
+  opacity: 0.85;
+  animation: embed-vs-orbit 2.8s linear infinite;
+}
+
+@keyframes embed-vs-pulse {
+  0%,
+  100% {
+    transform: scale(1) rotate(-3deg);
+    box-shadow:
+      0 0 28px rgba(217, 70, 239, 0.45),
+      0 0 0 0 rgba(34, 211, 238, 0.32);
+  }
+
+  50% {
+    transform: scale(1.1) rotate(3deg);
+    box-shadow:
+      0 0 44px rgba(34, 211, 238, 0.55),
+      0 0 0 12px rgba(217, 70, 239, 0);
+  }
+}
+
+@keyframes embed-vs-orbit {
+  to {
+    transform: rotate(360deg);
   }
 }
 

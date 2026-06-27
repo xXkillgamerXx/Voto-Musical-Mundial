@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../artists/presentation/pages/artists_page.dart';
 import 'login_page.dart';
 
 class AuthGate extends StatelessWidget {
@@ -42,97 +43,227 @@ class _SignedInPage extends StatefulWidget {
 }
 
 class _SignedInPageState extends State<_SignedInPage> {
-  String _selectedSection = 'Inicio';
+  late final PageController _pageController;
+  String _selectedSection = 'Artistas';
+
+  static const _tabSections = [
+    'Inicio',
+    'Votaciones',
+    'Artistas',
+    'Ranking Popularity',
+  ];
+
+  int get _selectedTabIndex => _tabSections.indexOf(_selectedSection);
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: _selectedTabIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final displayName = widget.user.displayName?.trim();
 
-    return Scaffold(
-      extendBody: true,
-      extendBodyBehindAppBar: true,
-      backgroundColor: const Color(0xFF09061B),
-      appBar: AppBar(
+    return _HomeBackground(
+      child: Scaffold(
+        extendBody: true,
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        leading: Builder(
-          builder: (context) {
-            return IconButton(
-              tooltip: 'Abrir menú',
-              onPressed: () => Scaffold.of(context).openDrawer(),
-              icon: const Icon(Icons.menu_rounded),
-            );
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          leading: Builder(
+            builder: (context) {
+              return IconButton(
+                tooltip: 'Abrir menú',
+                onPressed: () => Scaffold.of(context).openDrawer(),
+                icon: const Icon(Icons.menu_rounded),
+              );
+            },
+          ),
+          centerTitle: true,
+          title:
+              (_selectedSection == 'Inicio' || _selectedSection == 'Artistas')
+              ? Image.asset(
+                  'assets/icons/logo-votos.png',
+                  width: 54,
+                  height: 42,
+                  fit: BoxFit.contain,
+                )
+              : (_selectedTabIndex == -1 ? Text(_selectedSection) : null),
+        ),
+        drawer: _HomeMenuDrawer(
+          user: widget.user,
+          selectedSection: _selectedSection,
+          onSectionSelected: (section) {
+            _selectSection(section);
+            Navigator.of(context).pop();
           },
         ),
-        centerTitle: true,
-        title: _selectedSection == 'Inicio'
-            ? Image.asset(
-                'assets/icons/logo-votos.png',
-                width: 54,
-                height: 42,
-                fit: BoxFit.contain,
-              )
-            : Text(_selectedSection),
+        body: _buildSectionContent(displayName),
+        bottomNavigationBar: _HomeBottomNav(
+          selectedSection: _selectedSection,
+          onSectionSelected: _selectSection,
+        ),
       ),
-      drawer: _HomeMenuDrawer(
-        user: widget.user,
-        selectedSection: _selectedSection,
-        onSectionSelected: (section) {
-          setState(() => _selectedSection = section);
-          Navigator.of(context).pop();
-        },
-      ),
-      body: _HomeBackground(
+    );
+  }
+
+  void _selectSection(String section) {
+    final tabIndex = _tabSections.indexOf(section);
+
+    setState(() => _selectedSection = section);
+
+    if (tabIndex != -1 && _pageController.hasClients) {
+      _pageController.animateToPage(
+        tabIndex,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Widget _buildSectionContent(String? displayName) {
+    final tabIndex = _selectedTabIndex;
+
+    if (tabIndex == -1) {
+      return _PlaceholderPanel(
+        title: _selectedSection,
+        subtitle: 'Esta sección se conectará como pantalla completa.',
+      );
+    }
+
+    return PageView(
+      controller: _pageController,
+      onPageChanged: (index) {
+        setState(() => _selectedSection = _tabSections[index]);
+      },
+      children: [
+        KeepAlivePanel(
+          child: _HomePanel(displayName: displayName ?? widget.user.email),
+        ),
+        const KeepAlivePanel(
+          child: _PlaceholderPanel(
+            title: 'Votaciones',
+            subtitle: 'Aquí irán las votaciones disponibles.',
+          ),
+        ),
+        const KeepAlivePanel(child: ArtistsPage()),
+        const KeepAlivePanel(
+          child: _PlaceholderPanel(
+            title: 'Ranking Popularity',
+            subtitle: 'Aquí irá el ranking de popularidad.',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class KeepAlivePanel extends StatefulWidget {
+  const KeepAlivePanel({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<KeepAlivePanel> createState() => _KeepAlivePanelState();
+}
+
+class _KeepAlivePanelState extends State<KeepAlivePanel>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
+class _HomePanel extends StatelessWidget {
+  const _HomePanel({required this.displayName});
+
+  final String? displayName;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_selectedSection == 'Inicio') ...[
-                  Image.asset(
-                    'assets/icons/logo-votos.png',
-                    width: 132,
-                    height: 132,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(height: 18),
-                ] else ...[
-                  Icon(
-                    Icons.verified_user_outlined,
-                    size: 72,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    _selectedSection,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                Text(
-                  displayName?.isNotEmpty == true
-                      ? displayName!
-                      : widget.user.email ?? 'Usuario conectado',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Color(0xFFD8D3F7)),
-                ),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/icons/logo-votos.png',
+                width: 132,
+                height: 132,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: 18),
+              Text(
+                displayName?.isNotEmpty == true
+                    ? displayName!
+                    : 'Usuario conectado',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFD8D3F7)),
+              ),
+            ],
           ),
         ),
       ),
-      bottomNavigationBar: _HomeBottomNav(
-        selectedSection: _selectedSection,
-        onSectionSelected: (section) {
-          setState(() => _selectedSection = section);
-        },
+    );
+  }
+}
+
+class _PlaceholderPanel extends StatelessWidget {
+  const _PlaceholderPanel({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 72,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(height: 18),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFD8D3F7)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -159,23 +290,18 @@ class _HomeBottomNav extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
           decoration: BoxDecoration(
-            color: const Color(0xFF0D071D).withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            color: const Color(0xFF080416).withValues(alpha: 0.62),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
-              ),
-              BoxShadow(
-                color: const Color(0xFFFF21C8).withValues(alpha: 0.10),
-                blurRadius: 28,
-                offset: const Offset(0, 8),
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 22,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
@@ -223,7 +349,7 @@ class _BottomNavButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 9),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             gradient: isSelected
@@ -237,17 +363,17 @@ class _BottomNavButton extends StatelessWidget {
             children: [
               Icon(
                 item.icon,
-                size: 21,
+                size: 20,
                 color: isSelected ? Colors.white : const Color(0xFFB9B2D8),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 item.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: isSelected ? Colors.white : const Color(0xFFB9B2D8),
-                  fontSize: 10.5,
+                  fontSize: 10,
                   fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
                 ),
               ),
@@ -723,46 +849,7 @@ class _HomeBackground extends StatelessWidget {
           colors: [Color(0xFF050213), Color(0xFF09061B), Color(0xFF120A2B)],
         ),
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -90,
-            right: -70,
-            child: _GlowCircle(color: Color(0xFF7C3AED), size: 210),
-          ),
-          Positioned(
-            bottom: -100,
-            left: -90,
-            child: _GlowCircle(color: Color(0xFFFF21C8), size: 240),
-          ),
-          SafeArea(child: child),
-        ],
-      ),
-    );
-  }
-}
-
-class _GlowCircle extends StatelessWidget {
-  const _GlowCircle({required this.color, required this.size});
-
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.18),
-            blurRadius: 110,
-            spreadRadius: 28,
-          ),
-        ],
-      ),
+      child: child,
     );
   }
 }

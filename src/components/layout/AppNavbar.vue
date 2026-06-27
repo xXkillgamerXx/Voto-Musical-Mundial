@@ -30,13 +30,14 @@ const userUsername = ref("");
 const userPoints = ref(0);
 let unsubscribeAuth = null;
 let unsubscribeUserProfile = null;
+const adminRoles = new Set(["admin", "superadmin", "owner"]);
 
 const userName = computed(
   () => currentUser.value?.displayName || translate("nav.fanAccount"),
 );
 const userEmail = computed(() => currentUser.value?.email || "");
 const isSignedInUser = computed(() => Boolean(currentUser.value && !currentUser.value.isAnonymous));
-const isAdmin = computed(() => userRole.value === "admin");
+const isAdmin = computed(() => adminRoles.has(userRole.value));
 const formattedUserPoints = computed(() =>
   Number(userPoints.value || 0).toLocaleString(locale.value),
 );
@@ -118,7 +119,7 @@ const listenUserProfile = (user) => {
     (userSnap) => {
       if (currentUser.value?.uid === user.uid) {
         const userData = userSnap.data() || {};
-        userRole.value = (userData.role || "").toLowerCase();
+        userRole.value = String(userData.role || "").trim().toLowerCase();
         userUsername.value = userData.username || "";
         userPoints.value = Number(userData.points || 0);
       }

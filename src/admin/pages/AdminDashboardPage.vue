@@ -112,6 +112,7 @@ const userInitial = computed(() => {
 
   return source.trim().charAt(0).toUpperCase()
 })
+const adminRoles = new Set(['admin', 'superadmin', 'owner'])
 
 const navItems = [
   { label: 'Dashboard', href: '/admin', icon: 'fa-solid fa-chart-line' },
@@ -149,7 +150,8 @@ onMounted(() => {
 
     try {
       const userSnap = await getDoc(doc(db, 'users', user.uid))
-      hasAdminAccess.value = (userSnap.data()?.role || '').toLowerCase() === 'admin'
+      const role = String(userSnap.data()?.role || '').trim().toLowerCase()
+      hasAdminAccess.value = adminRoles.has(role)
     } catch {
       hasAdminAccess.value = false
     } finally {

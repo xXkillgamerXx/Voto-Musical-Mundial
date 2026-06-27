@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 
 initializeApp();
@@ -9,6 +10,11 @@ initializeApp();
 const db = getFirestore();
 const DEFAULT_COOLDOWN_MINUTES = 60;
 const DEFAULT_SHARD_COUNT = 512;
+const REFERRAL_SIGNUP_POINTS = 50;
+const REFERRAL_MILESTONE_BONUSES = {
+  5: 300,
+  10: 700,
+};
 const MAX_COOLDOWN_MINUTES = 24 * 60;
 const callableOptions = {
   cors: true,
@@ -378,4 +384,58 @@ export const castAnonymousVoteHttp = onRequest(async (request, response) => {
   } catch (error) {
     sendHttpError(response, error);
   }
+});
+
+export const processReferralSignup = onDocumentCreated("users/{userId}", async (event) => {
+  const userId = event.params.userId;
+  const userData = event.data?.data() || {};
+  const referredBy = userData.referredBy || null;
+  const referrerId = cleanId(referredBy?.uid);
+
+  if (!referrerId || referrerId === userId) {
+    return;
+  }
+
+  const referredUserRef = db.doc(`users/${userId}`);
+  const referrerRef = db.doc(`users/${referrerId}`);
+  const referralSignupRef = db.doc(`referralSignups/${userId}`);
+
+  await db.runTransaction(async (transaction) => {
+    const [existingSignupSnap, referrerSnap] = await Promise.all([
+      transaction.get(referralSignupRef),
+      transaction.get(referrerRef),
+    ]);
+
+    if (existingSignupSnap.exists || !referrerSnap.exists) {
+      return;
+    }
+
+    const previousSignupCount = Number(referrerSnap.data()?.referralSignups || 0);
+    const nextSignupCount = previousSignupCount + 1;
+    const milestoneBonus = REFERRAL_MILESTONE_BONUSES[nextSignupCount] || 0;
+    const pointsAwarded = REFERRAL_SIGNUP_POINTS + milestoneBonus;
+
+    transaction.set(referralSignupRef, {
+      userId,
+      referrerId,
+      referralCode: referredBy.code || "",
+      referredUsername: userData.username || "",
+      referrerUsername: referredBy.username || "",
+      pointsAwarded,
+      signupPoints: REFERRAL_SIGNUP_POINTS,
+      milestoneBonus,
+      milestone: milestoneBonus ? nextSignupCount : null,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(referrerRef, {
+      points: FieldValue.increment(pointsAwarded),
+      referralSignups: FieldValue.increment(1),
+      referralPoints: FieldValue.increment(pointsAwarded),
+      referralUpdatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(referredUserRef, {
+      referralSignupProcessed: true,
+      referralSignupProcessedAt: FieldValue.serverTimestamp(),
+    });
+  });
 });

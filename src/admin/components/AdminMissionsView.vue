@@ -207,6 +207,7 @@ const emptyForm = {
   description: "",
   category: "social",
   type: "vote_count",
+  actionUrl: "",
   target: 1,
   rewardPoints: 25,
   icon: "fa-solid fa-check",
@@ -220,6 +221,8 @@ const form = ref({ ...emptyForm });
 const editingMissionId = ref("");
 const isLoading = ref(true);
 const isSaving = ref(false);
+const isMissionModalOpen = ref(false);
+const isTemplatesModalOpen = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 let unsubscribeMissions = null;
@@ -236,6 +239,13 @@ const templateKey = (mission) =>
   `${mission.category || "general"}:${mission.type || "manual"}:${mission.title || ""}:${Number(mission.target || 1)}`;
 const isTemplateCreated = (template) =>
   missions.value.some((mission) => templateKey(mission) === templateKey(template));
+const missionErrorMessage = (error, fallbackMessage) => {
+  if (error?.code === "permission-denied") {
+    return "Permiso denegado. Revisa que tu usuario tenga role admin en Firestore o despliega las reglas nuevas.";
+  }
+
+  return error?.message ? `${fallbackMessage} (${error.message})` : fallbackMessage;
+};
 
 const resetForm = () => {
   editingMissionId.value = "";
@@ -245,6 +255,24 @@ const resetForm = () => {
   };
 };
 
+const openCreateMission = () => {
+  resetForm();
+  isMissionModalOpen.value = true;
+};
+
+const closeMissionModal = () => {
+  isMissionModalOpen.value = false;
+  resetForm();
+};
+
+const openTemplatesModal = () => {
+  isTemplatesModalOpen.value = true;
+};
+
+const closeTemplatesModal = () => {
+  isTemplatesModalOpen.value = false;
+};
+
 const editMission = (mission) => {
   editingMissionId.value = mission.id;
   form.value = {
@@ -252,6 +280,7 @@ const editMission = (mission) => {
     description: mission.description || "",
     category: mission.category || "general",
     type: mission.type || "manual",
+    actionUrl: mission.actionUrl || mission.url || "",
     target: Number(mission.target || 1),
     rewardPoints: Number(mission.rewardPoints || 0),
     icon: mission.icon || "fa-solid fa-check",
@@ -259,7 +288,8 @@ const editMission = (mission) => {
     active: mission.active !== false,
     featured: Boolean(mission.featured),
   };
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  isTemplatesModalOpen.value = false;
+  isMissionModalOpen.value = true;
 };
 
 const missionPayload = () => ({
@@ -267,6 +297,7 @@ const missionPayload = () => ({
   description: form.value.description.trim(),
   category: form.value.category || "general",
   type: form.value.type,
+  actionUrl: form.value.actionUrl.trim(),
   target: Math.max(1, Math.floor(Number(form.value.target || 1))),
   rewardPoints: Math.max(0, Math.floor(Number(form.value.rewardPoints || 0))),
   icon: form.value.icon.trim() || "fa-solid fa-check",
@@ -281,6 +312,7 @@ const templatePayload = (template, index) => ({
   description: template.description,
   category: template.category,
   type: template.type,
+  actionUrl: template.actionUrl || "",
   target: template.target,
   rewardPoints: template.rewardPoints,
   icon: template.icon,
@@ -300,7 +332,8 @@ const useTemplate = (template) => {
     active: true,
     featured: false,
   };
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  isTemplatesModalOpen.value = false;
+  isMissionModalOpen.value = true;
 };
 
 const createAllTemplates = async () => {
@@ -326,9 +359,10 @@ const createAllTemplates = async () => {
 
     await batch.commit();
     successMessage.value = `${missingTemplates.length} misiones creadas.`;
+    isTemplatesModalOpen.value = false;
     resetForm();
-  } catch {
-    errorMessage.value = "No se pudieron crear las plantillas.";
+  } catch (error) {
+    errorMessage.value = missionErrorMessage(error, "No se pudieron crear las plantillas.");
   } finally {
     isSaving.value = false;
   }
@@ -365,8 +399,9 @@ const saveMission = async () => {
     }
 
     resetForm();
-  } catch {
-    errorMessage.value = "No se pudo guardar la mision.";
+    isMissionModalOpen.value = false;
+  } catch (error) {
+    errorMessage.value = missionErrorMessage(error, "No se pudo guardar la mision.");
   } finally {
     isSaving.value = false;
   }
@@ -381,8 +416,8 @@ const toggleMission = async (mission) => {
       active: mission.active === false,
       updatedAt: serverTimestamp(),
     });
-  } catch {
-    errorMessage.value = "No se pudo cambiar el estado de la mision.";
+  } catch (error) {
+    errorMessage.value = missionErrorMessage(error, "No se pudo cambiar el estado de la mision.");
   }
 };
 
@@ -403,8 +438,8 @@ const removeMission = async (mission) => {
     if (editingMissionId.value === mission.id) {
       resetForm();
     }
-  } catch {
-    errorMessage.value = "No se pudo eliminar la mision.";
+  } catch (error) {
+    errorMessage.value = missionErrorMessage(error, "No se pudo eliminar la mision.");
   }
 };
 
@@ -419,7 +454,7 @@ onMounted(() => {
       isLoading.value = false;
     },
     () => {
-      errorMessage.value = "No se pudieron cargar las misiones.";
+      missions.value = [];
       isLoading.value = false;
     },
   );
@@ -431,15 +466,35 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+  <section class="space-y-6">
     <article class="rounded-3xl border border-fuchsia-300/20 bg-[#090b19] p-5 shadow-2xl shadow-fuchsia-950/30 sm:p-6">
-      <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-        Gana puntos extra
-      </p>
-      <h2 class="mt-2 text-2xl font-black text-white">{{ formTitle }}</h2>
-      <p class="mt-2 text-sm leading-6 text-slate-400">
-        Configura misiones para mostrar en el home. El tipo deja preparado que luego se pueda validar automaticamente.
-      </p>
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            Gana puntos extra
+          </p>
+          <h2 class="mt-2 text-2xl font-black text-white">Sistema de misiones</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-400">
+            Crea misiones desde un modal y usa plantillas rapidas para redes sociales, referidos y tareas diarias.
+          </p>
+        </div>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
+            @click="openCreateMission"
+          >
+            Crear mision
+          </button>
+          <button
+            type="button"
+            class="min-h-12 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-5 text-sm font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
+            @click="openTemplatesModal"
+          >
+            Plantillas rapidas
+          </button>
+        </div>
+      </div>
 
       <p
         v-if="errorMessage"
@@ -454,7 +509,34 @@ onUnmounted(() => {
         {{ successMessage }}
       </p>
 
-      <form class="mt-6 space-y-4" @submit.prevent="saveMission">
+    </article>
+
+    <div
+      v-if="isMissionModalOpen"
+      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
+    >
+      <article class="w-full max-w-3xl rounded-3xl border border-fuchsia-300/20 bg-[#090b19] p-5 shadow-2xl shadow-fuchsia-950/40 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+              Gana puntos extra
+            </p>
+            <h2 class="mt-2 text-2xl font-black text-white">{{ formTitle }}</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-400">
+              Configura misiones para mostrar en el home. El tipo deja preparado que luego se pueda validar automaticamente.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+            aria-label="Cerrar"
+            @click="closeMissionModal"
+          >
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form class="mt-6 space-y-4" @submit.prevent="saveMission">
         <label class="block">
           <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Titulo</span>
           <input
@@ -519,6 +601,19 @@ onUnmounted(() => {
           </label>
         </div>
 
+        <label class="block">
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">URL de accion</span>
+          <input
+            v-model="form.actionUrl"
+            type="url"
+            class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50"
+            placeholder="https://instagram.com/tu-cuenta"
+          />
+          <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
+            Para seguir redes, likes o comentarios, pega aqui la URL oficial que abrira el boton Hacer mision.
+          </span>
+        </label>
+
         <div class="grid gap-4 sm:grid-cols-3">
           <label class="block">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Meta</span>
@@ -576,19 +671,39 @@ onUnmounted(() => {
           <button
             type="button"
             class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
-            @click="resetForm"
+            @click="closeMissionModal"
           >
-            Nueva
+            Cancelar
           </button>
         </div>
       </form>
+      </article>
+    </div>
 
-      <div class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      v-if="isTemplatesModalOpen"
+      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6"
+    >
+      <article class="w-full max-w-7xl overflow-hidden rounded-3xl border border-cyan-300/20 bg-[#090b19] p-4 shadow-2xl shadow-cyan-950/30 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Plantillas rapidas</p>
-            <p class="mt-1 text-sm text-slate-400">Usa los puntos de referencia para crear misiones desde admin.</p>
+            <h2 class="mt-2 text-2xl font-black text-white">Crear misiones desde plantillas</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-400">
+              Elige una plantilla para abrir el formulario o crea todas las que falten.
+            </p>
           </div>
+          <button
+            type="button"
+            class="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+            aria-label="Cerrar"
+            @click="closeTemplatesModal"
+          >
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div class="mt-5 flex justify-end">
           <button
             type="button"
             class="min-h-11 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -599,18 +714,19 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="mt-4 space-y-4">
+        <div class="mt-5 grid min-w-0 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <div
             v-for="missionCategory in missionCategories.filter((category) => category.value !== 'general')"
             :key="missionCategory.value"
+            class="min-w-0 rounded-3xl border border-white/10 bg-white/5 p-3 sm:p-4"
           >
             <p class="text-xs font-black uppercase tracking-widest text-slate-500">{{ missionCategory.label }}</p>
-            <div class="mt-2 grid gap-2">
+            <div class="mt-3 grid gap-2">
               <button
                 v-for="template in missionTemplates.filter((item) => item.category === missionCategory.value)"
                 :key="templateKey(template)"
                 type="button"
-                class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left text-sm font-bold text-slate-200 transition hover:border-fuchsia-300/30 hover:bg-white/8"
+                class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left text-sm font-bold text-slate-200 transition hover:border-fuchsia-300/30 hover:bg-white/8"
                 @click="useTemplate(template)"
               >
                 <span class="min-w-0">
@@ -624,8 +740,8 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </div>
-    </article>
+      </article>
+    </div>
 
     <article class="rounded-3xl border border-white/10 bg-white/4 p-5 shadow-2xl shadow-violet-950/20 sm:p-6">
       <div class="flex items-center justify-between gap-4">

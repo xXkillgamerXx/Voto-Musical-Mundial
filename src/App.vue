@@ -5,10 +5,11 @@ import AppFooter from './components/layout/AppFooter.vue'
 import AppNavbar from './components/layout/AppNavbar.vue'
 import BannerFeatures from './components/BannerFeatures.vue'
 import HeroBanner from './components/HeroBanner.vue'
+import HomeAd from './components/HomeAd.vue'
 import MainCategories from './components/MainCategories.vue'
 import ThemeToggle from './components/theme/ThemeToggle.vue'
 import { preloadRouteData } from './services/firebaseCache'
-import { db } from './firebase'
+import { db, trackAnalyticsEvent } from './firebase'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
 const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
@@ -52,8 +53,21 @@ const isVersusPollPage = computed(() => currentPath.value === '/votacion/versus'
 const isVersusEmbedPage = computed(() => currentPath.value === '/embed/versus')
 const isArtistProfilePage = computed(() => /^\/artista\/[^/]+$/.test(currentPath.value))
 const isAdminPage = computed(() => currentPath.value.startsWith('/admin'))
-const isPlainPage = computed(() => isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
+const isEmbeddedPage = computed(() => {
+  currentRouteKey.value
+  const params = new URLSearchParams(window.location.search)
+  return params.get('embed') === '1' || params.get('embed') === 'true'
+})
+const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldShowDailyRewardModal = computed(() => !isPlainPage.value && !isTermsPage.value)
+
+const trackPageView = () => {
+  trackAnalyticsEvent('page_view', {
+    page_location: window.location.href,
+    page_path: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    page_title: document.title,
+  })
+}
 
 const finishPageLoading = async () => {
   if (PREVIEW_PAGE_LOADING) {
@@ -79,6 +93,7 @@ const syncCurrentPath = () => {
   isPageLoading.value = true
   currentPath.value = window.location.pathname
   currentRouteKey.value = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  trackPageView()
   finishPageLoading()
 }
 
@@ -131,6 +146,7 @@ onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
   document.addEventListener('pointerover', preloadAnchorRoute, { passive: true })
   document.addEventListener('touchstart', preloadAnchorRoute, { passive: true })
+  trackPageView()
   finishPageLoading()
 })
 
@@ -217,6 +233,7 @@ onUnmounted(() => {
         <ActivePolls />
         <MainCategories />
         <TopRanking />
+        <HomeAd />
         <LiveActivity />
         <LatestNews />
         <MissionsSection />

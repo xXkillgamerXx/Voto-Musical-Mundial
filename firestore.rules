@@ -12,7 +12,17 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'Admin'];
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in [
+          'admin',
+          'Admin',
+          'ADMIN',
+          'superadmin',
+          'superAdmin',
+          'SuperAdmin',
+          'owner',
+          'Owner',
+          'OWNER',
+        ];
     }
 
     function isAnonymousAuth() {
@@ -121,11 +131,93 @@ service cloud.firestore {
         && request.resource.data.pointsSpent == request.resource.data.amount;
     }
 
+    function commentCooldownHasPassed(pollId, userId) {
+      return !exists(/databases/$(database)/documents/polls/$(pollId)/commentLocks/$(userId))
+        || request.time >= get(/databases/$(database)/documents/polls/$(pollId)/commentLocks/$(userId)).data.lastCommentAt + duration.value(5, 'm');
+    }
+
+    function isPollCommentCreate(pollId) {
+      return isSignedIn()
+        && !isAnonymousAuth()
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'displayName',
+          'photoURL',
+          'text',
+          'gif',
+          'createdAt',
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80
+        && request.resource.data.photoURL is string
+        && request.resource.data.photoURL.size() <= 500
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 3
+        && request.resource.data.text.size() <= 500
+        && (!request.resource.data.keys().hasAny(['gif'])
+          || (request.resource.data.gif is map
+            && request.resource.data.gif.keys().hasOnly([
+              'id',
+              'url',
+              'previewUrl',
+              'title',
+              'source',
+            ])
+            && request.resource.data.gif.id is string
+            && request.resource.data.gif.id.size() <= 100
+            && request.resource.data.gif.url is string
+            && request.resource.data.gif.url.size() <= 1000
+            && request.resource.data.gif.previewUrl is string
+            && request.resource.data.gif.previewUrl.size() <= 1000
+            && request.resource.data.gif.title is string
+            && request.resource.data.gif.title.size() <= 160
+            && request.resource.data.gif.source is string
+            && request.resource.data.gif.source.size() <= 20
+            && request.resource.data.gif.source == 'giphy'
+            && request.resource.data.gif.url.matches('https://.*giphy.com/.*')
+            && request.resource.data.gif.previewUrl.matches('https://.*giphy.com/.*')))
+        && request.resource.data.createdAt == request.time
+        && (isAdmin()
+          || (getAfter(/databases/$(database)/documents/polls/$(pollId)/commentLocks/$(request.auth.uid)).data.userId == request.auth.uid
+            && getAfter(/databases/$(database)/documents/polls/$(pollId)/commentLocks/$(request.auth.uid)).data.lastCommentAt == request.time
+            && commentCooldownHasPassed(pollId, request.auth.uid)));
+    }
+
+    function isPollCommentLockWrite(pollId, userId) {
+      return isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'lastCommentAt',
+        ])
+        && request.resource.data.userId == userId
+        && request.resource.data.lastCommentAt == request.time
+        && commentCooldownHasPassed(pollId, userId);
+    }
+
     match /usernames/{username} {
       allow get: if true;
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.username == username;
+    }
+
+    match /referralCodes/{code} {
+      allow get: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username is string
+        && request.resource.data.code == code;
+      allow update, delete: if isAdmin();
+    }
+
+    match /referralSignups/{signupId} {
+      allow read: if isAdmin()
+        || (isSignedIn()
+          && (resource.data.userId == request.auth.uid
+            || resource.data.referrerId == request.auth.uid));
+      allow write: if false;
     }
 
     match /users/{userId} {
@@ -218,6 +310,19 @@ service cloud.firestore {
 
       match /anonymousVoteLocks/{lockId} {
         allow read, write: if false;
+      }
+
+      match /commentLocks/{userId} {
+        allow read, delete: if false;
+        allow create, update: if isPollCommentLockWrite(pollId, userId);
+      }
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isPollCommentCreate(pollId);
+        allow update: if false;
+        allow delete: if isAdmin()
+          || (isSignedIn() && resource.data.userId == request.auth.uid);
       }
 
       match /publicResults/{resultId} {

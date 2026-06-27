@@ -50,6 +50,7 @@ const selectedGroupArtistIds = ref([])
 const contestantToRemove = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
+const copiedEmbed = ref('')
 let unsubscribePoll = null
 let unsubscribeRound = null
 let unsubscribeRounds = null
@@ -139,6 +140,51 @@ const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
+const publicPollPath = computed(() =>
+  `/votacion/${poll.value?.year || new Date().getFullYear()}/${poll.value?.slug || props.pollId}`,
+)
+const buildRoundEmbedUrl = (groupNumber = null) => {
+  const url = new URL(publicPollPath.value, window.location.origin)
+  url.searchParams.set('ronda', props.roundId)
+  url.searchParams.set('embed', '1')
+
+  if (groupNumber) {
+    url.searchParams.set('duelo', String(groupNumber))
+  }
+
+  return url.toString()
+}
+const roundEmbedUrl = computed(() => buildRoundEmbedUrl())
+const buildEmbedFrameId = (groupNumber = null) =>
+  `wmv-embed-${String(props.roundId).replace(/[^a-zA-Z0-9_-]/g, '-')}${groupNumber ? `-duelo-${groupNumber}` : ''}`
+const buildIframeCode = (url, frameId) =>
+  [
+    `<iframe id="${frameId}" src="${url}" width="100%" style="width:100%; min-height:360px; border:0; border-radius:24px; overflow:hidden;" loading="lazy"></iframe>`,
+    '<script>',
+    '  window.addEventListener("message", function(event) {',
+    '    var data = event.data || {};',
+    `    if (data.type !== "wmv-embed-height" || !data.src || data.src.indexOf("${url}") !== 0) return;`,
+    `    var iframe = document.getElementById("${frameId}");`,
+    '    if (iframe) iframe.style.height = Math.max(360, Number(data.height || 0)) + "px";',
+    '  });',
+    '</scr' + 'ipt>',
+  ].join('\n')
+const buildGroupIframeCode = (groupNumber) => {
+  const url = buildRoundEmbedUrl(groupNumber)
+  return buildIframeCode(url, buildEmbedFrameId(groupNumber))
+}
+const embedFrameId = computed(() => buildEmbedFrameId())
+const roundIframeCode = computed(() => buildIframeCode(roundEmbedUrl.value, embedFrameId.value))
+const groupEmbedRows = computed(() =>
+  roundForm.value.type === 'versus'
+    ? versusGroups.value.map((group) => ({
+        groupNumber: group.groupNumber,
+        title: `Duelo ${group.groupNumber}`,
+        url: buildRoundEmbedUrl(group.groupNumber),
+        iframe: buildGroupIframeCode(group.groupNumber),
+      }))
+    : [],
+)
 const availableArtistsHelp = computed(() =>
   previousRound.value
     ? `Solo puedes asignar ganadores de ${previousRound.value.title || 'la ronda anterior'}.`
@@ -172,6 +218,20 @@ const toTimestamp = (value) => (value ? Timestamp.fromDate(new Date(value)) : nu
 const openDatePicker = (input) => {
   input?.focus()
   input?.showPicker?.()
+}
+
+const copyToClipboard = async (value, type) => {
+  try {
+    await navigator.clipboard.writeText(value)
+    copiedEmbed.value = type
+    window.setTimeout(() => {
+      if (copiedEmbed.value === type) {
+        copiedEmbed.value = ''
+      }
+    }, 2200)
+  } catch {
+    errorMessage.value = 'No se pudo copiar. Selecciona el texto manualmente.'
+  }
 }
 
 const loadArtists = async () => {
@@ -567,6 +627,116 @@ onUnmounted(() => {
             </button>
           </div>
         </form>
+
+        <div class="mt-5 rounded-3xl border border-cyan-300/15 bg-cyan-400/8 p-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-300">
+                Embed de esta ronda
+              </p>
+              <h4 class="mt-1 text-lg font-black text-white">
+                Código para pegar en otra web
+              </h4>
+              <p class="mt-1 text-xs leading-5 text-slate-400">
+                Abre solo el cuadro de votación de esta ronda, sin navbar, footer ni comentarios.
+              </p>
+            </div>
+            <a
+              :href="roundEmbedUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black uppercase text-cyan-100 transition hover:bg-cyan-400/20"
+            >
+              Ver ejemplo
+            </a>
+          </div>
+
+          <div class="mt-4 grid gap-3">
+            <label class="block">
+              <span class="text-xs font-black uppercase tracking-widest text-slate-400">
+                URL embed
+              </span>
+              <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  :value="roundEmbedUrl"
+                  readonly
+                  class="min-w-0 flex-1 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-xs font-bold text-slate-200 outline-none"
+                />
+                <button
+                  type="button"
+                  class="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-xs font-black uppercase text-slate-100 transition hover:bg-white/12"
+                  @click="copyToClipboard(roundEmbedUrl, 'url')"
+                >
+                  {{ copiedEmbed === 'url' ? 'Copiado' : 'Copiar URL' }}
+                </button>
+              </div>
+            </label>
+
+            <label class="block">
+              <span class="text-xs font-black uppercase tracking-widest text-slate-400">
+                Código iframe
+              </span>
+              <textarea
+                :value="roundIframeCode"
+                readonly
+                rows="4"
+                class="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-xs font-bold leading-5 text-slate-200 outline-none"
+              ></textarea>
+              <div class="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  class="rounded-2xl bg-linear-to-r from-cyan-500 to-fuchsia-500 px-5 py-3 text-xs font-black uppercase text-white shadow-lg shadow-cyan-950/25 transition hover:scale-[1.01]"
+                  @click="copyToClipboard(roundIframeCode, 'iframe')"
+                >
+                  {{ copiedEmbed === 'iframe' ? 'Iframe copiado' : 'Copiar iframe' }}
+                </button>
+              </div>
+            </label>
+
+            <div
+              v-if="groupEmbedRows.length"
+              class="rounded-3xl border border-fuchsia-300/15 bg-fuchsia-400/8 p-3"
+            >
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300">
+                Embeds por duelo
+              </p>
+              <p class="mt-1 text-xs text-slate-400">
+                Usa estos si quieres pegar solo un versus específico, por ejemplo Duelo 1.
+              </p>
+              <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                <div
+                  v-for="group in groupEmbedRows"
+                  :key="`embed-group-${group.groupNumber}`"
+                  class="rounded-2xl border border-white/10 bg-slate-950/45 p-3"
+                >
+                  <p class="text-sm font-black text-white">
+                    {{ group.title }}
+                  </p>
+                  <p class="mt-1 truncate text-[10px] font-bold text-slate-500">
+                    {{ group.url }}
+                  </p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <a
+                      :href="group.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex min-h-9 items-center justify-center rounded-xl border border-white/10 bg-white/8 px-3 text-[10px] font-black uppercase text-slate-200 transition hover:bg-white/12"
+                    >
+                      Ver
+                    </a>
+                    <button
+                      type="button"
+                      class="inline-flex min-h-9 items-center justify-center rounded-xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 text-[10px] font-black uppercase text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+                      @click="copyToClipboard(group.iframe, `duelo-${group.groupNumber}`)"
+                    >
+                      {{ copiedEmbed === `duelo-${group.groupNumber}` ? 'Copiado' : 'Copiar iframe' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </article>
 
       <article class="rounded-3xl border border-white/10 bg-white/4 p-4 sm:p-5">

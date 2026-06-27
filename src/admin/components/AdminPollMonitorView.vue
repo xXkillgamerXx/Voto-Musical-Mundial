@@ -51,6 +51,7 @@ const isRoundModalOpen = ref(false)
 const roundEndAtInput = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
+const copiedRoundEmbed = ref('')
 let unsubscribePoll = null
 let unsubscribeContestants = null
 let unsubscribeRounds = null
@@ -64,6 +65,45 @@ const getArtistImage = (artist) =>
 
 const getUserName = (user) => user?.displayName || user?.username || user?.name || user?.email || translate('admin.monitor.userFallback')
 const getUserAvatar = (user) => user?.photoURL || user?.avatar || user?.image || ''
+
+const roundEmbedUrl = (roundId) => {
+  const path = `/votacion/${poll.value?.year || new Date().getFullYear()}/${poll.value?.slug || props.pollId}`
+  const url = new URL(path, window.location.origin)
+
+  url.searchParams.set('ronda', roundId)
+  url.searchParams.set('embed', '1')
+
+  return url.toString()
+}
+
+const embedFrameId = (roundId) => `wmv-embed-${String(roundId).replace(/[^a-zA-Z0-9_-]/g, '-')}`
+
+const roundIframeCode = (roundId) =>
+  [
+    `<iframe id="${embedFrameId(roundId)}" src="${roundEmbedUrl(roundId)}" width="100%" style="width:100%; min-height:360px; border:0; border-radius:24px; overflow:hidden;" loading="lazy"></iframe>`,
+    '<script>',
+    '  window.addEventListener("message", function(event) {',
+    '    var data = event.data || {};',
+    `    if (data.type !== "wmv-embed-height" || !data.src || data.src.indexOf("${roundEmbedUrl(roundId)}") !== 0) return;`,
+    `    var iframe = document.getElementById("${embedFrameId(roundId)}");`,
+    '    if (iframe) iframe.style.height = Math.max(360, Number(data.height || 0)) + "px";',
+    '  });',
+    '</scr' + 'ipt>',
+  ].join('\n')
+
+const copyRoundEmbed = async (roundId) => {
+  try {
+    await navigator.clipboard.writeText(roundIframeCode(roundId))
+    copiedRoundEmbed.value = roundId
+    window.setTimeout(() => {
+      if (copiedRoundEmbed.value === roundId) {
+        copiedRoundEmbed.value = ''
+      }
+    }, 2200)
+  } catch {
+    errorMessage.value = 'No se pudo copiar el embed. Entra a Configurar para copiarlo manualmente.'
+  }
+}
 
 const rankedContestants = computed(() =>
   contestants.value
@@ -797,6 +837,21 @@ onUnmounted(() => {
                 class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               >
                 {{ $t('admin.monitor.configure') }}
+              </a>
+              <button
+                type="button"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                @click="copyRoundEmbed(round.id)"
+              >
+                {{ copiedRoundEmbed === round.id ? 'Embed copiado' : 'Copiar embed' }}
+              </button>
+              <a
+                :href="roundEmbedUrl(round.id)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10"
+              >
+                Ver iframe
               </a>
             </div>
           </div>

@@ -11,6 +11,13 @@ const successMessage = ref('')
 const pointAdjustments = ref({})
 const updatingPointsUserId = ref('')
 const updatingRoleUserId = ref('')
+const roleOptions = [
+  { value: 'user', label: 'Usuario' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'superadmin', label: 'Super Admin' },
+  { value: 'owner', label: 'Owner' },
+]
+const normalizeRole = (role) => String(role || 'user').trim().toLowerCase()
 
 const loadUsers = async () => {
   isLoading.value = true
@@ -73,7 +80,7 @@ const updateUserRole = async (user, nextRole) => {
   errorMessage.value = ''
   successMessage.value = ''
 
-  if (!['user', 'admin'].includes(nextRole) || nextRole === (user.role || 'user')) {
+  if (!roleOptions.some((role) => role.value === nextRole) || nextRole === normalizeRole(user.role)) {
     return
   }
 
@@ -161,13 +168,18 @@ onMounted(loadUsers)
             <span>
               <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.role') }}</span>
               <select
-                :value="user.role || 'user'"
+                :value="normalizeRole(user.role)"
                 class="min-h-10 w-full rounded-2xl border border-fuchsia-300/20 bg-slate-950 px-3 text-sm font-black capitalize text-fuchsia-100 outline-none transition focus:border-fuchsia-300/50 disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="updatingRoleUserId === user.id"
                 @change="updateUserRole(user, $event.target.value)"
               >
-                <option value="user">{{ $t('admin.common.user') }}</option>
-                <option value="admin">Admin</option>
+                <option
+                  v-for="role in roleOptions"
+                  :key="role.value"
+                  :value="role.value"
+                >
+                  {{ role.label }}
+                </option>
               </select>
             </span>
             <form class="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center" @submit.prevent="adjustUserPoints(user)">

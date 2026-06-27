@@ -8,7 +8,17 @@ service firebase.storage {
 
     function isAdmin() {
       return isSignedIn()
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['admin', 'Admin'];
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in [
+          'admin',
+          'Admin',
+          'ADMIN',
+          'superadmin',
+          'superAdmin',
+          'SuperAdmin',
+          'owner',
+          'Owner',
+          'OWNER',
+        ];
     }
 
     match /artists/{allPaths=**} {
