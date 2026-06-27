@@ -5,8 +5,9 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
+  getDocs,
   limit,
-  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -42,11 +43,12 @@ const gifSearchTerm = ref("");
 const gifResults = ref([]);
 const selectedGif = ref(null);
 const currentCommentsPage = ref(1);
+const commentsRoot = ref(null);
+const isCommentsVisible = ref(false);
 
 let unsubscribeAuth = null;
-let unsubscribeComments = null;
-let unsubscribeUserProfile = null;
 let cooldownTimer = null;
+let commentsObserver = null;
 
 const remainingCharacters = computed(
   () => MAX_COMMENT_LENGTH - commentText.value.length,
@@ -223,32 +225,35 @@ const startCooldown = () => {
   }, 1000);
 };
 
-const listenComments = () => {
-  unsubscribeComments?.();
-  comments.value = [];
-
-  if (!props.pollId) {
+const loadComments = async () => {
+  if (!props.pollId || !isCommentsVisible.value) {
     return;
   }
 
-  unsubscribeComments = onSnapshot(
-    query(
-      collection(db, "polls", props.pollId, "comments"),
-      orderBy("createdAt", "desc"),
-      limit(50),
-    ),
-    (commentsSnap) => {
-      comments.value = commentsSnap.docs.map((commentDoc) => ({
-        id: commentDoc.id,
-        ...commentDoc.data(),
-      }));
-      errorMessage.value = "";
-    },
-    () => {
-      errorMessage.value = "No se pudieron cargar los comentarios.";
-    },
-  );
+  try {
+    const commentsSnap = await getDocs(
+      query(
+        collection(db, "polls", props.pollId, "comments"),
+        orderBy("createdAt", "desc"),
+        limit(50),
+      ),
+    );
+    comments.value = commentsSnap.docs.map((commentDoc) => ({
+      id: commentDoc.id,
+      ...commentDoc.data(),
+    }));
+    errorMessage.value = "";
+  } catch {
+    errorMessage.value = "No se pudieron cargar los comentarios.";
+  }
 };
+
+const resetAndLoadComments = () => {
+  comments.value = [];
+  loadComments();
+};
+
+const stopCommentsListener = () => {};
 
 const publishComment = async () => {
   const text = trimmedCommentText.value;
@@ -309,6 +314,7 @@ const publishComment = async () => {
     if (!isAdminUser.value) {
       startCooldown();
     }
+    await loadComments();
     window.setTimeout(() => {
       successMessage.value = "";
     }, 2500);
@@ -329,12 +335,19 @@ const removeComment = async (comment) => {
 
   try {
     await deleteDoc(doc(db, "polls", props.pollId, "comments", comment.id));
+    await loadComments();
   } catch {
     errorMessage.value = "No se pudo eliminar el comentario.";
   }
 };
 
-watch(() => props.pollId, listenComments);
+watch(
+  () => props.pollId,
+  () => {
+    stopCommentsListener();
+    resetAndLoadComments();
+  },
+);
 watch(comments, () => {
   if (currentCommentsPage.value > totalCommentPages.value) {
     currentCommentsPage.value = totalCommentPages.value;
@@ -342,22 +355,19 @@ watch(comments, () => {
 });
 
 const listenCurrentUserProfile = (user) => {
-  unsubscribeUserProfile?.();
   currentUserProfile.value = null;
 
   if (!user || user.isAnonymous) {
     return;
   }
 
-  unsubscribeUserProfile = onSnapshot(
-    doc(db, "users", user.uid),
-    (userSnap) => {
+  getDoc(doc(db, "users", user.uid))
+    .then((userSnap) => {
       currentUserProfile.value = userSnap.exists() ? userSnap.data() : null;
-    },
-    () => {
+    })
+    .catch(() => {
       currentUserProfile.value = null;
-    },
-  );
+    });
 };
 
 onMounted(() => {
@@ -365,19 +375,35 @@ onMounted(() => {
     currentUser.value = user;
     listenCurrentUserProfile(user);
   });
-  listenComments();
+
+  if ("IntersectionObserver" in window && commentsRoot.value) {
+    commentsObserver = new IntersectionObserver(
+      ([entry]) => {
+        isCommentsVisible.value = Boolean(entry?.isIntersecting);
+        if (isCommentsVisible.value) {
+          loadComments();
+        } else {
+          stopCommentsListener();
+        }
+      },
+      { rootMargin: "200px 0px" },
+    );
+    commentsObserver.observe(commentsRoot.value);
+  } else {
+    isCommentsVisible.value = true;
+    loadComments();
+  }
 });
 
 onUnmounted(() => {
   unsubscribeAuth?.();
-  unsubscribeComments?.();
-  unsubscribeUserProfile?.();
+  commentsObserver?.disconnect();
   window.clearInterval(cooldownTimer);
 });
 </script>
 
 <template>
-  <section class="mx-auto mt-10 max-w-5xl">
+  <section ref="commentsRoot" class="mx-auto mt-10 max-w-5xl">
     <div class="mb-5 flex items-end justify-between">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.32em] text-cyan-300">

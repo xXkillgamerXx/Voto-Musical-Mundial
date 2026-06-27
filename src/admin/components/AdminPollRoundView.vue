@@ -1,11 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
-  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -51,10 +51,6 @@ const contestantToRemove = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 const copiedEmbed = ref('')
-let unsubscribePoll = null
-let unsubscribeRound = null
-let unsubscribeRounds = null
-let unsubscribeRoundContestants = null
 
 const roundArtistIds = computed(() => new Set(roundContestants.value.map((contestant) => contestant.artistId)))
 const currentRoundIndex = computed(() => rounds.value.findIndex((item) => item.id === props.roundId))
@@ -242,43 +238,34 @@ const loadArtists = async () => {
   }))
 }
 
-const listenBaseData = () => {
-  unsubscribePoll = onSnapshot(doc(db, 'polls', props.pollId), (pollSnap) => {
-    poll.value = pollSnap.exists() ? { id: pollSnap.id, ...pollSnap.data() } : null
-  })
+const listenBaseData = async () => {
+  const [pollSnap, roundSnap, roundsSnap, contestantsSnap] = await Promise.all([
+    getDoc(doc(db, 'polls', props.pollId)),
+    getDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId)),
+    getDocs(query(collection(db, 'polls', props.pollId, 'rounds'), orderBy('createdAt', 'asc'))),
+    getDocs(collection(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants')),
+  ])
 
-  unsubscribeRound = onSnapshot(doc(db, 'polls', props.pollId, 'rounds', props.roundId), (roundSnap) => {
+  poll.value = pollSnap.exists() ? { id: pollSnap.id, ...pollSnap.data() } : null
     round.value = roundSnap.exists() ? { id: roundSnap.id, ...roundSnap.data() } : null
 
-    if (round.value) {
-      roundForm.value = {
-        title: round.value.title || '',
-        type: round.value.type || 'list',
-        status: round.value.status || 'draft',
-        endAt: toDatetimeLocal(round.value.endAt),
-      }
+  if (round.value) {
+    roundForm.value = {
+      title: round.value.title || '',
+      type: round.value.type || 'list',
+      status: round.value.status || 'draft',
+      endAt: toDatetimeLocal(round.value.endAt),
     }
-  })
+  }
 
-  unsubscribeRounds = onSnapshot(
-    query(collection(db, 'polls', props.pollId, 'rounds'), orderBy('createdAt', 'asc')),
-    (roundsSnap) => {
-      rounds.value = roundsSnap.docs.map((roundDoc) => ({
-        id: roundDoc.id,
-        ...roundDoc.data(),
-      }))
-    },
-  )
-
-  unsubscribeRoundContestants = onSnapshot(
-    collection(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants'),
-    (contestantsSnap) => {
-      roundContestants.value = contestantsSnap.docs.map((contestantDoc) => ({
-        id: contestantDoc.id,
-        ...contestantDoc.data(),
-      }))
-    },
-  )
+  rounds.value = roundsSnap.docs.map((roundDoc) => ({
+    id: roundDoc.id,
+    ...roundDoc.data(),
+  }))
+  roundContestants.value = contestantsSnap.docs.map((contestantDoc) => ({
+    id: contestantDoc.id,
+    ...contestantDoc.data(),
+  }))
 }
 
 const addRoundContestant = async (artist) => {
@@ -484,14 +471,7 @@ const deleteRound = async () => {
 
 onMounted(async () => {
   await loadArtists()
-  listenBaseData()
-})
-
-onUnmounted(() => {
-  unsubscribePoll?.()
-  unsubscribeRound?.()
-  unsubscribeRounds?.()
-  unsubscribeRoundContestants?.()
+  await listenBaseData()
 })
 </script>
 

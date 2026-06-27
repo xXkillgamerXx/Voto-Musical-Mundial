@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   collection,
-  onSnapshot,
+  getDocs,
+  limit,
   orderBy,
   query,
 } from 'firebase/firestore'
@@ -17,7 +18,6 @@ const loadedSources = ref({
   users: false,
   artists: false,
 })
-const unsubscribers = []
 
 const quickActions = [
   { labelKey: 'admin.dashboard.quickActions.createPoll', href: '/admin/votaciones/crear', icon: 'fa-solid fa-plus' },
@@ -57,22 +57,19 @@ const markLoaded = (source) => {
   }
 }
 
-const handleSnapshotError = (source) => {
+const handleLoadError = (source) => {
   errorMessage.value = 'admin.dashboard.errors.load'
   markLoaded(source)
 }
 
-const subscribe = (source, targetQuery, onData) => {
-  const unsubscribe = onSnapshot(
-    targetQuery,
-    (snapshot) => {
-      onData(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })))
-      markLoaded(source)
-    },
-    () => handleSnapshotError(source),
-  )
-
-  unsubscribers.push(unsubscribe)
+const loadSource = async (source, targetQuery, onData) => {
+  try {
+    const snapshot = await getDocs(targetQuery)
+    onData(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })))
+    markLoaded(source)
+  } catch {
+    handleLoadError(source)
+  }
 }
 
 const isLoading = computed(() => Object.values(loadedSources.value).some((isLoaded) => !isLoaded))
@@ -225,19 +222,15 @@ const recentActivity = computed(() => {
 })
 
 onMounted(() => {
-  subscribe('polls', query(collection(db, 'polls'), orderBy('createdAt', 'desc')), (items) => {
+  loadSource('polls', query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(100)), (items) => {
     polls.value = items
   })
-  subscribe('users', query(collection(db, 'users'), orderBy('createdAt', 'desc')), (items) => {
+  loadSource('users', query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100)), (items) => {
     users.value = items
   })
-  subscribe('artists', query(collection(db, 'artists'), orderBy('createdAt', 'desc')), (items) => {
+  loadSource('artists', query(collection(db, 'artists'), orderBy('createdAt', 'desc'), limit(100)), (items) => {
     artists.value = items
   })
-})
-
-onUnmounted(() => {
-  unsubscribers.forEach((unsubscribe) => unsubscribe())
 })
 </script>
 

@@ -1,20 +1,22 @@
-import { collection, getDocs, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 
 const ARTISTS_CACHE_MS = 5 * 60 * 1000;
 const POLLS_CACHE_MS = 90 * 1000;
 const RANKING_CACHE_MS = 2 * 60 * 1000;
+const PUBLIC_ARTISTS_LIMIT = 250;
+const PUBLIC_POLLS_LIMIT = 100;
+const LIVE_POLLS_LIMIT = 12;
+const RANKING_ARTISTS_LIMIT = 100;
 
 let artistsCache = {
   loadedAt: 0,
   rows: [],
   promise: null,
-  unsubscribe: null,
   subscribers: new Set(),
 };
 
 let livePollsCache = {
   rows: [],
-  unsubscribe: null,
   subscribers: new Set(),
 };
 
@@ -22,7 +24,6 @@ let pollsCache = {
   loadedAt: 0,
   rows: [],
   promise: null,
-  unsubscribe: null,
   subscribers: new Set(),
 };
 
@@ -46,7 +47,7 @@ export const getArtistsCached = async (db, maxAgeMs = ARTISTS_CACHE_MS) => {
   }
 
   if (!artistsCache.promise) {
-    artistsCache.promise = getDocs(collection(db, "artists"))
+    artistsCache.promise = getDocs(query(collection(db, "artists"), limit(PUBLIC_ARTISTS_LIMIT)))
       .then((artistsSnap) => {
         artistsCache.rows = artistsSnap.docs.map((artistDoc) => ({
           id: artistDoc.id,
@@ -72,15 +73,9 @@ export const getArtistFollowersCountCached = async (db, artistId, fallbackCount 
     return followersCountCache.get(artistId);
   }
 
-  try {
-    const followersSnap = await getDocs(collection(db, "artists", artistId, "followers"));
-    followersCountCache.set(artistId, followersSnap.size);
-    return followersSnap.size;
-  } catch {
-    const count = Number(fallbackCount || 0);
-    followersCountCache.set(artistId, count);
-    return count;
-  }
+  const count = Number(fallbackCount || 0);
+  followersCountCache.set(artistId, count);
+  return count;
 };
 
 export const subscribeArtistsCached = (db, callback) => {
@@ -90,23 +85,12 @@ export const subscribeArtistsCached = (db, callback) => {
     callback(artistsCache.rows);
   }
 
-  if (!artistsCache.unsubscribe) {
-    artistsCache.unsubscribe = onSnapshot(collection(db, "artists"), (artistsSnap) => {
-      artistsCache.rows = artistsSnap.docs.map((artistDoc) => ({
-        id: artistDoc.id,
-        ...artistDoc.data(),
-      }));
-      artistsCache.loadedAt = Date.now();
-      notify(artistsCache.subscribers, artistsCache.rows);
-    });
-  }
+  getArtistsCached(db)
+    .then((rows) => notify(artistsCache.subscribers, rows))
+    .catch(() => {});
 
   return () => {
     artistsCache.subscribers.delete(callback);
-    if (!artistsCache.subscribers.size && artistsCache.unsubscribe) {
-      artistsCache.unsubscribe();
-      artistsCache.unsubscribe = null;
-    }
   };
 };
 
@@ -118,7 +102,9 @@ export const getPollsCached = async (db, maxAgeMs = POLLS_CACHE_MS) => {
   }
 
   if (!pollsCache.promise) {
-    pollsCache.promise = getDocs(query(collection(db, "polls"), orderBy("createdAt", "desc")))
+    pollsCache.promise = getDocs(
+      query(collection(db, "polls"), orderBy("createdAt", "desc"), limit(PUBLIC_POLLS_LIMIT)),
+    )
       .then((pollsSnap) => {
         pollsCache.rows = pollsSnap.docs.map((pollDoc) => ({
           id: pollDoc.id,
@@ -142,27 +128,12 @@ export const subscribePollsCached = (db, callback, onError = () => {}) => {
     callback(pollsCache.rows);
   }
 
-  if (!pollsCache.unsubscribe) {
-    pollsCache.unsubscribe = onSnapshot(
-      query(collection(db, "polls"), orderBy("createdAt", "desc")),
-      (pollsSnap) => {
-        pollsCache.rows = pollsSnap.docs.map((pollDoc) => ({
-          id: pollDoc.id,
-          ...pollDoc.data(),
-        }));
-        pollsCache.loadedAt = Date.now();
-        notify(pollsCache.subscribers, pollsCache.rows);
-      },
-      onError,
-    );
-  }
+  getPollsCached(db)
+    .then((rows) => notify(pollsCache.subscribers, rows))
+    .catch(onError);
 
   return () => {
     pollsCache.subscribers.delete(callback);
-    if (!pollsCache.subscribers.size && pollsCache.unsubscribe) {
-      pollsCache.unsubscribe();
-      pollsCache.unsubscribe = null;
-    }
   };
 };
 
@@ -173,126 +144,37 @@ export const subscribeLivePollsCached = (db, callback, onError = () => {}) => {
     callback(livePollsCache.rows);
   }
 
-  if (!livePollsCache.unsubscribe) {
-    livePollsCache.unsubscribe = onSnapshot(
-      query(collection(db, "polls"), where("status", "in", ["live", "selecting_winners"])),
-      (pollsSnap) => {
+  getDocs(
+      query(
+        collection(db, "polls"),
+        where("status", "in", ["live", "selecting_winners"]),
+        limit(LIVE_POLLS_LIMIT),
+      ),
+    )
+    .then((pollsSnap) => {
         livePollsCache.rows = pollsSnap.docs.map((pollDoc) => ({
           id: pollDoc.id,
           ...pollDoc.data(),
         }));
         notify(livePollsCache.subscribers, livePollsCache.rows);
-      },
-      onError,
-    );
-  }
+      })
+    .catch(onError);
 
   return () => {
     livePollsCache.subscribers.delete(callback);
-    if (!livePollsCache.subscribers.size && livePollsCache.unsubscribe) {
-      livePollsCache.unsubscribe();
-      livePollsCache.unsubscribe = null;
-    }
   };
 };
 
-const getArtistFieldId = (row) => row?.artistId || row?.id || "";
-
-const addVotesToArtist = (totalsByArtist, artistId, amount) => {
-  if (!artistId || !amount) {
-    return;
-  }
-
-  totalsByArtist.set(
-    artistId,
-    Number(totalsByArtist.get(artistId) || 0) + Number(amount || 0),
-  );
-};
-
-const loadContestantVotes = async (contestantsRef, voteShardsRef, totalsByArtist) => {
-  const [contestantsSnap, shardsSnap] = await Promise.all([
-    getDocs(contestantsRef),
-    getDocs(voteShardsRef),
-  ]);
-  const shardVotesByArtist = new Map();
-
-  shardsSnap.docs.forEach((shardDoc) => {
-    const shard = shardDoc.data();
-    const artistId = shard.artistId;
-
-    if (!artistId) {
-      return;
-    }
-
-    shardVotesByArtist.set(
-      artistId,
-      Number(shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
-    );
-  });
-
-  contestantsSnap.docs.forEach((contestantDoc) => {
-    const contestant = contestantDoc.data();
-    const artistId = getArtistFieldId({ id: contestantDoc.id, ...contestant });
-    const legacyVotes = Number(contestant.votes || 0);
-    const manualVotes = Number(contestant.manualVotes || 0);
-    const shardVotes = Number(shardVotesByArtist.get(artistId) || 0);
-
-    addVotesToArtist(totalsByArtist, artistId, legacyVotes + manualVotes + shardVotes);
-    shardVotesByArtist.delete(artistId);
-  });
-
-  shardVotesByArtist.forEach((votes, artistId) => {
-    addVotesToArtist(totalsByArtist, artistId, votes);
-  });
-};
-
-const loadVoteTotalsByArtist = async (db) => {
-  const totalsByArtist = new Map();
-  const pollsSnap = await getDocs(collection(db, "polls"));
-
-  await Promise.all(
-    pollsSnap.docs.map(async (pollDoc) => {
-      const pollId = pollDoc.id;
-
-      await loadContestantVotes(
-        collection(db, "polls", pollId, "contestants"),
-        collection(db, "polls", pollId, "voteShards"),
-        totalsByArtist,
-      ).catch(() => {});
-
-      const roundsSnap = await getDocs(collection(db, "polls", pollId, "rounds")).catch(
-        () => null,
-      );
-
-      if (!roundsSnap) {
-        return;
-      }
-
-      await Promise.all(
-        roundsSnap.docs.map((roundDoc) =>
-          loadContestantVotes(
-            collection(db, "polls", pollId, "rounds", roundDoc.id, "contestants"),
-            collection(db, "polls", pollId, "rounds", roundDoc.id, "voteShards"),
-            totalsByArtist,
-          ).catch(() => {}),
-        ),
-      );
-    }),
-  );
-
-  return totalsByArtist;
-};
-
-const buildRankingArtistRows = (artistRows, voteTotalsByArtist = new Map()) =>
+const buildRankingArtistRows = (artistRows) =>
   artistRows.map((artist) => {
     const followersCount = Number(artist.followersCount || 0);
-    const totalVotes = Number(voteTotalsByArtist.get(artist.id) ?? artist.totalVotes ?? 0);
+    const totalVotes = Number(artist.totalVotes || 0);
 
     return {
       ...artist,
       followersCount,
       totalVotes,
-      popularityScore: Math.round(followersCount * 10 + totalVotes),
+      popularityScore: Number(artist.popularityScore ?? Math.round(followersCount * 10 + totalVotes)),
     };
   });
 
@@ -304,12 +186,21 @@ export const getRankingPopularityCached = async (db, maxAgeMs = RANKING_CACHE_MS
   }
 
   if (!rankingPopularityCache.promise) {
-    rankingPopularityCache.promise = Promise.all([
-      getArtistsCached(db),
-      loadVoteTotalsByArtist(db),
-    ])
-      .then(([artistRows, voteTotalsByArtist]) => {
-        rankingPopularityCache.rows = buildRankingArtistRows(artistRows, voteTotalsByArtist);
+    rankingPopularityCache.promise = getDocs(
+      query(
+        collection(db, "artists"),
+        orderBy("popularityScore", "desc"),
+        limit(RANKING_ARTISTS_LIMIT),
+      ),
+    )
+      .then((artistsSnap) => {
+        const artistRows = artistsSnap.docs.map((artistDoc) => ({
+          id: artistDoc.id,
+          ...artistDoc.data(),
+        }));
+        rankingPopularityCache.rows = buildRankingArtistRows(artistRows)
+          .sort((current, next) => Number(next.popularityScore || 0) - Number(current.popularityScore || 0))
+          .slice(0, RANKING_ARTISTS_LIMIT);
         rankingPopularityCache.loadedAt = Date.now();
         return rankingPopularityCache.rows;
       })
@@ -324,17 +215,15 @@ export const getRankingPopularityCached = async (db, maxAgeMs = RANKING_CACHE_MS
 export const getArtistsWithFollowersCached = async (db) => {
   const artistRows = await getArtistsCached(db);
 
-  return Promise.all(
-    artistRows.map(async (artist) => {
-      const followersCount = await getArtistFollowersCountCached(db, artist.id, artist.followersCount);
+  return artistRows.map((artist) => {
+    const followersCount = Number(artist.followersCount || 0);
 
-      return {
-        ...artist,
-        followersCount,
-        popularityScore: Number(artist.popularityScore || followersCount * 10 || 0),
-      };
-    }),
-  );
+    return {
+      ...artist,
+      followersCount,
+      popularityScore: Number(artist.popularityScore || followersCount * 10 || 0),
+    };
+  });
 };
 
 const withTimeout = (promise, timeoutMs = 4500) =>
@@ -346,23 +235,12 @@ const withTimeout = (promise, timeoutMs = 4500) =>
   ]);
 
 export const preloadRouteData = (db, path) => {
-  if (path === "/ranking-popularity") {
-    return withTimeout(getRankingPopularityCached(db));
-  }
-
-  if (path === "/artistas") {
-    return withTimeout(getArtistsWithFollowersCached(db));
-  }
-
   if (path === "/votaciones") {
     return withTimeout(getPollsCached(db));
   }
 
   if (path === "/") {
-    return withTimeout(Promise.all([
-      getArtistsCached(db),
-      getPollsCached(db),
-    ]));
+    return withTimeout(getPollsCached(db));
   }
 
   return Promise.resolve();

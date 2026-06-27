@@ -3,15 +3,14 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  onSnapshot,
+  increment,
   query,
   serverTimestamp,
-  setDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
@@ -32,7 +31,6 @@ const isUnfollowModalOpen = ref(false);
 const errorMessage = ref("");
 
 let unsubscribeAuth = null;
-let unsubscribeFollowDoc = null;
 
 const getArtistImage = (artistData) =>
   artistData?.image ||
@@ -52,15 +50,14 @@ const getArtistBanner = (artistData) =>
 
 const getArtistGroup = (artistData) =>
   artistData?.group || artistData?.fandom || "";
-const getContestantArtistId = (contestant, docId) =>
-  contestant?.artistId || docId || "";
 
 const formattedFollowers = computed(() =>
   followersCount.value.toLocaleString(locale.value),
 );
 
 const totalVotes = computed(() =>
-  artistPolls.value.reduce((total, poll) => total + poll.votes, 0),
+  artistPolls.value.reduce((total, poll) => total + poll.votes, 0)
+    || Number(artist.value?.totalVotes || 0),
 );
 
 const averageSupport = computed(() => {
@@ -145,89 +142,18 @@ const loadArtist = async () => {
 };
 
 const listenFollowState = () => {
-  unsubscribeFollowDoc?.();
-
   if (!currentUser.value || !artist.value?.id) {
     isFollowing.value = false;
     return;
   }
 
-  unsubscribeFollowDoc = onSnapshot(
-    doc(db, "artists", artist.value.id, "followers", currentUser.value.uid),
-    (followSnap) => {
+  getDoc(doc(db, "artists", artist.value.id, "followers", currentUser.value.uid))
+    .then((followSnap) => {
       isFollowing.value = followSnap.exists();
-    },
-  );
-};
-
-const loadFollowersCount = async () => {
-  if (!artist.value?.id) {
-    followersCount.value = 0;
-    return;
-  }
-
-  try {
-    const followersSnap = await getDocs(
-      collection(db, "artists", artist.value.id, "followers"),
-    );
-    followersCount.value = followersSnap.size;
-  } catch {
-    followersCount.value = Number(artist.value?.followersCount || 0);
-  }
-};
-
-const loadContestantVotesForArtist = async (contestantsRef, voteShardsRef, artistId) => {
-  const [contestantsSnap, shardsSnap] = await Promise.all([
-    getDocs(contestantsRef),
-    getDocs(voteShardsRef),
-  ]);
-  const shardVotesByArtist = new Map();
-  let votes = 0;
-  let totalVotes = 0;
-
-  shardsSnap.docs.forEach((shardDoc) => {
-    const shard = shardDoc.data();
-    const shardArtistId = shard.artistId;
-
-    if (!shardArtistId) {
-      return;
-    }
-
-    shardVotesByArtist.set(
-      shardArtistId,
-      Number(shardVotesByArtist.get(shardArtistId) || 0) + Number(shard.votes || 0),
-    );
-  });
-
-  contestantsSnap.docs.forEach((contestantDoc) => {
-    const contestant = contestantDoc.data();
-    const contestantArtistId = getContestantArtistId(contestant, contestantDoc.id);
-    const contestantVotes = Number(contestant.votes || 0)
-      + Number(contestant.manualVotes || 0)
-      + Number(shardVotesByArtist.get(contestantArtistId) || 0);
-
-    totalVotes += contestantVotes;
-
-    if (contestantArtistId === artistId) {
-      votes += contestantVotes;
-    }
-
-    shardVotesByArtist.delete(contestantArtistId);
-  });
-
-  shardVotesByArtist.forEach((shardVotes, shardArtistId) => {
-    totalVotes += shardVotes;
-
-    if (shardArtistId === artistId) {
-      votes += shardVotes;
-    }
-  });
-
-  return {
-    votes,
-    totalVotes,
-    percent: totalVotes ? (votes / totalVotes) * 100 : 0,
-  };
+    })
+    .catch(() => {
+      isFollowing.value = false;
+    });
 };
 
 const normalizeStoredPollStats = () => {
@@ -251,65 +177,7 @@ const loadArtistPollStats = async () => {
     return;
   }
 
-  try {
-    const pollsSnap = await getDocs(collection(db, "polls"));
-    const calculatedStats = [];
-
-    await Promise.all(
-      pollsSnap.docs.map(async (pollDoc) => {
-        const pollId = pollDoc.id;
-        const poll = { id: pollId, ...pollDoc.data() };
-        const rootResult = await loadContestantVotesForArtist(
-          collection(db, "polls", pollId, "contestants"),
-          collection(db, "polls", pollId, "voteShards"),
-          artist.value.id,
-        ).catch(() => null);
-
-        if (rootResult?.votes) {
-          calculatedStats.push({
-            title: poll.title || "Votación",
-            status: poll.status || "",
-            ...rootResult,
-          });
-        }
-
-        const roundsSnap = await getDocs(collection(db, "polls", pollId, "rounds")).catch(
-          () => null,
-        );
-
-        if (!roundsSnap) {
-          return;
-        }
-
-        await Promise.all(
-          roundsSnap.docs.map(async (roundDoc) => {
-            const round = { id: roundDoc.id, ...roundDoc.data() };
-            const roundResult = await loadContestantVotesForArtist(
-              collection(db, "polls", pollId, "rounds", roundDoc.id, "contestants"),
-              collection(db, "polls", pollId, "rounds", roundDoc.id, "voteShards"),
-              artist.value.id,
-            ).catch(() => null);
-
-            if (!roundResult?.votes) {
-              return;
-            }
-
-            calculatedStats.push({
-              title: round.title ? `${poll.title || "Votación"} · ${round.title}` : poll.title || "Votación",
-              status: round.status || poll.status || "",
-              ...roundResult,
-            });
-          }),
-        );
-      }),
-    );
-
-    artistPolls.value = calculatedStats
-      .sort((current, next) => next.votes - current.votes)
-      .slice(0, 6);
-  } catch {
-    artistPolls.value = normalizeStoredPollStats();
-  }
+  artistPolls.value = normalizeStoredPollStats();
 };
 
 const toggleFollow = async () => {
@@ -345,6 +213,7 @@ const toggleFollow = async () => {
       "followingArtists",
       artist.value.id,
     );
+    const artistRef = doc(db, "artists", artist.value.id);
 
     const followData = {
       artistId: artist.value.id,
@@ -355,11 +224,20 @@ const toggleFollow = async () => {
       createdAt: serverTimestamp(),
     };
 
-    await Promise.all([
-      setDoc(artistFollowRef, followData),
-      setDoc(userFollowRef, followData),
-    ]);
+    const batch = writeBatch(db);
+    batch.set(artistFollowRef, followData);
+    batch.set(userFollowRef, followData);
+    batch.update(artistRef, {
+      followersCount: increment(1),
+      popularityScore: increment(10),
+    });
+    await batch.commit();
     followersCount.value += 1;
+    artist.value = {
+      ...artist.value,
+      followersCount: followersCount.value,
+      popularityScore: Number(artist.value.popularityScore || 0) + 10,
+    };
   } catch {
     errorMessage.value = translate("artists.profileErrors.follow");
   } finally {
@@ -390,9 +268,22 @@ const confirmUnfollow = async () => {
       "followingArtists",
       artist.value.id,
     );
+    const artistRef = doc(db, "artists", artist.value.id);
 
-    await Promise.all([deleteDoc(artistFollowRef), deleteDoc(userFollowRef)]);
+    const batch = writeBatch(db);
+    batch.delete(artistFollowRef);
+    batch.delete(userFollowRef);
+    batch.update(artistRef, {
+      followersCount: increment(-1),
+      popularityScore: increment(-10),
+    });
+    await batch.commit();
     followersCount.value = Math.max(0, followersCount.value - 1);
+    artist.value = {
+      ...artist.value,
+      followersCount: followersCount.value,
+      popularityScore: Math.max(0, Number(artist.value.popularityScore || 0) - 10),
+    };
     isUnfollowModalOpen.value = false;
   } catch {
     errorMessage.value = translate("artists.profileErrors.follow");
@@ -408,13 +299,11 @@ onMounted(async () => {
   });
 
   await loadArtist();
-  await loadFollowersCount();
   listenFollowState();
 });
 
 onUnmounted(() => {
   unsubscribeAuth?.();
-  unsubscribeFollowDoc?.();
 });
 </script>
 

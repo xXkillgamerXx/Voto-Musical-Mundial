@@ -1,11 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
-  onSnapshot,
+  getDocs,
   orderBy,
   query,
   serverTimestamp,
@@ -225,7 +225,6 @@ const isMissionModalOpen = ref(false);
 const isTemplatesModalOpen = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
-let unsubscribeMissions = null;
 
 const formTitle = computed(() =>
   editingMissionId.value ? "Editar mision" : "Crear mision",
@@ -443,25 +442,18 @@ const removeMission = async (mission) => {
   }
 };
 
-onMounted(() => {
-  unsubscribeMissions = onSnapshot(
-    query(collection(db, "missions"), orderBy("order", "asc")),
-    (missionsSnap) => {
+onMounted(async () => {
+  try {
+    const missionsSnap = await getDocs(query(collection(db, "missions"), orderBy("order", "asc")));
       missions.value = missionsSnap.docs.map((missionDoc) => ({
         id: missionDoc.id,
         ...missionDoc.data(),
       }));
       isLoading.value = false;
-    },
-    () => {
-      missions.value = [];
-      isLoading.value = false;
-    },
-  );
-});
-
-onUnmounted(() => {
-  unsubscribeMissions?.();
+  } catch {
+    missions.value = [];
+    isLoading.value = false;
+  }
 });
 </script>
 

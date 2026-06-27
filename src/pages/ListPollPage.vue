@@ -67,7 +67,6 @@ let unsubscribeContestants = null;
 let unsubscribeRounds = null;
 let unsubscribeUserPoints = null;
 let unsubscribePublicResults = null;
-let unsubscribeVoteShards = null;
 let clockTimer = null;
 let voteQueue = null;
 let listeningContestantsKey = "";
@@ -182,11 +181,6 @@ const getArtistImage = (artist) =>
   "";
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
-
-const getRoundCollectionRef = (pollId, roundId, collectionName) =>
-  roundId
-    ? collection(db, "polls", pollId, "rounds", roundId, collectionName)
-    : collection(db, "polls", pollId, collectionName);
 
 const getOptimisticVoteTotal = (artistId) =>
   Number(optimisticVoteTotals.value[artistId] || 0);
@@ -930,20 +924,6 @@ const percentForMatch = (contestant, match) => {
   return `${((displayVoteCountFor(contestant) / totalMatchVotes) * 100).toFixed(2)}%`;
 };
 
-const mergeContestantsWithShardVotes = (baseContestants, shardVotesByArtist) =>
-  baseContestants.map((contestant) => {
-    const artistId = contestant.artistId || contestant.id;
-    const legacyVotes = Number(contestant.votes || 0);
-    const manualVotes = Number(contestant.manualVotes || 0);
-    const shardVotes = Number(shardVotesByArtist.get(artistId) || 0);
-
-    return {
-      ...contestant,
-      votes: legacyVotes + shardVotes,
-      totalVotes: legacyVotes + manualVotes + shardVotes,
-    };
-  });
-
 const setOptimisticVoteTotal = (artistId, totalVotes) => {
   if (!artistId) {
     return;
@@ -1130,23 +1110,13 @@ const listenContestants = async (pollId) => {
 
   unsubscribeContestants?.();
   unsubscribePublicResults?.();
-  unsubscribeVoteShards?.();
   listeningContestantsKey = contestantsKey;
 
   try {
     const baseContestants = await loadContestantMetadata(db, pollId, roundId);
     let latestPublicResults = null;
-    let latestShardVotesByArtist = null;
 
     const applyLatestResults = () => {
-      if (latestShardVotesByArtist) {
-        contestants.value = mergeContestantsWithShardVotes(
-          baseContestants,
-          latestShardVotesByArtist,
-        );
-        return;
-      }
-
       contestants.value = latestPublicResults
         ? mergeContestantsWithPublicResults(
             baseContestants,
@@ -1171,32 +1141,6 @@ const listenContestants = async (pollId) => {
         errorMessage.value = translate("polls.detail.liveResultsError");
       },
     });
-    unsubscribeVoteShards = onSnapshot(
-      getRoundCollectionRef(pollId, roundId, "voteShards"),
-      (shardsSnap) => {
-        const shardVotesByArtist = new Map();
-
-        shardsSnap.docs.forEach((shardDoc) => {
-          const shard = shardDoc.data();
-          const artistId = shard.artistId;
-
-          if (!artistId) {
-            return;
-          }
-
-          shardVotesByArtist.set(
-            artistId,
-            (shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
-          );
-        });
-
-        latestShardVotesByArtist = shardVotesByArtist;
-        applyLatestResults();
-      },
-      () => {
-        errorMessage.value = translate("polls.detail.liveResultsError");
-      },
-    );
   } catch {
     errorMessage.value = translate("polls.detail.contestantsError");
   }
@@ -1366,19 +1310,13 @@ const refreshAnonymousVoteStatuses = async () => {
   isLoadingAnonymousStatus.value = true;
 
   try {
-    const statuses = await Promise.all(
-      anonymousVoteScopes.value.map(async (scope) => {
-        const result = await getAnonymousVoteStatus({
-          pollId: poll.value.id,
-          roundId: activeRound.value?.id || null,
-          voteScope: scope === anonymousDefaultScope ? null : scope,
-        });
+    const result = await getAnonymousVoteStatus({
+      pollId: poll.value.id,
+      roundId: activeRound.value?.id || null,
+      voteScopes: anonymousVoteScopes.value,
+    });
 
-        return [scope, result.data || null];
-      }),
-    );
-
-    anonymousVoteStatuses.value = Object.fromEntries(statuses);
+    anonymousVoteStatuses.value = result.data?.statuses || {};
   } catch {
     anonymousVoteStatuses.value = {};
   } finally {
@@ -1760,7 +1698,6 @@ onUnmounted(() => {
   unsubscribePoll?.();
   unsubscribeContestants?.();
   unsubscribePublicResults?.();
-  unsubscribeVoteShards?.();
   unsubscribeRounds?.();
   unsubscribeUserPoints?.();
   embedResizeObserver?.disconnect();

@@ -25,7 +25,11 @@ class _ArtistsPageState extends State<ArtistsPage> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('artists').snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('artists')
+          .orderBy('popularityScore', descending: true)
+          .limit(50)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const _ArtistsStateMessage(
@@ -267,21 +271,12 @@ class _ArtistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('artists')
-          .doc(artist.id)
-          .collection('followers')
-          .snapshots(),
-      builder: (context, snapshot) {
-        final followersCount = snapshot.hasData
-            ? snapshot.data!.size
-            : artist.followersCount;
-        final popularityScore = artist.popularityScore > 0
-            ? artist.popularityScore
-            : followersCount * 10;
+    final followersCount = artist.followersCount;
+    final popularityScore = artist.popularityScore > 0
+        ? artist.popularityScore
+        : followersCount * 10;
 
-        return Material(
+    return Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
@@ -485,8 +480,6 @@ class _ArtistCard extends StatelessWidget {
               ),
             ),
           ),
-        );
-      },
     );
   }
 }

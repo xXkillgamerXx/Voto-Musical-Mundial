@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 
 const dbMissions = ref([])
@@ -9,7 +9,6 @@ const selectedMission = ref(null)
 const referralCode = ref('')
 let unsubscribeMissions = null
 let unsubscribeAuth = null
-let unsubscribeUserProfile = null
 let isEnsuringReferralCode = false
 
 const fallbackMissions = [
@@ -177,27 +176,24 @@ const performMissionAction = (mission) => {
 }
 
 onMounted(() => {
-  unsubscribeMissions = onSnapshot(
-    query(collection(db, 'missions'), orderBy('order', 'asc')),
-    (missionsSnap) => {
+  getDocs(query(collection(db, 'missions'), orderBy('order', 'asc')))
+    .then((missionsSnap) => {
       dbMissions.value = missionsSnap.docs.map((missionDoc) => ({
         id: missionDoc.id,
         ...missionDoc.data(),
       }))
-    },
-    () => {
+    })
+    .catch(() => {
       dbMissions.value = []
-    },
-  )
+    })
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    unsubscribeUserProfile?.()
     referralCode.value = ''
 
     if (!user || user.isAnonymous) {
       return
     }
 
-    unsubscribeUserProfile = onSnapshot(doc(db, 'users', user.uid), (userSnap) => {
+    getDoc(doc(db, 'users', user.uid)).then((userSnap) => {
       const userData = userSnap.data() || {}
       const code = String(userData.referralCode || userData.username || '').trim().toLowerCase()
       referralCode.value = code
@@ -219,13 +215,12 @@ onMounted(() => {
           isEnsuringReferralCode = false
         })
       }
-    })
+    }).catch(() => {})
   })
 })
 
 onUnmounted(() => {
   unsubscribeMissions?.()
-  unsubscribeUserProfile?.()
   unsubscribeAuth?.()
 })
 </script>

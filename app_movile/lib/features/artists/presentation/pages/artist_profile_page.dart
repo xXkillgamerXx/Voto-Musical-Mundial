@@ -25,24 +25,6 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
   void initState() {
     super.initState();
     _followersCount = widget.artist.followersCount;
-    _loadFollowersCount();
-  }
-
-  Future<void> _loadFollowersCount() async {
-    try {
-      final followersSnap = await FirebaseFirestore.instance
-          .collection('artists')
-          .doc(widget.artist.id)
-          .collection('followers')
-          .get();
-
-      if (mounted) {
-        setState(() => _followersCount = followersSnap.size);
-      }
-    } catch (_) {
-      // Keep the cached counter from the artist document when the subcollection
-      // cannot be counted.
-    }
   }
 
   @override
@@ -166,6 +148,9 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
         .doc(widget.artist.id)
         .collection('followers')
         .doc(user.uid);
+    final artistRef = FirebaseFirestore.instance
+        .collection('artists')
+        .doc(widget.artist.id);
     final userFollowRef = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
@@ -182,7 +167,15 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
           return;
         }
 
-        await Future.wait([artistFollowRef.delete(), userFollowRef.delete()]);
+        final batch = FirebaseFirestore.instance.batch()
+          ..delete(artistFollowRef)
+          ..delete(userFollowRef)
+          ..update(artistRef, {
+            'followersCount': FieldValue.increment(-1),
+            'popularityScore': FieldValue.increment(-10),
+          });
+
+        await batch.commit();
         setState(() {
           _followersCount = _followersCount > 0 ? _followersCount - 1 : 0;
         });
@@ -198,10 +191,15 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
           'createdAt': FieldValue.serverTimestamp(),
         };
 
-        await Future.wait([
-          artistFollowRef.set(followData),
-          userFollowRef.set(followData),
-        ]);
+        final batch = FirebaseFirestore.instance.batch()
+          ..set(artistFollowRef, followData)
+          ..set(userFollowRef, followData)
+          ..update(artistRef, {
+            'followersCount': FieldValue.increment(1),
+            'popularityScore': FieldValue.increment(10),
+          });
+
+        await batch.commit();
         setState(() => _followersCount += 1);
       }
     } catch (_) {

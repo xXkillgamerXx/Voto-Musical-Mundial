@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { onAuthStateChanged, updateProfile } from 'firebase/auth'
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { translate } from '../i18n'
 import { auth, db, storage } from '../firebase'
@@ -28,8 +28,6 @@ const isUploadingBanner = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 let unsubscribeAuth = null
-let unsubscribeUser = null
-let unsubscribeFollowedArtists = null
 
 const isPublicProfile = computed(() => Boolean(routeUsername))
 const isOwnProfile = computed(() => currentUser.value?.uid && currentUser.value.uid === profileUserId.value)
@@ -192,8 +190,6 @@ const saveProfile = async () => {
 }
 
 const listenUserProfileById = (userId, errorText = translate('profile.loadError')) => {
-  unsubscribeUser?.()
-  unsubscribeFollowedArtists?.()
   profileUserId.value = userId || ''
 
   if (!userId) {
@@ -203,27 +199,22 @@ const listenUserProfileById = (userId, errorText = translate('profile.loadError'
     return
   }
 
-  unsubscribeUser = onSnapshot(
-    doc(db, 'users', userId),
-    (userSnap) => {
+  Promise.all([
+    getDoc(doc(db, 'users', userId)),
+    getDocs(collection(db, 'users', userId, 'followingArtists')),
+  ])
+    .then(([userSnap, artistsSnap]) => {
       userProfile.value = userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } : null
-      isLoading.value = false
-    },
-    () => {
-      errorMessage.value = errorText
-      isLoading.value = false
-    },
-  )
-
-  unsubscribeFollowedArtists = onSnapshot(
-    collection(db, 'users', userId, 'followingArtists'),
-    (artistsSnap) => {
       followedArtists.value = artistsSnap.docs.map((artistDoc) => ({
         id: artistDoc.id,
         ...artistDoc.data(),
       }))
-    },
-  )
+      isLoading.value = false
+    })
+    .catch(() => {
+      errorMessage.value = errorText
+      isLoading.value = false
+    })
 }
 
 const loadPublicProfile = async () => {
@@ -266,8 +257,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubscribeAuth?.()
-  unsubscribeUser?.()
-  unsubscribeFollowedArtists?.()
 })
 </script>
 

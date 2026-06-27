@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { computed, onMounted, ref } from 'vue'
+import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore'
 import { translate } from '../i18n'
 import { db } from '../firebase'
 
@@ -9,7 +9,6 @@ const artists = ref([])
 const categories = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
-let unsubscribePolls = null
 
 const getArtist = (artistId) => artists.value.find((artist) => artist.id === artistId)
 const getCategory = (categoryId) => categories.value.find((category) => category.id === categoryId)
@@ -51,7 +50,7 @@ const yearGroups = computed(() => {
 })
 
 const loadArtists = async () => {
-  const artistsSnap = await getDocs(query(collection(db, 'artists'), orderBy('createdAt', 'desc')))
+  const artistsSnap = await getDocs(query(collection(db, 'artists'), limit(250)))
   artists.value = artistsSnap.docs.map((artistDoc) => ({
     id: artistDoc.id,
     ...artistDoc.data(),
@@ -93,35 +92,30 @@ const hydratePollWinner = async (poll) => {
   }
 }
 
-const loadPolls = () => {
+const loadPolls = async () => {
   isLoading.value = true
   errorMessage.value = ''
 
-  unsubscribePolls = onSnapshot(
-    query(collection(db, 'polls'), orderBy('createdAt', 'desc')),
-    async (pollsSnap) => {
+  try {
+    const pollsSnap = await getDocs(
+      query(collection(db, 'polls'), where('status', '==', 'closed'), limit(100)),
+    )
       const pollDocs = pollsSnap.docs.map((pollDoc) => ({
         id: pollDoc.id,
         ...pollDoc.data(),
       }))
       polls.value = await Promise.all(pollDocs.map((poll) => hydratePollWinner(poll)))
       isLoading.value = false
-    },
-    () => {
-      errorMessage.value = translate('hallOfFame.errors.load')
-      isLoading.value = false
-    },
-  )
+  } catch {
+    errorMessage.value = translate('hallOfFame.errors.load')
+    isLoading.value = false
+  }
 }
 
 onMounted(async () => {
   await loadArtists()
   await loadCategories()
   loadPolls()
-})
-
-onUnmounted(() => {
-  unsubscribePolls?.()
 })
 </script>
 

@@ -4,9 +4,9 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   increment,
-  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -316,36 +316,31 @@ const loadArtists = async () => {
 }
 
 const listenPoll = () => {
-  unsubscribePoll = onSnapshot(
-    doc(db, 'polls', props.pollId),
-    (pollSnap) => {
+  getDoc(doc(db, 'polls', props.pollId))
+    .then((pollSnap) => {
       poll.value = pollSnap.exists() ? { id: pollSnap.id, ...pollSnap.data() } : null
-    },
-    () => {
+    })
+    .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenPoll')
-    },
-  )
+    })
 }
 
 const listenContestants = () => {
-  unsubscribeContestants = onSnapshot(
-    collection(db, 'polls', props.pollId, 'contestants'),
-    (contestantsSnap) => {
+  getDocs(collection(db, 'polls', props.pollId, 'contestants'))
+    .then((contestantsSnap) => {
       contestants.value = contestantsSnap.docs.map((contestantDoc) => ({
         id: contestantDoc.id,
         ...contestantDoc.data(),
       }))
-    },
-    () => {
+    })
+    .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenVotes')
-    },
-  )
+    })
 }
 
 const listenRounds = () => {
-  unsubscribeRounds = onSnapshot(
-    query(collection(db, 'polls', props.pollId, 'rounds'), orderBy('createdAt', 'asc')),
-    (roundsSnap) => {
+  getDocs(query(collection(db, 'polls', props.pollId, 'rounds'), orderBy('createdAt', 'asc')))
+    .then((roundsSnap) => {
       rounds.value = roundsSnap.docs.map((roundDoc) => ({
         id: roundDoc.id,
         ...roundDoc.data(),
@@ -357,11 +352,10 @@ const listenRounds = () => {
 
       listenActiveRoundContestants()
       restartResultsAggregator()
-    },
-    () => {
+    })
+    .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenRounds')
-    },
-  )
+    })
 }
 
 const selectRound = (roundId) => {
@@ -381,18 +375,16 @@ const listenActiveRoundContestants = () => {
     return
   }
 
-  unsubscribeActiveRoundContestants = onSnapshot(
-    collection(db, 'polls', props.pollId, 'rounds', activeRound.value.id, 'contestants'),
-    (contestantsSnap) => {
+  getDocs(collection(db, 'polls', props.pollId, 'rounds', activeRound.value.id, 'contestants'))
+    .then((contestantsSnap) => {
       activeRoundContestants.value = contestantsSnap.docs.map((contestantDoc) => ({
         id: contestantDoc.id,
         ...contestantDoc.data(),
       }))
-    },
-    () => {
+    })
+    .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenRoundContestants')
-    },
-  )
+    })
 
   unsubscribePublicResults = subscribePublicResults(db, {
     pollId: props.pollId,

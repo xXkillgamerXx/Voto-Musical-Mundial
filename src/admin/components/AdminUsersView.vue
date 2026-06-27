@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { collection, doc, getDocs, increment, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDocs, increment, limit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { translate } from '../../i18n'
 
@@ -25,7 +25,7 @@ const loadUsers = async () => {
   successMessage.value = ''
 
   try {
-    const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'))
+    const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100))
     const usersSnap = await getDocs(usersQuery)
 
     users.value = usersSnap.docs.map((userDoc) => ({

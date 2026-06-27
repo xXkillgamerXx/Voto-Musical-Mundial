@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { db } from "../firebase";
@@ -85,9 +85,8 @@ const syncActiveRoundEndListeners = (pollRows) => {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      collection(db, "polls", poll.id, "rounds"),
-      (roundsSnap) => {
+    getDocs(collection(db, "polls", poll.id, "rounds"))
+      .then((roundsSnap) => {
         const rounds = roundsSnap.docs.map((roundDoc) => ({
           id: roundDoc.id,
           ...roundDoc.data(),
@@ -108,12 +107,12 @@ const syncActiveRoundEndListeners = (pollRows) => {
               }
             : currentPoll,
         );
-      },
-    );
+      })
+      .catch(() => {});
 
     activeRoundEndListeners.set(poll.id, {
       roundId: poll.activeRoundId || "",
-      unsubscribe,
+      unsubscribe: () => {},
     });
   });
 };

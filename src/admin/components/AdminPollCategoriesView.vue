@@ -1,11 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
-  onSnapshot,
+  getDocs,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
@@ -69,7 +69,6 @@ const isFormOpen = ref(false)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-let unsubscribeCategories = null
 
 const formTitle = computed(() => editingCategoryId.value ? translate('admin.categories.editTitle') : translate('admin.categories.createTitle'))
 const shouldShowForm = computed(() => props.showForm || isFormOpen.value || Boolean(editingCategoryId.value))
@@ -178,10 +177,9 @@ const removeCategory = async (category) => {
   }
 }
 
-onMounted(() => {
-  unsubscribeCategories = onSnapshot(
-    collection(db, 'pollCategories'),
-    (categoriesSnap) => {
+onMounted(async () => {
+  try {
+    const categoriesSnap = await getDocs(collection(db, 'pollCategories'))
       categories.value = categoriesSnap.docs.map((categoryDoc) => ({
         id: categoryDoc.id,
         ...categoryDoc.data(),
@@ -189,12 +187,9 @@ onMounted(() => {
         Number(next.year || 0) - Number(current.year || 0)
           || String(current.name || '').localeCompare(String(next.name || '')),
       )
-    },
-  )
-})
-
-onUnmounted(() => {
-  unsubscribeCategories?.()
+  } catch {
+    categories.value = []
+  }
 })
 </script>
 

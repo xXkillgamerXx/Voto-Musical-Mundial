@@ -1,16 +1,17 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
-  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
 
-const DEFAULT_AGGREGATION_MS = 2000;
+const DEFAULT_AGGREGATION_MS = 30 * 1000;
+const PUBLIC_RESULTS_REFRESH_MS = 30 * 1000;
 const RECENT_ACTIVITY_LIMIT = 12;
 
 const roundCollection = (db, pollId, roundId, collectionName) =>
@@ -65,14 +66,36 @@ export const mergeContestantsWithPublicResults = (contestants, publicResults) =>
 export const subscribePublicResults = (
   db,
   { pollId, roundId, onData, onError = () => {} },
-) =>
-  onSnapshot(
-    roundDoc(db, pollId, roundId, "publicResults", "current"),
-    (resultsSnap) => {
+) => {
+  let stopped = false;
+  let timer = null;
+
+  const load = async () => {
+    if (stopped || !pollId) {
+      return;
+    }
+
+    try {
+      const resultsSnap = await getDoc(roundDoc(db, pollId, roundId, "publicResults", "current"));
+      if (stopped) {
+        return;
+      }
       onData(resultsSnap.exists() ? { id: resultsSnap.id, ...resultsSnap.data() } : null);
-    },
-    onError,
-  );
+    } catch (error) {
+      onError(error);
+    }
+  };
+
+  load();
+  timer = window.setInterval(load, PUBLIC_RESULTS_REFRESH_MS);
+
+  return () => {
+    stopped = true;
+    if (timer) {
+      window.clearInterval(timer);
+    }
+  };
+};
 
 const loadRecentActivity = async (db, pollId, roundId) => {
   const activitySnap = await getDocs(

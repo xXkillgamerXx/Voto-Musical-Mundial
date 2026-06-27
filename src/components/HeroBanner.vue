@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { collection, onSnapshot } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
+import { subscribePublicResults } from '../services/pollResults'
 
 const activeSlide = ref(0)
 const animatedVotes = ref(0)
@@ -105,13 +106,7 @@ const formatPercent = (value) => `${value.toFixed(2)}%`
 const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
 const getArtistName = (artistId) =>
   artists.value.find((artist) => artist.id === artistId)?.name || 'Tu artista favorito'
-const getArtistFieldId = (row) => row?.artistId || row?.id || ''
 const getEffectiveRoundId = (poll) => poll.activeRoundId || activeRoundIds.value[poll.id] || ''
-
-const pollRoundCollection = (poll, collectionName) =>
-  getEffectiveRoundId(poll)
-    ? collection(db, 'polls', poll.id, 'rounds', getEffectiveRoundId(poll), collectionName)
-    : collection(db, 'polls', poll.id, collectionName)
 
 const estimatedStats = (votes) => {
   const safeVotes = Math.max(Number(votes || 0), 1)
@@ -162,53 +157,6 @@ const clearActiveRoundId = (pollId) => {
   activeRoundIds.value = nextRoundIds
 }
 
-const buildResultFromSnapshots = (contestants, shardVotesByArtist) => {
-  const totalsByArtist = new Map()
-
-  contestants.forEach((contestant) => {
-    const artistId = getArtistFieldId(contestant)
-    if (!artistId) {
-      return
-    }
-
-    totalsByArtist.set(artistId, {
-      artistId,
-      votes: Number(contestant.votes || 0),
-      manualVotes: Number(contestant.manualVotes || 0),
-      totalVotes: Number(contestant.totalVotes ?? ((contestant.votes || 0) + (contestant.manualVotes || 0))),
-    })
-  })
-
-  shardVotesByArtist.forEach((shardVotes, artistId) => {
-    const current = totalsByArtist.get(artistId) || {
-      artistId,
-      votes: 0,
-      manualVotes: 0,
-      totalVotes: 0,
-    }
-    const legacyVotes = Number(current.votes || 0)
-    const manualVotes = Number(current.manualVotes || 0)
-
-    totalsByArtist.set(artistId, {
-      artistId,
-      votes: legacyVotes + shardVotes,
-      manualVotes,
-      totalVotes: legacyVotes + manualVotes + shardVotes,
-    })
-  })
-
-  const rankedResults = [...totalsByArtist.values()]
-    .sort((current, next) => next.totalVotes - current.totalVotes)
-  const totalVotes = rankedResults.reduce((total, result) => total + result.totalVotes, 0)
-  const leader = rankedResults[0] || null
-
-  return {
-    totalVotes,
-    leaderArtistId: leader?.artistId || null,
-    leaderVotes: Number(leader?.totalVotes || 0),
-  }
-}
-
 const syncRoundListeners = (pollRows) => {
   const visiblePolls = pollRows.slice(0, 3)
   const visiblePollIds = new Set(visiblePolls.map((poll) => poll.id))
@@ -226,9 +174,8 @@ const syncRoundListeners = (pollRows) => {
       return
     }
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'polls', poll.id, 'rounds'),
-      (roundsSnap) => {
+    getDocs(collection(db, 'polls', poll.id, 'rounds'))
+      .then((roundsSnap) => {
         const rounds = roundsSnap.docs.map((roundDoc) => ({
           id: roundDoc.id,
           ...roundDoc.data(),
@@ -240,14 +187,13 @@ const syncRoundListeners = (pollRows) => {
 
         setActiveRoundId(poll.id, activeRound?.id || '')
         syncPollResultListeners(livePolls.value)
-      },
-      () => {
+      })
+      .catch(() => {
         clearActiveRoundId(poll.id)
         syncPollResultListeners(livePolls.value)
-      },
-    )
+      })
 
-    roundListeners.set(poll.id, unsubscribe)
+    roundListeners.set(poll.id, () => {})
   })
 }
 
@@ -272,53 +218,22 @@ const syncPollResultListeners = (pollRows) => {
       return
     }
 
-    let latestContestants = []
-    let latestShardVotesByArtist = new Map()
-    const applyResult = () => {
-      setPollResult(
-        poll.id,
-        buildResultFromSnapshots(latestContestants, latestShardVotesByArtist),
-      )
-    }
-    const contestantsUnsubscribe = onSnapshot(
-      pollRoundCollection(poll, 'contestants'),
-      (contestantsSnap) => {
-        latestContestants = contestantsSnap.docs.map((contestantDoc) => ({
-          id: contestantDoc.id,
-          ...contestantDoc.data(),
-        }))
-        applyResult()
-      },
-      () => clearPollResult(poll.id),
-    )
-    const shardsUnsubscribe = onSnapshot(
-      pollRoundCollection(poll, 'voteShards'),
-      (shardsSnap) => {
-        const shardVotesByArtist = new Map()
-
-        shardsSnap.docs.forEach((shardDoc) => {
-          const shard = shardDoc.data()
-          const artistId = shard.artistId
-
-          if (!artistId) {
-            return
-          }
-
-          shardVotesByArtist.set(
-            artistId,
-            (shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
-          )
+    const unsubscribe = subscribePublicResults(db, {
+      pollId: poll.id,
+      roundId: getEffectiveRoundId(poll) || null,
+      onData: (publicResults) => {
+        setPollResult(poll.id, publicResults || {
+          totalVotes: Number(poll.totalVotes || 0),
+          leaderArtistId: poll.leaderArtistId || null,
+          leaderVotes: Number(poll.leaderVotes || 0),
         })
-
-        latestShardVotesByArtist = shardVotesByArtist
-        applyResult()
       },
-      () => clearPollResult(poll.id),
-    )
+      onError: () => clearPollResult(poll.id),
+    })
 
     pollResultListeners.set(key, {
       pollId: poll.id,
-      unsubscribers: [contestantsUnsubscribe, shardsUnsubscribe],
+      unsubscribers: [unsubscribe],
     })
   })
 }

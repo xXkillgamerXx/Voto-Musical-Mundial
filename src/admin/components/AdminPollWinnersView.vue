@@ -1,10 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
-  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -27,8 +27,6 @@ const contestants = ref([])
 const selectedWinnerIds = ref([])
 const errorMessage = ref('')
 const successMessage = ref('')
-let unsubscribePoll = null
-let unsubscribeContestants = null
 
 const getArtist = (artistId) => artists.value.find((artist) => artist.id === artistId)
 const getArtistImage = (artist) =>
@@ -52,20 +50,18 @@ const loadArtists = async () => {
   }))
 }
 
-const listenPoll = () => {
-  unsubscribePoll = onSnapshot(doc(db, 'polls', props.pollId), (pollSnap) => {
+const loadPoll = async () => {
+  const pollSnap = await getDoc(doc(db, 'polls', props.pollId))
     poll.value = pollSnap.exists() ? { id: pollSnap.id, ...pollSnap.data() } : null
     selectedWinnerIds.value = poll.value?.winnerIds || []
-  })
 }
 
-const listenContestants = () => {
-  unsubscribeContestants = onSnapshot(collection(db, 'polls', props.pollId, 'contestants'), (contestantsSnap) => {
+const loadContestants = async () => {
+  const contestantsSnap = await getDocs(collection(db, 'polls', props.pollId, 'contestants'))
     contestants.value = contestantsSnap.docs.map((contestantDoc) => ({
       id: contestantDoc.id,
       ...contestantDoc.data(),
     }))
-  })
 }
 
 const toggleWinner = (artistId) => {
@@ -107,6 +103,8 @@ const saveWinners = async () => {
 
     await batch.commit()
     successMessage.value = translate('admin.winners.saved')
+    await loadPoll()
+    await loadContestants()
   } catch {
     errorMessage.value = translate('admin.winners.errors.save')
   }
@@ -114,13 +112,8 @@ const saveWinners = async () => {
 
 onMounted(async () => {
   await loadArtists()
-  listenPoll()
-  listenContestants()
-})
-
-onUnmounted(() => {
-  unsubscribePoll?.()
-  unsubscribeContestants?.()
+  await loadPoll()
+  await loadContestants()
 })
 </script>
 

@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { collection, onSnapshot } from "firebase/firestore";
+import { computed, onMounted, ref } from "vue";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 
 const dbCategories = ref([]);
@@ -12,7 +12,6 @@ const dragState = ref({
   hasMoved: false,
 });
 const suppressCategoryClickUntil = ref(0);
-let unsubscribeCategories = null;
 
 const fallbackCategories = [
   {
@@ -152,9 +151,8 @@ const categories = computed(() => {
 
 onMounted(() => {
   const skeletonDelay = wait(700);
-  unsubscribeCategories = onSnapshot(
-    collection(db, "pollCategories"),
-    (categoriesSnap) => {
+  getDocs(collection(db, "pollCategories"))
+    .then((categoriesSnap) => {
       const categoryRows = categoriesSnap.docs
         .map((categoryDoc) => ({
           id: categoryDoc.id,
@@ -170,12 +168,10 @@ onMounted(() => {
         dbCategories.value = categoryRows;
         isLoadingCategories.value = false;
       });
-    },
-  );
-});
-
-onUnmounted(() => {
-  unsubscribeCategories?.();
+    })
+    .catch(() => {
+      isLoadingCategories.value = false;
+    });
 });
 </script>
 

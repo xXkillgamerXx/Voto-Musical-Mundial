@@ -1,6 +1,6 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { onMounted, ref } from 'vue'
+import { collection, deleteDoc, doc, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { translate } from '../../i18n'
 
@@ -8,7 +8,6 @@ const polls = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 const successMessage = ref('')
-let unsubscribePolls = null
 
 const formatDate = (value) => {
   const date = value?.toDate?.()
@@ -23,26 +22,23 @@ const formatDate = (value) => {
   }).format(date)
 }
 
-const loadPolls = () => {
+const loadPolls = async () => {
   isLoading.value = true
   errorMessage.value = ''
 
   const pollsQuery = query(collection(db, 'polls'), orderBy('createdAt', 'desc'))
 
-  unsubscribePolls = onSnapshot(
-    pollsQuery,
-    (pollsSnap) => {
-      polls.value = pollsSnap.docs.map((pollDoc) => ({
-        id: pollDoc.id,
-        ...pollDoc.data(),
-      }))
-      isLoading.value = false
-    },
-    () => {
-      errorMessage.value = translate('admin.polls.errors.load')
-      isLoading.value = false
-    },
-  )
+  try {
+    const pollsSnap = await getDocs(pollsQuery)
+    polls.value = pollsSnap.docs.map((pollDoc) => ({
+      id: pollDoc.id,
+      ...pollDoc.data(),
+    }))
+  } catch {
+    errorMessage.value = translate('admin.polls.errors.load')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const removePoll = async (poll) => {
@@ -64,10 +60,6 @@ const removePoll = async (poll) => {
 }
 
 onMounted(loadPolls)
-
-onUnmounted(() => {
-  unsubscribePolls?.()
-})
 </script>
 
 <template>

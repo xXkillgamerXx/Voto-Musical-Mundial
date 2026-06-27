@@ -10,13 +10,27 @@ initializeApp();
 const db = getFirestore();
 const DEFAULT_COOLDOWN_MINUTES = 60;
 const DEFAULT_SHARD_COUNT = 512;
+const MIN_SHARD_COUNT = 128;
+const MAX_SHARD_COUNT = 2048;
+const MAX_STATUS_SCOPES = 64;
+const LOCK_TTL_BUFFER_MS = 24 * 60 * 60 * 1000;
+const LEDGER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const REFERRAL_SIGNUP_POINTS = 50;
 const REFERRAL_MILESTONE_BONUSES = {
   5: 300,
   10: 700,
 };
 const MAX_COOLDOWN_MINUTES = 24 * 60;
+const functionOptions = {
+  region: "us-central1",
+  minInstances: 0,
+  maxInstances: 10,
+  timeoutSeconds: 10,
+  memory: "256MiB",
+  concurrency: 40,
+};
 const callableOptions = {
+  ...functionOptions,
   cors: true,
 };
 const httpErrorStatus = {
@@ -200,75 +214,128 @@ const statusPayload = ({ nextVoteAt = 0, config }) => ({
   remainingMs: Math.max(0, nextVoteAt - Date.now()),
 });
 
+const contestantVoteScope = (contestant, fallbackIndex = 0) => {
+  const matchGroup = Number(contestant?.matchGroup || 0);
+
+  return `match_${matchGroup || Math.floor(fallbackIndex / 2) + 1}`;
+};
+
 const resolveAnonymousVoteScope = async ({ pollId, roundId, roundData, artistId }) => {
   if (!roundId || roundData?.type !== "versus") {
     return null;
   }
 
-  const contestantsSnap = await roundCollectionRef(pollId, roundId, "contestants").get();
-  const contestants = contestantsSnap.docs
-    .map((contestantDoc, index) => ({
-      id: contestantDoc.id,
-      index,
-      ...contestantDoc.data(),
-      artistId: contestantDoc.data().artistId || contestantDoc.id,
-    }))
-    .sort(
-      (current, next) =>
-        Number(current.order ?? current.index) - Number(next.order ?? next.index),
-    );
-  const contestantIndex = contestants.findIndex(
-    (contestant) =>
-      cleanId(contestant.artistId) === artistId || cleanId(contestant.id) === artistId,
-  );
+  const contestantsRef = roundCollectionRef(pollId, roundId, "contestants");
+  const contestantById = await contestantsRef.doc(artistId).get();
 
-  if (contestantIndex < 0) {
-    throw new HttpsError("invalid-argument", "El participante no pertenece a esta ronda.");
+  if (contestantById.exists) {
+    return contestantVoteScope(contestantById.data());
   }
 
-  const contestant = contestants[contestantIndex];
-  const matchGroup = Number(contestant.matchGroup || 0);
+  const contestantByArtist = await contestantsRef
+    .where("artistId", "==", artistId)
+    .limit(1)
+    .get();
 
-  return `match_${matchGroup || Math.floor(contestantIndex / 2) + 1}`;
+  if (!contestantByArtist.empty) {
+    return contestantVoteScope(contestantByArtist.docs[0].data());
+  }
+
+  throw new HttpsError("invalid-argument", "El participante no pertenece a esta ronda.");
+};
+
+const DEFAULT_SCOPE_KEY = "_round";
+
+const normalizeStatusScopes = (data) => {
+  const rawScopes = Array.isArray(data?.voteScopes)
+    ? data.voteScopes
+    : [data?.voteScope || DEFAULT_SCOPE_KEY];
+  const scopes = [
+    ...new Set(
+      rawScopes.map((scope) => {
+        const key = cleanId(scope || DEFAULT_SCOPE_KEY);
+        return key || DEFAULT_SCOPE_KEY;
+      }),
+    ),
+  ];
+
+  if (scopes.length > MAX_STATUS_SCOPES) {
+    throw new HttpsError("invalid-argument", "Demasiados duelos para consultar.");
+  }
+
+  return scopes;
+};
+
+const resolveShardCount = (pollData, roundData) => {
+  const configured = Number(roundData?.shardCount || pollData?.shardCount || DEFAULT_SHARD_COUNT);
+
+  return Math.min(
+    MAX_SHARD_COUNT,
+    Math.max(MIN_SHARD_COUNT, Math.floor(Number.isFinite(configured) ? configured : DEFAULT_SHARD_COUNT)),
+  );
 };
 
 export const getAnonymousVoteStatus = onCall(callableOptions, async (request) => {
   const uid = assertAnonymousAuth(request);
   const pollId = cleanId(request.data?.pollId);
   const roundId = request.data?.roundId ? cleanId(request.data.roundId) : null;
-  const voteScope = request.data?.voteScope ? cleanId(request.data.voteScope) : null;
 
   if (!pollId) {
     throw new HttpsError("invalid-argument", "Falta la votacion.");
   }
 
+  const isBatch = Array.isArray(request.data?.voteScopes);
+  const requestedKeys = normalizeStatusScopes(request.data);
+
   const ipHash = hashIp(getClientIp(request));
   const context = await loadPollContext(pollId, roundId);
   const config = normalizeAnonymousConfig(context.pollData, context.roundData);
-  const { uidLockRef, ipLockRef } = lockDocRefs({
-    pollId,
-    roundId,
-    voteScope,
-    uid,
-    ipHash,
-    blockByIp: config.blockByIp,
-  });
-  const [uidLock, ipLock] = await Promise.all([
-    uidLockRef.get(),
-    ipLockRef ? ipLockRef.get() : Promise.resolve(null),
-  ]);
 
-  return statusPayload({
-    nextVoteAt: nextVoteAtFromLocks(uidLock, ipLock),
-    config,
+  const scopeRefs = requestedKeys.map((key) => {
+    const internalScope = key === DEFAULT_SCOPE_KEY ? null : cleanId(key);
+    const { uidLockRef, ipLockRef } = lockDocRefs({
+      pollId,
+      roundId,
+      voteScope: internalScope,
+      uid,
+      ipHash,
+      blockByIp: config.blockByIp,
+    });
+    return { key, uidLockRef, ipLockRef };
   });
+
+  const allRefs = [];
+  scopeRefs.forEach(({ uidLockRef, ipLockRef }) => {
+    allRefs.push(uidLockRef);
+    if (ipLockRef) {
+      allRefs.push(ipLockRef);
+    }
+  });
+
+  const snaps = allRefs.length ? await db.getAll(...allRefs) : [];
+  const snapByPath = new Map(snaps.map((snap) => [snap.ref.path, snap]));
+
+  const statuses = {};
+  scopeRefs.forEach(({ key, uidLockRef, ipLockRef }) => {
+    const uidLock = snapByPath.get(uidLockRef.path) || null;
+    const ipLock = ipLockRef ? snapByPath.get(ipLockRef.path) || null : null;
+    statuses[key] = statusPayload({
+      nextVoteAt: nextVoteAtFromLocks(uidLock, ipLock),
+      config,
+    });
+  });
+
+  if (!isBatch) {
+    return statuses[requestedKeys[0]];
+  }
+
+  return { statuses };
 });
 
 const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
   const pollId = cleanId(data?.pollId);
   const roundId = data?.roundId ? cleanId(data.roundId) : null;
   const artistId = cleanId(data?.artistId);
-  const shardCount = Math.max(1, Math.floor(Number(data?.shardCount || DEFAULT_SHARD_COUNT)));
 
   if (!pollId || !artistId) {
     throw new HttpsError("invalid-argument", "Faltan datos del voto.");
@@ -277,6 +344,7 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
   const ipHash = hashIp(getClientIp({ rawRequest }));
   const context = await loadPollContext(pollId, roundId);
   const config = normalizeAnonymousConfig(context.pollData, context.roundData);
+  const shardCount = resolveShardCount(context.pollData, context.roundData);
 
   if (!config.enabled) {
     throw new HttpsError("failed-precondition", "El voto anonimo no esta activo.");
@@ -305,13 +373,11 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
   const ledgerRef = roundCollectionRef(pollId, roundId, "userVoteBatches").doc(
     `${cleanId(uid)}_${now}_${shardIndex}`,
   );
-  const userRef = db.doc(`users/${uid}`);
 
   await db.runTransaction(async (transaction) => {
-    const [uidLock, ipLock, userSnap] = await Promise.all([
+    const [uidLock, ipLock] = await Promise.all([
       transaction.get(uidLockRef),
       ipLockRef ? transaction.get(ipLockRef) : Promise.resolve(null),
-      transaction.get(userRef),
     ]);
     const activeNextVoteAt = nextVoteAtFromLocks(uidLock, ipLock);
 
@@ -332,6 +398,7 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
       nextVoteAt: timestampFromMillis(nextVoteAt),
       cooldownMinutes: config.cooldownMinutes,
       updatedAt: FieldValue.serverTimestamp(),
+      expireAt: timestampFromMillis(nextVoteAt + LOCK_TTL_BUFFER_MS),
     };
 
     transaction.set(uidLockRef, { ...lockData, lockType: "uid" }, { merge: true });
@@ -340,22 +407,6 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
       transaction.set(ipLockRef, { ...lockData, lockType: "ip" }, { merge: true });
     }
 
-    transaction.set(
-      userRef,
-      {
-        isAnonymous: true,
-        role: "user",
-        updatedAt: FieldValue.serverTimestamp(),
-        ...(!userSnap.exists
-          ? {
-              points: 0,
-              spentPoints: 0,
-              createdAt: FieldValue.serverTimestamp(),
-            }
-          : {}),
-      },
-      { merge: true },
-    );
     transaction.set(
       shardRef,
       {
@@ -380,6 +431,7 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
       anonymous: true,
       shardIndex,
       createdAt: FieldValue.serverTimestamp(),
+      expireAt: timestampFromMillis(now + LEDGER_TTL_MS),
     });
   });
 
@@ -389,17 +441,7 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
   });
 };
 
-export const castAnonymousVote = onCall(callableOptions, async (request) => {
-  const uid = assertAnonymousAuth(request);
-
-  return castAnonymousVoteForUser({
-    uid,
-    data: request.data,
-    rawRequest: request.rawRequest,
-  });
-});
-
-export const castAnonymousVoteHttp = onRequest(async (request, response) => {
+export const castAnonymousVoteHttp = onRequest(functionOptions, async (request, response) => {
   setCorsHeaders(request, response);
 
   if (request.method === "OPTIONS") {
@@ -426,7 +468,12 @@ export const castAnonymousVoteHttp = onRequest(async (request, response) => {
   }
 });
 
-export const processReferralSignup = onDocumentCreated("users/{userId}", async (event) => {
+export const processReferralSignup = onDocumentCreated(
+  {
+    ...functionOptions,
+    document: "users/{userId}",
+  },
+  async (event) => {
   const userId = event.params.userId;
   const userData = event.data?.data() || {};
   const referredBy = userData.referredBy || null;

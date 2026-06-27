@@ -1,12 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   collection,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
-  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -28,7 +27,6 @@ const contestants = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 const successMessage = ref('')
-let unsubscribeContestants = null
 
 const contestantIds = computed(() => new Set(contestants.value.map((contestant) => contestant.artistId)))
 
@@ -77,19 +75,16 @@ const loadBaseData = async () => {
   }
 }
 
-const listenContestants = () => {
-  unsubscribeContestants = onSnapshot(
-    collection(db, 'polls', props.pollId, 'contestants'),
-    (contestantsSnap) => {
-      contestants.value = contestantsSnap.docs.map((contestantDoc) => ({
-        id: contestantDoc.id,
-        ...contestantDoc.data(),
-      }))
-    },
-    () => {
-      errorMessage.value = translate('admin.contestants.errors.listen')
-    },
-  )
+const loadContestants = async () => {
+  try {
+    const contestantsSnap = await getDocs(collection(db, 'polls', props.pollId, 'contestants'))
+    contestants.value = contestantsSnap.docs.map((contestantDoc) => ({
+      id: contestantDoc.id,
+      ...contestantDoc.data(),
+    }))
+  } catch {
+    errorMessage.value = translate('admin.contestants.errors.listen')
+  }
 }
 
 const addContestant = async (artist) => {
@@ -107,6 +102,7 @@ const addContestant = async (artist) => {
       addedAt: serverTimestamp(),
     })
     successMessage.value = translate('admin.contestants.added')
+    await loadContestants()
   } catch {
     errorMessage.value = translate('admin.contestants.errors.add')
   }
@@ -128,6 +124,7 @@ const removeContestant = async (contestant) => {
   try {
     await deleteDoc(doc(db, 'polls', props.pollId, 'contestants', contestant.id))
     successMessage.value = translate('admin.contestants.removed')
+    await loadContestants()
   } catch {
     errorMessage.value = translate('admin.contestants.errors.remove')
   }
@@ -135,11 +132,7 @@ const removeContestant = async (contestant) => {
 
 onMounted(async () => {
   await loadBaseData()
-  listenContestants()
-})
-
-onUnmounted(() => {
-  unsubscribeContestants?.()
+  loadContestants()
 })
 </script>
 

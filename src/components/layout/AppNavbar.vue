@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { availableLocales, setLocale, translate } from "../../i18n";
 import { auth, db } from "../../firebase";
@@ -29,7 +29,6 @@ const userRole = ref("");
 const userUsername = ref("");
 const userPoints = ref(0);
 let unsubscribeAuth = null;
-let unsubscribeUserProfile = null;
 const adminRoles = new Set(["admin", "superadmin", "owner"]);
 
 const userName = computed(
@@ -105,7 +104,6 @@ const handleEscape = (event) => {
 };
 
 const listenUserProfile = (user) => {
-  unsubscribeUserProfile?.();
   userRole.value = "";
   userUsername.value = "";
   userPoints.value = 0;
@@ -114,22 +112,20 @@ const listenUserProfile = (user) => {
     return;
   }
 
-  unsubscribeUserProfile = onSnapshot(
-    doc(db, "users", user.uid),
-    (userSnap) => {
+  getDoc(doc(db, "users", user.uid))
+    .then((userSnap) => {
       if (currentUser.value?.uid === user.uid) {
         const userData = userSnap.data() || {};
         userRole.value = String(userData.role || "").trim().toLowerCase();
         userUsername.value = userData.username || "";
         userPoints.value = Number(userData.points || 0);
       }
-    },
-    () => {
+    })
+    .catch(() => {
       userRole.value = "";
       userUsername.value = "";
       userPoints.value = 0;
-    },
-  );
+    });
 };
 
 onMounted(() => {
@@ -148,7 +144,6 @@ onUnmounted(() => {
   document.removeEventListener("click", handleDocumentClick);
   document.removeEventListener("keydown", handleEscape);
   unsubscribeAuth?.();
-  unsubscribeUserProfile?.();
 });
 </script>
 
