@@ -1,13 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import {
-  collection,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-} from 'firebase/firestore'
-import { db } from '../../firebase'
+import { getAdminDashboard } from '../../services/api/adminApi'
 
 const polls = ref([])
 const users = ref([])
@@ -62,15 +55,19 @@ const handleLoadError = (source) => {
   markLoaded(source)
 }
 
-const loadSource = async (source, targetQuery, onData) => {
-  try {
-    const snapshot = await getDocs(targetQuery)
-    onData(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })))
-    markLoaded(source)
-  } catch {
-    handleLoadError(source)
-  }
+const dateLike = (value) => {
+  if (!value || typeof value !== 'string') return value
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return { toDate: () => date, toMillis: () => date.getTime() }
 }
+const normalizeDateRows = (rows) => rows.map((row) => ({
+  ...row,
+  createdAt: dateLike(row.createdAt),
+  updatedAt: dateLike(row.updatedAt),
+  endAt: dateLike(row.endAt || row.endsAt),
+  activeEndAt: dateLike(row.activeEndAt),
+}))
 
 const isLoading = computed(() => Object.values(loadedSources.value).some((isLoaded) => !isLoaded))
 const openPolls = computed(() => polls.value.filter(isOpenPoll))
@@ -222,15 +219,20 @@ const recentActivity = computed(() => {
 })
 
 onMounted(() => {
-  loadSource('polls', query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(100)), (items) => {
-    polls.value = items
-  })
-  loadSource('users', query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100)), (items) => {
-    users.value = items
-  })
-  loadSource('artists', query(collection(db, 'artists'), orderBy('createdAt', 'desc'), limit(100)), (items) => {
-    artists.value = items
-  })
+  getAdminDashboard()
+    .then((data) => {
+      polls.value = normalizeDateRows(data.polls || [])
+      users.value = normalizeDateRows(data.users || [])
+      artists.value = normalizeDateRows(data.artists || [])
+      markLoaded('polls')
+      markLoaded('users')
+      markLoaded('artists')
+    })
+    .catch(() => {
+      handleLoadError('polls')
+      handleLoadError('users')
+      handleLoadError('artists')
+    })
 })
 </script>
 

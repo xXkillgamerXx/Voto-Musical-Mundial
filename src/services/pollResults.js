@@ -1,47 +1,66 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { getPoll, getPollResults } from "./api/pollsApi";
 
 const DEFAULT_AGGREGATION_MS = 30 * 1000;
 const PUBLIC_RESULTS_REFRESH_MS = 30 * 1000;
-const RECENT_ACTIVITY_LIMIT = 12;
 
-const roundCollection = (db, pollId, roundId, collectionName) =>
-  roundId
-    ? collection(db, "polls", pollId, "rounds", roundId, collectionName)
-    : collection(db, "polls", pollId, collectionName);
+const normalizeArtist = (artist) => {
+  if (!artist) return null;
+  const metadata = artist.metadata || {};
+  const image = artist.image || artist.imageUrl || artist.photo || artist.photoURL || artist.foto || artist.banner || artist.photoUrl || metadata.image || metadata.imageUrl || metadata.photo || metadata.photoURL || metadata.foto || metadata.banner || "";
 
-const roundDoc = (db, pollId, roundId, collectionName, docId) =>
-  roundId
-    ? doc(db, "polls", pollId, "rounds", roundId, collectionName, docId)
-    : doc(db, "polls", pollId, collectionName, docId);
+  return {
+    ...metadata,
+    ...artist,
+    id: String(artist.id),
+    image,
+    imageUrl: image,
+    photo: image,
+    photoURL: image,
+    banner: metadata.banner || metadata.bannerUrl || metadata.cover || metadata.coverImage || image,
+    followersCount: Number(artist.followersCount || metadata.followersCount || 0),
+    totalVotes: Number(artist.totalVotes || metadata.totalVotes || 0),
+    popularityScore: Number(artist.popularityScore || metadata.popularityScore || 0),
+  };
+};
+
+const normalizeContestant = (contestant) => {
+  const metadata = contestant.metadata || {};
+  const artist = normalizeArtist(contestant.artist);
+  const artistId = String(contestant.artistId || artist?.id || metadata.artistId || contestant.id);
+
+  return {
+    ...metadata,
+    ...contestant,
+    id: String(contestant.id),
+    firebaseId: contestant.firebaseId || metadata.id || null,
+    artistId,
+    artist,
+    votes: Number(contestant.votes || 0),
+    manualVotes: Number(contestant.manualVotes || 0),
+    totalVotes: normalizeContestantVotes(contestant),
+    matchGroup: Number(contestant.matchGroup || 0),
+    matchOrder: Number(contestant.matchOrder || 0),
+    order: Number(contestant.order || 0),
+    roundId: contestant.roundId ? String(contestant.roundId) : metadata.roundId || null,
+  };
+};
 
 export const normalizeContestantVotes = (contestant) =>
   Number(contestant.totalVotes ?? (contestant.votes || 0) + (contestant.manualVotes || 0));
 
-export const loadContestantMetadata = async (db, pollId, roundId) => {
-  const contestantsSnap = await getDocs(
-    roundCollection(db, pollId, roundId, "contestants"),
-  );
+export const loadContestantMetadata = async (_db, pollId, roundId) => {
+  const poll = await getPoll(pollId);
+  const requestedRoundId = roundId ? String(roundId) : null;
 
-  return contestantsSnap.docs.map((contestantDoc) => {
-    const contestant = contestantDoc.data();
+  return (poll.contestants || [])
+    .map(normalizeContestant)
+    .filter((contestant) => {
+      if (!requestedRoundId) {
+        return !contestant.roundId;
+      }
 
-    return {
-      id: contestantDoc.id,
-      ...contestant,
-      artistId: contestant.artistId || contestantDoc.id,
-      totalVotes: normalizeContestantVotes(contestant),
-    };
-  });
+      return contestant.roundId === requestedRoundId || contestant.firebaseId === requestedRoundId;
+    });
 };
 
 export const mergeContestantsWithPublicResults = (contestants, publicResults) => {
@@ -64,7 +83,7 @@ export const mergeContestantsWithPublicResults = (contestants, publicResults) =>
 };
 
 export const subscribePublicResults = (
-  db,
+  _db,
   { pollId, roundId, onData, onError = () => {} },
 ) => {
   let stopped = false;
@@ -76,11 +95,11 @@ export const subscribePublicResults = (
     }
 
     try {
-      const resultsSnap = await getDoc(roundDoc(db, pollId, roundId, "publicResults", "current"));
+      const results = await getPollResults({ pollId, roundId });
       if (stopped) {
         return;
       }
-      onData(resultsSnap.exists() ? { id: resultsSnap.id, ...resultsSnap.data() } : null);
+      onData(results);
     } catch (error) {
       onError(error);
     }
@@ -97,101 +116,8 @@ export const subscribePublicResults = (
   };
 };
 
-const loadRecentActivity = async (db, pollId, roundId) => {
-  const activitySnap = await getDocs(
-    query(
-      roundCollection(db, pollId, roundId, "userVoteBatches"),
-      orderBy("createdAt", "desc"),
-      limit(RECENT_ACTIVITY_LIMIT),
-    ),
-  );
-
-  return activitySnap.docs.map((activityDoc) => ({
-    id: activityDoc.id,
-    ...activityDoc.data(),
-  }));
-};
-
-export const aggregatePublicResults = async (db, { pollId, round }) => {
-  const roundId = round?.id || null;
-  const [contestants, shardsSnap] = await Promise.all([
-    loadContestantMetadata(db, pollId, roundId),
-    getDocs(roundCollection(db, pollId, roundId, "voteShards")),
-  ]);
-  const shardVotesByArtist = new Map();
-
-  shardsSnap.docs.forEach((shardDoc) => {
-    const shard = shardDoc.data();
-    const artistId = shard.artistId;
-
-    if (!artistId) {
-      return;
-    }
-
-    shardVotesByArtist.set(
-      artistId,
-      (shardVotesByArtist.get(artistId) || 0) + Number(shard.votes || 0),
-    );
-  });
-
-  const results = contestants
-    .map((contestant) => {
-      const artistId = contestant.artistId || contestant.id;
-      const legacyVotes = Number(contestant.votes || 0);
-      const shardVotes = shardVotesByArtist.get(artistId) || 0;
-      const manualVotes = Number(contestant.manualVotes || 0);
-      const totalVotes = legacyVotes + shardVotes + manualVotes;
-
-      return {
-        id: contestant.id,
-        artistId,
-        votes: legacyVotes + shardVotes,
-        manualVotes,
-        totalVotes,
-        order: Number(contestant.order || 0),
-        matchGroup: Number(contestant.matchGroup || 0),
-        matchOrder: Number(contestant.matchOrder || 0),
-      };
-    })
-    .sort((current, next) => next.totalVotes - current.totalVotes);
-
-  const totalVotes = results.reduce((total, result) => total + result.totalVotes, 0);
-  const rankedResults = results.map((result, index) => ({
-    ...result,
-    rank: index + 1,
-    percent: totalVotes ? (result.totalVotes / totalVotes) * 100 : 0,
-  }));
-  const leader = rankedResults[0] || null;
-  const recentActivity = await loadRecentActivity(db, pollId, roundId).catch(() => []);
-  const payload = {
-    pollId,
-    roundId,
-    totalVotes,
-    leaderArtistId: leader?.artistId || null,
-    leaderVotes: Number(leader?.totalVotes || 0),
-    results: rankedResults,
-    recentActivity,
-    aggregationIntervalMs: DEFAULT_AGGREGATION_MS,
-    updatedAt: serverTimestamp(),
-  };
-
-  await setDoc(roundDoc(db, pollId, roundId, "publicResults", "current"), payload, {
-    merge: true,
-  });
-  await setDoc(
-    doc(db, "polls", pollId),
-    {
-      totalVotes,
-      leaderArtistId: payload.leaderArtistId,
-      leaderVotes: payload.leaderVotes,
-      activeEndAt: round?.endAt || null,
-      publicActivity: recentActivity.slice(0, 8),
-      publicResultsUpdatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
-
-  return payload;
+export const aggregatePublicResults = async (_db, { pollId, round }) => {
+  return getPollResults({ pollId, roundId: round?.id || null });
 };
 
 export const startPublicResultsAggregator = ({

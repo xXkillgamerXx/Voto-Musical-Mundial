@@ -69,11 +69,15 @@ onMounted(loadArtists)
 
 <template>
   <section class="top-ranking-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8">
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h2 class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl">
-        <span class="text-amber-300">✦</span>
-        Artistas populares de la semana
-      </h2>
+    <div class="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+          Artistas populares
+        </p>
+        <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+          De la semana
+        </h2>
+      </div>
       <a href="/artistas" class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
         Ver artistas
       </a>
@@ -266,12 +270,21 @@ onMounted(loadArtists)
       </div>
     </div>
 
-    <p
+    <div
       v-else
-      class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400"
+      class="relative overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-fuchsia-950/15"
     >
-      Todavía no hay artistas populares para mostrar.
-    </p>
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(217,70,239,0.22),transparent_34%),radial-gradient(circle_at_15%_80%,rgba(34,211,238,0.12),transparent_30%)]"></div>
+      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-amber-200/20 bg-amber-300/10 text-2xl text-amber-200 shadow-lg shadow-amber-950/20">
+        <i class="fa-solid fa-ranking-star" aria-hidden="true"></i>
+      </div>
+      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+        Ranking en preparacion
+      </h3>
+      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+        Cuando los artistas empiecen a recibir actividad, aqui apareceran los mas populares de la comunidad.
+      </p>
+    </div>
   </section>
 </template>
 

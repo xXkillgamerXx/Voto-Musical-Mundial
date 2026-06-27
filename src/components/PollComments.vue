@@ -1,19 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  writeBatch,
-} from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { auth } from "../firebase";
 
 const props = defineProps({
   pollId: {
@@ -230,22 +218,8 @@ const loadComments = async () => {
     return;
   }
 
-  try {
-    const commentsSnap = await getDocs(
-      query(
-        collection(db, "polls", props.pollId, "comments"),
-        orderBy("createdAt", "desc"),
-        limit(50),
-      ),
-    );
-    comments.value = commentsSnap.docs.map((commentDoc) => ({
-      id: commentDoc.id,
-      ...commentDoc.data(),
-    }));
-    errorMessage.value = "";
-  } catch {
-    errorMessage.value = "No se pudieron cargar los comentarios.";
-  }
+  comments.value = [];
+  errorMessage.value = "";
 };
 
 const resetAndLoadComments = () => {
@@ -282,47 +256,9 @@ const publishComment = async () => {
   successMessage.value = "";
 
   try {
-    const commentsRef = collection(db, "polls", props.pollId, "comments");
-    const commentRef = doc(commentsRef);
-    const user = currentUser.value;
-    const batch = writeBatch(db);
-    const commentData = {
-      userId: user.uid,
-      displayName: getDisplayName(user),
-      photoURL: currentPhotoURL.value,
-      text,
-      createdAt: serverTimestamp(),
-    };
-
-    if (selectedGif.value) {
-      commentData.gif = selectedGif.value;
-    }
-
-    batch.set(commentRef, commentData);
-    if (!isAdminUser.value) {
-      batch.set(doc(db, "polls", props.pollId, "commentLocks", user.uid), {
-        userId: user.uid,
-        lastCommentAt: serverTimestamp(),
-      });
-    }
-
-    await batch.commit();
-    commentText.value = "";
-    selectedGif.value = null;
-    currentCommentsPage.value = 1;
-    successMessage.value = "Comentario publicado.";
-    if (!isAdminUser.value) {
-      startCooldown();
-    }
-    await loadComments();
-    window.setTimeout(() => {
-      successMessage.value = "";
-    }, 2500);
-  } catch (error) {
-    errorMessage.value =
-      error?.code === "permission-denied"
-        ? "Firebase bloqueó el comentario. Despliega las reglas nuevas o espera el tiempo anti-spam."
-        : "No se pudo publicar. Revisa que no estés comentando muy rápido.";
+    throw new Error("comments-api-pending");
+  } catch {
+    errorMessage.value = "Los comentarios se activaran cuando el modulo API este listo.";
   } finally {
     isPublishing.value = false;
   }
@@ -333,12 +269,7 @@ const removeComment = async (comment) => {
     return;
   }
 
-  try {
-    await deleteDoc(doc(db, "polls", props.pollId, "comments", comment.id));
-    await loadComments();
-  } catch {
-    errorMessage.value = "No se pudo eliminar el comentario.";
-  }
+  errorMessage.value = "Los comentarios se activaran cuando el modulo API este listo.";
 };
 
 watch(
@@ -361,13 +292,11 @@ const listenCurrentUserProfile = (user) => {
     return;
   }
 
-  getDoc(doc(db, "users", user.uid))
-    .then((userSnap) => {
-      currentUserProfile.value = userSnap.exists() ? userSnap.data() : null;
-    })
-    .catch(() => {
-      currentUserProfile.value = null;
-    });
+  currentUserProfile.value = {
+    name: user.displayName || user.email?.split("@")[0] || "Fan",
+    photoURL: user.photoURL || "",
+    role: "",
+  };
 };
 
 onMounted(() => {

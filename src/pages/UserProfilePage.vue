@@ -1,10 +1,8 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { onAuthStateChanged, updateProfile } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { translate } from '../i18n'
-import { auth, db, storage } from '../firebase'
+import { checkUsername, getCurrentApiAuth, getMe, getPublicProfile, updateMe, uploadProfileImage as uploadProfileImageFile } from '../services/api/authApi'
+import { onStoredAuthChange } from '../services/api/client'
 
 const pathParts = window.location.pathname.split('/').filter(Boolean)
 const routeUsername = pathParts[0] === 'user' ? (pathParts[1] || '').toLowerCase() : ''
@@ -15,6 +13,7 @@ const profileUserId = ref('')
 const followedArtists = ref([])
 const editForm = ref({
   name: '',
+  username: '',
   country: '',
   bio: '',
   photoURL: '',
@@ -25,21 +24,24 @@ const isEditOpen = ref(false)
 const isSavingProfile = ref(false)
 const isUploadingPhoto = ref(false)
 const isUploadingBanner = ref(false)
+const isCheckingUsername = ref(false)
+const usernameStatus = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 let unsubscribeAuth = null
+let usernameCheckTimer = null
 
 const isPublicProfile = computed(() => Boolean(routeUsername))
-const isOwnProfile = computed(() => currentUser.value?.uid && currentUser.value.uid === profileUserId.value)
+const isOwnProfile = computed(() => currentUser.value?.id && String(currentUser.value.id) === String(profileUserId.value))
 const todayKey = computed(() => new Date().toISOString().slice(0, 10))
 const hasClaimedDailyReward = computed(() => userProfile.value?.lastDailyRewardClaimDate === todayKey.value)
 
 const displayName = computed(() =>
-  userProfile.value?.name || (!isPublicProfile.value ? currentUser.value?.displayName || currentUser.value?.email : '') || translate('profile.fallbackName'),
+  userProfile.value?.name || userProfile.value?.displayName || (!isPublicProfile.value ? currentUser.value?.displayName || currentUser.value?.email : '') || translate('profile.fallbackName'),
 )
 
 const profilePhoto = computed(() =>
-  userProfile.value?.photoURL || (!isPublicProfile.value || isOwnProfile.value ? currentUser.value?.photoURL : '') || '',
+  userProfile.value?.photoURL || userProfile.value?.photoUrl || (!isPublicProfile.value || isOwnProfile.value ? currentUser.value?.photoUrl || currentUser.value?.photoURL : '') || '',
 )
 const profileBanner = computed(() => userProfile.value?.banner || userProfile.value?.bannerUrl || '')
 const userInitial = computed(() => displayName.value.trim().charAt(0).toUpperCase())
@@ -49,19 +51,20 @@ const profileStats = computed(() => [
     value: followedArtists.value.length.toLocaleString(),
   },
 ])
+const isUsernameBlocked = computed(() => {
+  const username = editForm.value.username.trim().toLowerCase()
+  const currentUsername = (userProfile.value?.username || currentUser.value?.username || '').toLowerCase()
+
+  if (!username) return false
+  if (username === currentUsername) return false
+  return isCheckingUsername.value || !usernameStatus.value?.valid || !usernameStatus.value?.available
+})
 
 const artistUrl = (artist) => `/artista/${artist.artistSlug || artist.artistId}`
 
 const openDailyRewardModal = () => {
   window.dispatchEvent(new CustomEvent('open-daily-reward-modal'))
 }
-
-const sanitizeFileName = (value) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, '-')
-    .replace(/(^-|-$)/g, '')
 
 const isAcceptedImageFile = (file) => {
   const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp']
@@ -72,27 +75,10 @@ const isAcceptedImageFile = (file) => {
     || acceptedExtensions.some((extension) => fileName.endsWith(extension))
 }
 
-const getImageContentType = (file) => {
-  const fileName = file.name.toLowerCase()
-
-  if (file.type) {
-    return file.type
-  }
-
-  if (fileName.endsWith('.webp')) {
-    return 'image/webp'
-  }
-
-  if (fileName.endsWith('.png')) {
-    return 'image/png'
-  }
-
-  return 'image/jpeg'
-}
-
 const openEditProfile = () => {
   editForm.value = {
     name: displayName.value,
+    username: userProfile.value?.username || currentUser.value?.username || '',
     country: userProfile.value?.country || '',
     bio: userProfile.value?.bio || '',
     photoURL: profilePhoto.value,
@@ -100,6 +86,7 @@ const openEditProfile = () => {
   }
   errorMessage.value = ''
   successMessage.value = ''
+  usernameStatus.value = null
   isEditOpen.value = true
 }
 
@@ -108,22 +95,18 @@ const closeEditProfile = () => {
 }
 
 const uploadProfileImage = async (file, field) => {
-  if (!file || !currentUser.value?.uid) {
+  if (!file) {
     return
   }
 
   errorMessage.value = ''
   successMessage.value = ''
-
   if (!isAcceptedImageFile(file)) {
     errorMessage.value = translate('profile.edit.imageTypeError')
     return
   }
 
   const isBanner = field === 'banner'
-  const fileName = sanitizeFileName(file.name)
-  const imageRef = storageRef(storage, `users/${currentUser.value.uid}/${Date.now()}-${field}-${fileName}`)
-
   if (isBanner) {
     isUploadingBanner.value = true
   } else {
@@ -131,8 +114,8 @@ const uploadProfileImage = async (file, field) => {
   }
 
   try {
-    await uploadBytes(imageRef, file, { contentType: getImageContentType(file) })
-    editForm.value[field] = await getDownloadURL(imageRef)
+    const uploaded = await uploadProfileImageFile(file)
+    editForm.value[field] = uploaded.url
   } catch {
     errorMessage.value = translate('profile.edit.uploadError')
   } finally {
@@ -151,14 +134,20 @@ const handleProfileImageInput = (event, field) => {
 }
 
 const saveProfile = async () => {
-  if (!currentUser.value?.uid || !isOwnProfile.value) {
+  if (!currentUser.value?.id || !isOwnProfile.value) {
     return
   }
 
   const nextName = editForm.value.name.trim()
+  const nextUsername = editForm.value.username.trim().toLowerCase()
 
   if (!nextName) {
     errorMessage.value = translate('profile.edit.nameRequired')
+    return
+  }
+
+  if (isUsernameBlocked.value) {
+    errorMessage.value = usernameStatus.value?.message || 'Verifica el username antes de guardar.'
     return
   }
 
@@ -167,88 +156,108 @@ const saveProfile = async () => {
   isSavingProfile.value = true
 
   try {
-    await updateDoc(doc(db, 'users', currentUser.value.uid), {
+    const updated = await updateMe({
       name: nextName,
-      firstName: nextName.split(' ')[0] || nextName,
+      displayName: nextName,
+      username: nextUsername,
       country: editForm.value.country.trim(),
       bio: editForm.value.bio.trim(),
       photoURL: editForm.value.photoURL,
       banner: editForm.value.banner,
-      updatedAt: serverTimestamp(),
     })
-    await updateProfile(currentUser.value, {
-      displayName: nextName,
-      photoURL: editForm.value.photoURL || null,
-    })
+    currentUser.value = updated
+    userProfile.value = updated
+    profileUserId.value = updated.id
     successMessage.value = translate('profile.edit.saved')
     isEditOpen.value = false
-  } catch {
-    errorMessage.value = translate('profile.edit.saveError')
+  } catch (error) {
+    errorMessage.value = error.message || translate('profile.edit.saveError')
   } finally {
     isSavingProfile.value = false
   }
 }
 
-const listenUserProfileById = (userId, errorText = translate('profile.loadError')) => {
-  profileUserId.value = userId || ''
+watch(
+  () => editForm.value.username,
+  (value) => {
+    if (!isEditOpen.value) return
+    window.clearTimeout(usernameCheckTimer)
 
-  if (!userId) {
-    userProfile.value = null
-    followedArtists.value = []
-    isLoading.value = false
-    return
+    const username = value.trim().toLowerCase()
+    const currentUsername = (userProfile.value?.username || currentUser.value?.username || '').toLowerCase()
+
+    usernameStatus.value = null
+    if (!username || username === currentUsername) {
+      isCheckingUsername.value = false
+      return
+    }
+
+    if (!/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
+      isCheckingUsername.value = false
+      usernameStatus.value = {
+        valid: false,
+        available: false,
+        message: 'Usa 3 a 32 caracteres: letras, numeros o guion bajo.',
+      }
+      return
+    }
+
+    isCheckingUsername.value = true
+    usernameCheckTimer = window.setTimeout(async () => {
+      try {
+        usernameStatus.value = await checkUsername(username)
+      } catch {
+        usernameStatus.value = {
+          valid: false,
+          available: false,
+          message: 'No se pudo verificar el username.',
+        }
+      } finally {
+        isCheckingUsername.value = false
+      }
+    }, 350)
+  },
+)
+
+const setUserProfile = (profile) => {
+  profileUserId.value = profile?.id || ''
+  userProfile.value = profile || null
+  followedArtists.value = profile?.followedArtists || []
+  isLoading.value = false
+}
+
+const loadOwnProfile = async () => {
+  isLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    const profile = await getMe()
+    currentUser.value = profile
+    setUserProfile(profile)
+  } catch {
+    errorMessage.value = translate('profile.ownLoadError')
+    setUserProfile(null)
   }
-
-  Promise.all([
-    getDoc(doc(db, 'users', userId)),
-    getDocs(collection(db, 'users', userId, 'followingArtists')),
-  ])
-    .then(([userSnap, artistsSnap]) => {
-      userProfile.value = userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } : null
-      followedArtists.value = artistsSnap.docs.map((artistDoc) => ({
-        id: artistDoc.id,
-        ...artistDoc.data(),
-      }))
-      isLoading.value = false
-    })
-    .catch(() => {
-      errorMessage.value = errorText
-      isLoading.value = false
-    })
 }
 
 const loadPublicProfile = async () => {
   isLoading.value = true
   errorMessage.value = ''
-
   try {
-    const usernameSnap = await getDoc(doc(db, 'usernames', routeUsername))
-
-    if (!usernameSnap.exists()) {
-      errorMessage.value = translate('profile.notFound')
-      userProfile.value = null
-      followedArtists.value = []
-      isLoading.value = false
-      return
-    }
-
-    listenUserProfileById(usernameSnap.data().uid, translate('profile.unavailable'))
+    setUserProfile(await getPublicProfile(routeUsername))
   } catch {
     errorMessage.value = translate('profile.userLoadError')
-    isLoading.value = false
+    setUserProfile(null)
   }
 }
 
 onMounted(() => {
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    currentUser.value = user
-
-    if (isPublicProfile.value) {
-      return
-    }
-
-    listenUserProfileById(user?.uid, translate('profile.ownLoadError'))
-  })
+  const syncAuth = (authState = getCurrentApiAuth()) => {
+    currentUser.value = authState?.user || null
+    if (!isPublicProfile.value) loadOwnProfile()
+  }
+  unsubscribeAuth = onStoredAuthChange(syncAuth)
+  syncAuth()
 
   if (isPublicProfile.value) {
     loadPublicProfile()
@@ -257,6 +266,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubscribeAuth?.()
+  window.clearTimeout(usernameCheckTimer)
 })
 </script>
 
@@ -498,18 +508,17 @@ onUnmounted(() => {
             </div>
 
             <form class="mt-6 grid gap-5" @submit.prevent="saveProfile">
-              <div class="grid gap-4 lg:grid-cols-[0.8fr_1fr]">
-                <label
-                  class="group relative grid min-h-48 cursor-pointer place-items-center overflow-hidden rounded-3xl border border-dashed border-fuchsia-300/35 bg-fuchsia-400/10 text-center"
-                >
+              <section class="overflow-hidden rounded-4xl border border-white/10 bg-white/5">
+                <label class="group relative block min-h-56 cursor-pointer overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
                   <img
                     v-if="editForm.banner"
                     :src="editForm.banner"
                     alt=""
-                    class="absolute inset-0 size-full object-cover opacity-70"
+                    class="absolute inset-0 size-full object-cover opacity-75 transition duration-300 group-hover:scale-105"
                   />
-                  <span class="relative z-10 rounded-2xl bg-black/45 px-4 py-3 text-xs font-black uppercase tracking-wide text-white backdrop-blur">
-                    {{ isUploadingBanner ? $t('profile.edit.uploadingBanner') : $t('profile.edit.changeBanner') }}
+                  <div class="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(217,70,239,0.35),transparent_32%),linear-gradient(to_top,rgba(9,11,25,0.95),rgba(9,11,25,0.12))]"></div>
+                  <span class="absolute right-4 top-4 rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur transition group-hover:bg-fuchsia-500">
+                    {{ isUploadingBanner ? $t('profile.edit.uploadingBanner') : 'Subir banner' }}
                   </span>
                   <input
                     type="file"
@@ -520,9 +529,9 @@ onUnmounted(() => {
                   />
                 </label>
 
-                <div class="grid gap-4">
-                  <label class="mx-auto grid cursor-pointer gap-3 text-center">
-                    <span class="mx-auto grid size-32 place-items-center overflow-hidden rounded-4xl border-2 border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-4xl font-black text-white shadow-xl shadow-fuchsia-500/20">
+                <div class="-mt-14 flex px-5 pb-5">
+                  <label class="group relative z-10 grid cursor-pointer gap-3">
+                    <span class="grid size-32 place-items-center overflow-hidden rounded-4xl border-4 border-[#090b19] bg-linear-to-br from-violet-500 to-fuchsia-500 text-4xl font-black text-white shadow-2xl shadow-fuchsia-500/25 transition group-hover:scale-105">
                       <img
                         v-if="editForm.photoURL"
                         :src="editForm.photoURL"
@@ -531,8 +540,8 @@ onUnmounted(() => {
                       />
                       <span v-else>{{ userInitial }}</span>
                     </span>
-                    <span class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10">
-                      {{ isUploadingPhoto ? $t('profile.edit.uploadingPhoto') : $t('profile.edit.changePhoto') }}
+                    <span class="rounded-full border border-white/10 bg-white/8 px-4 py-2 text-center text-xs font-black uppercase tracking-wide text-slate-100 transition group-hover:bg-fuchsia-500">
+                      {{ isUploadingPhoto ? $t('profile.edit.uploadingPhoto') : 'Subir foto' }}
                     </span>
                     <input
                       type="file"
@@ -542,8 +551,9 @@ onUnmounted(() => {
                       @change="handleProfileImageInput($event, 'photoURL')"
                     />
                   </label>
+
                 </div>
-              </div>
+              </section>
 
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="block">
@@ -555,6 +565,26 @@ onUnmounted(() => {
                   />
                 </label>
 
+                <label class="block">
+                  <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Username</span>
+                  <input
+                    v-model="editForm.username"
+                    type="text"
+                    class="mt-2 min-h-12 w-full rounded-2xl border bg-white/5 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/40"
+                    :class="usernameStatus && !usernameStatus.available ? 'border-red-300/40' : usernameStatus?.available ? 'border-emerald-300/40' : 'border-white/10'"
+                    placeholder="mi_username"
+                  />
+                  <p
+                    v-if="isCheckingUsername || usernameStatus"
+                    class="mt-2 text-xs font-black"
+                    :class="usernameStatus?.available ? 'text-emerald-300' : 'text-amber-200'"
+                  >
+                    {{ isCheckingUsername ? 'Verificando username...' : usernameStatus.message }}
+                  </p>
+                </label>
+              </div>
+
+              <div class="grid gap-4 sm:grid-cols-2">
                 <label class="block">
                   <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('profile.edit.country') }}</span>
                   <input
@@ -586,7 +616,7 @@ onUnmounted(() => {
                 <button
                   type="submit"
                   class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-                  :disabled="isSavingProfile || isUploadingPhoto || isUploadingBanner"
+                  :disabled="isSavingProfile || isUploadingPhoto || isUploadingBanner || isUsernameBlocked"
                 >
                   {{ isSavingProfile ? $t('profile.edit.saving') : $t('profile.edit.save') }}
                 </button>

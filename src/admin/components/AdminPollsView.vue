@@ -1,8 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { collection, deleteDoc, doc, getDocs, orderBy, query } from 'firebase/firestore'
-import { db } from '../../firebase'
 import { translate } from '../../i18n'
+import { deleteAdminPoll, getAdminPolls } from '../../services/api/adminApi'
 
 const polls = ref([])
 const isLoading = ref(true)
@@ -10,7 +9,7 @@ const errorMessage = ref('')
 const successMessage = ref('')
 
 const formatDate = (value) => {
-  const date = value?.toDate?.()
+  const date = value?.toDate?.() || (typeof value === 'string' ? new Date(value) : null)
 
   if (!date) {
     return '-'
@@ -26,14 +25,8 @@ const loadPolls = async () => {
   isLoading.value = true
   errorMessage.value = ''
 
-  const pollsQuery = query(collection(db, 'polls'), orderBy('createdAt', 'desc'))
-
   try {
-    const pollsSnap = await getDocs(pollsQuery)
-    polls.value = pollsSnap.docs.map((pollDoc) => ({
-      id: pollDoc.id,
-      ...pollDoc.data(),
-    }))
+    polls.value = await getAdminPolls(100)
   } catch {
     errorMessage.value = translate('admin.polls.errors.load')
   } finally {
@@ -52,8 +45,9 @@ const removePoll = async (poll) => {
   successMessage.value = ''
 
   try {
-    await deleteDoc(doc(db, 'polls', poll.id))
+    await deleteAdminPoll(poll.id)
     successMessage.value = translate('admin.polls.deleted')
+    await loadPolls()
   } catch {
     errorMessage.value = translate('admin.polls.errors.delete')
   }

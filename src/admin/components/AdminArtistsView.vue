@@ -1,8 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { collection, deleteDoc, doc, getDocs, orderBy, query } from 'firebase/firestore'
-import { db } from '../../firebase'
 import { translate } from '../../i18n'
+import { deleteAdminArtist, getAdminArtists } from '../../services/api/adminApi'
 
 const artists = ref([])
 const isLoading = ref(true)
@@ -30,13 +29,7 @@ const loadArtists = async () => {
   errorMessage.value = ''
 
   try {
-    const artistsQuery = query(collection(db, 'artists'), orderBy('createdAt', 'desc'))
-    const artistsSnap = await getDocs(artistsQuery)
-
-    artists.value = artistsSnap.docs.map((artistDoc) => ({
-      id: artistDoc.id,
-      ...artistDoc.data(),
-    }))
+    artists.value = await getAdminArtists(250)
   } catch {
     errorMessage.value = translate('admin.artists.errors.load')
   } finally {
@@ -55,7 +48,7 @@ const removeArtist = async (artist) => {
   successMessage.value = ''
 
   try {
-    await deleteDoc(doc(db, 'artists', artist.id))
+    await deleteAdminArtist(artist.id)
     successMessage.value = translate('admin.artists.deleted')
     await loadArtists()
   } catch {

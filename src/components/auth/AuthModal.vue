@@ -1,12 +1,7 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from "vue";
-import {
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-} from "firebase/auth";
+import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import { translate } from "../../i18n";
-import { auth, googleProvider } from "../../firebase";
+import { login, loginWithGoogle } from "../../services/api/authApi";
 
 const emit = defineEmits(["close"]);
 
@@ -19,6 +14,9 @@ const isResetPasswordOpen = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
+const googleButtonRef = ref(null);
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+let googleScriptPromise = null;
 
 const closeModal = () => {
   emit("close");
@@ -32,6 +30,7 @@ const handleEscape = (event) => {
 
 onMounted(() => {
   window.addEventListener("keydown", handleEscape);
+  nextTick(renderGoogleButton);
 });
 
 onUnmounted(() => {
@@ -39,26 +38,73 @@ onUnmounted(() => {
 });
 
 const friendlyAuthError = (error) => {
-  const messages = {
-    "auth/invalid-email": translate("auth.errors.invalidEmail"),
-    "auth/invalid-credential": translate("auth.errors.invalidCredential"),
-    "auth/user-not-found": translate("auth.errors.userNotFound"),
-    "auth/wrong-password": translate("auth.errors.wrongPassword"),
-    "auth/too-many-requests":
-      translate("auth.errors.tooManyRequests"),
-    "auth/operation-not-allowed":
-      translate("auth.errors.operationNotAllowed"),
-    "auth/network-request-failed":
-      translate("auth.errors.networkRequestFailed"),
-    "auth/popup-closed-by-user":
-      translate("auth.errors.popupClosedByUser"),
-    "auth/unauthorized-domain":
-      translate("auth.errors.unauthorizedDomain"),
-  };
+  return error?.message || translate("auth.errors.genericAction");
+};
 
-  return (
-    messages[error.code] || translate("auth.errors.genericAction")
-  );
+const loadGoogleScript = () => {
+  if (window.google?.accounts?.id) {
+    return Promise.resolve();
+  }
+
+  if (!googleScriptPromise) {
+    googleScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  return googleScriptPromise;
+};
+
+const handleGoogleCredential = async (response) => {
+  errorMessage.value = "";
+  successMessage.value = "";
+  isLoading.value = true;
+
+  try {
+    if (!response?.credential) {
+      throw new Error("No se recibio credencial de Google.");
+    }
+
+    await loginWithGoogle(response.credential);
+    emit("close");
+  } catch (error) {
+    errorMessage.value = friendlyAuthError(error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const renderGoogleButton = async () => {
+  if (!GOOGLE_CLIENT_ID || !googleButtonRef.value) {
+    return;
+  }
+
+  try {
+    await loadGoogleScript();
+    googleButtonRef.value.innerHTML = "";
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+    });
+    window.google.accounts.id.renderButton(googleButtonRef.value, {
+      theme: "outline",
+      size: "large",
+      type: "standard",
+      shape: "pill",
+      text: "continue_with",
+      logo_alignment: "left",
+      locale: "en",
+      width: Math.min(300, googleButtonRef.value.clientWidth || 300),
+    });
+  } catch (error) {
+    errorMessage.value = friendlyAuthError(error);
+  }
 };
 
 const openPasswordReset = () => {
@@ -80,11 +126,10 @@ const handleEmailAccess = async () => {
   isLoading.value = true;
 
   try {
-    await signInWithEmailAndPassword(
-      auth,
-      email.value.trim().toLowerCase(),
-      password.value,
-    );
+    await login({
+      identifier: email.value.trim().toLowerCase(),
+      password: password.value,
+    });
     emit("close");
   } catch (error) {
     errorMessage.value = friendlyAuthError(error);
@@ -96,16 +141,13 @@ const handleEmailAccess = async () => {
 const handleGoogleAccess = async () => {
   errorMessage.value = "";
   successMessage.value = "";
-  isLoading.value = true;
 
-  try {
-    await signInWithPopup(auth, googleProvider);
-    emit("close");
-  } catch (error) {
-    errorMessage.value = friendlyAuthError(error);
-  } finally {
-    isLoading.value = false;
+  if (!GOOGLE_CLIENT_ID) {
+    errorMessage.value = "Falta configurar VITE_GOOGLE_CLIENT_ID.";
+    return;
   }
+
+  await renderGoogleButton();
 };
 
 const handlePasswordReset = async () => {
@@ -120,10 +162,9 @@ const handlePasswordReset = async () => {
   isLoading.value = true;
 
   try {
-    await sendPasswordResetEmail(auth, resetEmail.value.trim().toLowerCase());
-    successMessage.value = translate("auth.resetEmailSent");
-  } catch (error) {
-    errorMessage.value = friendlyAuthError(error);
+    successMessage.value = "Reset de password pendiente de API propia.";
+  } catch {
+    errorMessage.value = translate("auth.errors.genericAction");
   } finally {
     isLoading.value = false;
   }
@@ -219,23 +260,33 @@ const handlePasswordReset = async () => {
             </button>
           </form>
 
-          <button
+          <div
             v-else
-            type="button"
-            class="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-black text-white transition hover:border-white/20 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="isLoading"
-            @click="handleGoogleAccess"
+            class="min-h-12 w-full"
           >
-            <span class="grid size-5 place-items-center">
-              <img
-                src="/google-g-logo.svg"
-                alt=""
-                class="size-5"
-                aria-hidden="true"
-              />
-            </span>
-            {{ $t("auth.continueWithGoogle") }}
-          </button>
+            <div
+              v-if="GOOGLE_CLIENT_ID"
+              ref="googleButtonRef"
+              class="google-auth-button flex min-h-12 w-full items-center justify-center overflow-hidden"
+            ></div>
+            <button
+              v-else
+              type="button"
+              class="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-black text-white transition hover:border-white/20 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isLoading"
+              @click="handleGoogleAccess"
+            >
+              <span class="grid size-5 place-items-center">
+                <img
+                  src="/google-g-logo.svg"
+                  alt=""
+                  class="size-5"
+                  aria-hidden="true"
+                />
+              </span>
+              {{ $t("auth.continueWithGoogle") }}
+            </button>
+          </div>
 
           <div
             v-if="!isResetPasswordOpen"
@@ -276,7 +327,7 @@ const handlePasswordReset = async () => {
                   v-model="password"
                   :type="showPassword ? 'text' : 'password'"
                   required
-                  minlength="6"
+                  minlength="8"
                   class="min-h-12 w-full rounded-lg border border-white/10 bg-white/5 px-5 pr-24 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-white/20 focus:bg-white/8 focus:ring-0"
                   :placeholder="$t('auth.passwordPlaceholder')"
                 />

@@ -372,12 +372,21 @@ onUnmounted(() => {
           </article>
         </div>
 
-        <p
+        <div
           v-else
-          class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400"
+          class="relative overflow-hidden rounded-4xl border border-slate-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-violet-950/15"
         >
-          {{ $t("polls.list.noClosed") }}
-        </p>
+          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(148,163,184,0.18),transparent_34%),radial-gradient(circle_at_85%_75%,rgba(217,70,239,0.14),transparent_30%)]"></div>
+          <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-slate-200/20 bg-white/8 text-2xl text-slate-200 shadow-lg shadow-violet-950/20">
+            <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+          </div>
+          <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+            Historial en preparacion
+          </h3>
+          <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+            Cuando finalice una votacion, sus resultados quedaran guardados aqui para consultar ganadores y posiciones.
+          </p>
+        </div>
       </section>
     </template>
   </section>

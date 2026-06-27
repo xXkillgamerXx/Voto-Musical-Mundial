@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { subscribePublicResults } from '../services/pollResults'
@@ -18,73 +17,28 @@ let unsubscribePolls = null
 const roundListeners = new Map()
 const pollResultListeners = new Map()
 
-const fallbackSlides = [
-  {
-    badge: '#1 mas popular',
-    status: 'En vivo',
-    eyebrow: 'Best Kpop Vocalists 2026',
-    title: 'Jungkook lidera la votacion',
-    description:
-      'Apoya a tu artista favorito, suma votos y ayuda a tu fandom a mantenerse arriba en el ranking.',
-    category: 'Lista',
-    leader: 'Jungkook',
-    votes: '1,890,406',
-    percent: '38.48%',
-    progress: 82,
-    time: '6d 04h',
-    href: '/ranking-popularity',
-    socialStats: [
-      { label: 'Fans activos', value: '12.8K' },
-      { label: 'Votos hoy', value: '84.2K' },
-      { label: 'Fandom push', value: '98%' },
-    ],
-  },
-  {
-    badge: 'Votacion destacada',
-    status: 'Abierta',
-    eyebrow: 'Best Kpop Leaders 2026',
-    title: 'Elige al lider favorito',
-    description:
-      'Cada voto cuenta para subir posiciones. Vuelve cuando termine el cooldown y sigue apoyando.',
-    category: 'Ranking',
-    leader: 'Seungmin',
-    votes: '1,817,217',
-    percent: '36.99%',
-    progress: 76,
-    time: '12d 08h',
-    href: '/ranking-popularity',
-    socialStats: [
-      { label: 'Fans activos', value: '9.4K' },
-      { label: 'Votos hoy', value: '71.6K' },
-      { label: 'Subiendo', value: '+4' },
-    ],
-  },
-  {
-    badge: 'Top del momento',
-    status: 'Resultados',
-    eyebrow: 'Best Global Artist 2026',
-    title: 'La carrera sigue abierta',
-    description:
-      'Consulta el avance del top y descubre que fandom esta empujando mas fuerte en tiempo real.',
-    category: 'Top 5',
-    leader: 'Rose',
-    votes: '596,389',
-    percent: '12.14%',
-    progress: 54,
-    time: 'Live',
-    href: '/ranking-popularity',
-    socialStats: [
-      { label: 'Fans activos', value: '6.1K' },
-      { label: 'Votos hoy', value: '32.7K' },
-      { label: 'Tendencia', value: 'Hot' },
-    ],
-  },
-]
+const emptyBannerSlide = {
+  badge: 'Proximamente',
+  status: 'Sin votaciones',
+  eyebrow: 'Votos Musica Mundial',
+  title: 'Prepara tu fandom para la proxima votacion',
+  description:
+    'Cuando haya una votacion activa, aqui veras el lider, los votos y el avance real del ranking.',
+  category: '',
+  leader: '',
+  votes: '0',
+  percent: '0.00%',
+  progress: 0,
+  time: '',
+  href: '/votaciones',
+  socialStats: [],
+  isEmpty: true,
+}
 
 const liveSlides = computed(() =>
   livePolls.value.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index)),
 )
-const bannerSlides = computed(() => liveSlides.value.length ? liveSlides.value : fallbackSlides)
+const bannerSlides = computed(() => liveSlides.value.length ? liveSlides.value : [emptyBannerSlide])
 const currentSlide = computed(() => bannerSlides.value[activeSlide.value] || bannerSlides.value[0])
 
 const goToPreviousSlide = () => {
@@ -174,24 +128,13 @@ const syncRoundListeners = (pollRows) => {
       return
     }
 
-    getDocs(collection(db, 'polls', poll.id, 'rounds'))
-      .then((roundsSnap) => {
-        const rounds = roundsSnap.docs.map((roundDoc) => ({
-          id: roundDoc.id,
-          ...roundDoc.data(),
-        }))
-        const activeRound = rounds.find((round) => round.id === poll.activeRoundId)
-          || rounds.find((round) => round.status === 'live')
-          || rounds[0]
-          || null
+    const activeRound = (poll.rounds || []).find((round) => round.id === poll.activeRoundId)
+      || (poll.rounds || []).find((round) => round.status === 'live')
+      || (poll.rounds || [])[0]
+      || null
 
-        setActiveRoundId(poll.id, activeRound?.id || '')
-        syncPollResultListeners(livePolls.value)
-      })
-      .catch(() => {
-        clearActiveRoundId(poll.id)
-        syncPollResultListeners(livePolls.value)
-      })
+    setActiveRoundId(poll.id, activeRound?.id || '')
+    syncPollResultListeners(livePolls.value)
 
     roundListeners.set(poll.id, () => {})
   })
@@ -405,7 +348,10 @@ onUnmounted(() => {
           {{ currentSlide.description }}
         </p>
 
-        <div class="mt-6 flex flex-wrap items-end gap-4">
+        <div
+          v-if="!currentSlide.isEmpty"
+          class="mt-6 flex flex-wrap items-end gap-4"
+        >
           <div>
             <p class="text-xs font-black uppercase tracking-widest text-slate-400">
               {{ currentSlide.category }}
@@ -421,14 +367,20 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10 sm:max-w-md">
+        <div
+          v-if="!currentSlide.isEmpty"
+          class="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10 sm:max-w-md"
+        >
           <div
             class="h-full rounded-full bg-linear-to-r from-violet-400 to-fuchsia-400 transition-all duration-700 ease-out"
             :style="{ width: `${animatedProgress}%` }"
           ></div>
         </div>
 
-        <div class="mt-4 grid w-full gap-2 sm:max-w-md sm:grid-cols-3">
+        <div
+          v-if="currentSlide.socialStats.length"
+          class="mt-4 grid w-full gap-2 sm:max-w-md sm:grid-cols-3"
+        >
           <div
             v-for="stat in currentSlide.socialStats"
             :key="stat.label"
@@ -448,7 +400,7 @@ onUnmounted(() => {
             :href="currentSlide.href"
             class="flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-center text-sm font-black uppercase tracking-wide shadow-xl shadow-fuchsia-500/25 transition hover:scale-[1.02]"
           >
-            <span>{{ $t('common.actions.voteNow') }}</span>
+            <span>{{ currentSlide.isEmpty ? 'Ver votaciones' : $t('common.actions.voteNow') }}</span>
             <span aria-hidden="true">→</span>
           </a>
           <a
@@ -459,7 +411,10 @@ onUnmounted(() => {
           </a>
         </div>
 
-        <div class="mt-7 flex items-center gap-3">
+        <div
+          v-if="bannerSlides.length > 1"
+          class="mt-7 flex items-center gap-3"
+        >
           <button
             v-for="(_, index) in bannerSlides"
             :key="index"

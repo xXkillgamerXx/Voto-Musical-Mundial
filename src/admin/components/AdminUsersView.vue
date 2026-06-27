@@ -1,8 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { collection, doc, getDocs, increment, limit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { db } from '../../firebase'
 import { translate } from '../../i18n'
+import { getAdminUsers, updateAdminUser } from '../../services/api/adminApi'
 
 const users = ref([])
 const isLoading = ref(true)
@@ -25,13 +24,7 @@ const loadUsers = async () => {
   successMessage.value = ''
 
   try {
-    const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100))
-    const usersSnap = await getDocs(usersQuery)
-
-    users.value = usersSnap.docs.map((userDoc) => ({
-      id: userDoc.id,
-      ...userDoc.data(),
-    }))
+    users.value = await getAdminUsers(100)
     pointAdjustments.value = users.value.reduce((adjustments, user) => {
       adjustments[user.id] = ''
       return adjustments
@@ -59,12 +52,10 @@ const adjustUserPoints = async (user) => {
   updatingPointsUserId.value = user.id
 
   try {
-    await updateDoc(doc(db, 'users', user.id), {
-      points: increment(amount),
-      pointsUpdatedAt: serverTimestamp(),
+    const updated = await updateAdminUser(user.id, {
+      points: Number(user.points || 0) + amount,
     })
-
-    user.points = Number(user.points || 0) + amount
+    user.points = Number(updated.points || 0)
     pointAdjustments.value[user.id] = ''
     successMessage.value = translate('admin.users.pointsUpdated', {
       name: user.name || user.username || user.email || translate('admin.users.fallbackUser'),
@@ -87,12 +78,8 @@ const updateUserRole = async (user, nextRole) => {
   updatingRoleUserId.value = user.id
 
   try {
-    await updateDoc(doc(db, 'users', user.id), {
-      role: nextRole,
-      roleUpdatedAt: serverTimestamp(),
-    })
-
-    user.role = nextRole
+    const updated = await updateAdminUser(user.id, { role: nextRole })
+    user.role = updated.role
     successMessage.value = translate('admin.users.roleUpdated', {
       name: user.name || user.username || user.email || translate('admin.users.fallbackUser'),
     })

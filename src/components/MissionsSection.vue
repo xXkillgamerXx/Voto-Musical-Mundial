@@ -1,64 +1,18 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { auth } from '../firebase'
+import { getMissions } from '../services/api/missionsApi'
 
 const dbMissions = ref([])
 const selectedMission = ref(null)
 const referralCode = ref('')
 let unsubscribeMissions = null
 let unsubscribeAuth = null
-let isEnsuringReferralCode = false
-
-const fallbackMissions = [
-  {
-    icon: '✓',
-    titleKey: 'home.missions.items.voteTen.title',
-    textKey: 'home.missions.items.voteTen.text',
-    reward: '+40 pts',
-    progress: '4/10',
-    percent: 40,
-    statusKey: 'common.status.inProgress',
-    featured: true,
-  },
-  {
-    icon: '♡',
-    titleKey: 'home.missions.items.likePoll.title',
-    textKey: 'home.missions.items.likePoll.text',
-    reward: '+15 pts',
-    progress: '0/1',
-    percent: 0,
-    statusKey: 'common.status.pending',
-  },
-  {
-    icon: '↗',
-    titleKey: 'home.missions.items.shareFandom.title',
-    textKey: 'home.missions.items.shareFandom.text',
-    reward: '+25 pts',
-    progress: '0/1',
-    percent: 0,
-    statusKey: 'common.status.pending',
-  },
-  {
-    icon: '+',
-    titleKey: 'home.missions.items.followAccount.title',
-    textKey: 'home.missions.items.followAccount.text',
-    reward: '+30 pts',
-    progress: '1/1',
-    percent: 100,
-    statusKey: 'common.status.ready',
-    done: true,
-  },
-]
 
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
 
 const missions = computed(() => {
-  if (!dbMissions.value.length) {
-    return fallbackMissions
-  }
-
   return dbMissions.value
     .filter((mission) => mission.active !== false)
     .slice(0, 8)
@@ -176,12 +130,9 @@ const performMissionAction = (mission) => {
 }
 
 onMounted(() => {
-  getDocs(query(collection(db, 'missions'), orderBy('order', 'asc')))
-    .then((missionsSnap) => {
-      dbMissions.value = missionsSnap.docs.map((missionDoc) => ({
-        id: missionDoc.id,
-        ...missionDoc.data(),
-      }))
+  getMissions()
+    .then((missionRows) => {
+      dbMissions.value = missionRows
     })
     .catch(() => {
       dbMissions.value = []
@@ -193,29 +144,7 @@ onMounted(() => {
       return
     }
 
-    getDoc(doc(db, 'users', user.uid)).then((userSnap) => {
-      const userData = userSnap.data() || {}
-      const code = String(userData.referralCode || userData.username || '').trim().toLowerCase()
-      referralCode.value = code
-
-      if (!userData.referralCode && code && !isEnsuringReferralCode) {
-        isEnsuringReferralCode = true
-        Promise.all([
-          setDoc(doc(db, 'referralCodes', code), {
-            uid: user.uid,
-            username: userData.username || code,
-            code,
-            createdAt: serverTimestamp(),
-          }, { merge: true }),
-          updateDoc(doc(db, 'users', user.uid), {
-            referralCode: code,
-            referralCodeUpdatedAt: serverTimestamp(),
-          }),
-        ]).finally(() => {
-          isEnsuringReferralCode = false
-        })
-      }
-    }).catch(() => {})
+    referralCode.value = String(user.displayName || user.email?.split('@')[0] || '').trim().toLowerCase()
   })
 })
 
@@ -236,13 +165,12 @@ onUnmounted(() => {
           {{ $t('home.missions.title') }}
         </h2>
       </div>
-
-      <span class="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-100">
-        {{ $t('common.points', { count: '2,450' }) }}
-      </span>
     </div>
 
-    <div class="missions-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
+    <div
+      v-if="missions.length"
+      class="missions-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0"
+    >
       <article
         v-for="mission in missions"
         :key="mission.id || mission.titleKey"
@@ -308,6 +236,22 @@ onUnmounted(() => {
           </button>
         </div>
       </article>
+    </div>
+
+    <div
+      v-else
+      class="relative overflow-hidden rounded-4xl border border-cyan-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-cyan-950/15"
+    >
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_70%,rgba(217,70,239,0.14),transparent_30%)]"></div>
+      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-cyan-200/20 bg-cyan-300/10 text-2xl text-cyan-200 shadow-lg shadow-cyan-950/20">
+        <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+      </div>
+      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+        Nuevas misiones pronto
+      </h3>
+      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+        Estamos preparando retos para que puedas ganar puntos extra. Vuelve mas tarde para encontrar nuevas actividades.
+      </p>
     </div>
 
     <div

@@ -1,11 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
-import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { VueTelInput } from 'vue-tel-input'
 import 'vue-tel-input/vue-tel-input.css'
-import { auth, db } from '../firebase'
 import { translate } from '../i18n'
+import { register } from '../services/api/authApi'
 
 const fallbackCountries = [
   { name: 'República Dominicana', code: 'DO', flag: '🇩🇴', dialCode: '+1', example: '(809) 000-0000', maxDigits: 10 },
@@ -153,13 +151,7 @@ onUnmounted(() => {
 })
 
 const friendlyAuthError = (error) => {
-  const messages = {
-    'auth/email-already-in-use': translate('register.errors.emailInUse'),
-    'auth/invalid-email': translate('register.errors.invalidEmail'),
-    'auth/weak-password': translate('register.errors.weakPassword'),
-  }
-
-  return messages[error.code] || translate('register.errors.createAccount')
+  return error?.message || translate('register.errors.createAccount')
 }
 
 const countryCodeToFlag = (countryCode) => countryCode
@@ -380,37 +372,10 @@ const checkUsernameAvailable = async (showError = true) => {
   const usernameToCheck = normalizedUsername.value
   isCheckingUsername.value = true
 
-  try {
-    const usernameSnap = await getDoc(doc(db, 'usernames', usernameToCheck))
-
-    if (usernameToCheck !== normalizedUsername.value) {
-      return false
-    }
-
-    if (usernameSnap.exists()) {
-      usernameMessage.value = translate('register.errors.usernameTaken')
-
-      if (showError) {
-        errorMessage.value = translate('register.errors.usernameTaken')
-      }
-
-      return false
-    }
-
-    usernameMessage.value = translate('register.states.usernameValid')
-    isUsernameAvailable.value = true
-    return true
-  } catch (error) {
-    usernameMessage.value = translate('register.errors.validateUsername')
-
-    if (showError) {
-      errorMessage.value = translate('register.errors.validateUsernamePermissions')
-    }
-
-    return false
-  } finally {
-    isCheckingUsername.value = false
-  }
+  usernameMessage.value = translate('register.states.usernameValid')
+  isUsernameAvailable.value = true
+  isCheckingUsername.value = false
+  return Boolean(usernameToCheck)
 }
 
 watch(normalizedUsername, () => {
@@ -499,46 +464,15 @@ const handleRegister = async () => {
       return
     }
 
-    const credential = await createUserWithEmailAndPassword(auth, email.value, password.value)
-    await updateProfile(credential.user, { displayName: fullName.value })
-
-    await runTransaction(db, async (transaction) => {
-      const usernameRef = doc(db, 'usernames', normalizedUsername.value)
-      const ownReferralCode = normalizedUsername.value
-      const ownReferralRef = doc(db, 'referralCodes', ownReferralCode)
-      const invitedByCode = referralCode.value && referralCode.value !== ownReferralCode
-        ? referralCode.value
-        : ''
-      const invitedByRef = invitedByCode ? doc(db, 'referralCodes', invitedByCode) : null
-      const usernameSnap = await transaction.get(usernameRef)
-      const invitedBySnap = invitedByRef ? await transaction.get(invitedByRef) : null
-
-      if (usernameSnap.exists()) {
-        throw new Error('username-unavailable')
-      }
-
-      if (invitedByRef && !invitedBySnap.exists()) {
-        throw new Error('referral-code-unavailable')
-      }
-
-      const invitedBy = invitedBySnap?.data() || null
-
-      transaction.set(usernameRef, {
-        uid: credential.user.uid,
-        username: normalizedUsername.value,
-        createdAt: serverTimestamp(),
-      })
-      transaction.set(ownReferralRef, {
-        uid: credential.user.uid,
-        username: normalizedUsername.value,
-        code: ownReferralCode,
-        createdAt: serverTimestamp(),
-      })
-      transaction.set(doc(db, 'users', credential.user.uid), {
+    await register({
+      email: email.value.trim().toLowerCase(),
+      password: password.value,
+      username: normalizedUsername.value,
+      displayName: fullName.value,
+      referralCode: referralCode.value || undefined,
+      metadata: {
         firstName: firstName.value.trim(),
         lastName: lastName.value.trim(),
-        name: fullName.value,
-        username: normalizedUsername.value,
         country: selectedResidenceCountry.value?.name || country.value,
         countryCode: selectedResidenceCountry.value?.code || '',
         phoneCountry: selectedPhoneCountry.value?.name || '',
@@ -546,20 +480,7 @@ const handleRegister = async () => {
         phoneDialCode: selectedPhoneCountry.value?.dialCode || '',
         phone: phone.value.trim(),
         phoneInternational: phoneForSave.value,
-        email: email.value.trim(),
-        points: 25,
-        spentPoints: 0,
-        referralCode: ownReferralCode,
-        referredBy: invitedBy
-          ? {
-              uid: invitedBy.uid,
-              username: invitedBy.username || '',
-              code: invitedBy.code || invitedByCode,
-            }
-          : null,
-        referralSignupProcessed: false,
-        createdAt: serverTimestamp(),
-      })
+      },
     })
 
     window.location.href = '/'

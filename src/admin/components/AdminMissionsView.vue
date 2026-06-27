@@ -1,18 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  writeBatch,
-} from "firebase/firestore";
-import { db } from "../../firebase";
+  createAdminMission,
+  deleteAdminMission,
+  getAdminMissions,
+  updateAdminMission,
+} from "../../services/api/adminApi";
 
 const missionCategories = [
   { value: "social", label: "Redes sociales" },
@@ -303,7 +296,6 @@ const missionPayload = () => ({
   order: Math.max(1, Math.floor(Number(form.value.order || 1))),
   active: Boolean(form.value.active),
   featured: Boolean(form.value.featured),
-  updatedAt: serverTimestamp(),
 });
 
 const templatePayload = (template, index) => ({
@@ -318,8 +310,6 @@ const templatePayload = (template, index) => ({
   order: missions.value.length + index + 1,
   active: true,
   featured: false,
-  createdAt: serverTimestamp(),
-  updatedAt: serverTimestamp(),
 });
 
 const useTemplate = (template) => {
@@ -349,17 +339,13 @@ const createAllTemplates = async () => {
   isSaving.value = true;
 
   try {
-    const batch = writeBatch(db);
-
-    missingTemplates.forEach((template, index) => {
-      const missionRef = doc(collection(db, "missions"));
-      batch.set(missionRef, templatePayload(template, index));
-    });
-
-    await batch.commit();
+    await Promise.all(
+      missingTemplates.map((template, index) => createAdminMission(templatePayload(template, index))),
+    );
     successMessage.value = `${missingTemplates.length} misiones creadas.`;
     isTemplatesModalOpen.value = false;
     resetForm();
+    missions.value = await getAdminMissions();
   } catch (error) {
     errorMessage.value = missionErrorMessage(error, "No se pudieron crear las plantillas.");
   } finally {
@@ -387,18 +373,16 @@ const saveMission = async () => {
     const payload = missionPayload();
 
     if (editingMissionId.value) {
-      await updateDoc(doc(db, "missions", editingMissionId.value), payload);
+      await updateAdminMission(editingMissionId.value, payload);
       successMessage.value = "Mision actualizada.";
     } else {
-      await addDoc(collection(db, "missions"), {
-        ...payload,
-        createdAt: serverTimestamp(),
-      });
+      await createAdminMission(payload);
       successMessage.value = "Mision creada.";
     }
 
     resetForm();
     isMissionModalOpen.value = false;
+    missions.value = await getAdminMissions();
   } catch (error) {
     errorMessage.value = missionErrorMessage(error, "No se pudo guardar la mision.");
   } finally {
@@ -411,10 +395,10 @@ const toggleMission = async (mission) => {
   successMessage.value = "";
 
   try {
-    await updateDoc(doc(db, "missions", mission.id), {
+    const updated = await updateAdminMission(mission.id, {
       active: mission.active === false,
-      updatedAt: serverTimestamp(),
     });
+    mission.active = updated.active;
   } catch (error) {
     errorMessage.value = missionErrorMessage(error, "No se pudo cambiar el estado de la mision.");
   }
@@ -431,8 +415,9 @@ const removeMission = async (mission) => {
   successMessage.value = "";
 
   try {
-    await deleteDoc(doc(db, "missions", mission.id));
+    await deleteAdminMission(mission.id);
     successMessage.value = "Mision eliminada.";
+    missions.value = missions.value.filter((item) => item.id !== mission.id);
 
     if (editingMissionId.value === mission.id) {
       resetForm();
@@ -444,11 +429,7 @@ const removeMission = async (mission) => {
 
 onMounted(async () => {
   try {
-    const missionsSnap = await getDocs(query(collection(db, "missions"), orderBy("order", "asc")));
-      missions.value = missionsSnap.docs.map((missionDoc) => ({
-        id: missionDoc.id,
-        ...missionDoc.data(),
-      }));
+      missions.value = await getAdminMissions();
       isLoading.value = false;
   } catch {
     missions.value = [];

@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { collection, getDocs } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { db } from "../firebase";
@@ -85,30 +84,22 @@ const syncActiveRoundEndListeners = (pollRows) => {
       return;
     }
 
-    getDocs(collection(db, "polls", poll.id, "rounds"))
-      .then((roundsSnap) => {
-        const rounds = roundsSnap.docs.map((roundDoc) => ({
-          id: roundDoc.id,
-          ...roundDoc.data(),
-        }));
-        const activeRound =
-          rounds.find((round) => round.id === poll.activeRoundId) ||
-          rounds.find((round) => round.status === "live") ||
-          rounds[0] ||
-          null;
+    const activeRound =
+      (poll.rounds || []).find((round) => round.id === poll.activeRoundId) ||
+      (poll.rounds || []).find((round) => round.status === "live") ||
+      (poll.rounds || [])[0] ||
+      null;
 
-        polls.value = polls.value.map((currentPoll) =>
-          currentPoll.id === poll.id
-            ? {
-                ...currentPoll,
-                activeRoundId:
-                  currentPoll.activeRoundId || activeRound?.id || "",
-                activeRoundEndAt: activeRound?.endAt || null,
-              }
-            : currentPoll,
-        );
-      })
-      .catch(() => {});
+    polls.value = polls.value.map((currentPoll) =>
+      currentPoll.id === poll.id
+        ? {
+            ...currentPoll,
+            activeRoundId:
+              currentPoll.activeRoundId || activeRound?.id || "",
+            activeRoundEndAt: activeRound?.endAt || null,
+          }
+        : currentPoll,
+    );
 
     activeRoundEndListeners.set(poll.id, {
       roundId: poll.activeRoundId || "",
@@ -180,19 +171,20 @@ onUnmounted(() => {
 
 <template>
   <section class="active-polls-surface mx-auto max-w-352 py-6 px-4 sm:px-6 lg:py-8">
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h2
-        class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"
-      >
-        <span class="text-fuchsia-300">✦</span>
-        {{ $t("home.activePolls.title") }}
-      </h2>
+    <div class="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+          {{ $t("home.activePolls.eyebrow") }}
+        </p>
+        <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+          {{ $t("home.activePolls.title") }}
+        </h2>
+      </div>
       <a
         href="/votaciones"
         class="rounded-full border border-violet-300/20 bg-violet-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-violet-200 transition hover:bg-violet-400/20 hover:text-white"
       >
-        {{ $t("home.activePolls.eyebrow") }}
-        · {{ $t("common.actions.viewAll") }}
+        {{ $t("common.actions.viewAll") }}
       </a>
     </div>
 

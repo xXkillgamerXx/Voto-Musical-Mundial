@@ -19,9 +19,6 @@ const pointPacks = [
         <span class="text-fuchsia-300">✦</span>
         {{ $t('rewards.hubTitle') }}
       </h2>
-      <span class="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-100">
-        2,450 pts
-      </span>
     </div>
 
     <div class="grid gap-4 lg:grid-cols-[1fr_1.2fr_1fr]">

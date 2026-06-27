@@ -1,16 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  serverTimestamp,
-  updateDoc,
-} from 'firebase/firestore'
-import { db } from '../../firebase'
 import { translate } from '../../i18n'
+import {
+  createAdminPollCategory,
+  deleteAdminPollCategory,
+  getAdminPollCategories,
+  updateAdminPollCategory,
+} from '../../services/api/adminApi'
 
 const props = defineProps({
   showForm: {
@@ -129,17 +125,13 @@ const saveCategory = async () => {
       year,
       icon: categoryForm.value.icon || iconOptions[0].value,
       visual: categoryForm.value.visual || visualOptions[0].value,
-      updatedAt: serverTimestamp(),
     }
 
     if (editingCategoryId.value) {
-      await updateDoc(doc(db, 'pollCategories', editingCategoryId.value), categoryData)
+      await updateAdminPollCategory(editingCategoryId.value, categoryData)
       successMessage.value = translate('admin.categories.updated')
     } else {
-      await addDoc(collection(db, 'pollCategories'), {
-        ...categoryData,
-        createdAt: serverTimestamp(),
-      })
+      await createAdminPollCategory(categoryData)
       successMessage.value = translate('admin.categories.created')
     }
 
@@ -166,7 +158,7 @@ const removeCategory = async (category) => {
   successMessage.value = ''
 
   try {
-    await deleteDoc(doc(db, 'pollCategories', category.id))
+    await deleteAdminPollCategory(category.id)
     successMessage.value = translate('admin.categories.deleted')
 
     if (editingCategoryId.value === category.id) {
@@ -179,11 +171,7 @@ const removeCategory = async (category) => {
 
 onMounted(async () => {
   try {
-    const categoriesSnap = await getDocs(collection(db, 'pollCategories'))
-      categories.value = categoriesSnap.docs.map((categoryDoc) => ({
-        id: categoryDoc.id,
-        ...categoryDoc.data(),
-      })).sort((current, next) =>
+    categories.value = (await getAdminPollCategories()).sort((current, next) =>
         Number(next.year || 0) - Number(current.year || 0)
           || String(current.name || '').localeCompare(String(next.name || '')),
       )

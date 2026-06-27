@@ -1,21 +1,16 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import {
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
-import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { httpsCallable } from "firebase/functions";
-import { auth, db, functions } from "../firebase";
 import { translate } from "../i18n";
 import ActivePolls from "../components/ActivePolls.vue";
 import PollComments from "../components/PollComments.vue";
 import { getArtistsCached } from "../services/firebaseCache";
+import { getCurrentApiAuth } from "../services/api/authApi";
+import { onStoredAuthChange } from "../services/api/client";
+import { getPoll, getPolls } from "../services/api/pollsApi";
+import {
+  castVote as castApiVote,
+  getAnonymousVoteStatus,
+} from "../services/api/votesApi";
 import {
   loadContestantMetadata,
   mergeContestantsWithPublicResults,
@@ -77,12 +72,127 @@ const voteCountAnimationTimers = new Map();
 let displayedTotalAnimationTimer = null;
 const POINTS_PER_VOTE = 1;
 const DEFAULT_ANONYMOUS_COOLDOWN_MINUTES = 60;
-const getAnonymousVoteStatus = httpsCallable(
-  functions,
-  "getAnonymousVoteStatus",
-);
-const CAST_ANONYMOUS_VOTE_URL =
-  "https://us-central1-votos-3420a.cloudfunctions.net/castAnonymousVoteHttp";
+const db = null;
+
+const dateLike = (value) => {
+  if (!value || typeof value !== "string") {
+    return value || null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return {
+    toDate: () => date,
+    toMillis: () => date.getTime(),
+    seconds: Math.floor(date.getTime() / 1000),
+  };
+};
+
+const normalizeApiArtist = (artist) => {
+  if (!artist) return null;
+  const metadata = artist.metadata || {};
+  const image =
+    artist.image ||
+    artist.imageUrl ||
+    artist.photo ||
+    artist.photoURL ||
+    artist.foto ||
+    artist.banner ||
+    artist.photoUrl ||
+    metadata.image ||
+    metadata.imageUrl ||
+    metadata.photo ||
+    metadata.photoURL ||
+    metadata.foto ||
+    metadata.banner ||
+    "";
+
+  return {
+    ...metadata,
+    ...artist,
+    id: String(artist.id),
+    image,
+    imageUrl: image,
+    photo: image,
+    photoURL: image,
+    banner:
+      metadata.banner ||
+      metadata.bannerUrl ||
+      metadata.cover ||
+      metadata.coverImage ||
+      image,
+  };
+};
+
+const normalizeApiContestant = (contestant) => {
+  const metadata = contestant.metadata || {};
+  const artist = normalizeApiArtist(contestant.artist);
+
+  return {
+    ...metadata,
+    ...contestant,
+    id: String(contestant.id),
+    artistId: String(contestant.artistId || artist?.id || metadata.artistId || contestant.id),
+    artist,
+    votes: Number(contestant.votes || 0),
+    manualVotes: Number(contestant.manualVotes || 0),
+    totalVotes: Number(
+      contestant.totalVotes ??
+        Number(contestant.votes || 0) + Number(contestant.manualVotes || 0),
+    ),
+    matchGroup: Number(contestant.matchGroup || 0),
+    matchOrder: Number(contestant.matchOrder || 0),
+    order: Number(contestant.order || 0),
+    roundId: contestant.roundId ? String(contestant.roundId) : metadata.roundId || null,
+  };
+};
+
+const normalizeApiRound = (round) => {
+  const metadata = round.metadata || round.config || {};
+
+  return {
+    ...metadata,
+    ...round,
+    id: String(round.id),
+    firebaseId: round.firebaseId || metadata.id || null,
+    startAt: dateLike(round.startsAt || metadata.startsAt || metadata.startAt),
+    startsAt: dateLike(round.startsAt || metadata.startsAt || metadata.startAt),
+    endAt: dateLike(round.endsAt || metadata.endsAt || metadata.endAt),
+    endsAt: dateLike(round.endsAt || metadata.endsAt || metadata.endAt),
+    createdAt: dateLike(round.createdAt),
+    updatedAt: dateLike(round.updatedAt),
+  };
+};
+
+const normalizeApiPoll = (apiPoll) => {
+  const metadata = apiPoll.metadata || apiPoll.config || {};
+  const normalizedRounds = (apiPoll.rounds || []).map(normalizeApiRound);
+  const liveRound = normalizedRounds.find((round) => round.status === "live");
+
+  return {
+    ...metadata,
+    ...apiPoll,
+    id: String(apiPoll.id),
+    firebaseId: apiPoll.firebaseId || metadata.id || null,
+    year: Number(metadata.year || apiPoll.year || routeYear),
+    activeRoundId: String(apiPoll.activeRoundId || metadata.activeRoundId || liveRound?.id || ""),
+    totalVotes: Number(apiPoll.totalVotes || 0),
+    leaderArtistId: apiPoll.leaderArtistId ? String(apiPoll.leaderArtistId) : metadata.leaderArtistId || null,
+    leaderVotes: Number(apiPoll.leaderVotes || 0),
+    startAt: dateLike(apiPoll.startsAt || metadata.startsAt || metadata.startAt),
+    startsAt: dateLike(apiPoll.startsAt || metadata.startsAt || metadata.startAt),
+    endAt: dateLike(apiPoll.endsAt || metadata.endsAt || metadata.endAt),
+    endsAt: dateLike(apiPoll.endsAt || metadata.endsAt || metadata.endAt),
+    activeEndAt: dateLike(apiPoll.activeEndAt || metadata.activeEndAt),
+    createdAt: dateLike(apiPoll.createdAt),
+    updatedAt: dateLike(apiPoll.updatedAt),
+    rounds: normalizedRounds,
+    contestants: (apiPoll.contestants || []).map(normalizeApiContestant),
+  };
+};
 
 const isEmbeddedPage = computed(() => {
   const embedParam = new URLSearchParams(window.location.search).get(
@@ -489,7 +599,7 @@ const isAnonymousVotingFlow = computed(() =>
 const hasEnoughPointsToVote = computed(() =>
   currentUser.value?.isAnonymous || !currentUser.value
     ? canUseAnonymousVote.value
-    : Number(userPoints.value || 0) >= POINTS_PER_VOTE,
+    : true,
 );
 const hasEnoughPointsToVoteFor = (contestant) =>
   currentUser.value?.isAnonymous || !currentUser.value
@@ -499,7 +609,9 @@ const formattedUserPoints = computed(() =>
   Number(userPoints.value || 0).toLocaleString("es"),
 );
 const maxVoteAmount = computed(() =>
-  Math.max(0, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE)),
+  currentUser.value && !currentUser.value.isAnonymous
+    ? 1
+    : Math.max(0, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE)),
 );
 const normalizedVoteAmount = computed(() =>
   Math.min(
@@ -1076,26 +1188,11 @@ const getRoundContestants = async (round) => {
     return [];
   }
 
-  const contestantsSnap = await getDocs(
-    collection(db, "polls", selectedPollId, "rounds", round.id, "contestants"),
-  );
-
-  return contestantsSnap.docs
-    .map((contestantDoc) => {
-      const contestant = contestantDoc.data();
-      const totalVotes = Number(
-        contestant.totalVotes ??
-          (contestant.votes || 0) + (contestant.manualVotes || 0),
-      );
-
-      return {
-        id: contestantDoc.id,
-        ...contestant,
-        artistId: contestant.artistId || contestantDoc.id,
-        artist: getArtist(contestant.artistId || contestantDoc.id),
-        totalVotes,
-      };
-    })
+  return (await loadContestantMetadata(db, selectedPollId, round.id))
+    .map((contestant) => ({
+      ...contestant,
+      artist: contestant.artist || getArtist(contestant.artistId || contestant.id),
+    }))
     .filter((contestant) => contestant.artist)
     .sort((current, next) => next.totalVotes - current.totalVotes);
 };
@@ -1220,26 +1317,13 @@ const loadFinalResultContestants = async () => {
 
 const listenRounds = (pollId) => {
   unsubscribeRounds?.();
-  unsubscribeRounds = onSnapshot(
-    query(
-      collection(db, "polls", pollId, "rounds"),
-      orderBy("createdAt", "asc"),
-    ),
-    (roundsSnap) => {
-      rounds.value = roundsSnap.docs.map((roundDoc) => ({
-        id: roundDoc.id,
-        ...roundDoc.data(),
-      }));
-      listenContestants(pollId);
-      syncSelectedRoundFromUrl();
-      if (poll.value?.status === "closed") {
-        loadFinalResultContestants();
-      }
-    },
-    () => {
-      errorMessage.value = translate("polls.detail.roundsError");
-    },
-  );
+  unsubscribeRounds = null;
+  rounds.value = (poll.value?.rounds || []).map(normalizeApiRound);
+  listenContestants(pollId);
+  syncSelectedRoundFromUrl();
+  if (poll.value?.status === "closed") {
+    loadFinalResultContestants();
+  }
 };
 
 const loadArtists = async () => {
@@ -1253,30 +1337,26 @@ const loadPoll = async () => {
   try {
     await loadArtists();
 
-    const pollsQuery = routeSlug
-      ? query(collection(db, "polls"), where("slug", "==", routeSlug))
-      : query(collection(db, "polls"), where("type", "==", "list"));
-    const pollsSnap = await getDocs(pollsQuery);
-    const pollDoc =
-      pollsSnap.docs.find((docSnap) => {
-        const data = docSnap.data();
-        return !data.year || data.year === routeYear;
-      }) || pollsSnap.docs[0];
+    const apiPoll = routeSlug
+      ? await getPoll(routeSlug)
+      : await getPolls(100).then((pollRows) =>
+          pollRows.find((row) => row.type === "list" && (!row.year || Number(row.year) === routeYear)) ||
+          pollRows.find((row) => row.type === "list") ||
+          pollRows[0],
+        );
 
-    if (!pollDoc) {
+    if (!apiPoll) {
       errorMessage.value = translate("polls.detail.notFound");
       poll.value = null;
       currentPollId.value = "";
       return;
     }
 
-    currentPollId.value = pollDoc.id;
-    unsubscribePoll = onSnapshot(doc(db, "polls", pollDoc.id), (pollSnap) => {
-      poll.value = pollSnap.exists()
-        ? { id: pollSnap.id, ...pollSnap.data() }
-        : null;
-    });
-    listenRounds(pollDoc.id);
+    const pollDetail = apiPoll.rounds ? apiPoll : await getPoll(apiPoll.slug || apiPoll.id);
+    poll.value = normalizeApiPoll(pollDetail);
+    currentPollId.value = poll.value.id;
+    unsubscribePoll = null;
+    listenRounds(poll.value.id);
   } catch {
     errorMessage.value = translate("polls.detail.loadError");
   } finally {
@@ -1286,15 +1366,8 @@ const loadPoll = async () => {
 
 const listenUserPoints = (user) => {
   unsubscribeUserPoints?.();
-  userPoints.value = 0;
-
-  if (!user) {
-    return;
-  }
-
-  unsubscribeUserPoints = onSnapshot(doc(db, "users", user.uid), (userSnap) => {
-    userPoints.value = Number(userSnap.data()?.points || 0);
-  });
+  unsubscribeUserPoints = null;
+  userPoints.value = user && !user.isAnonymous ? 1 : 0;
 };
 
 const refreshAnonymousVoteStatuses = async () => {
@@ -1310,13 +1383,19 @@ const refreshAnonymousVoteStatuses = async () => {
   isLoadingAnonymousStatus.value = true;
 
   try {
-    const result = await getAnonymousVoteStatus({
-      pollId: poll.value.id,
-      roundId: activeRound.value?.id || null,
-      voteScopes: anonymousVoteScopes.value,
-    });
+    const statuses = await Promise.all(
+      anonymousVoteScopes.value.map(async (scope) => {
+        const result = await getAnonymousVoteStatus({
+          pollId: poll.value.id,
+          roundId: activeRound.value?.id || null,
+          voteScope: scope === anonymousDefaultScope ? null : scope,
+        });
 
-    anonymousVoteStatuses.value = result.data?.statuses || {};
+        return [scope, result?.status || result || null];
+      }),
+    );
+
+    anonymousVoteStatuses.value = Object.fromEntries(statuses);
   } catch {
     anonymousVoteStatuses.value = {};
   } finally {
@@ -1329,50 +1408,23 @@ const ensureAnonymousUser = async () => {
     return currentUser.value;
   }
 
-  if (auth.currentUser) {
-    currentUser.value = auth.currentUser;
-    return auth.currentUser;
-  }
-
-  const credential = await signInAnonymously(auth);
-  currentUser.value = credential.user;
-  return credential.user;
+  return { isAnonymous: true, id: "anonymous" };
 };
 
-const callAnonymousVoteEndpoint = async (payload, user = auth.currentUser) => {
-  const token = await user?.getIdToken(true);
-
-  if (!token) {
-    throw new Error("anonymous-token-missing");
-  }
-
-  const response = await fetch(CAST_ANONYMOUS_VOTE_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const error = new Error(data?.error?.message || "anonymous-vote-failed");
-    error.code = data?.error?.code
-      ? `functions/${data.error.code}`
-      : "functions/internal";
-    error.details = data?.error?.details || null;
-    console.error("Anonymous vote failed", {
-      status: response.status,
-      code: error.code,
-      message: error.message,
-      details: error.details,
-      payload,
-    });
+const callAnonymousVoteEndpoint = async (payload) => {
+  try {
+    return await castApiVote(payload, { anonymous: true });
+  } catch (error) {
+    error.code = error.status === 429
+      ? "resource-exhausted"
+      : error.status === 401
+        ? "unauthenticated"
+        : error.status === 400
+          ? "invalid-argument"
+          : "internal";
+    error.details = error.payload || null;
     throw error;
   }
-
-  return data;
 };
 
 const voteButtonLabel = (contestant) => {
@@ -1506,12 +1558,11 @@ const voteAnonymouslyFor = async (contestant) => {
       roundId: activeRound.value?.id || null,
       artistId,
       voteScope: voteScope === anonymousDefaultScope ? null : voteScope,
-      shardCount: shardCountForConcurrency(100000),
-    }, anonymousUser);
+    });
 
     anonymousVoteStatuses.value = {
       ...anonymousVoteStatuses.value,
-      [voteScope]: result || null,
+      [voteScope]: result?.status || result || null,
     };
     setOptimisticVoteTotal(artistId, currentVotes + 1);
     animateVoteCount(artistId, currentVotes, currentVotes + 1);
@@ -1562,7 +1613,7 @@ const voteAnonymouslyFor = async (contestant) => {
 
 const voteFor = async (contestant, amount = 1) => {
   errorMessage.value = "";
-  const votingUser = currentUser.value || auth.currentUser;
+  const votingUser = currentUser.value;
 
   if (!votingUser || votingUser.isAnonymous) {
     await voteAnonymouslyFor(contestant);
@@ -1602,12 +1653,14 @@ const voteFor = async (contestant, amount = 1) => {
       pollId: poll.value.id,
       roundId: activeRound.value?.id || null,
       artistId,
-      userId: votingUser.uid,
+      contestantId: contestant.id,
+      userId: votingUser.id,
       userDisplayName:
         votingUser.displayName || votingUser.email || "",
-      userPhotoURL: votingUser.photoURL || "",
+      userPhotoURL: votingUser.photoUrl || votingUser.photoURL || "",
       amount: votesToAdd,
       pointsPerVote: POINTS_PER_VOTE,
+      anonymous: false,
       shardCount: shardCountForConcurrency(100000),
     });
     setOptimisticVoteTotal(artistId, currentVotes + votesToAdd);
@@ -1648,7 +1701,7 @@ const confirmVoteAmount = () => {
 
 watch(
   () => [
-    currentUser.value?.uid,
+    currentUser.value?.id,
     poll.value?.id,
     activeRound.value?.id,
     anonymousVoteScopes.value.join("|"),
@@ -1681,10 +1734,12 @@ onMounted(() => {
           : translate("polls.detail.batchVoteError");
     },
   });
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    currentUser.value = user;
-    listenUserPoints(user);
-  });
+  const syncAuth = (authState = getCurrentApiAuth()) => {
+    currentUser.value = authState?.user || null;
+    listenUserPoints(currentUser.value);
+  };
+  syncAuth();
+  unsubscribeAuth = onStoredAuthChange(syncAuth);
   clockTimer = window.setInterval(() => {
     now.value = Date.now();
   }, 1000);

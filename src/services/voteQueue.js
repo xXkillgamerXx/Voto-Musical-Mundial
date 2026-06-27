@@ -1,10 +1,4 @@
-import {
-  collection,
-  doc,
-  increment,
-  runTransaction,
-  serverTimestamp,
-} from "firebase/firestore";
+import { castVote } from "./api/votesApi";
 
 const DEFAULT_FLUSH_MS = 1500;
 const DEFAULT_SHARD_COUNT = 512;
@@ -19,13 +13,6 @@ export const shardCountForConcurrency = (concurrentUsers = 100000) => {
   return 128;
 };
 
-const randomShard = (shardCount) => Math.floor(Math.random() * shardCount);
-
-const roundCollection = (db, pollId, roundId, collectionName) =>
-  roundId
-    ? collection(db, "polls", pollId, "rounds", roundId, collectionName)
-    : collection(db, "polls", pollId, collectionName);
-
 const buildBatchKey = ({ pollId, roundId, artistId, userId }) =>
   [pollId, roundId || "_root", artistId, userId].map(cleanId).join(":");
 
@@ -35,7 +22,6 @@ const normalizeVote = (vote) => ({
 });
 
 export const createVoteQueue = ({
-  db,
   flushMs = DEFAULT_FLUSH_MS,
   shardCount = DEFAULT_SHARD_COUNT,
   onFlushStart = () => {},
@@ -62,61 +48,16 @@ export const createVoteQueue = ({
   };
 
   const commitBatch = async (batch) => {
-    const userRef = doc(db, "users", batch.userId);
-    const shardIndex = randomShard(batch.shardCount);
-    const shardRef = doc(
-      roundCollection(db, batch.pollId, batch.roundId, "voteShards"),
-      `${cleanId(batch.artistId)}_${shardIndex}`,
-    );
-    const ledgerRef = doc(
-      roundCollection(db, batch.pollId, batch.roundId, "userVoteBatches"),
-      `${cleanId(batch.userId)}_${Date.now()}_${shardIndex}`,
-    );
-
-    await runTransaction(db, async (transaction) => {
-      const [userSnap, shardSnap] = await Promise.all([
-        transaction.get(userRef),
-        transaction.get(shardRef),
-      ]);
-      const availablePoints = Number(userSnap.data()?.points || 0);
-      const pointsToSpend = batch.amount * batch.pointsPerVote;
-
-      if (availablePoints < pointsToSpend) {
-        throw new Error("not-enough-points");
-      }
-
-      transaction.update(userRef, {
-        points: increment(-pointsToSpend),
-        spentPoints: increment(pointsToSpend),
-      });
-
-      if (shardSnap.exists()) {
-        transaction.update(shardRef, {
-          votes: increment(batch.amount),
-          updatedAt: serverTimestamp(),
-        });
-      } else {
-        transaction.set(shardRef, {
-          pollId: batch.pollId,
-          roundId: batch.roundId || null,
-          artistId: batch.artistId,
-          shardIndex,
-          votes: increment(batch.amount),
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      transaction.set(ledgerRef, {
-        userId: batch.userId,
-        userDisplayName: batch.userDisplayName || "",
-        userPhotoURL: batch.userPhotoURL || "",
-        artistId: batch.artistId,
-        roundId: batch.roundId || null,
-        amount: batch.amount,
-        pointsSpent: pointsToSpend,
-        shardIndex,
-        createdAt: serverTimestamp(),
-      });
+    await castVote({
+      pollId: batch.pollId,
+      roundId: batch.roundId || null,
+      artistId: batch.artistId,
+      contestantId: batch.contestantId || null,
+      amount: batch.amount,
+      pointsPerVote: batch.pointsPerVote,
+      voteScope: batch.voteScope || null,
+    }, {
+      anonymous: batch.anonymous !== false,
     });
   };
 

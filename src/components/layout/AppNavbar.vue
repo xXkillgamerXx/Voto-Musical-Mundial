@@ -1,12 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { availableLocales, setLocale, translate } from "../../i18n";
-import { auth, db } from "../../firebase";
 import AuthModal from "../auth/AuthModal.vue";
 import ThemeToggle from "../theme/ThemeToggle.vue";
+import { getMe, getCurrentApiAuth, logout } from "../../services/api/authApi";
+import { onStoredAuthChange } from "../../services/api/client";
 
 const navItems = [
   { labelKey: "nav.home", href: "/" },
@@ -32,10 +31,10 @@ let unsubscribeAuth = null;
 const adminRoles = new Set(["admin", "superadmin", "owner"]);
 
 const userName = computed(
-  () => currentUser.value?.displayName || translate("nav.fanAccount"),
+  () => currentUser.value?.displayName || currentUser.value?.username || translate("nav.fanAccount"),
 );
 const userEmail = computed(() => currentUser.value?.email || "");
-const isSignedInUser = computed(() => Boolean(currentUser.value && !currentUser.value.isAnonymous));
+const isSignedInUser = computed(() => Boolean(currentUser.value));
 const isAdmin = computed(() => adminRoles.has(userRole.value));
 const formattedUserPoints = computed(() =>
   Number(userPoints.value || 0).toLocaleString(locale.value),
@@ -44,7 +43,7 @@ const profileHref = computed(() =>
   userUsername.value ? `/user/${userUsername.value}` : "/perfil",
 );
 const shouldShowAvatarImage = computed(
-  () => currentUser.value?.photoURL && !avatarImageFailed.value,
+  () => (currentUser.value?.photoUrl || currentUser.value?.photoURL) && !avatarImageFailed.value,
 );
 const userInitial = computed(() => {
   const source =
@@ -60,7 +59,11 @@ const openAuthModal = () => {
 };
 
 const handleLogout = async () => {
-  await signOut(auth);
+  logout();
+  currentUser.value = null;
+  userRole.value = "";
+  userUsername.value = "";
+  userPoints.value = 0;
   isAccountMenuOpen.value = false;
   isSettingsMenuOpen.value = false;
   isMenuOpen.value = false;
@@ -108,17 +111,17 @@ const listenUserProfile = (user) => {
   userUsername.value = "";
   userPoints.value = 0;
 
-  if (!user || user.isAnonymous) {
+  if (!user) {
     return;
   }
 
-  getDoc(doc(db, "users", user.uid))
-    .then((userSnap) => {
-      if (currentUser.value?.uid === user.uid) {
-        const userData = userSnap.data() || {};
-        userRole.value = String(userData.role || "").trim().toLowerCase();
-        userUsername.value = userData.username || "";
-        userPoints.value = Number(userData.points || 0);
+  getMe()
+    .then((userData) => {
+      if (currentUser.value) {
+        currentUser.value = { ...currentUser.value, ...userData };
+        userRole.value = String(userData?.role || "").trim().toLowerCase();
+        userUsername.value = userData?.username || "";
+        userPoints.value = Number(userData?.points || 0);
       }
     })
     .catch(() => {
@@ -131,13 +134,17 @@ const listenUserProfile = (user) => {
 onMounted(() => {
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("keydown", handleEscape);
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    currentUser.value = user;
+
+  const syncAuth = (authState = getCurrentApiAuth()) => {
+    currentUser.value = authState?.user || null;
     avatarImageFailed.value = false;
     isAccountMenuOpen.value = false;
     isSettingsMenuOpen.value = false;
-    listenUserProfile(user);
-  });
+    listenUserProfile(currentUser.value);
+  };
+
+  syncAuth();
+  unsubscribeAuth = onStoredAuthChange(syncAuth);
 });
 
 onUnmounted(() => {

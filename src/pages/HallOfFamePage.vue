@@ -1,35 +1,33 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore'
 import { translate } from '../i18n'
-import { db } from '../firebase'
+import { getPollResults, getPolls } from '../services/api/pollsApi'
 
 const polls = ref([])
-const artists = ref([])
-const categories = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 
-const getArtist = (artistId) => artists.value.find((artist) => artist.id === artistId)
-const getCategory = (categoryId) => categories.value.find((category) => category.id === categoryId)
 const getArtistImage = (artist) =>
-  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
+  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.photoUrl || artist?.foto || artist?.banner || ''
 
-const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
+const pollYearForUrl = (poll) => poll.year || poll.categoryYear || poll.category?.year || 'historial'
+const pollUrl = (poll) => `/votacion/${pollYearForUrl(poll)}/${poll.slug || poll.id}`
 
-const categoryTitleFor = (poll) => poll.categoryName || getCategory(poll.categoryId)?.name || poll.title || translate('hallOfFame.fallbackCategory')
-const yearFor = (poll) => Number(poll.year || getCategory(poll.categoryId)?.year || new Date().getFullYear())
+const categoryTitleFor = (poll) => poll.categoryName || poll.category?.name || poll.title || translate('hallOfFame.fallbackCategory')
+const yearFor = (poll) => {
+  const year = Number(poll.year || poll.categoryYear || poll.category?.year || 0)
+  return Number.isFinite(year) && year > 0 ? year : null
+}
 
 const winners = computed(() =>
   polls.value
-    .filter((poll) => poll.status === 'closed' && poll.winnerIds?.length)
+    .filter((poll) => poll.status === 'closed' && poll.winnerArtist)
     .map((poll) => ({
       poll,
-      artist: getArtist(poll.winnerIds[0]),
+      artist: poll.winnerArtist,
       categoryTitle: categoryTitleFor(poll),
       year: yearFor(poll),
     }))
-    .filter((entry) => entry.artist),
 )
 
 const yearGroups = computed(() => {
@@ -42,50 +40,23 @@ const yearGroups = computed(() => {
   }, new Map())
 
   return [...groups.entries()]
-    .sort(([currentYear], [nextYear]) => nextYear - currentYear)
+    .sort(([currentYear], [nextYear]) => Number(nextYear || 0) - Number(currentYear || 0))
     .map(([year, entries]) => ({
       year,
       entries,
     }))
 })
 
-const loadArtists = async () => {
-  const artistsSnap = await getDocs(query(collection(db, 'artists'), limit(250)))
-  artists.value = artistsSnap.docs.map((artistDoc) => ({
-    id: artistDoc.id,
-    ...artistDoc.data(),
-  }))
-}
-
-const loadCategories = async () => {
-  const categoriesSnap = await getDocs(collection(db, 'pollCategories'))
-  categories.value = categoriesSnap.docs.map((categoryDoc) => ({
-    id: categoryDoc.id,
-    ...categoryDoc.data(),
-  })).sort((current, next) =>
-    Number(next.year || 0) - Number(current.year || 0)
-      || String(current.name || '').localeCompare(String(next.name || '')),
-  )
-}
-
 const hydratePollWinner = async (poll) => {
-  if (poll.winnerIds?.length || poll.status !== 'closed') {
+  if (poll.status !== 'closed') {
     return poll
   }
 
   try {
-    const roundsSnap = await getDocs(query(collection(db, 'polls', poll.id, 'rounds'), orderBy('createdAt', 'asc')))
-    const finalRound = roundsSnap.docs
-      .map((roundDoc) => ({
-        id: roundDoc.id,
-        ...roundDoc.data(),
-      }))
-      .filter((round) => round.status === 'closed' && round.winnerIds?.length)
-      .at(-1)
-
+    const results = await getPollResults({ pollId: poll.id })
     return {
       ...poll,
-      winnerIds: finalRound?.winnerIds || [],
+      winnerArtist: results.results?.[0]?.artist || null,
     }
   } catch {
     return poll
@@ -97,26 +68,16 @@ const loadPolls = async () => {
   errorMessage.value = ''
 
   try {
-    const pollsSnap = await getDocs(
-      query(collection(db, 'polls'), where('status', '==', 'closed'), limit(100)),
-    )
-      const pollDocs = pollsSnap.docs.map((pollDoc) => ({
-        id: pollDoc.id,
-        ...pollDoc.data(),
-      }))
-      polls.value = await Promise.all(pollDocs.map((poll) => hydratePollWinner(poll)))
-      isLoading.value = false
+    const pollDocs = (await getPolls(100)).filter((poll) => poll.status === 'closed')
+    polls.value = await Promise.all(pollDocs.map((poll) => hydratePollWinner(poll)))
+    isLoading.value = false
   } catch {
     errorMessage.value = translate('hallOfFame.errors.load')
     isLoading.value = false
   }
 }
 
-onMounted(async () => {
-  await loadArtists()
-  await loadCategories()
-  loadPolls()
-})
+onMounted(loadPolls)
 </script>
 
 <template>
@@ -162,7 +123,9 @@ onMounted(async () => {
             <p class="text-xs font-black uppercase tracking-[0.28em] text-amber-200">
               {{ $t('hallOfFame.year') }}
             </p>
-            <h2 class="mt-2 text-4xl font-black text-white">{{ group.year }}</h2>
+            <h2 class="mt-2 text-4xl font-black text-white">
+              {{ group.year || 'Historial' }}
+            </h2>
           </div>
           <span class="rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-amber-100">
             {{ $t('hallOfFame.winnersCount', { count: group.entries.length }) }}
@@ -208,11 +171,20 @@ onMounted(async () => {
       </section>
     </div>
 
-    <p
+    <div
       v-else
-      class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400"
+      class="relative mt-8 overflow-hidden rounded-4xl border border-amber-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-amber-950/15"
     >
-      {{ $t('hallOfFame.empty') }}
-    </p>
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.18),transparent_34%),radial-gradient(circle_at_85%_75%,rgba(217,70,239,0.14),transparent_30%)]"></div>
+      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-amber-200/20 bg-amber-300/10 text-2xl text-amber-200 shadow-lg shadow-amber-950/20">
+        <i class="fa-solid fa-crown" aria-hidden="true"></i>
+      </div>
+      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+        Salon de la fama en preparacion
+      </h3>
+      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+        Cuando una votacion cerrada tenga ganador, aparecera aqui como parte del historial oficial.
+      </p>
+    </div>
   </section>
 </template>

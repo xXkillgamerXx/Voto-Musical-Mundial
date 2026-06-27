@@ -150,7 +150,7 @@ onMounted(loadArtists);
 
           <div class="rounded-3xl border border-white/10 bg-white/7 p-5 backdrop-blur">
             <div class="h-3 w-32 animate-pulse rounded-full bg-fuchsia-300/20"></div>
-            <div class="mt-5 grid grid-cols-3 gap-3">
+            <div class="mt-5 grid grid-cols-2 gap-3">
               <div
                 v-for="metric in 3"
                 :key="`hero-metric-skeleton-${metric}`"
@@ -209,18 +209,7 @@ onMounted(loadArtists);
                   {{ formatNumber(totalChartVotes) }}
                 </p>
               </div>
-              <div class="rounded-2xl bg-black/25 p-4">
-                <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  {{ $t("ranking.formula") }}
-                </p>
-                <p class="mt-1 text-sm font-black text-amber-200">
-                  {{ $t("ranking.formulaValue") }}
-                </p>
-              </div>
             </div>
-            <p class="mt-4 text-xs leading-5 text-slate-500">
-              {{ $t("ranking.historyNote") }}
-            </p>
             <p
               v-if="isLoadingVotes"
               class="mt-3 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-cyan-100"
@@ -554,9 +543,19 @@ onMounted(loadArtists);
       </div>
     </template>
 
-    <div v-else class="mt-8 rounded-4xl border border-white/10 bg-slate-950/45">
-      <p class="px-4 py-10 text-center text-sm font-bold text-slate-400">
-        {{ $t("ranking.empty") }}
+    <div
+      v-else
+      class="relative mt-8 overflow-hidden rounded-4xl border border-amber-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-fuchsia-950/15"
+    >
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.18),transparent_34%),radial-gradient(circle_at_85%_75%,rgba(217,70,239,0.16),transparent_30%)]"></div>
+      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-amber-200/20 bg-amber-300/10 text-2xl text-amber-200 shadow-lg shadow-fuchsia-950/20">
+        <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+      </div>
+      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+        Ranking Popularity en preparacion
+      </h3>
+      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+        Cuando los artistas acumulen votos, seguidores y actividad, el ranking se ordenara automaticamente aqui.
       </p>
     </div>
   </section>

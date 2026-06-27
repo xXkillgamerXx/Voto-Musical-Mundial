@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../firebase";
+import { getPolls } from "../services/api/pollsApi";
 
 const dbCategories = ref([]);
 const isLoadingCategories = ref(true);
@@ -151,13 +150,28 @@ const categories = computed(() => {
 
 onMounted(() => {
   const skeletonDelay = wait(700);
-  getDocs(collection(db, "pollCategories"))
-    .then((categoriesSnap) => {
-      const categoryRows = categoriesSnap.docs
-        .map((categoryDoc) => ({
-          id: categoryDoc.id,
-          ...categoryDoc.data(),
-        }))
+  getPolls(100)
+    .then((pollRows) => {
+      const categoriesById = new Map();
+
+      pollRows.forEach((poll) => {
+        const categoryId = poll.categoryId || poll.category?.id || poll.categoryName || poll.category;
+        const categoryName = poll.category?.name || poll.categoryName || poll.category || "";
+
+        if (!categoryId || categoriesById.has(String(categoryId))) {
+          return;
+        }
+
+        categoriesById.set(String(categoryId), {
+          id: String(categoryId),
+          name: categoryName || "Categoria",
+          year: poll.year,
+          icon: poll.category?.icon || poll.config?.categoryIcon || "",
+          visual: poll.category?.visual || poll.config?.categoryVisual || "",
+        });
+      });
+
+      const categoryRows = [...categoriesById.values()]
         .sort(
           (current, next) =>
             Number(next.year || 0) - Number(current.year || 0) ||
@@ -179,13 +193,15 @@ onMounted(() => {
   <section
     class="main-categories-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8"
   >
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h2
-        class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl"
-      >
-        <i class="fa-solid fa-star text-fuchsia-300" aria-hidden="true"></i>
-        Categorias principales
-      </h2>
+    <div class="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+          Explora
+        </p>
+        <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+          Categorias principales
+        </h2>
+      </div>
       <a
         href="/votaciones"
         class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white"

@@ -1,0 +1,356 @@
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { User, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
+import { PrismaService } from '../prisma/prisma.service';
+import { AnonymousTokenDto } from './dto/anonymous-token.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterDto } from './dto/register.dto';
+import { JwtPayload, VoteIdentity } from './auth.types';
+
+const REFERRAL_SIGNUP_POINTS = 50;
+const REFERRAL_MILESTONE_BONUSES: Record<number, number> = {
+  5: 300,
+  10: 700,
+};
+
+const usernameFromEmail = (email: string) =>
+  email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24) || 'google_user';
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+  ) {}
+
+  async register(dto: RegisterDto) {
+    const normalizedEmail = dto.email.toLowerCase().trim();
+    const normalizedUsername = dto.username.toLowerCase().trim();
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const referrer = dto.referralCode
+      ? await this.prisma.referralCode.findUnique({ where: { code: dto.referralCode.toLowerCase().trim() } })
+      : null;
+
+    const existing = await this.prisma.user.findFirst({
+      where: { OR: [{ email: normalizedEmail }, { username: normalizedUsername }] },
+    });
+
+    if (existing?.email === normalizedEmail) {
+      throw new ConflictException('Ese correo ya esta registrado.');
+    }
+
+    if (existing?.username === normalizedUsername) {
+      throw new ConflictException('Ese username ya esta en uso.');
+    }
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: normalizedEmail,
+          username: normalizedUsername,
+          displayName: dto.displayName || normalizedUsername,
+          passwordHash,
+          referralCode: normalizedUsername,
+          referredById: referrer?.userId || null,
+          points: 25,
+          metadata: (dto.metadata || {}) as any,
+        },
+      });
+
+      await tx.referralCode.upsert({
+        where: { code: normalizedUsername },
+        update: { userId: created.id, username: normalizedUsername },
+        create: {
+          code: normalizedUsername,
+          userId: created.id,
+          username: normalizedUsername,
+        },
+      });
+
+      if (referrer && referrer.userId !== created.id) {
+        const referrerUser = await tx.user.findUnique({ where: { id: referrer.userId } });
+        const nextSignupCount = Number(referrerUser?.referralSignups || 0) + 1;
+        const milestoneBonus = REFERRAL_MILESTONE_BONUSES[nextSignupCount] || 0;
+        const pointsAwarded = REFERRAL_SIGNUP_POINTS + milestoneBonus;
+
+        await tx.referralSignup.create({
+          data: {
+            userId: created.id,
+            referrerId: referrer.userId,
+            referralCode: referrer.code,
+            pointsAwarded,
+            signupPoints: REFERRAL_SIGNUP_POINTS,
+            milestoneBonus,
+            milestone: milestoneBonus ? nextSignupCount : null,
+          },
+        });
+        await tx.user.update({
+          where: { id: referrer.userId },
+          data: {
+            points: { increment: pointsAwarded },
+            referralPoints: { increment: pointsAwarded },
+            referralSignups: { increment: 1 },
+          },
+        });
+      }
+
+      return created;
+    }).catch((error) => {
+      if (error?.code === 'P2002') {
+        throw new ConflictException('Ese correo o username ya esta registrado.');
+      }
+
+      if (error?.code === 'P2021' || error?.code === 'P2022') {
+        throw new BadRequestException('La base PostgreSQL no tiene las tablas actualizadas. Ejecuta las migraciones de Prisma.');
+      }
+
+      throw error;
+    });
+
+    return this.authResponse(user);
+  }
+
+  async login(dto: LoginDto) {
+    const identifier = dto.identifier.toLowerCase().trim();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ email: identifier }, { username: identifier }],
+      },
+    });
+
+    if (!user?.passwordHash || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+      throw new UnauthorizedException('Credenciales invalidas.');
+    }
+
+    return this.authResponse(user);
+  }
+
+  async google(dto: GoogleLoginDto) {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new BadRequestException('Falta configurar GOOGLE_CLIENT_ID.');
+    }
+
+    const client = new OAuth2Client(clientId);
+    const ticket = await client.verifyIdToken({
+      idToken: dto.credential,
+      audience: clientId,
+    });
+    const payload = ticket.getPayload();
+    const email = payload?.email?.toLowerCase().trim();
+
+    if (!payload?.sub || !email || !payload.email_verified) {
+      throw new UnauthorizedException('No se pudo validar la cuenta de Google.');
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { metadata: { path: ['googleSub'], equals: payload.sub } },
+        ],
+      },
+    });
+
+    if (existing) {
+      const updated = await this.prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          email,
+          displayName: existing.displayName || payload.name || usernameFromEmail(email),
+          photoUrl: payload.picture || existing.photoUrl,
+          metadata: {
+            ...((existing.metadata as Record<string, unknown>) || {}),
+            googleSub: payload.sub,
+            googleEmail: email,
+            googlePicture: payload.picture || null,
+            authProvider: 'google',
+          } as any,
+        },
+      });
+
+      return this.authResponse(updated);
+    }
+
+    const baseUsername = usernameFromEmail(email);
+    const username = await this.availableUsername(baseUsername, payload.sub.slice(-6));
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          username,
+          displayName: payload.name || username,
+          photoUrl: payload.picture || null,
+          referralCode: username,
+          points: 25,
+          metadata: {
+            googleSub: payload.sub,
+            googleEmail: email,
+            googlePicture: payload.picture || null,
+            authProvider: 'google',
+          } as any,
+        },
+      });
+      await tx.referralCode.create({
+        data: {
+          code: username,
+          userId: created.id,
+          username,
+        },
+      });
+      return created;
+    });
+
+    return this.authResponse(user);
+  }
+
+  async refresh(dto: RefreshTokenDto) {
+    const payload = await this.verifyToken(dto.refreshToken, 'refresh', this.refreshSecret());
+    const user = await this.prisma.user.findUnique({ where: { id: BigInt(payload.sub) } });
+
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado.');
+    }
+
+    return this.authResponse(user);
+  }
+
+  async anonymous(dto: AnonymousTokenDto) {
+    const anonymousId = dto.deviceId || randomUUID();
+    const token = await this.jwt.signAsync(
+      { sub: anonymousId, type: 'anonymous' } satisfies JwtPayload,
+      {
+        secret: this.anonymousSecret(),
+        expiresIn: (this.config.get<string>('JWT_ANONYMOUS_EXPIRES_IN') || '365d') as any,
+      },
+    );
+
+    return {
+      anonymousId,
+      accessToken: token,
+      tokenType: 'anonymous',
+    };
+  }
+
+  async resolveVoteIdentity(authorization?: string): Promise<VoteIdentity> {
+    const token = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : '';
+
+    if (!token) {
+      throw new UnauthorizedException('Falta token de votacion.');
+    }
+
+    try {
+      const access = await this.verifyToken(token, 'access', this.accessSecret());
+      return {
+        type: 'user',
+        id: access.sub,
+        userId: BigInt(access.sub),
+        role: access.role,
+      };
+    } catch {
+      const anonymous = await this.verifyToken(token, 'anonymous', this.anonymousSecret());
+      return {
+        type: 'anonymous',
+        id: anonymous.sub,
+      };
+    }
+  }
+
+  private async authResponse(user: User) {
+    const accessPayload: JwtPayload = {
+      sub: user.id.toString(),
+      type: 'access',
+      role: user.role,
+      username: user.username,
+    };
+    const refreshPayload: JwtPayload = {
+      sub: user.id.toString(),
+      type: 'refresh',
+      role: user.role,
+      username: user.username,
+    };
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwt.signAsync(accessPayload, {
+        secret: this.accessSecret(),
+        expiresIn: (this.config.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m') as any,
+      }),
+      this.jwt.signAsync(refreshPayload, {
+        secret: this.refreshSecret(),
+        expiresIn: (this.config.get<string>('JWT_REFRESH_EXPIRES_IN') || '30d') as any,
+      }),
+    ]);
+
+    return {
+      user: this.publicUser(user),
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  private publicUser(user: User) {
+    return {
+      id: user.id.toString(),
+      username: user.username,
+      email: user.email,
+      displayName: user.displayName,
+      photoUrl: user.photoUrl,
+      role: user.role,
+      points: Number(user.points),
+      spentPoints: Number(user.spentPoints),
+      referralCode: user.referralCode,
+    };
+  }
+
+  private async availableUsername(baseUsername: string, suffix: string) {
+    const candidates = [
+      baseUsername,
+      `${baseUsername}_${suffix.toLowerCase()}`.slice(0, 32),
+      `google_${suffix.toLowerCase()}`,
+    ];
+
+    for (const candidate of candidates) {
+      const existing = await this.prisma.user.findUnique({ where: { username: candidate } });
+      if (!existing) return candidate;
+    }
+
+    return `google_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  }
+
+  private async verifyToken(token: string, type: JwtPayload['type'], secret: string) {
+    try {
+      const payload = await this.jwt.verifyAsync<JwtPayload>(token, { secret });
+      if (payload.type !== type) {
+        throw new BadRequestException('Tipo de token invalido.');
+      }
+      return payload;
+    } catch {
+      throw new UnauthorizedException('Token invalido.');
+    }
+  }
+
+  private accessSecret() {
+    return this.config.get<string>('JWT_ACCESS_SECRET') || 'change-me-access-secret';
+  }
+
+  private refreshSecret() {
+    return this.config.get<string>('JWT_REFRESH_SECRET') || 'change-me-refresh-secret';
+  }
+
+  private anonymousSecret() {
+    return this.config.get<string>('JWT_ANONYMOUS_SECRET') || 'change-me-anonymous-secret';
+  }
+}

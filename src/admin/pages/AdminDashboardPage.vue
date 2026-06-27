@@ -1,8 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, db } from '../../firebase'
 import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
@@ -15,6 +12,7 @@ import AdminPollsView from '../components/AdminPollsView.vue'
 import AdminPollRoundView from '../components/AdminPollRoundView.vue'
 import AdminPollWinnersView from '../components/AdminPollWinnersView.vue'
 import AdminUsersView from '../components/AdminUsersView.vue'
+import { getCurrentApiAuth, getMe, logout } from '../../services/api/authApi'
 
 const currentPath = window.location.pathname
 const isPollsView = computed(() => currentPath === '/admin/votaciones')
@@ -106,7 +104,7 @@ const avatarImageFailed = ref(false)
 
 const userName = computed(() => currentUser.value?.displayName || 'Admin')
 const userEmail = computed(() => currentUser.value?.email || '')
-const shouldShowAvatarImage = computed(() => currentUser.value?.photoURL && !avatarImageFailed.value)
+const shouldShowAvatarImage = computed(() => (currentUser.value?.photoUrl || currentUser.value?.photoURL) && !avatarImageFailed.value)
 const userInitial = computed(() => {
   const source = currentUser.value?.displayName || currentUser.value?.email || 'A'
 
@@ -133,31 +131,32 @@ const handleAvatarError = () => {
 }
 
 const handleLogout = async () => {
-  await signOut(auth)
+  logout()
   window.location.href = '/'
 }
 
 onMounted(() => {
-  onAuthStateChanged(auth, async (user) => {
-    currentUser.value = user
-    avatarImageFailed.value = false
+  const authState = getCurrentApiAuth()
+  currentUser.value = authState?.user || null
+  avatarImageFailed.value = false
 
-    if (!user) {
-      hasAdminAccess.value = false
-      isCheckingAccess.value = false
-      return
-    }
+  if (!authState?.accessToken) {
+    hasAdminAccess.value = false
+    isCheckingAccess.value = false
+    return
+  }
 
-    try {
-      const userSnap = await getDoc(doc(db, 'users', user.uid))
-      const role = String(userSnap.data()?.role || '').trim().toLowerCase()
-      hasAdminAccess.value = adminRoles.has(role)
-    } catch {
+  getMe()
+    .then((user) => {
+      currentUser.value = user
+      hasAdminAccess.value = adminRoles.has(String(user?.role || '').trim().toLowerCase())
+    })
+    .catch(() => {
       hasAdminAccess.value = false
-    } finally {
+    })
+    .finally(() => {
       isCheckingAccess.value = false
-    }
-  })
+    })
 })
 </script>
 

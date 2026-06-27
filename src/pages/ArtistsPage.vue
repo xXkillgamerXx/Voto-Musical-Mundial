@@ -204,10 +204,28 @@ onMounted(loadArtists)
       </article>
     </div>
 
-    <div v-else class="mt-8 rounded-4xl border border-white/10 bg-slate-950/45">
-      <p class="px-4 py-10 text-center text-sm font-bold text-slate-400">
-        {{ searchQuery ? $t('artists.list.noSearchResults') : $t('artists.list.empty') }}
+    <div
+      v-else
+      class="relative mt-8 overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-fuchsia-950/15"
+    >
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(217,70,239,0.22),transparent_34%),radial-gradient(circle_at_15%_80%,rgba(34,211,238,0.12),transparent_30%)]"></div>
+      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-fuchsia-200/20 bg-fuchsia-300/10 text-2xl text-fuchsia-200 shadow-lg shadow-fuchsia-950/20">
+        <i :class="searchQuery ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-music'" aria-hidden="true"></i>
+      </div>
+      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+        {{ searchQuery ? 'Sin resultados' : 'Artistas en preparacion' }}
+      </h3>
+      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+        {{ searchQuery ? 'No encontramos artistas con esa busqueda. Prueba con otro nombre, pais o fandom.' : 'Cuando agregues artistas desde el panel admin, apareceran aqui listos para explorar y seguir.' }}
       </p>
+      <button
+        v-if="searchQuery"
+        type="button"
+        class="relative mt-5 rounded-full border border-white/10 bg-white/5 px-5 py-2 text-xs font-black uppercase tracking-wide text-slate-100 transition hover:bg-white/10"
+        @click="searchQuery = ''"
+      >
+        {{ $t('artists.list.clearSearch') }}
+      </button>
     </div>
   </section>
 </template>

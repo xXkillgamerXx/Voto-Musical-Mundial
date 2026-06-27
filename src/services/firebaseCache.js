@@ -1,4 +1,5 @@
-import { collection, getDocs, limit, orderBy, query, where } from "firebase/firestore";
+import { getArtists, getPopularityRanking } from "./api/artistsApi";
+import { getLivePolls, getPolls } from "./api/pollsApi";
 
 const ARTISTS_CACHE_MS = 5 * 60 * 1000;
 const POLLS_CACHE_MS = 90 * 1000;
@@ -39,7 +40,91 @@ const notify = (subscribers, rows) => {
   subscribers.forEach((callback) => callback(rows));
 };
 
-export const getArtistsCached = async (db, maxAgeMs = ARTISTS_CACHE_MS) => {
+const dateLike = (value) => {
+  if (!value || typeof value !== "string") {
+    return value;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return {
+    toDate: () => date,
+    toMillis: () => date.getTime(),
+    seconds: Math.floor(date.getTime() / 1000),
+  };
+};
+
+const normalizeArtist = (artist) => {
+  const metadata = artist?.metadata || {};
+  const image = artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || artist?.photoUrl || metadata.image || metadata.imageUrl || metadata.photo || metadata.photoURL || metadata.foto || metadata.banner || "";
+
+  return {
+    ...metadata,
+    ...artist,
+    id: String(artist.id),
+    image,
+    imageUrl: image,
+    photo: image,
+    photoURL: image,
+    banner: metadata.banner || metadata.bannerUrl || metadata.cover || metadata.coverImage || image,
+    followersCount: Number(artist.followersCount || metadata.followersCount || 0),
+    totalVotes: Number(artist.totalVotes || metadata.totalVotes || 0),
+    popularityScore: Number(artist.popularityScore || metadata.popularityScore || 0),
+  };
+};
+
+const normalizeRound = (round) => {
+  const metadata = round?.metadata || round?.config || {};
+
+  return {
+    ...metadata,
+    ...round,
+    id: String(round.id),
+    firebaseId: round.firebaseId || metadata.id || null,
+    createdAt: dateLike(round.createdAt),
+    updatedAt: dateLike(round.updatedAt),
+    startsAt: dateLike(round.startsAt || metadata.startsAt || metadata.startAt),
+    startAt: dateLike(round.startsAt || metadata.startsAt || metadata.startAt),
+    endsAt: dateLike(round.endsAt || metadata.endsAt || metadata.endAt),
+    endAt: dateLike(round.endsAt || metadata.endsAt || metadata.endAt),
+  };
+};
+
+const normalizePoll = (poll) => {
+  const metadata = poll?.metadata || poll?.config || {};
+  const category = poll?.category || null;
+  const rounds = (poll.rounds || []).map(normalizeRound);
+  const liveRound = rounds.find((round) => round.status === "live") || rounds[0] || null;
+
+  return {
+    ...metadata,
+    ...poll,
+    id: String(poll.id),
+    firebaseId: poll.firebaseId || metadata.id || null,
+    categoryId: poll.categoryId ? String(poll.categoryId) : metadata.categoryId || category?.id || "",
+    categoryName: category?.name || metadata.categoryName || metadata.category || "",
+    category: category?.name || metadata.category || "",
+    year: Number(metadata.year || poll.year || new Date().getFullYear()),
+    activeRoundId: poll.activeRoundId || metadata.activeRoundId || liveRound?.id || "",
+    totalVotes: Number(poll.totalVotes || 0),
+    leaderArtistId: poll.leaderArtistId ? String(poll.leaderArtistId) : metadata.leaderArtistId || null,
+    leaderVotes: Number(poll.leaderVotes || 0),
+    publicActivity: metadata.publicActivity || [],
+    createdAt: dateLike(poll.createdAt),
+    updatedAt: dateLike(poll.updatedAt),
+    startsAt: dateLike(poll.startsAt || metadata.startsAt || metadata.startAt),
+    startAt: dateLike(poll.startsAt || metadata.startsAt || metadata.startAt),
+    endsAt: dateLike(poll.endsAt || metadata.endsAt || metadata.endAt),
+    endAt: dateLike(poll.endsAt || metadata.endsAt || metadata.endAt),
+    activeEndAt: dateLike(poll.activeEndAt || metadata.activeEndAt),
+    rounds,
+  };
+};
+
+export const getArtistsCached = async (_db, maxAgeMs = ARTISTS_CACHE_MS) => {
   const now = Date.now();
 
   if (artistsCache.rows.length && now - artistsCache.loadedAt < maxAgeMs) {
@@ -47,12 +132,9 @@ export const getArtistsCached = async (db, maxAgeMs = ARTISTS_CACHE_MS) => {
   }
 
   if (!artistsCache.promise) {
-    artistsCache.promise = getDocs(query(collection(db, "artists"), limit(PUBLIC_ARTISTS_LIMIT)))
-      .then((artistsSnap) => {
-        artistsCache.rows = artistsSnap.docs.map((artistDoc) => ({
-          id: artistDoc.id,
-          ...artistDoc.data(),
-        }));
+    artistsCache.promise = getArtists(PUBLIC_ARTISTS_LIMIT)
+      .then((artistRows) => {
+        artistsCache.rows = artistRows.map(normalizeArtist);
         artistsCache.loadedAt = Date.now();
         return artistsCache.rows;
       })
@@ -64,7 +146,7 @@ export const getArtistsCached = async (db, maxAgeMs = ARTISTS_CACHE_MS) => {
   return artistsCache.promise;
 };
 
-export const getArtistFollowersCountCached = async (db, artistId, fallbackCount = 0) => {
+export const getArtistFollowersCountCached = async (_db, artistId, fallbackCount = 0) => {
   if (!artistId) {
     return Number(fallbackCount || 0);
   }
@@ -94,7 +176,7 @@ export const subscribeArtistsCached = (db, callback) => {
   };
 };
 
-export const getPollsCached = async (db, maxAgeMs = POLLS_CACHE_MS) => {
+export const getPollsCached = async (_db, maxAgeMs = POLLS_CACHE_MS) => {
   const now = Date.now();
 
   if (pollsCache.rows.length && now - pollsCache.loadedAt < maxAgeMs) {
@@ -102,14 +184,9 @@ export const getPollsCached = async (db, maxAgeMs = POLLS_CACHE_MS) => {
   }
 
   if (!pollsCache.promise) {
-    pollsCache.promise = getDocs(
-      query(collection(db, "polls"), orderBy("createdAt", "desc"), limit(PUBLIC_POLLS_LIMIT)),
-    )
-      .then((pollsSnap) => {
-        pollsCache.rows = pollsSnap.docs.map((pollDoc) => ({
-          id: pollDoc.id,
-          ...pollDoc.data(),
-        }));
+    pollsCache.promise = getPolls(PUBLIC_POLLS_LIMIT)
+      .then((pollRows) => {
+        pollsCache.rows = pollRows.map(normalizePoll);
         pollsCache.loadedAt = Date.now();
         return pollsCache.rows;
       })
@@ -137,27 +214,18 @@ export const subscribePollsCached = (db, callback, onError = () => {}) => {
   };
 };
 
-export const subscribeLivePollsCached = (db, callback, onError = () => {}) => {
+export const subscribeLivePollsCached = (_db, callback, onError = () => {}) => {
   livePollsCache.subscribers.add(callback);
 
   if (livePollsCache.rows.length) {
     callback(livePollsCache.rows);
   }
 
-  getDocs(
-      query(
-        collection(db, "polls"),
-        where("status", "in", ["live", "selecting_winners"]),
-        limit(LIVE_POLLS_LIMIT),
-      ),
-    )
-    .then((pollsSnap) => {
-        livePollsCache.rows = pollsSnap.docs.map((pollDoc) => ({
-          id: pollDoc.id,
-          ...pollDoc.data(),
-        }));
-        notify(livePollsCache.subscribers, livePollsCache.rows);
-      })
+  getLivePolls(LIVE_POLLS_LIMIT)
+    .then((pollRows) => {
+      livePollsCache.rows = pollRows.map(normalizePoll);
+      notify(livePollsCache.subscribers, livePollsCache.rows);
+    })
     .catch(onError);
 
   return () => {
@@ -178,7 +246,7 @@ const buildRankingArtistRows = (artistRows) =>
     };
   });
 
-export const getRankingPopularityCached = async (db, maxAgeMs = RANKING_CACHE_MS) => {
+export const getRankingPopularityCached = async (_db, maxAgeMs = RANKING_CACHE_MS) => {
   const now = Date.now();
 
   if (rankingPopularityCache.rows.length && now - rankingPopularityCache.loadedAt < maxAgeMs) {
@@ -186,18 +254,9 @@ export const getRankingPopularityCached = async (db, maxAgeMs = RANKING_CACHE_MS
   }
 
   if (!rankingPopularityCache.promise) {
-    rankingPopularityCache.promise = getDocs(
-      query(
-        collection(db, "artists"),
-        orderBy("popularityScore", "desc"),
-        limit(RANKING_ARTISTS_LIMIT),
-      ),
-    )
-      .then((artistsSnap) => {
-        const artistRows = artistsSnap.docs.map((artistDoc) => ({
-          id: artistDoc.id,
-          ...artistDoc.data(),
-        }));
+    rankingPopularityCache.promise = getPopularityRanking(RANKING_ARTISTS_LIMIT)
+      .then((rows) => {
+        const artistRows = rows.map(normalizeArtist);
         rankingPopularityCache.rows = buildRankingArtistRows(artistRows)
           .sort((current, next) => Number(next.popularityScore || 0) - Number(current.popularityScore || 0))
           .slice(0, RANKING_ARTISTS_LIMIT);

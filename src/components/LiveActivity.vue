@@ -9,17 +9,6 @@ const publicPollActivities = ref([])
 let unsubscribeArtists = null
 let unsubscribeLivePolls = null
 
-const fallbackActivities = [
-  { user: 'LunaArmy', artist: 'Jungkook', time: 'hace 5 segundos', votes: 12, streak: '+4', color: 'from-fuchsia-500 to-violet-500', visual: 'from-slate-950 via-indigo-950 to-black' },
-  { user: 'BlinkUniverse', artist: 'Lisa', time: 'hace 7 segundos', votes: 8, streak: '+2', color: 'from-pink-500 to-rose-500', visual: 'from-slate-950 via-fuchsia-950 to-black' },
-  { user: 'MochiJimin', artist: 'Jimin', time: 'hace 9 segundos', votes: 15, streak: '+7', color: 'from-blue-500 to-violet-500', visual: 'from-slate-950 via-blue-950 to-black' },
-  { user: 'StayTiny', artist: 'Stray Kids', time: 'hace 12 segundos', votes: 10, streak: '+3', color: 'from-violet-500 to-fuchsia-500', visual: 'from-slate-950 via-purple-950 to-black' },
-  { user: 'Once4Ever', artist: 'Twice', time: 'hace 14 segundos', votes: 9, streak: '+2', color: 'from-pink-500 to-amber-400', visual: 'from-slate-950 via-pink-950 to-black' },
-  { user: 'NanaNewJeans', artist: 'NewJeans', time: 'hace 16 segundos', votes: 7, streak: '+1', color: 'from-cyan-400 to-emerald-400', visual: 'from-slate-950 via-cyan-950 to-black' },
-  { user: 'EXOLove', artist: 'EXO', time: 'hace 18 segundos', votes: 11, streak: '+5', color: 'from-orange-400 to-rose-500', visual: 'from-slate-950 via-orange-950 to-black' },
-  { user: 'AeriMY', artist: 'AESPA', time: 'hace 20 segundos', votes: 14, streak: '+6', color: 'from-violet-500 to-purple-400', visual: 'from-slate-950 via-violet-950 to-black' },
-]
-
 const colorOptions = [
   'from-fuchsia-500 to-violet-500',
   'from-pink-500 to-rose-500',
@@ -90,16 +79,13 @@ const activities = computed(() => {
   if (publicPollActivities.value.length) {
     return publicPollActivities.value
   }
-
-  return fallbackActivities
+  return []
 })
 
 const activeUsers = computed(() =>
   realActivities.value.length
     ? new Set(recentVotes.value.map((vote) => vote.userId).filter(Boolean)).size
-    : publicPollActivities.value.length
-      ? publicPollActivities.value.length
-    : fallbackActivities.length * 37,
+    : publicPollActivities.value.length,
 )
 const votesPerMinute = computed(() =>
   realActivities.value.length
@@ -109,16 +95,12 @@ const votesPerMinute = computed(() =>
         return voteTime && Date.now() - voteTime <= 60000
       })
       .reduce((total, vote) => total + Number(vote.amount || 1), 0)
-    : publicPollActivities.value.length
-      ? publicPollActivities.value.reduce((total, activity) => total + Number(activity.votes || 0), 0)
-    : fallbackActivities.reduce((total, activity) => total + activity.votes, 0),
+    : publicPollActivities.value.reduce((total, activity) => total + Number(activity.votes || 0), 0),
 )
 const onlineFandoms = computed(() =>
   realActivities.value.length
     ? new Set(recentVotes.value.map((vote) => vote.artistId).filter(Boolean)).size
-    : publicPollActivities.value.length
-      ? new Set(publicPollActivities.value.map((activity) => activity.artist).filter(Boolean)).size
-    : 24,
+    : new Set(publicPollActivities.value.map((activity) => activity.artist).filter(Boolean)).size,
 )
 
 const liveStats = computed(() => [
@@ -218,7 +200,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="live-scroll relative max-h-[520px] space-y-2 overflow-y-auto sm:max-h-[650px] sm:space-y-3 sm:pr-2">
+      <div
+        v-if="activities.length"
+        class="live-scroll relative max-h-[520px] space-y-2 overflow-y-auto sm:max-h-[650px] sm:space-y-3 sm:pr-2"
+      >
         <article
           v-for="(activity, index) in activities"
           :key="`${activity.user}-${activity.time}`"
@@ -268,6 +253,22 @@ onUnmounted(() => {
             </div>
           </div>
         </article>
+      </div>
+
+      <div
+        v-else
+        class="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 text-center"
+      >
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(217,70,239,0.16),transparent_34%),radial-gradient(circle_at_85%_75%,rgba(34,211,238,0.12),transparent_30%)]"></div>
+        <div class="relative mx-auto grid size-14 place-items-center rounded-3xl border border-cyan-200/20 bg-cyan-300/10 text-xl text-cyan-200">
+          <i class="fa-solid fa-user-clock" aria-hidden="true"></i>
+        </div>
+        <h3 class="relative mt-4 text-lg font-black uppercase text-white">
+          No hay usuarios activos ahora
+        </h3>
+        <p class="relative mx-auto mt-2 max-w-lg text-sm font-bold leading-6 text-slate-400">
+          Cuando alguien vote en una votacion activa, la actividad aparecera aqui en tiempo real.
+        </p>
       </div>
     </div>
   </section>

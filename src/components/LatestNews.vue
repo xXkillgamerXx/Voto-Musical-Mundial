@@ -262,11 +262,15 @@ onMounted(loadNews)
 
 <template>
   <section id="noticias" class="mx-auto max-w-352 scroll-mt-28 px-4 py-6 sm:px-6 lg:py-8">
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h2 class="flex items-center gap-2 text-lg font-black uppercase tracking-tight sm:text-xl">
-        <i class="fa-solid fa-newspaper text-fuchsia-300" aria-hidden="true"></i>
-        Noticias Music Mundial
-      </h2>
+    <div class="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+          Noticias
+        </p>
+        <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+          Music Mundial
+        </h2>
+      </div>
       <a href="/noticias" class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
         Ver todas
       </a>

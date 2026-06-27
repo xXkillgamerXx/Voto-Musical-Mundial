@@ -4,6 +4,13 @@ import { onMounted, ref } from "vue";
 const hasPushedAd = ref(false);
 const ADSENSE_SCRIPT_ID = "google-adsense-script";
 const ADSENSE_CLIENT = "ca-pub-1078939545517246";
+const isLocalHost = () =>
+  ["localhost", "127.0.0.1", ""].includes(window.location.hostname);
+const shouldRenderAd = ref(
+  typeof window !== "undefined" &&
+    !isLocalHost() &&
+    !window.location.pathname.startsWith("/admin"),
+);
 
 const loadAdSenseScript = () =>
   new Promise((resolve, reject) => {
@@ -28,7 +35,7 @@ onMounted(() => {
   if (
     hasPushedAd.value ||
     typeof window === "undefined" ||
-    window.location.pathname.startsWith("/admin")
+    !shouldRenderAd.value
   ) {
     return;
   }
@@ -47,7 +54,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-4 py-4 sm:px-6">
+  <section v-if="shouldRenderAd" class="mx-auto max-w-352 px-4 py-4 sm:px-6">
     <div class="home-ad-card relative mx-auto max-w-5xl overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/85 p-2 shadow-2xl shadow-fuchsia-950/20">
       <div class="pointer-events-none absolute -left-20 -top-24 size-64 rounded-full bg-fuchsia-500/10 blur-3xl"></div>
       <div class="pointer-events-none absolute -right-16 bottom-0 size-56 rounded-full bg-cyan-400/10 blur-3xl"></div>

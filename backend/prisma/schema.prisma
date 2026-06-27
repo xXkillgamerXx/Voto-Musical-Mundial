@@ -1,0 +1,345 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  admin
+  superadmin
+  owner
+}
+
+enum PollStatus {
+  draft
+  live
+  selecting_winners
+  closed
+}
+
+enum RoundType {
+  standard
+  versus
+}
+
+model User {
+  id                         BigInt           @id @default(autoincrement())
+  firebaseUid                String?          @unique @map("firebase_uid")
+  username                   String?          @unique
+  email                      String?          @unique
+  passwordHash               String?          @map("password_hash")
+  displayName                String?          @map("display_name")
+  photoUrl                   String?          @map("photo_url")
+  role                       UserRole         @default(user)
+  points                     BigInt           @default(0)
+  spentPoints                BigInt           @default(0) @map("spent_points")
+  referralCode               String?          @unique @map("referral_code")
+  referredById               BigInt?          @map("referred_by_id")
+  referralSignups            Int              @default(0) @map("referral_signups")
+  referralPoints             BigInt           @default(0) @map("referral_points")
+  dailyRewardStreak          Int              @default(0) @map("daily_reward_streak")
+  dailyRewardStreakDay       Int              @default(0) @map("daily_reward_streak_day")
+  lastDailyRewardClaimDate   String?          @map("last_daily_reward_claim_date")
+  metadata                   Json             @default("{}")
+  createdAt                  DateTime         @default(now()) @map("created_at")
+  updatedAt                  DateTime         @updatedAt @map("updated_at")
+
+  referredBy                 User?            @relation("UserReferrals", fields: [referredById], references: [id])
+  referredUsers              User[]           @relation("UserReferrals")
+  referralSignupsSent        ReferralSignup[] @relation("ReferralSignupUser")
+  referralSignupsReceived    ReferralSignup[] @relation("ReferralSignupReferrer")
+  dailyRewards               DailyReward[]
+  voteLedger                 VoteLedger[]
+  comments                   Comment[]
+  commentLocks               CommentLock[]
+  notifications              Notification[]
+  followingArtists           ArtistFollower[]
+  missionCompletions         MissionCompletion[]
+  referralCodes              ReferralCode[]
+
+  @@map("users")
+}
+
+model Artist {
+  id               BigInt           @id @default(autoincrement())
+  firebaseId       String?          @unique @map("firebase_id")
+  slug             String?          @unique
+  name             String
+  photoUrl         String?          @map("photo_url")
+  country          String?
+  genre            String?
+  followersCount   BigInt           @default(0) @map("followers_count")
+  totalVotes       BigInt           @default(0) @map("total_votes")
+  popularityScore  BigInt           @default(0) @map("popularity_score")
+  metadata         Json             @default("{}")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  contestants      Contestant[]
+  followers        ArtistFollower[]
+
+  @@map("artists")
+}
+
+model ArtistFollower {
+  id        BigInt   @id @default(autoincrement())
+  artistId  BigInt   @map("artist_id")
+  userId    BigInt   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  artist    Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([artistId, userId])
+  @@map("artist_followers")
+}
+
+model PollCategory {
+  id          BigInt   @id @default(autoincrement())
+  firebaseId  String?  @unique @map("firebase_id")
+  slug        String?  @unique
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  order       Int      @default(0)
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  polls       Poll[]
+
+  @@map("poll_categories")
+}
+
+model Poll {
+  id             BigInt       @id @default(autoincrement())
+  firebaseId     String?      @unique @map("firebase_id")
+  categoryId     BigInt?      @map("category_id")
+  slug           String?      @unique
+  title          String
+  description    String?
+  status         PollStatus   @default(draft)
+  type           RoundType    @default(standard)
+  config         Json         @default("{}")
+  totalVotes     BigInt       @default(0) @map("total_votes")
+  leaderArtistId BigInt?      @map("leader_artist_id")
+  leaderVotes    BigInt       @default(0) @map("leader_votes")
+  startsAt       DateTime?    @map("starts_at")
+  endsAt         DateTime?    @map("ends_at")
+  activeEndAt    DateTime?    @map("active_end_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  category       PollCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  rounds         Round[]
+  contestants    Contestant[]
+  voteLedger     VoteLedger[]
+  comments       Comment[]
+  commentLocks   CommentLock[]
+
+  @@index([status])
+  @@map("polls")
+}
+
+model Round {
+  id          BigInt       @id @default(autoincrement())
+  firebaseId  String?      @map("firebase_id")
+  pollId      BigInt       @map("poll_id")
+  title       String?
+  type        RoundType    @default(standard)
+  status      PollStatus   @default(draft)
+  config      Json         @default("{}")
+  startsAt    DateTime?    @map("starts_at")
+  endsAt      DateTime?    @map("ends_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  poll        Poll         @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  contestants Contestant[]
+  voteLedger  VoteLedger[]
+
+  @@unique([pollId, firebaseId])
+  @@map("rounds")
+}
+
+model Contestant {
+  id           BigInt       @id @default(autoincrement())
+  firebaseId   String?      @map("firebase_id")
+  pollId       BigInt       @map("poll_id")
+  roundId      BigInt?      @map("round_id")
+  artistId     BigInt       @map("artist_id")
+  votes        BigInt       @default(0)
+  manualVotes  BigInt       @default(0) @map("manual_votes")
+  matchGroup   Int          @default(0) @map("match_group")
+  matchOrder   Int          @default(0) @map("match_order")
+  order        Int          @default(0)
+  metadata     Json         @default("{}")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  poll         Poll         @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  round        Round?       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  artist       Artist       @relation(fields: [artistId], references: [id])
+  voteLedger   VoteLedger[]
+
+  @@index([pollId, roundId])
+  @@unique([pollId, roundId, artistId])
+  @@map("contestants")
+}
+
+model VoteLedger {
+  id            BigInt      @id @default(autoincrement())
+  pollId        BigInt      @map("poll_id")
+  roundId       BigInt?     @map("round_id")
+  contestantId  BigInt      @map("contestant_id")
+  userId        BigInt?     @map("user_id")
+  anonymousId   String?     @map("anonymous_id")
+  ipHash        String?     @map("ip_hash")
+  voteScope     String?     @map("vote_scope")
+  amount        Int         @default(1)
+  pointsSpent   Int         @default(0) @map("points_spent")
+  isAnonymous   Boolean     @default(false) @map("is_anonymous")
+  metadata      Json        @default("{}")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  poll          Poll        @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  round         Round?      @relation(fields: [roundId], references: [id], onDelete: SetNull)
+  contestant    Contestant  @relation(fields: [contestantId], references: [id])
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([pollId, roundId, createdAt])
+  @@index([contestantId, createdAt])
+  @@map("vote_ledger")
+}
+
+model Mission {
+  id           BigInt   @id @default(autoincrement())
+  firebaseId   String?  @unique @map("firebase_id")
+  title        String
+  description  String?
+  type         String   @default("manual")
+  icon         String?
+  actionUrl    String?  @map("action_url")
+  rewardPoints Int      @default(0) @map("reward_points")
+  target       Int      @default(1)
+  active       Boolean  @default(true)
+  featured     Boolean  @default(false)
+  order        Int      @default(0)
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  completions  MissionCompletion[]
+
+  @@map("missions")
+}
+
+model MissionCompletion {
+  id          BigInt   @id @default(autoincrement())
+  missionId   BigInt   @map("mission_id")
+  userId      BigInt   @map("user_id")
+  progress    Int      @default(0)
+  completedAt DateTime? @map("completed_at")
+  rewardedAt  DateTime? @map("rewarded_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  mission     Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([missionId, userId])
+  @@map("mission_completions")
+}
+
+model ReferralCode {
+  id        BigInt   @id @default(autoincrement())
+  code      String   @unique
+  userId    BigInt   @map("user_id")
+  username  String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referral_codes")
+}
+
+model ReferralSignup {
+  id                 BigInt   @id @default(autoincrement())
+  userId             BigInt   @unique @map("user_id")
+  referrerId         BigInt   @map("referrer_id")
+  referralCode       String   @map("referral_code")
+  pointsAwarded      Int      @map("points_awarded")
+  signupPoints       Int      @map("signup_points")
+  milestoneBonus     Int      @default(0) @map("milestone_bonus")
+  milestone          Int?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  user               User     @relation("ReferralSignupUser", fields: [userId], references: [id], onDelete: Cascade)
+  referrer           User     @relation("ReferralSignupReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+
+  @@map("referral_signups")
+}
+
+model DailyReward {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  claimDate String   @map("claim_date")
+  points    Int
+  streak    Int
+  streakDay Int      @map("streak_day")
+  claimedAt DateTime @default(now()) @map("claimed_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, claimDate])
+  @@map("daily_rewards")
+}
+
+model Comment {
+  id          BigInt   @id @default(autoincrement())
+  pollId      BigInt   @map("poll_id")
+  userId      BigInt?  @map("user_id")
+  displayName String   @map("display_name")
+  photoUrl    String?  @map("photo_url")
+  text        String
+  gif         Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  poll        Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([pollId, createdAt])
+  @@map("comments")
+}
+
+model CommentLock {
+  id            BigInt   @id @default(autoincrement())
+  pollId        BigInt   @map("poll_id")
+  userId        BigInt   @map("user_id")
+  lastCommentAt DateTime @map("last_comment_at")
+
+  poll          Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@map("comment_locks")
+}
+
+model Notification {
+  id        BigInt    @id @default(autoincrement())
+  userId    BigInt    @map("user_id")
+  type      String
+  payload   Json      @default("{}")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
