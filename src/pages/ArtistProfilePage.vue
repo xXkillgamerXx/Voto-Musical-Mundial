@@ -1,20 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { onAuthStateChanged } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  increment,
-  query,
-  serverTimestamp,
-  where,
-  writeBatch,
-} from "firebase/firestore";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
-import { auth, db } from "../firebase";
+import { getCurrentApiAuth } from "../services/api/authApi";
+import { onStoredAuthChange } from "../services/api/client";
+import { getArtistsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
 const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -108,30 +98,20 @@ const loadArtist = async () => {
   errorMessage.value = "";
 
   try {
-    const artistsSnap = await getDocs(
-      query(collection(db, "artists"), where("slug", "==", routeArtistKey)),
+    const artistRows = await getArtistsCached(null);
+    const matchedArtist = artistRows.find(
+      (row) =>
+        String(row.slug || "") === routeArtistKey ||
+        String(row.id || "") === routeArtistKey,
     );
-    const artistDoc = artistsSnap.docs[0];
-    const artistSnapById = artistDoc
-      ? null
-      : await getDoc(doc(db, "artists", routeArtistKey));
 
-    if (!artistDoc && !artistSnapById?.exists()) {
+    if (!matchedArtist) {
       errorMessage.value = translate("artists.profileErrors.notFound");
       artist.value = null;
       return;
     }
 
-    artist.value = artistDoc
-      ? {
-          id: artistDoc.id,
-          ...artistDoc.data(),
-        }
-      : {
-          id: artistSnapById.id,
-          ...artistSnapById.data(),
-        };
-
+    artist.value = { ...matchedArtist };
     followersCount.value = Number(artist.value.followersCount || 0);
     await loadArtistPollStats();
   } catch {
@@ -142,18 +122,7 @@ const loadArtist = async () => {
 };
 
 const listenFollowState = () => {
-  if (!currentUser.value || !artist.value?.id) {
-    isFollowing.value = false;
-    return;
-  }
-
-  getDoc(doc(db, "artists", artist.value.id, "followers", currentUser.value.uid))
-    .then((followSnap) => {
-      isFollowing.value = followSnap.exists();
-    })
-    .catch(() => {
-      isFollowing.value = false;
-    });
+  isFollowing.value = false;
 };
 
 const normalizeStoredPollStats = () => {
@@ -190,113 +159,21 @@ const toggleFollow = async () => {
     return;
   }
 
-  if (isFollowing.value) {
-    isUnfollowModalOpen.value = true;
-    return;
-  }
-
-  isTogglingFollow.value = true;
-  errorMessage.value = "";
-
-  try {
-    const artistFollowRef = doc(
-      db,
-      "artists",
-      artist.value.id,
-      "followers",
-      currentUser.value.uid,
-    );
-    const userFollowRef = doc(
-      db,
-      "users",
-      currentUser.value.uid,
-      "followingArtists",
-      artist.value.id,
-    );
-    const artistRef = doc(db, "artists", artist.value.id);
-
-    const followData = {
-      artistId: artist.value.id,
-      artistSlug: artist.value.slug || artist.value.id,
-      userId: currentUser.value.uid,
-      artistName: artist.value.name || "",
-      artistImage: getArtistImage(artist.value),
-      createdAt: serverTimestamp(),
-    };
-
-    const batch = writeBatch(db);
-    batch.set(artistFollowRef, followData);
-    batch.set(userFollowRef, followData);
-    batch.update(artistRef, {
-      followersCount: increment(1),
-      popularityScore: increment(10),
-    });
-    await batch.commit();
-    followersCount.value += 1;
-    artist.value = {
-      ...artist.value,
-      followersCount: followersCount.value,
-      popularityScore: Number(artist.value.popularityScore || 0) + 10,
-    };
-  } catch {
-    errorMessage.value = translate("artists.profileErrors.follow");
-  } finally {
-    isTogglingFollow.value = false;
-  }
+  errorMessage.value = translate("artists.profileErrors.followPending");
 };
 
 const confirmUnfollow = async () => {
-  if (!currentUser.value || !artist.value?.id || isTogglingFollow.value) {
-    return;
-  }
-
-  isTogglingFollow.value = true;
-  errorMessage.value = "";
-
-  try {
-    const artistFollowRef = doc(
-      db,
-      "artists",
-      artist.value.id,
-      "followers",
-      currentUser.value.uid,
-    );
-    const userFollowRef = doc(
-      db,
-      "users",
-      currentUser.value.uid,
-      "followingArtists",
-      artist.value.id,
-    );
-    const artistRef = doc(db, "artists", artist.value.id);
-
-    const batch = writeBatch(db);
-    batch.delete(artistFollowRef);
-    batch.delete(userFollowRef);
-    batch.update(artistRef, {
-      followersCount: increment(-1),
-      popularityScore: increment(-10),
-    });
-    await batch.commit();
-    followersCount.value = Math.max(0, followersCount.value - 1);
-    artist.value = {
-      ...artist.value,
-      followersCount: followersCount.value,
-      popularityScore: Math.max(0, Number(artist.value.popularityScore || 0) - 10),
-    };
-    isUnfollowModalOpen.value = false;
-  } catch {
-    errorMessage.value = translate("artists.profileErrors.follow");
-  } finally {
-    isTogglingFollow.value = false;
-  }
+  isUnfollowModalOpen.value = false;
 };
 
 onMounted(async () => {
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    currentUser.value = user;
+  const syncAuth = (authState = getCurrentApiAuth()) => {
+    currentUser.value = authState?.user || null;
     listenFollowState();
-  });
+  };
+
+  syncAuth();
+  unsubscribeAuth = onStoredAuthChange(syncAuth);
 
   await loadArtist();
   listenFollowState();

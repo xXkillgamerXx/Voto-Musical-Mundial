@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { db } from '../firebase'
 import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 
 const artists = ref([])
@@ -61,7 +60,7 @@ const podiumArtists = computed(() => {
 const mobileTopArtists = computed(() => topArtists.value)
 
 const loadArtists = async () => {
-  artists.value = await getArtistsWithFollowersCached(db)
+  artists.value = await getArtistsWithFollowersCached(null)
 }
 
 onMounted(loadArtists)

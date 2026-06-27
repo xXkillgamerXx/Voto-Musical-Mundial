@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { db } from '../firebase'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 
 const artists = ref([])
@@ -139,12 +138,12 @@ const buildPublicPollActivities = (pollRows) => {
 }
 
 onMounted(() => {
-  unsubscribeArtists = subscribeArtistsCached(db, (artistRows) => {
+  unsubscribeArtists = subscribeArtistsCached(null, (artistRows) => {
     artists.value = artistRows
   })
 
   unsubscribeLivePolls = subscribeLivePollsCached(
-    db,
+    null,
     (pollRows) => {
       buildPublicPollActivities(pollRows)
     },

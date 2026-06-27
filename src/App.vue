@@ -9,11 +9,11 @@ import HomeAd from './components/HomeAd.vue'
 import MainCategories from './components/MainCategories.vue'
 import ThemeToggle from './components/theme/ThemeToggle.vue'
 import { preloadRouteData } from './services/firebaseCache'
-import { db, trackAnalyticsEvent } from './firebase'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
 const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
 const DailyRewardModal = defineAsyncComponent(() => import('./components/DailyRewardModal.vue'))
+const GiftNotificationModal = defineAsyncComponent(() => import('./components/GiftNotificationModal.vue'))
 const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
 const LiveActivity = defineAsyncComponent(() => import('./components/LiveActivity.vue'))
 const MissionsSection = defineAsyncComponent(() => import('./components/MissionsSection.vue'))
@@ -61,13 +61,7 @@ const isEmbeddedPage = computed(() => {
 const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldShowDailyRewardModal = computed(() => !isPlainPage.value && !isTermsPage.value)
 
-const trackPageView = () => {
-  trackAnalyticsEvent('page_view', {
-    page_location: window.location.href,
-    page_path: `${window.location.pathname}${window.location.search}${window.location.hash}`,
-    page_title: document.title,
-  })
-}
+const trackPageView = () => {}
 
 const finishPageLoading = async () => {
   if (PREVIEW_PAGE_LOADING) {
@@ -78,7 +72,7 @@ const finishPageLoading = async () => {
   const token = ++loadingToken
   window.clearTimeout(loadingTimer)
 
-  await preloadRouteData(db, window.location.pathname).catch(() => {})
+  await preloadRouteData(null, window.location.pathname).catch(() => {})
 
   if (token !== loadingToken) {
     return
@@ -138,7 +132,7 @@ const preloadAnchorRoute = (event) => {
   }
 
   prefetchedRoutes.add(url.pathname)
-  preloadRouteData(db, url.pathname).catch(() => {})
+  preloadRouteData(null, url.pathname).catch(() => {})
 }
 
 onMounted(() => {
@@ -244,6 +238,7 @@ onUnmounted(() => {
 
     <AppFooter v-if="!isPlainPage" />
     <DailyRewardModal v-if="shouldShowDailyRewardModal" />
+    <GiftNotificationModal v-if="!isPlainPage" />
 
   </div>
 </template>

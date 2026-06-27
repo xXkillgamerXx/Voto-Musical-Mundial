@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { doc, getDoc, increment, runTransaction, serverTimestamp } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { getMe, getCurrentApiAuth } from '../services/api/authApi'
+import { claimDailyReward } from '../services/api/rewardsApi'
 import { translate } from '../i18n'
 
 const DAILY_REWARD_STATE_KEY = 'vmm-daily-reward-state'
@@ -95,29 +95,30 @@ const shouldShowDailyReward = () => {
   return state.date !== getTodayKey() || !state.dismissed
 }
 
+const currentUser = () => getCurrentApiAuth()?.user || null
+
 const syncClaimedState = async () => {
-  const user = auth.currentUser
   claimed.value = false
   rewardState.value = {
     lastClaimDate: '',
     streak: 0,
   }
 
-  if (!user || user.isAnonymous) {
+  if (!currentUser()) {
     return
   }
 
-  const [userSnap, claimSnap] = await Promise.all([
-    getDoc(doc(db, 'users', user.uid)),
-    getDoc(doc(db, 'users', user.uid, 'dailyRewards', getTodayKey())),
-  ])
-  const userData = userSnap.data() || {}
+  const userData = await getMe().catch(() => null)
+
+  if (!userData) {
+    return
+  }
 
   rewardState.value = {
     lastClaimDate: userData.lastDailyRewardClaimDate || '',
     streak: Number(userData.dailyRewardStreak || 0),
   }
-  claimed.value = claimSnap.exists()
+  claimed.value = userData.lastDailyRewardClaimDate === getTodayKey()
 }
 
 const openModal = async () => {
@@ -146,65 +147,26 @@ const claimReward = async () => {
   isClaiming.value = true
   claimError.value = ''
 
-  const user = auth.currentUser
   const todayKey = getTodayKey()
-  let nextPointsTotal = rewardPoints.value
-  let claimedPoints = rewardPoints.value
-  let claimedStreak = nextStreakForClaim.value
 
   try {
-    if (!user || user.isAnonymous) {
+    if (!currentUser()) {
       claimError.value = translate('rewards.loginRequired')
       return
     }
 
-    await runTransaction(db, async (transaction) => {
-      const userRef = doc(db, 'users', user.uid)
-      const claimRef = doc(db, 'users', user.uid, 'dailyRewards', todayKey)
-      const [userSnap, claimSnap] = await Promise.all([
-        transaction.get(userRef),
-        transaction.get(claimRef),
-      ])
+    const response = await claimDailyReward()
+    const claimedUser = response?.user || {}
+    const claimedReward = response?.reward || {}
+    const claimedPoints = Number(claimedReward.points || rewardPoints.value)
+    const claimedStreak = Number(claimedUser.dailyRewardStreak || nextStreakForClaim.value)
+    const nextPointsTotal = Number(claimedUser.points || 0)
 
-      if (claimSnap.exists()) {
-        throw new Error('daily-reward-already-claimed')
-      }
-
-      const userData = userSnap.data() || {}
-      const currentPoints = Number(userData.points || 0)
-      const currentStreak = Number(userData.dailyRewardStreak || 0)
-      const lastClaimDate = userData.lastDailyRewardClaimDate || ''
-      const nextStreak = daysBetween(todayKey, lastClaimDate) === 1
-        ? currentStreak + 1
-        : 1
-      const streakDay = getRewardDayFromStreak(nextStreak)
-      const nextReward = rewardSchedule.find((reward) => reward.day === streakDay) || rewardSchedule[0]
-
-      claimedPoints = nextReward.points
-      claimedStreak = nextStreak
-      nextPointsTotal = currentPoints + claimedPoints
-      pointsBeforeClaim.value = currentPoints
-      pointsAfterClaim.value = nextPointsTotal
-
-      transaction.set(claimRef, {
-        userId: user.uid,
-        claimDate: todayKey,
-        points: claimedPoints,
-        streak: nextStreak,
-        streakDay,
-        claimedAt: serverTimestamp(),
-      })
-      transaction.update(userRef, {
-        points: increment(claimedPoints),
-        lastDailyRewardClaimDate: todayKey,
-        dailyRewardStreak: nextStreak,
-        dailyRewardStreakDay: streakDay,
-        dailyRewardClaimedAt: serverTimestamp(),
-      })
-    })
+    pointsBeforeClaim.value = Math.max(0, nextPointsTotal - claimedPoints)
+    pointsAfterClaim.value = nextPointsTotal
 
     rewardState.value = {
-      lastClaimDate: todayKey,
+      lastClaimDate: claimedUser.lastDailyRewardClaimDate || todayKey,
       streak: claimedStreak,
     }
     claimed.value = true
@@ -216,7 +178,9 @@ const claimReward = async () => {
       pointsTotal: nextPointsTotal,
     })
   } catch (error) {
-    if (error.message === 'daily-reward-already-claimed') {
+    const message = String(error?.message || '')
+
+    if (message.includes('Ya reclamaste') || error?.status === 400) {
       await syncClaimedState()
       claimed.value = true
       showClaimSuccess.value = true
@@ -232,7 +196,7 @@ const claimReward = async () => {
 
 onMounted(async () => {
   await syncClaimedState()
-  isOpen.value = Boolean(auth.currentUser && !auth.currentUser.isAnonymous && shouldShowDailyReward())
+  isOpen.value = Boolean(currentUser() && shouldShowDailyReward())
 
   window.addEventListener('keydown', handleEscape)
   window.addEventListener('open-daily-reward-modal', openModal)

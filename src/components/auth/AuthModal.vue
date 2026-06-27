@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { translate } from "../../i18n";
 import { login, loginWithGoogle } from "../../services/api/authApi";
 
@@ -14,9 +14,9 @@ const isResetPasswordOpen = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
-const googleButtonRef = ref(null);
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
-let googleScriptPromise = null;
+const GOOGLE_REDIRECT_PATH = "/google-oauth-callback.html";
+const GOOGLE_POPUP_NAME = "vmm_google_login";
 
 const closeModal = () => {
   emit("close");
@@ -30,7 +30,6 @@ const handleEscape = (event) => {
 
 onMounted(() => {
   window.addEventListener("keydown", handleEscape);
-  nextTick(renderGoogleButton);
 });
 
 onUnmounted(() => {
@@ -41,71 +40,55 @@ const friendlyAuthError = (error) => {
   return error?.message || translate("auth.errors.genericAction");
 };
 
-const loadGoogleScript = () => {
-  if (window.google?.accounts?.id) {
-    return Promise.resolve();
-  }
+const openGooglePopup = () => {
+  const redirectUri = `${window.location.origin}${GOOGLE_REDIRECT_PATH}`;
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: "token",
+    scope: "openid email profile",
+    prompt: "select_account",
+  });
+  const left = Math.max(window.screenX + (window.outerWidth - 500) / 2, 0);
+  const top = Math.max(window.screenY + (window.outerHeight - 640) / 2, 0);
 
-  if (!googleScriptPromise) {
-    googleScriptPromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-
-  return googleScriptPromise;
+  return window.open(
+    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+    GOOGLE_POPUP_NAME,
+    `width=500,height=640,left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
+  );
 };
 
-const handleGoogleCredential = async (response) => {
-  errorMessage.value = "";
-  successMessage.value = "";
-  isLoading.value = true;
-
-  try {
-    if (!response?.credential) {
-      throw new Error("No se recibio credencial de Google.");
+const waitForGooglePopup = (popup) => new Promise((resolve, reject) => {
+  const timeout = window.setTimeout(() => {
+    cleanup();
+    reject(new Error("Google tardo demasiado en responder."));
+  }, 120000);
+  const closedTimer = window.setInterval(() => {
+    if (popup.closed) {
+      cleanup();
+      reject(new Error("Inicio con Google cancelado."));
     }
+  }, 500);
+  const cleanup = () => {
+    window.clearTimeout(timeout);
+    window.clearInterval(closedTimer);
+    window.removeEventListener("message", handleMessage);
+  };
+  const handleMessage = (event) => {
+    if (event.origin !== window.location.origin || event.data?.source !== "vmm-google-oauth") {
+      return;
+    }
+    cleanup();
+    if (event.data.error) {
+      reject(new Error(event.data.error));
+      return;
+    }
+    resolve(event.data.accessToken);
+  };
 
-    await loginWithGoogle(response.credential);
-    emit("close");
-  } catch (error) {
-    errorMessage.value = friendlyAuthError(error);
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-const renderGoogleButton = async () => {
-  if (!GOOGLE_CLIENT_ID || !googleButtonRef.value) {
-    return;
-  }
-
-  try {
-    await loadGoogleScript();
-    googleButtonRef.value.innerHTML = "";
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleGoogleCredential,
-    });
-    window.google.accounts.id.renderButton(googleButtonRef.value, {
-      theme: "outline",
-      size: "large",
-      type: "standard",
-      shape: "pill",
-      text: "continue_with",
-      logo_alignment: "left",
-      locale: "en",
-      width: Math.min(300, googleButtonRef.value.clientWidth || 300),
-    });
-  } catch (error) {
-    errorMessage.value = friendlyAuthError(error);
-  }
-};
+  window.addEventListener("message", handleMessage);
+});
 
 const openPasswordReset = () => {
   errorMessage.value = "";
@@ -147,7 +130,20 @@ const handleGoogleAccess = async () => {
     return;
   }
 
-  await renderGoogleButton();
+  isLoading.value = true;
+  try {
+    const popup = openGooglePopup();
+    if (!popup) {
+      throw new Error("El navegador bloqueo el popup de Google.");
+    }
+    const accessToken = await waitForGooglePopup(popup);
+    await loginWithGoogle({ accessToken });
+    emit("close");
+  } catch (error) {
+    errorMessage.value = friendlyAuthError(error);
+  } finally {
+    isLoading.value = false;
+  }
 };
 
 const handlePasswordReset = async () => {
@@ -264,15 +260,9 @@ const handlePasswordReset = async () => {
             v-else
             class="min-h-12 w-full"
           >
-            <div
-              v-if="GOOGLE_CLIENT_ID"
-              ref="googleButtonRef"
-              class="google-auth-button flex min-h-12 w-full items-center justify-center overflow-hidden"
-            ></div>
             <button
-              v-else
               type="button"
-              class="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-black text-white transition hover:border-white/20 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
+              class="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#dadce0] bg-white px-5 text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isLoading"
               @click="handleGoogleAccess"
             >
@@ -284,7 +274,7 @@ const handlePasswordReset = async () => {
                   aria-hidden="true"
                 />
               </span>
-              {{ $t("auth.continueWithGoogle") }}
+              Continue with Google
             </button>
           </div>
 

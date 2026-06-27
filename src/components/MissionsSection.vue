@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase'
+import { getMe, getCurrentApiAuth } from '../services/api/authApi'
+import { onStoredAuthChange } from '../services/api/client'
 import { getMissions } from '../services/api/missionsApi'
 
 const dbMissions = ref([])
@@ -129,6 +129,29 @@ const performMissionAction = (mission) => {
   }
 }
 
+const syncReferralCode = (authState = getCurrentApiAuth()) => {
+  referralCode.value = ''
+
+  const user = authState?.user
+  if (!user) {
+    return
+  }
+
+  referralCode.value = String(user.referralCode || user.username || user.displayName || user.email?.split('@')[0] || '')
+    .trim()
+    .toLowerCase()
+
+  getMe()
+    .then((userData) => {
+      if (userData) {
+        referralCode.value = String(userData.referralCode || userData.username || referralCode.value || '')
+          .trim()
+          .toLowerCase()
+      }
+    })
+    .catch(() => {})
+}
+
 onMounted(() => {
   getMissions()
     .then((missionRows) => {
@@ -137,15 +160,9 @@ onMounted(() => {
     .catch(() => {
       dbMissions.value = []
     })
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    referralCode.value = ''
 
-    if (!user || user.isAnonymous) {
-      return
-    }
-
-    referralCode.value = String(user.displayName || user.email?.split('@')[0] || '').trim().toLowerCase()
-  })
+  syncReferralCode()
+  unsubscribeAuth = onStoredAuthChange(syncReferralCode)
 })
 
 onUnmounted(() => {

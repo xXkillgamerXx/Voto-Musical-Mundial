@@ -10,8 +10,8 @@ import {
   serverTimestamp,
   updateDoc,
   writeBatch,
-} from 'firebase/firestore'
-import { db } from '../../firebase'
+} from '../../services/firebaseRemoved'
+import { db } from '../../services/firebaseRemoved'
 import { translate } from '../../i18n'
 
 const props = defineProps({

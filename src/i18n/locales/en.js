@@ -377,6 +377,7 @@ export default {
       notFound: 'We could not find that artist.',
       load: 'Could not load the artist profile.',
       follow: 'Could not update the follow state.',
+      followPending: 'Following will be available soon.',
     },
   },
   news: {

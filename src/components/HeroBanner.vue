@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { db } from '../firebase'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { subscribePublicResults } from '../services/pollResults'
 
@@ -161,7 +160,7 @@ const syncPollResultListeners = (pollRows) => {
       return
     }
 
-    const unsubscribe = subscribePublicResults(db, {
+    const unsubscribe = subscribePublicResults(null, {
       pollId: poll.id,
       roundId: getEffectiveRoundId(poll) || null,
       onData: (publicResults) => {
@@ -249,7 +248,7 @@ const buildLiveSlide = (poll, index) => {
 
 const listenLivePolls = () => {
   unsubscribePolls = subscribeLivePollsCached(
-    db,
+    null,
     (pollRows) => {
       livePolls.value = pollRows
       syncRoundListeners(pollRows)
@@ -272,7 +271,7 @@ watch([activeSlide, bannerSlides], () => {
 let unsubscribeArtists = null
 
 onMounted(() => {
-  unsubscribeArtists = subscribeArtistsCached(db, (artistRows) => {
+  unsubscribeArtists = subscribeArtistsCached(null, (artistRows) => {
     artists.value = artistRows
   })
   listenLivePolls()

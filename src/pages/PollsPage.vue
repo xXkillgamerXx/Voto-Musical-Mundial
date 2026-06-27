@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
-import { db } from "../firebase";
 import { subscribePollsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
@@ -73,7 +72,7 @@ const loadPolls = () => {
   errorMessage.value = "";
 
   unsubscribePolls = subscribePollsCached(
-    db,
+    null,
     (pollsSnap) => {
       polls.value = pollsSnap;
       isLoading.value = false;

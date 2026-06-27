@@ -7,9 +7,9 @@ import {
   getDoc,
   serverTimestamp,
   updateDoc,
-} from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
-import { db, storage } from '../../firebase'
+} from '../../services/firebaseRemoved'
+import { getDownloadURL, ref as storageRef, uploadBytes } from '../../services/firebaseRemoved'
+import { db, storage } from '../../services/firebaseRemoved'
 import { translate } from '../../i18n'
 
 const props = defineProps({

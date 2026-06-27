@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
-import { db } from "../firebase";
 import { subscribeLivePollsCached } from "../services/firebaseCache";
 
 const props = defineProps({
@@ -137,7 +136,7 @@ const activePolls = computed(() => {
 });
 
 onMounted(() => {
-  unsubscribePolls = subscribeLivePollsCached(db, (pollRows) => {
+  unsubscribePolls = subscribeLivePollsCached(null, (pollRows) => {
     const previousPolls = new Map(polls.value.map((poll) => [poll.id, poll]));
 
     polls.value = pollRows.map((poll) => {

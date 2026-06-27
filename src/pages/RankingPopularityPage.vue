@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
-import { db } from "../firebase";
 import { getRankingPopularityCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
@@ -105,7 +104,7 @@ const loadArtists = async () => {
 
   try {
     isLoadingVotes.value = true;
-    artists.value = await getRankingPopularityCached(db);
+    artists.value = await getRankingPopularityCached(null);
   } catch {
     errorMessage.value = translate("ranking.errors.load");
   } finally {

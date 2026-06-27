@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 
-const feedUrl = 'https://www.musicmundial.com/en/feed/'
-const feedProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`
-const feedJsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`
-const postsUrl = 'https://www.musicmundial.com/en/wp-json/wp/v2/posts?per_page=3&_embed=1'
+const { locale } = useI18n()
+const musicMundialPath = computed(() => locale.value === 'en' ? '/en' : '')
+const feedUrl = computed(() => `https://www.musicmundial.com${musicMundialPath.value}/feed/`)
+const feedProxyUrl = computed(() => `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl.value)}`)
+const feedJsonUrl = computed(() => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl.value)}`)
+const postsUrl = computed(() => `https://www.musicmundial.com${musicMundialPath.value}/wp-json/wp/v2/posts?per_page=3&_embed=1`)
 const newsItems = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
@@ -39,8 +42,21 @@ const fallbackNews = [
 
 const visibleNews = computed(() => newsItems.value.length ? newsItems.value : fallbackNews)
 
+const decodeHtml = (value = '') => {
+  if (!value) {
+    return ''
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.innerHTML = value
+
+  return textarea.value.trim()
+}
+
+const normalizeText = (value = '') => decodeHtml(value.replace(/<[^>]+>/g, ''))
+
 const textFromNode = (item, selector) =>
-  item.querySelector(selector)?.textContent?.trim() || ''
+  normalizeText(item.querySelector(selector)?.textContent || '')
 
 const imageFromItem = (item) => {
   const mediaImage = item.querySelector('media\\:content, content')?.getAttribute('url')
@@ -65,10 +81,10 @@ const formatFeedDate = (value) => {
   const date = new Date(value)
 
   if (Number.isNaN(date.getTime())) {
-    return 'Reciente'
+    return translate('news.recent')
   }
 
-  return new Intl.DateTimeFormat('es', {
+  return new Intl.DateTimeFormat(locale.value, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
@@ -102,7 +118,7 @@ const sortByRecent = (items) =>
   })
 
 const fetchFeedItems = async () => {
-  const urls = [feedUrl, feedProxyUrl]
+  const urls = [feedUrl.value, feedProxyUrl.value]
 
   for (const url of urls) {
     try {
@@ -135,21 +151,19 @@ const imageFromHtml = (html = '') => {
   return imageMatch?.[1] || ''
 }
 
-const stripHtml = (value = '') => value.replace(/<[^>]+>/g, '').trim()
-
 const newsFromPosts = (posts) =>
   posts.slice(0, 3).map((post, index) => {
     const featuredMedia = post._embedded?.['wp:featuredmedia']?.[0]
     const terms = post._embedded?.['wp:term']?.flat?.() || []
-    const tag = terms.find((term) => term.taxonomy === 'category')?.name || 'News'
+    const tag = normalizeText(terms.find((term) => term.taxonomy === 'category')?.name || 'News')
 
     return {
-      title: stripHtml(post.title?.rendered || 'Noticia'),
+      title: normalizeText(post.title?.rendered || 'Noticia'),
       tag,
       rawDate: post.date_gmt || post.date,
       time: formatFeedDate(post.date_gmt || post.date),
       link: post.link,
-      description: stripHtml(post.excerpt?.rendered || ''),
+      description: normalizeText(post.excerpt?.rendered || ''),
       image: featuredMedia?.source_url || imageFromHtml(post.content?.rendered || post.excerpt?.rendered),
       visual: [
         'from-violet-950 via-fuchsia-700 to-indigo-950',
@@ -164,7 +178,7 @@ const newsFromPosts = (posts) =>
 
 const fetchWordPressNews = async () => {
   try {
-    const response = await fetch(postsUrl)
+    const response = await fetch(postsUrl.value)
 
     if (!response.ok) {
       return []
@@ -184,12 +198,12 @@ const fetchWordPressNews = async () => {
 
 const newsFromJsonItems = (items) =>
   items.slice(0, 3).map((item, index) => ({
-    title: item.title || 'Noticia',
-    tag: item.categories?.[0] || 'News',
+    title: normalizeText(item.title || 'Noticia'),
+    tag: normalizeText(item.categories?.[0] || 'News'),
     rawDate: item.pubDate,
     time: formatFeedDate(item.pubDate),
     link: item.link,
-    description: item.description?.replace(/<[^>]+>/g, '').trim() || '',
+    description: normalizeText(item.description || ''),
     image: item.thumbnail
       || item.enclosure?.link
       || imageFromHtml(item.content || item.description),
@@ -205,7 +219,7 @@ const newsFromJsonItems = (items) =>
 
 const fetchFeedJsonNews = async () => {
   try {
-    const response = await fetch(feedJsonUrl)
+    const response = await fetch(feedJsonUrl.value)
 
     if (!response.ok) {
       return []
@@ -258,6 +272,8 @@ const loadNews = async () => {
 }
 
 onMounted(loadNews)
+
+watch(locale, loadNews)
 </script>
 
 <template>

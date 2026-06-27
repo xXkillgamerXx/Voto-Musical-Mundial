@@ -26,9 +26,10 @@ export const login = async (payload) => {
 };
 
 export const loginWithGoogle = async (credential) => {
+  const body = typeof credential === "string" ? { credential } : credential;
   const auth = await apiRequest("/auth/google", {
     method: "POST",
-    body: { credential },
+    body,
   });
   setStoredAuth(auth);
   return auth;

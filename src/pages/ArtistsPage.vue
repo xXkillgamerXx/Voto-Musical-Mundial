@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
-import { db } from '../firebase'
 import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 
 const { locale } = useI18n()
@@ -72,7 +71,7 @@ const loadArtists = async () => {
   errorMessage.value = ''
 
   try {
-    artists.value = await getArtistsWithFollowersCached(db)
+    artists.value = await getArtistsWithFollowersCached(null)
   } catch {
     errorMessage.value = translate('artists.errors.loadPopular')
   } finally {

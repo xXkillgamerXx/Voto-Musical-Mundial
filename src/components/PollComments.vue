@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../firebase";
+import { getMe, getCurrentApiAuth } from "../services/api/authApi";
+import { onStoredAuthChange } from "../services/api/client";
 
 const props = defineProps({
   pollId: {
@@ -45,9 +45,7 @@ const trimmedCommentText = computed(() => commentText.value.trim());
 const hasEnoughCommentText = computed(
   () => trimmedCommentText.value.length >= MIN_COMMENT_LENGTH,
 );
-const isSignedInUser = computed(
-  () => Boolean(currentUser.value) && !currentUser.value?.isAnonymous,
-);
+const isSignedInUser = computed(() => Boolean(currentUser.value));
 const userInitial = computed(() => getInitial(currentDisplayName.value));
 const currentDisplayName = computed(
   () =>
@@ -265,7 +263,7 @@ const publishComment = async () => {
 };
 
 const removeComment = async (comment) => {
-  if (!currentUser.value || comment.userId !== currentUser.value.uid) {
+  if (!currentUser.value || comment.userId !== (currentUser.value.id || currentUser.value.uid)) {
     return;
   }
 
@@ -288,22 +286,37 @@ watch(comments, () => {
 const listenCurrentUserProfile = (user) => {
   currentUserProfile.value = null;
 
-  if (!user || user.isAnonymous) {
+  if (!user) {
     return;
   }
 
   currentUserProfile.value = {
-    name: user.displayName || user.email?.split("@")[0] || "Fan",
-    photoURL: user.photoURL || "",
-    role: "",
+    name: user.displayName || user.username || user.email?.split("@")[0] || "Fan",
+    photoURL: user.photoURL || user.photoUrl || "",
+    role: String(user.role || "").trim().toLowerCase(),
   };
+
+  getMe()
+    .then((userData) => {
+      if (userData && currentUser.value) {
+        currentUserProfile.value = {
+          name: userData.displayName || userData.username || userData.name || currentUserProfile.value.name,
+          photoURL: userData.photoURL || userData.photoUrl || currentUserProfile.value.photoURL,
+          role: String(userData.role || "").trim().toLowerCase(),
+        };
+      }
+    })
+    .catch(() => {});
 };
 
 onMounted(() => {
-  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    currentUser.value = user;
-    listenCurrentUserProfile(user);
-  });
+  const syncAuth = (authState = getCurrentApiAuth()) => {
+    currentUser.value = authState?.user || null;
+    listenCurrentUserProfile(currentUser.value);
+  };
+
+  syncAuth();
+  unsubscribeAuth = onStoredAuthChange(syncAuth);
 
   if ("IntersectionObserver" in window && commentsRoot.value) {
     commentsObserver = new IntersectionObserver(

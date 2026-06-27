@@ -377,6 +377,7 @@ export default {
       notFound: 'No encontramos ese artista.',
       load: 'No se pudo cargar el perfil del artista.',
       follow: 'No se pudo actualizar el seguimiento.',
+      followPending: 'El seguimiento estara disponible pronto.',
     },
   },
   news: {
