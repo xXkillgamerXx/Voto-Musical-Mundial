@@ -52,6 +52,7 @@ const roundEndAtInput = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 const copiedRoundEmbed = ref('')
+const copiedCounterEmbed = ref('')
 let unsubscribePoll = null
 let unsubscribeContestants = null
 let unsubscribeRounds = null
@@ -76,17 +77,38 @@ const roundEmbedUrl = (roundId) => {
   return url.toString()
 }
 
+const counterEmbedUrl = (roundId) => {
+  const url = new URL(roundEmbedUrl(roundId))
+  url.searchParams.set('contador', '1')
+
+  return url.toString()
+}
+
 const embedFrameId = (roundId) => `wmv-embed-${String(roundId).replace(/[^a-zA-Z0-9_-]/g, '-')}`
+const counterFrameId = (roundId) => `wmv-counter-${String(roundId).replace(/[^a-zA-Z0-9_-]/g, '-')}`
 
 const roundIframeCode = (roundId) =>
   [
-    `<iframe id="${embedFrameId(roundId)}" src="${roundEmbedUrl(roundId)}" width="100%" style="width:100%; min-height:360px; border:0; border-radius:24px; overflow:hidden;" loading="lazy"></iframe>`,
+    `<iframe id="${embedFrameId(roundId)}" src="${roundEmbedUrl(roundId)}" width="100%" style="width:100%; min-height:360px; border:0; border-radius:24px; overflow:hidden;" loading="lazy" scrolling="no"></iframe>`,
     '<script>',
     '  window.addEventListener("message", function(event) {',
     '    var data = event.data || {};',
     `    if (data.type !== "wmv-embed-height" || !data.src || data.src.indexOf("${roundEmbedUrl(roundId)}") !== 0) return;`,
     `    var iframe = document.getElementById("${embedFrameId(roundId)}");`,
     '    if (iframe) iframe.style.height = Math.max(360, Number(data.height || 0)) + "px";',
+    '  });',
+    '</scr' + 'ipt>',
+  ].join('\n')
+
+const counterIframeCode = (roundId) =>
+  [
+    `<iframe id="${counterFrameId(roundId)}" src="${counterEmbedUrl(roundId)}" width="100%" style="width:100%; min-height:220px; border:0; border-radius:24px; overflow:hidden;" loading="lazy" scrolling="no"></iframe>`,
+    '<script>',
+    '  window.addEventListener("message", function(event) {',
+    '    var data = event.data || {};',
+    `    if (data.type !== "wmv-embed-height" || !data.src || data.src.indexOf("${counterEmbedUrl(roundId)}") !== 0) return;`,
+    `    var iframe = document.getElementById("${counterFrameId(roundId)}");`,
+    '    if (iframe) iframe.style.height = Math.max(220, Number(data.height || 0)) + "px";',
     '  });',
     '</scr' + 'ipt>',
   ].join('\n')
@@ -102,6 +124,20 @@ const copyRoundEmbed = async (roundId) => {
     }, 2200)
   } catch {
     errorMessage.value = 'No se pudo copiar el embed. Entra a Configurar para copiarlo manualmente.'
+  }
+}
+
+const copyCounterEmbed = async (roundId) => {
+  try {
+    await navigator.clipboard.writeText(counterIframeCode(roundId))
+    copiedCounterEmbed.value = roundId
+    window.setTimeout(() => {
+      if (copiedCounterEmbed.value === roundId) {
+        copiedCounterEmbed.value = ''
+      }
+    }, 2200)
+  } catch {
+    errorMessage.value = 'No se pudo copiar el contador. Entra a Configurar para copiarlo manualmente.'
   }
 }
 
@@ -541,7 +577,12 @@ const finishActiveRound = async () => {
 }
 
 const launchPoll = async () => {
-  await updatePollStatus('live')
+  if (activeRound.value?.id) {
+    await updateRoundStatus(activeRound.value, 'live')
+  } else {
+    await updatePollStatus('live')
+  }
+
   isLaunchModalOpen.value = false
 }
 
@@ -845,6 +886,13 @@ onUnmounted(() => {
               >
                 {{ copiedRoundEmbed === round.id ? 'Embed copiado' : 'Copiar embed' }}
               </button>
+              <button
+                type="button"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 text-xs font-black text-amber-100 transition hover:bg-amber-400/20"
+                @click="copyCounterEmbed(round.id)"
+              >
+                {{ copiedCounterEmbed === round.id ? 'Contador copiado' : 'Copiar contador' }}
+              </button>
               <a
                 :href="roundEmbedUrl(round.id)"
                 target="_blank"
@@ -852,6 +900,14 @@ onUnmounted(() => {
                 class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10"
               >
                 Ver iframe
+              </a>
+              <a
+                :href="counterEmbedUrl(round.id)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10"
+              >
+                Ver contador
               </a>
             </div>
           </div>

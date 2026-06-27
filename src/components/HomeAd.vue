@@ -2,14 +2,40 @@
 import { onMounted, ref } from "vue";
 
 const hasPushedAd = ref(false);
+const ADSENSE_SCRIPT_ID = "google-adsense-script";
+const ADSENSE_CLIENT = "ca-pub-1078939545517246";
+
+const loadAdSenseScript = () =>
+  new Promise((resolve, reject) => {
+    const existingScript = document.getElementById(ADSENSE_SCRIPT_ID);
+
+    if (existingScript) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = ADSENSE_SCRIPT_ID;
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 
 onMounted(() => {
-  if (hasPushedAd.value || typeof window === "undefined") {
+  if (
+    hasPushedAd.value ||
+    typeof window === "undefined" ||
+    window.location.pathname.startsWith("/admin")
+  ) {
     return;
   }
 
-  window.setTimeout(() => {
+  window.setTimeout(async () => {
     try {
+      await loadAdSenseScript();
       window.adsbygoogle = window.adsbygoogle || [];
       window.adsbygoogle.push({});
       hasPushedAd.value = true;

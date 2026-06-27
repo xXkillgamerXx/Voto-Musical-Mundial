@@ -32,6 +32,8 @@ const routeSlug = pathParts[2] || "";
 const roundQueryParam = "ronda";
 const embedQueryParam = "embed";
 const matchQueryParam = "duelo";
+const counterQueryParam = "contador";
+const anonymousDefaultScope = "_round";
 
 const poll = ref(null);
 const currentPollId = ref("");
@@ -55,8 +57,9 @@ const voteFeedbacks = ref({});
 const optimisticVoteTotals = ref({});
 const animatedVoteCounts = ref({});
 const animatedDisplayedTotalVotes = ref(null);
-const anonymousVoteStatus = ref(null);
+const anonymousVoteStatuses = ref({});
 const isLoadingAnonymousStatus = ref(false);
+const isSignupPromptOpen = ref(false);
 
 let unsubscribeAuth = null;
 let unsubscribePoll = null;
@@ -69,6 +72,7 @@ let clockTimer = null;
 let voteQueue = null;
 let listeningContestantsKey = "";
 let embedResizeObserver = null;
+let previousEmbedOverflowStyles = null;
 const voteFeedbackTimers = new Map();
 const voteCountAnimationTimers = new Map();
 let displayedTotalAnimationTimer = null;
@@ -94,6 +98,13 @@ const routeRoundId = computed(
 const routeMatchGroup = computed(
   () => new URLSearchParams(window.location.search).get(matchQueryParam) || "",
 );
+const isCounterEmbed = computed(() => {
+  const counterParam = new URLSearchParams(window.location.search).get(
+    counterQueryParam,
+  );
+
+  return isEmbeddedPage.value && (counterParam === "1" || counterParam === "true");
+});
 
 const postEmbedHeight = () => {
   if (!isEmbeddedPage.value || window.parent === window) {
@@ -124,6 +135,38 @@ const startEmbedHeightSync = () => {
   });
   embedResizeObserver.observe(document.body);
   nextTick(postEmbedHeight);
+};
+
+const applyEmbeddedNoScroll = () => {
+  if (!isEmbeddedPage.value) {
+    return;
+  }
+
+  previousEmbedOverflowStyles = {
+    htmlOverflow: document.documentElement.style.overflow,
+    htmlScrollbarWidth: document.documentElement.style.scrollbarWidth,
+    bodyOverflow: document.body.style.overflow,
+    bodyScrollbarWidth: document.body.style.scrollbarWidth,
+  };
+  document.documentElement.style.overflow = "hidden";
+  document.documentElement.style.scrollbarWidth = "none";
+  document.body.style.overflow = "hidden";
+  document.body.style.scrollbarWidth = "none";
+};
+
+const restoreEmbeddedNoScroll = () => {
+  if (!previousEmbedOverflowStyles) {
+    return;
+  }
+
+  document.documentElement.style.overflow =
+    previousEmbedOverflowStyles.htmlOverflow;
+  document.documentElement.style.scrollbarWidth =
+    previousEmbedOverflowStyles.htmlScrollbarWidth;
+  document.body.style.overflow = previousEmbedOverflowStyles.bodyOverflow;
+  document.body.style.scrollbarWidth =
+    previousEmbedOverflowStyles.bodyScrollbarWidth;
+  previousEmbedOverflowStyles = null;
 };
 
 const getArtist = (artistId) =>
@@ -184,6 +227,15 @@ const hasEnded = computed(() =>
 );
 const isVotingOpen = computed(
   () => poll.value?.status === "live" && !hasEnded.value,
+);
+const isActiveRoundOpen = computed(() =>
+  Boolean(
+    activeRound.value?.status === "live" ||
+      (poll.value?.status === "live" &&
+        activeRound.value?.id &&
+        poll.value?.activeRoundId === activeRound.value.id) ||
+      (poll.value?.status === "live" && activeRound.value?.status !== "closed"),
+  ),
 );
 const isSelectingWinners = computed(
   () =>
@@ -354,7 +406,7 @@ const shouldShowVoteButtons = computed(
   () =>
     isVotingOpen.value &&
     (isEmbeddedPage.value
-      ? activeRound.value?.status !== "closed"
+      ? isActiveRoundOpen.value
       : selectedRoundStep.value?.status !== "closed"),
 );
 const anonymousVotingConfig = computed(() => ({
@@ -375,8 +427,42 @@ const anonymousVotingConfig = computed(() => ({
     ),
   ),
 }));
-const anonymousNextVoteAtMs = computed(() => {
-  const nextVoteAt = anonymousVoteStatus.value?.nextVoteAt;
+const getAnonymousVoteScope = (contestant) => {
+  if (activeRound.value?.type !== "versus") {
+    return anonymousDefaultScope;
+  }
+
+  const artistId = getContestantArtistId(contestant);
+  const match = versusMatches.value.find((versusMatch) =>
+    versusMatch.contestants.some(
+      (matchContestant) => getContestantArtistId(matchContestant) === artistId,
+    ),
+  );
+
+  if (match?.groupNumber) {
+    return `match_${match.groupNumber}`;
+  }
+
+  const matchGroup = Number(contestant?.matchGroup || 0);
+  return matchGroup ? `match_${matchGroup}` : anonymousDefaultScope;
+};
+const anonymousVoteScopes = computed(() => {
+  if (activeRound.value?.type !== "versus") {
+    return [anonymousDefaultScope];
+  }
+
+  return [
+    ...new Set(
+      displayedVersusMatches.value.map(
+        (match) => `match_${match.groupNumber}`,
+      ),
+    ),
+  ];
+});
+const anonymousVoteStatusForScope = (scope = anonymousDefaultScope) =>
+  anonymousVoteStatuses.value[scope] || null;
+const anonymousNextVoteAtMsForScope = (scope = anonymousDefaultScope) => {
+  const nextVoteAt = anonymousVoteStatusForScope(scope)?.nextVoteAt;
 
   if (!nextVoteAt) {
     return 0;
@@ -384,12 +470,21 @@ const anonymousNextVoteAtMs = computed(() => {
 
   const parsed = new Date(nextVoteAt).getTime();
   return Number.isFinite(parsed) ? parsed : 0;
-});
-const anonymousRemainingMs = computed(() =>
-  Math.max(0, anonymousNextVoteAtMs.value - now.value),
+};
+const anonymousRemainingMsForScope = (scope = anonymousDefaultScope) =>
+  Math.max(0, anonymousNextVoteAtMsForScope(scope) - now.value);
+const selectedAnonymousVoteScope = computed(() =>
+  getAnonymousVoteScope(voteModalContestant.value),
 );
-const canUseAnonymousVote = computed(
-  () => anonymousVotingConfig.value.enabled && anonymousRemainingMs.value <= 0,
+const anonymousRemainingMs = computed(() =>
+  anonymousRemainingMsForScope(selectedAnonymousVoteScope.value),
+);
+const canUseAnonymousVoteForScope = (scope = anonymousDefaultScope) =>
+  anonymousVotingConfig.value.enabled && anonymousRemainingMsForScope(scope) <= 0;
+const canUseAnonymousVoteFor = (contestant) =>
+  canUseAnonymousVoteForScope(getAnonymousVoteScope(contestant));
+const canUseAnonymousVote = computed(() =>
+  canUseAnonymousVoteForScope(selectedAnonymousVoteScope.value),
 );
 const isAnonymousVotingFlow = computed(() =>
   Boolean(
@@ -402,6 +497,10 @@ const hasEnoughPointsToVote = computed(() =>
     ? canUseAnonymousVote.value
     : Number(userPoints.value || 0) >= POINTS_PER_VOTE,
 );
+const hasEnoughPointsToVoteFor = (contestant) =>
+  currentUser.value?.isAnonymous || !currentUser.value
+    ? canUseAnonymousVoteFor(contestant)
+    : hasEnoughPointsToVote.value;
 const formattedUserPoints = computed(() =>
   Number(userPoints.value || 0).toLocaleString("es"),
 );
@@ -417,28 +516,34 @@ const normalizedVoteAmount = computed(() =>
 const selectedVoteArtist = computed(
   () => voteModalContestant.value?.artist || null,
 );
-const anonymousCooldownLabel = computed(() => {
-  const totalSeconds = Math.ceil(anonymousRemainingMs.value / 1000);
+const anonymousCooldownLabelForScope = (scope = anonymousDefaultScope) => {
+  const totalSeconds = Math.ceil(anonymousRemainingMsForScope(scope) / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-});
-const anonymousVoteMessage = computed(() => {
+};
+const anonymousCooldownLabel = computed(() =>
+  anonymousCooldownLabelForScope(selectedAnonymousVoteScope.value),
+);
+const anonymousVoteMessageForScope = (scope = anonymousDefaultScope) => {
   if (!anonymousVotingConfig.value.enabled) {
     return translate("polls.detail.anonymousDisabled");
   }
 
-  if (anonymousRemainingMs.value > 0) {
+  if (anonymousRemainingMsForScope(scope) > 0) {
     return translate("polls.detail.anonymousWait", {
-      time: anonymousCooldownLabel.value,
+      time: anonymousCooldownLabelForScope(scope),
     });
   }
 
   return translate("polls.detail.anonymousReady", {
     minutes: anonymousVotingConfig.value.cooldownMinutes,
   });
-});
+};
+const anonymousVoteMessage = computed(() =>
+  anonymousVoteMessageForScope(selectedAnonymousVoteScope.value),
+);
 
 const winners = computed(() =>
   rankedContestants.value.filter(
@@ -1248,26 +1353,34 @@ const listenUserPoints = (user) => {
   });
 };
 
-const refreshAnonymousVoteStatus = async () => {
+const refreshAnonymousVoteStatuses = async () => {
   if (
     !currentUser.value?.isAnonymous ||
     !poll.value?.id ||
     !anonymousVotingConfig.value.enabled
   ) {
-    anonymousVoteStatus.value = null;
+    anonymousVoteStatuses.value = {};
     return;
   }
 
   isLoadingAnonymousStatus.value = true;
 
   try {
-    const result = await getAnonymousVoteStatus({
-      pollId: poll.value.id,
-      roundId: activeRound.value?.id || null,
-    });
-    anonymousVoteStatus.value = result.data || null;
+    const statuses = await Promise.all(
+      anonymousVoteScopes.value.map(async (scope) => {
+        const result = await getAnonymousVoteStatus({
+          pollId: poll.value.id,
+          roundId: activeRound.value?.id || null,
+          voteScope: scope === anonymousDefaultScope ? null : scope,
+        });
+
+        return [scope, result.data || null];
+      }),
+    );
+
+    anonymousVoteStatuses.value = Object.fromEntries(statuses);
   } catch {
-    anonymousVoteStatus.value = null;
+    anonymousVoteStatuses.value = {};
   } finally {
     isLoadingAnonymousStatus.value = false;
   }
@@ -1278,13 +1391,18 @@ const ensureAnonymousUser = async () => {
     return currentUser.value;
   }
 
+  if (auth.currentUser) {
+    currentUser.value = auth.currentUser;
+    return auth.currentUser;
+  }
+
   const credential = await signInAnonymously(auth);
   currentUser.value = credential.user;
   return credential.user;
 };
 
-const callAnonymousVoteEndpoint = async (payload) => {
-  const token = await auth.currentUser?.getIdToken();
+const callAnonymousVoteEndpoint = async (payload, user = auth.currentUser) => {
+  const token = await user?.getIdToken(true);
 
   if (!token) {
     throw new Error("anonymous-token-missing");
@@ -1306,6 +1424,13 @@ const callAnonymousVoteEndpoint = async (payload) => {
       ? `functions/${data.error.code}`
       : "functions/internal";
     error.details = data?.error?.details || null;
+    console.error("Anonymous vote failed", {
+      status: response.status,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      payload,
+    });
     throw error;
   }
 
@@ -1318,9 +1443,11 @@ const voteButtonLabel = (contestant) => {
   }
 
   if (currentUser.value?.isAnonymous || !currentUser.value) {
-    return anonymousRemainingMs.value > 0
+    const scope = getAnonymousVoteScope(contestant);
+
+    return anonymousRemainingMsForScope(scope) > 0
       ? translate("polls.detail.voteCountdown", {
-          time: anonymousCooldownLabel.value,
+          time: anonymousCooldownLabelForScope(scope),
         })
       : translate("polls.detail.freeVote");
   }
@@ -1335,6 +1462,25 @@ const closeVoteModal = () => {
   voteAmount.value = 1;
 };
 
+const closeSignupPrompt = () => {
+  isSignupPromptOpen.value = false;
+  nextTick(postEmbedHeight);
+};
+
+const registerUrl = computed(() => `${window.location.origin}/registro`);
+const isLoggedFan = computed(
+  () => Boolean(currentUser.value) && !currentUser.value?.isAnonymous,
+);
+const embedUserName = computed(
+  () =>
+    currentUser.value?.displayName ||
+    currentUser.value?.email ||
+    translate("polls.detail.embedLoggedFallback"),
+);
+const embedUserInitial = computed(
+  () => embedUserName.value.trim().charAt(0).toUpperCase() || "F",
+);
+
 const openVoteModal = (contestant) => {
   errorMessage.value = "";
 
@@ -1348,9 +1494,16 @@ const openVoteModal = (contestant) => {
     return;
   }
 
+  if (!isActiveRoundOpen.value) {
+    errorMessage.value = "La ronda no está abierta.";
+    return;
+  }
+
   if (!currentUser.value || currentUser.value.isAnonymous) {
-    if (!canUseAnonymousVote.value) {
-      errorMessage.value = anonymousVoteMessage.value;
+    const scope = getAnonymousVoteScope(contestant);
+
+    if (!canUseAnonymousVoteForScope(scope)) {
+      errorMessage.value = anonymousVoteMessageForScope(scope);
       return;
     }
 
@@ -1385,8 +1538,10 @@ const voteAnonymouslyFor = async (contestant) => {
     return;
   }
 
-  if (anonymousRemainingMs.value > 0) {
-    errorMessage.value = anonymousVoteMessage.value;
+  const voteScope = getAnonymousVoteScope(contestant);
+
+  if (anonymousRemainingMsForScope(voteScope) > 0) {
+    errorMessage.value = anonymousVoteMessageForScope(voteScope);
     return;
   }
 
@@ -1398,36 +1553,66 @@ const voteAnonymouslyFor = async (contestant) => {
   const currentTotalVotes = displayTotalVotes.value;
 
   try {
-    await ensureAnonymousUser();
+    const anonymousUser = await ensureAnonymousUser();
+
+    if (!anonymousUser.isAnonymous) {
+      currentUser.value = anonymousUser;
+      await voteFor(contestant, 1);
+      return;
+    }
+
     isVoting.value = artistId;
 
     const result = await callAnonymousVoteEndpoint({
       pollId: poll.value.id,
       roundId: activeRound.value?.id || null,
       artistId,
+      voteScope: voteScope === anonymousDefaultScope ? null : voteScope,
       shardCount: shardCountForConcurrency(100000),
-    });
+    }, anonymousUser);
 
-    anonymousVoteStatus.value = result || null;
+    anonymousVoteStatuses.value = {
+      ...anonymousVoteStatuses.value,
+      [voteScope]: result || null,
+    };
     setOptimisticVoteTotal(artistId, currentVotes + 1);
     animateVoteCount(artistId, currentVotes, currentVotes + 1);
     animateDisplayedTotalVotes(currentTotalVotes, currentTotalVotes + 1);
     showVoteFeedback(artistId, 1);
-    shareMessage.value = translate("polls.detail.anonymousVoteSuccessLogin");
     closeVoteModal();
+    shareMessage.value = translate("polls.detail.anonymousVoteSuccessLogin");
+    isSignupPromptOpen.value = true;
+    nextTick(postEmbedHeight);
   } catch (error) {
     if (
       error.code === "functions/resource-exhausted" ||
       error.code === "resource-exhausted"
     ) {
-      anonymousVoteStatus.value = {
-        ...(anonymousVoteStatus.value || {}),
-        nextVoteAt: error.details?.nextVoteAt || null,
-        remainingMs: error.details?.remainingMs || 0,
+      anonymousVoteStatuses.value = {
+        ...anonymousVoteStatuses.value,
+        [voteScope]: {
+          ...(anonymousVoteStatuses.value[voteScope] || {}),
+          nextVoteAt: error.details?.nextVoteAt || null,
+          remainingMs: error.details?.remainingMs || 0,
+        },
       };
       errorMessage.value = translate("polls.detail.anonymousWait", {
-        time: anonymousCooldownLabel.value,
+        time: anonymousCooldownLabelForScope(voteScope),
       });
+      return;
+    }
+
+    if (
+      error.code === "functions/failed-precondition" ||
+      error.code === "failed-precondition" ||
+      error.code === "functions/unauthenticated" ||
+      error.code === "unauthenticated" ||
+      error.code === "functions/invalid-argument" ||
+      error.code === "invalid-argument"
+    ) {
+      errorMessage.value =
+        error.message ||
+        `${translate("polls.detail.anonymousVoteError")} (${error.code})`;
       return;
     }
 
@@ -1439,11 +1624,14 @@ const voteAnonymouslyFor = async (contestant) => {
 
 const voteFor = async (contestant, amount = 1) => {
   errorMessage.value = "";
+  const votingUser = currentUser.value || auth.currentUser;
 
-  if (!currentUser.value || currentUser.value.isAnonymous) {
+  if (!votingUser || votingUser.isAnonymous) {
     await voteAnonymouslyFor(contestant);
     return;
   }
+
+  currentUser.value = votingUser;
 
   if (!poll.value?.id || !isVotingOpen.value) {
     errorMessage.value = translate("polls.detail.closedVoting");
@@ -1476,10 +1664,10 @@ const voteFor = async (contestant, amount = 1) => {
       pollId: poll.value.id,
       roundId: activeRound.value?.id || null,
       artistId,
-      userId: currentUser.value.uid,
+      userId: votingUser.uid,
       userDisplayName:
-        currentUser.value.displayName || currentUser.value.email || "",
-      userPhotoURL: currentUser.value.photoURL || "",
+        votingUser.displayName || votingUser.email || "",
+      userPhotoURL: votingUser.photoURL || "",
       amount: votesToAdd,
       pointsPerVote: POINTS_PER_VOTE,
       shardCount: shardCountForConcurrency(100000),
@@ -1521,9 +1709,14 @@ const confirmVoteAmount = () => {
 };
 
 watch(
-  () => [currentUser.value?.uid, poll.value?.id, activeRound.value?.id],
+  () => [
+    currentUser.value?.uid,
+    poll.value?.id,
+    activeRound.value?.id,
+    anonymousVoteScopes.value.join("|"),
+  ],
   () => {
-    refreshAnonymousVoteStatus();
+    refreshAnonymousVoteStatuses();
     nextTick(postEmbedHeight);
   },
 );
@@ -1557,6 +1750,7 @@ onMounted(() => {
   clockTimer = window.setInterval(() => {
     now.value = Date.now();
   }, 1000);
+  applyEmbeddedNoScroll();
   loadPoll();
   startEmbedHeightSync();
 });
@@ -1577,6 +1771,7 @@ onUnmounted(() => {
   clearAnimatedDisplayedTotalVotes();
   voteQueue?.flush().catch(() => {});
   voteQueue?.dispose();
+  restoreEmbeddedNoScroll();
   window.clearInterval(clockTimer);
 });
 </script>
@@ -1591,10 +1786,43 @@ onUnmounted(() => {
     "
   >
     <div
-      v-if="isLoading"
+      v-if="isLoading && !isEmbeddedPage"
       class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-300"
     >
       {{ $t("polls.detail.loading") }}
+    </div>
+
+    <div
+      v-else-if="isLoading && isEmbeddedPage"
+      class="embed-loader-card relative grid min-h-90 place-items-center overflow-hidden rounded-4xl border border-violet-300/20 bg-[#080a18] p-6 text-center text-white shadow-2xl shadow-fuchsia-950/25"
+    >
+      <div
+        class="pointer-events-none absolute -left-16 -top-16 size-52 rounded-full bg-fuchsia-500/18 blur-3xl"
+      ></div>
+      <div
+        class="pointer-events-none absolute -bottom-20 right-8 size-60 rounded-full bg-cyan-400/12 blur-3xl"
+      ></div>
+      <div class="relative z-10 w-full max-w-sm">
+        <div
+          class="embed-loader-icon mx-auto flex size-20 items-end justify-center gap-1.5 rounded-3xl border border-white/10 bg-white/8 px-4 py-4 shadow-2xl shadow-fuchsia-950/40"
+          aria-hidden="true"
+        >
+          <span class="embed-loader-bar h-6 w-2 rounded-full bg-cyan-300"></span>
+          <span class="embed-loader-bar h-10 w-2 rounded-full bg-fuchsia-300"></span>
+          <span class="embed-loader-bar h-8 w-2 rounded-full bg-violet-300"></span>
+          <span class="embed-loader-bar h-12 w-2 rounded-full bg-pink-300"></span>
+        </div>
+        <p
+          class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
+        >
+          {{ $t("polls.detail.loading") }}
+        </p>
+        <div class="mt-5 space-y-3">
+          <span class="block h-4 rounded-full bg-white/10"></span>
+          <span class="mx-auto block h-4 w-3/4 rounded-full bg-white/8"></span>
+          <span class="mx-auto block h-11 w-1/2 rounded-2xl bg-white/10"></span>
+        </div>
+      </div>
     </div>
 
     <div
@@ -1603,6 +1831,64 @@ onUnmounted(() => {
     >
       {{ errorMessage }}
     </div>
+
+    <section
+      v-else-if="isCounterEmbed"
+      class="relative overflow-hidden rounded-4xl border border-violet-300/20 bg-[#080a18] p-5 text-white shadow-2xl shadow-fuchsia-950/25 sm:p-6"
+    >
+      <div
+        class="pointer-events-none absolute -left-16 -top-20 size-56 rounded-full bg-fuchsia-500/16 blur-3xl"
+      ></div>
+      <div
+        class="pointer-events-none absolute -bottom-20 right-0 size-64 rounded-full bg-cyan-400/12 blur-3xl"
+      ></div>
+      <div
+        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(217,70,239,0.14),transparent_35%)]"
+      ></div>
+
+      <div class="relative z-10">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div class="min-w-0">
+            <p
+              class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
+            >
+              Contador en vivo
+            </p>
+            <h2 class="mt-2 truncate text-2xl font-black sm:text-3xl">
+              {{ activeRound?.title || poll?.title || "Votación" }}
+            </h2>
+          </div>
+          <span
+            class="self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-cyan-100 sm:self-auto"
+          >
+            {{ hasEnded ? "Finalizado" : "Tiempo restante" }}
+          </span>
+        </div>
+
+        <div class="mt-5 grid grid-cols-4 gap-2 sm:gap-3">
+          <div
+            v-for="item in countdown"
+            :key="`counter-${item.label}`"
+            class="rounded-2xl border border-white/10 bg-slate-950/65 p-3 text-center shadow-lg shadow-black/20"
+          >
+            <p class="text-2xl font-black text-white sm:text-4xl">
+              {{ item.value }}
+            </p>
+            <p
+              class="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400"
+            >
+              {{ item.label }}
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+          <span
+            class="counter-embed-bar block h-full rounded-full bg-linear-to-r from-cyan-300 via-fuchsia-300 to-violet-400"
+          ></span>
+        </div>
+      </div>
+    </section>
 
     <template v-else>
       <article
@@ -2196,9 +2482,11 @@ onUnmounted(() => {
           :key="match.id"
           class="rounded-4xl border border-white/10 bg-white/5"
           :class="
-            !isEmbeddedPage && match.contestants.length === 2
-              ? 'mx-auto max-w-5xl p-3 sm:p-4'
-              : 'p-4 sm:p-5'
+              match.contestants.length === 2
+                ? isEmbeddedPage
+                  ? 'p-2 sm:p-4'
+                  : 'mx-auto max-w-5xl p-3 sm:p-4'
+                : 'p-4 sm:p-5'
           "
         >
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2213,16 +2501,20 @@ onUnmounted(() => {
             class="relative"
             :class="
               match.contestants.length === 2
-                ? 'grid gap-4 md:grid-cols-2'
+                ? isEmbeddedPage
+                  ? 'grid grid-cols-2 gap-2 sm:gap-4'
+                  : 'grid gap-4 md:grid-cols-2'
                 : 'space-y-3'
             "
           >
             <div
               v-if="match.contestants.length === 2"
-              class="pointer-events-none absolute inset-0 z-50 hidden place-items-center md:grid"
+              class="pointer-events-none absolute inset-0 z-50 place-items-center"
+              :class="isEmbeddedPage ? 'grid' : 'hidden md:grid'"
             >
               <span
-                class="embed-vs-badge grid size-20 place-items-center rounded-full border-4 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-2xl font-black text-white shadow-2xl shadow-fuchsia-500/60 ring-4 ring-fuchsia-500/20"
+                class="embed-vs-badge grid place-items-center rounded-full border-4 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 font-black text-white shadow-2xl shadow-fuchsia-500/60 ring-4 ring-fuchsia-500/20"
+                :class="isEmbeddedPage ? 'size-13 text-base sm:size-20 sm:text-2xl' : 'size-20 text-2xl'"
               >
                 VS
               </span>
@@ -2256,7 +2548,7 @@ onUnmounted(() => {
                   :class="
                     match.contestants.length === 2
                       ? isEmbeddedPage
-                        ? 'aspect-square min-h-80'
+                        ? 'aspect-4/5 min-h-0 sm:aspect-square sm:min-h-80'
                         : 'min-h-52 md:min-h-78'
                       : 'min-h-52 md:min-h-56'
                   "
@@ -2284,8 +2576,10 @@ onUnmounted(() => {
                 <div
                   class="p-3"
                   :class="
-                    match.contestants.length === 2 && !isEmbeddedPage
-                      ? 'sm:p-3'
+                    match.contestants.length === 2
+                      ? isEmbeddedPage
+                        ? 'p-2 sm:p-5'
+                        : 'sm:p-3'
                       : 'sm:p-5'
                   "
                 >
@@ -2294,8 +2588,10 @@ onUnmounted(() => {
                       <h3
                         class="truncate font-black text-white"
                         :class="
-                          match.contestants.length === 2 && !isEmbeddedPage
-                            ? 'text-2xl'
+                          match.contestants.length === 2
+                            ? isEmbeddedPage
+                              ? 'text-lg sm:text-3xl'
+                              : 'text-2xl'
                             : 'text-3xl'
                         "
                       >
@@ -2316,8 +2612,10 @@ onUnmounted(() => {
                     <p
                       class="shrink-0 font-black text-cyan-100"
                       :class="
-                        match.contestants.length === 2 && !isEmbeddedPage
-                          ? 'text-xl'
+                        match.contestants.length === 2
+                          ? isEmbeddedPage
+                            ? 'text-base sm:text-2xl'
+                            : 'text-xl'
                           : 'text-2xl'
                       "
                     >
@@ -2328,8 +2626,10 @@ onUnmounted(() => {
                   <div
                     class="overflow-hidden rounded-full bg-white/10"
                     :class="
-                      match.contestants.length === 2 && !isEmbeddedPage
-                        ? 'mt-3 h-2.5'
+                      match.contestants.length === 2
+                        ? isEmbeddedPage
+                          ? 'mt-3 h-2 sm:mt-4 sm:h-3'
+                          : 'mt-3 h-2.5'
                         : 'mt-4 h-3'
                     "
                   >
@@ -2374,14 +2674,16 @@ onUnmounted(() => {
                   type="button"
                   class="flex items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   :class="[
-                    match.contestants.length === 2 && !isEmbeddedPage
-                      ? 'm-3 min-h-10'
+                    match.contestants.length === 2
+                      ? isEmbeddedPage
+                        ? 'm-2 min-h-11 sm:m-4 sm:min-h-12'
+                        : 'm-3 min-h-10'
                       : 'm-4 min-h-12',
                     match.contestants.length !== 2 && 'md:min-w-32',
                   ]"
                   :disabled="
                     !isVotingOpen ||
-                    !hasEnoughPointsToVote ||
+                    !hasEnoughPointsToVoteFor(contestant) ||
                     isVoting === getContestantArtistId(contestant)
                   "
                   @click="openVoteModal(contestant)"
@@ -2622,7 +2924,7 @@ onUnmounted(() => {
                 class="col-span-3 min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:col-span-1"
                 :disabled="
                   !isVotingOpen ||
-                  !hasEnoughPointsToVote ||
+                  !hasEnoughPointsToVoteFor(contestant) ||
                   isVoting === getContestantArtistId(contestant)
                 "
                 @click="openVoteModal(contestant)"
@@ -2650,6 +2952,73 @@ onUnmounted(() => {
     <div v-if="!isEmbeddedPage" class="mt-12 border-t border-white/10 pt-4">
       <ActivePolls :exclude-poll-id="currentPollId" />
     </div>
+
+    <section
+      v-if="isEmbeddedPage"
+      class="mt-4 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 text-white shadow-2xl shadow-fuchsia-950/20 sm:p-4"
+    >
+      <div
+        v-if="isLoggedFan"
+        class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div class="flex min-w-0 items-center gap-3">
+          <span
+            class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-cyan-200/25 bg-linear-to-br from-cyan-400/20 to-fuchsia-500/20 text-sm font-black text-cyan-100"
+          >
+            <img
+              v-if="currentUser.photoURL"
+              :src="currentUser.photoURL"
+              :alt="embedUserName"
+              class="size-full object-cover"
+            />
+            <span v-else>{{ embedUserInitial }}</span>
+          </span>
+          <span class="min-w-0">
+            <span
+              class="block text-[10px] font-black uppercase tracking-[0.24em] text-cyan-200"
+            >
+              {{ $t("polls.detail.embedLoggedLabel") }}
+            </span>
+            <strong class="block truncate text-sm font-black sm:text-base">
+              {{ embedUserName }}
+            </strong>
+          </span>
+        </div>
+        <span
+          class="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-amber-100"
+        >
+          {{
+            $t("polls.detail.embedPoints", {
+              points: formattedUserPoints,
+            })
+          }}
+        </span>
+      </div>
+
+      <div
+        v-else
+        class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div>
+          <p
+            class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-200"
+          >
+            {{ $t("polls.detail.embedGuestLabel") }}
+          </p>
+          <p class="mt-1 text-sm font-bold leading-6 text-slate-200">
+            {{ $t("polls.detail.embedGuestDescription") }}
+          </p>
+        </div>
+        <a
+          class="flex min-h-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-200/35 bg-cyan-300/12 px-5 text-xs font-black uppercase tracking-wide text-cyan-50 shadow-lg shadow-cyan-950/25 backdrop-blur transition hover:scale-[1.01] hover:border-cyan-100/60 hover:bg-cyan-300/20"
+          :href="registerUrl"
+          target="_blank"
+          rel="noopener"
+        >
+          {{ $t("polls.detail.embedGuestAction") }}
+        </a>
+      </div>
+    </section>
 
     <Teleport to="body">
       <div
@@ -2850,10 +3219,123 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="isSignupPromptOpen"
+        class="fixed inset-0 z-95 flex items-center justify-center bg-[#03030a]/85 px-4 py-6 backdrop-blur-md"
+        @click.self="closeSignupPrompt"
+      >
+        <div
+          class="signup-prompt-modal relative w-full max-w-md overflow-hidden rounded-4xl border border-cyan-300/25 bg-[#080a18] p-1 text-white shadow-2xl shadow-cyan-950/50"
+          @click.stop
+        >
+          <div
+            class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(34,211,238,0.26),transparent_32%),radial-gradient(circle_at_90%_18%,rgba(236,72,153,0.26),transparent_28%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(15,8,32,0.98))]"
+          ></div>
+          <div
+            class="signup-prompt-orbit pointer-events-none absolute -right-14 -top-14 size-40 rounded-full border border-cyan-200/20"
+          ></div>
+          <div
+            class="pointer-events-none absolute -bottom-16 left-8 size-48 rounded-full bg-fuchsia-400/15 blur-3xl"
+          ></div>
+
+          <button
+            type="button"
+            class="absolute right-4 top-4 z-20 grid size-10 place-items-center rounded-full border border-white/10 bg-white/8 text-xl font-black text-slate-300 transition hover:bg-white/15 hover:text-white"
+            :aria-label="$t('common.actions.close')"
+            @click="closeSignupPrompt"
+          >
+            ×
+          </button>
+
+          <div class="relative z-10 p-6 text-center sm:p-8">
+            <div
+              class="signup-prompt-badge mx-auto grid size-20 place-items-center rounded-3xl border border-cyan-200/30 bg-cyan-300/10 text-4xl shadow-2xl shadow-cyan-950/40"
+              aria-hidden="true"
+            >
+              <i class="fa-solid fa-check"></i>
+            </div>
+            <p
+              class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-cyan-200"
+            >
+              {{ $t("polls.detail.anonymousVoteSuccessTitle") }}
+            </p>
+            <h2 class="mt-2 text-3xl font-black leading-tight">
+              {{ $t("polls.detail.signupPromptTitle") }}
+            </h2>
+            <p class="mt-3 text-sm leading-6 text-slate-300">
+              {{ $t("polls.detail.signupPromptDescription") }}
+            </p>
+
+            <div class="mt-6 grid gap-3">
+              <a
+                class="flex min-h-12 items-center justify-center rounded-2xl border border-cyan-200/35 bg-cyan-300/12 px-5 text-sm font-black uppercase tracking-wide text-cyan-50 shadow-lg shadow-cyan-950/30 backdrop-blur transition hover:scale-[1.01] hover:border-cyan-100/60 hover:bg-cyan-300/20"
+                :href="registerUrl"
+                :target="isEmbeddedPage ? '_blank' : '_self'"
+                rel="noopener"
+              >
+                {{ $t("polls.detail.signupPromptAction") }}
+              </a>
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
+                @click="closeSignupPrompt"
+              >
+                {{ $t("polls.detail.signupPromptLater") }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <style scoped>
+.signup-prompt-modal {
+  animation: signup-prompt-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.signup-prompt-badge {
+  animation: signup-prompt-badge 1.9s ease-in-out infinite;
+}
+
+.signup-prompt-orbit {
+  animation: signup-prompt-orbit 8s linear infinite;
+  box-shadow: 0 0 80px rgba(34, 211, 238, 0.16);
+}
+
+.embed-loader-card {
+  isolation: isolate;
+}
+
+.embed-loader-icon {
+  animation: embed-loader-pulse 2s ease-in-out infinite;
+}
+
+.embed-loader-bar {
+  animation: embed-loader-bar 0.9s ease-in-out infinite;
+  box-shadow: 0 0 18px rgba(217, 70, 239, 0.22);
+}
+
+.embed-loader-bar:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.embed-loader-bar:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.embed-loader-bar:nth-child(4) {
+  animation-delay: 360ms;
+}
+
+.counter-embed-bar {
+  animation: counter-embed-bar 2.4s ease-in-out infinite;
+  transform-origin: left center;
+}
+
 .waiting-card {
   isolation: isolate;
 }
@@ -3056,6 +3538,80 @@ onUnmounted(() => {
   to {
     transform: scaleX(1);
     filter: brightness(1.15);
+  }
+}
+
+@keyframes signup-prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes signup-prompt-badge {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.28));
+  }
+
+  50% {
+    transform: translateY(-0.25rem) scale(1.05);
+    filter: drop-shadow(0 0 30px rgba(236, 72, 153, 0.34));
+  }
+}
+
+@keyframes signup-prompt-orbit {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+
+  to {
+    transform: rotate(360deg) scale(1.04);
+  }
+}
+
+@keyframes embed-loader-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 18px rgba(217, 70, 239, 0.22));
+  }
+
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 32px rgba(34, 211, 238, 0.28));
+  }
+}
+
+@keyframes embed-loader-bar {
+  0%,
+  100% {
+    transform: scaleY(0.55);
+    opacity: 0.65;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes counter-embed-bar {
+  0%,
+  100% {
+    transform: scaleX(0.82);
+    filter: brightness(0.9);
+  }
+
+  50% {
+    transform: scaleX(1);
+    filter: brightness(1.2);
   }
 }
 

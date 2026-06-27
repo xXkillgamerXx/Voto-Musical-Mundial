@@ -170,17 +170,14 @@ const assertVotingOpen = ({ pollData, roundData }) => {
     throw new HttpsError("failed-precondition", "La votacion no esta abierta.");
   }
 
-  if (roundData && roundData.status !== "live") {
-    throw new HttpsError("failed-precondition", "La ronda no esta abierta.");
-  }
-
   if (endAtMillis && endAtMillis <= Date.now()) {
     throw new HttpsError("failed-precondition", "La votacion ya termino.");
   }
 };
 
-const lockDocRefs = ({ pollId, roundId, uid, ipHash, blockByIp }) => {
-  const scope = cleanId(roundId || "_root");
+const lockDocRefs = ({ pollId, roundId, voteScope, uid, ipHash, blockByIp }) => {
+  const roundScope = cleanId(roundId || "_root");
+  const scope = voteScope ? `${roundScope}_${cleanId(voteScope)}` : roundScope;
   const locks = db.collection(`polls/${pollId}/anonymousVoteLocks`);
 
   return {
@@ -203,10 +200,43 @@ const statusPayload = ({ nextVoteAt = 0, config }) => ({
   remainingMs: Math.max(0, nextVoteAt - Date.now()),
 });
 
+const resolveAnonymousVoteScope = async ({ pollId, roundId, roundData, artistId }) => {
+  if (!roundId || roundData?.type !== "versus") {
+    return null;
+  }
+
+  const contestantsSnap = await roundCollectionRef(pollId, roundId, "contestants").get();
+  const contestants = contestantsSnap.docs
+    .map((contestantDoc, index) => ({
+      id: contestantDoc.id,
+      index,
+      ...contestantDoc.data(),
+      artistId: contestantDoc.data().artistId || contestantDoc.id,
+    }))
+    .sort(
+      (current, next) =>
+        Number(current.order ?? current.index) - Number(next.order ?? next.index),
+    );
+  const contestantIndex = contestants.findIndex(
+    (contestant) =>
+      cleanId(contestant.artistId) === artistId || cleanId(contestant.id) === artistId,
+  );
+
+  if (contestantIndex < 0) {
+    throw new HttpsError("invalid-argument", "El participante no pertenece a esta ronda.");
+  }
+
+  const contestant = contestants[contestantIndex];
+  const matchGroup = Number(contestant.matchGroup || 0);
+
+  return `match_${matchGroup || Math.floor(contestantIndex / 2) + 1}`;
+};
+
 export const getAnonymousVoteStatus = onCall(callableOptions, async (request) => {
   const uid = assertAnonymousAuth(request);
   const pollId = cleanId(request.data?.pollId);
   const roundId = request.data?.roundId ? cleanId(request.data.roundId) : null;
+  const voteScope = request.data?.voteScope ? cleanId(request.data.voteScope) : null;
 
   if (!pollId) {
     throw new HttpsError("invalid-argument", "Falta la votacion.");
@@ -218,6 +248,7 @@ export const getAnonymousVoteStatus = onCall(callableOptions, async (request) =>
   const { uidLockRef, ipLockRef } = lockDocRefs({
     pollId,
     roundId,
+    voteScope,
     uid,
     ipHash,
     blockByIp: config.blockByIp,
@@ -253,12 +284,19 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
 
   assertVotingOpen(context);
 
+  const voteScope = await resolveAnonymousVoteScope({
+    pollId,
+    roundId,
+    roundData: context.roundData,
+    artistId,
+  });
   const shardIndex = Math.floor(Math.random() * shardCount);
   const now = Date.now();
   const nextVoteAt = now + config.cooldownMs;
   const { uidLockRef, ipLockRef } = lockDocRefs({
     pollId,
     roundId,
+    voteScope,
     uid,
     ipHash,
     blockByIp: config.blockByIp,
@@ -289,6 +327,7 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
       ipHash,
       pollId,
       roundId,
+      voteScope,
       lastVoteAt: FieldValue.serverTimestamp(),
       nextVoteAt: timestampFromMillis(nextVoteAt),
       cooldownMinutes: config.cooldownMinutes,
@@ -335,6 +374,7 @@ const castAnonymousVoteForUser = async ({ uid, data, rawRequest }) => {
       userPhotoURL: "",
       artistId,
       roundId,
+      voteScope,
       amount: 1,
       pointsSpent: 0,
       anonymous: true,
