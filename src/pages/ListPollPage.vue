@@ -4,13 +4,18 @@ import { translate } from "../i18n";
 import ActivePolls from "../components/ActivePolls.vue";
 import PollComments from "../components/PollComments.vue";
 import { getArtistsCached } from "../services/firebaseCache";
-import { getCurrentApiAuth } from "../services/api/authApi";
-import { onStoredAuthChange } from "../services/api/client";
-import { getPoll, getPolls } from "../services/api/pollsApi";
+import { getCurrentApiAuth, getMe } from "../services/api/authApi";
+import {
+  getStoredAuth,
+  onStoredAuthChange,
+  setStoredAuth,
+} from "../services/api/client";
+import { getPoll, getPolls, getPollResults } from "../services/api/pollsApi";
 import {
   castVote as castApiVote,
   getAnonymousVoteStatus,
 } from "../services/api/votesApi";
+import { subscribePollRealtime } from "../services/api/realtimeApi";
 import {
   loadContestantMetadata,
   mergeContestantsWithPublicResults,
@@ -29,6 +34,7 @@ const embedQueryParam = "embed";
 const matchQueryParam = "duelo";
 const counterQueryParam = "contador";
 const anonymousDefaultScope = "_round";
+const finalRoundTabId = "__final";
 
 const poll = ref(null);
 const currentPollId = ref("");
@@ -55,6 +61,7 @@ const animatedDisplayedTotalVotes = ref(null);
 const anonymousVoteStatuses = ref({});
 const isLoadingAnonymousStatus = ref(false);
 const isSignupPromptOpen = ref(false);
+const roundDetailSection = ref(null);
 
 let unsubscribeAuth = null;
 let unsubscribePoll = null;
@@ -62,6 +69,10 @@ let unsubscribeContestants = null;
 let unsubscribeRounds = null;
 let unsubscribeUserPoints = null;
 let unsubscribePublicResults = null;
+let unsubscribeRealtime = null;
+let reloadPublicResults = null;
+let realtimeResultsThrottle = 0;
+let realtimeStateThrottle = 0;
 let clockTimer = null;
 let voteQueue = null;
 let listeningContestantsKey = "";
@@ -392,7 +403,19 @@ const activeContestants = computed(() =>
         totalVotes,
       };
     })
-    .sort((current, next) => current.order - next.order),
+    .sort((current, next) => {
+      if (activeRound.value?.type === "versus") {
+        if (current.matchGroup !== next.matchGroup) {
+          return current.matchGroup - next.matchGroup;
+        }
+
+        if (current.matchOrder !== next.matchOrder) {
+          return current.matchOrder - next.matchOrder;
+        }
+      }
+
+      return current.order - next.order;
+    }),
 );
 
 const versusMatches = computed(() => {
@@ -599,7 +622,7 @@ const isAnonymousVotingFlow = computed(() =>
 const hasEnoughPointsToVote = computed(() =>
   currentUser.value?.isAnonymous || !currentUser.value
     ? canUseAnonymousVote.value
-    : true,
+    : Number(userPoints.value || 0) >= POINTS_PER_VOTE,
 );
 const hasEnoughPointsToVoteFor = (contestant) =>
   currentUser.value?.isAnonymous || !currentUser.value
@@ -610,7 +633,7 @@ const formattedUserPoints = computed(() =>
 );
 const maxVoteAmount = computed(() =>
   currentUser.value && !currentUser.value.isAnonymous
-    ? 1
+    ? Math.max(1, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE))
     : Math.max(0, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE)),
 );
 const normalizedVoteAmount = computed(() =>
@@ -882,7 +905,8 @@ const isRoundIntroVisible = computed(
 const roundSteps = computed(() =>
   rounds.value
     .map((round, index) => {
-      const isActive = activeRound.value?.id === round.id && isVotingOpen.value;
+      const isCurrent = activeRound.value?.id === round.id;
+      const isActive = isCurrent && isVotingOpen.value;
       const activeRoundIndex = rounds.value.findIndex(
         (item) => item.id === activeRound.value?.id,
       );
@@ -893,8 +917,13 @@ const roundSteps = computed(() =>
       return {
         ...round,
         number: index + 1,
+        isCurrent,
         isActive,
-        isVisible: isActive || isBeforeActiveRound || isFinalResultVisible,
+        isVisible:
+          isCurrent ||
+          isActive ||
+          isBeforeActiveRound ||
+          isFinalResultVisible,
         winners: (round.winnerIds || [])
           .map((artistId) => getArtist(artistId))
           .filter(Boolean),
@@ -908,6 +937,31 @@ const selectedRoundStep = computed(
     roundSteps.value.find((round) => round.id === selectedRoundId.value) ||
     null,
 );
+
+const isViewingSelectedClosedRound = computed(
+  () => selectedRoundStep.value?.status === "closed",
+);
+
+const isViewingFinalResult = computed(
+  () =>
+    isClosed.value &&
+    finalWinnerEntries.value.length > 0 &&
+    (!selectedRoundId.value || selectedRoundId.value === finalRoundTabId),
+);
+
+const selectedRoundWinnerNames = computed(() =>
+  (selectedRoundStep.value?.winners || [])
+    .map((winner) => winner?.name)
+    .filter(Boolean),
+);
+
+const scrollToRoundDetail = async () => {
+  await nextTick();
+  roundDetailSection.value?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+};
 
 const updateSelectedRoundUrl = (roundId) => {
   const url = new URL(window.location.href);
@@ -946,9 +1000,21 @@ const syncSelectedRoundFromUrl = async () => {
     return;
   }
 
+  const roundParam = new URLSearchParams(window.location.search).get(
+    roundQueryParam,
+  );
+
+  if (roundParam === "final" && isClosed.value) {
+    selectedRoundId.value = finalRoundTabId;
+    return;
+  }
+
   const round = findRoundFromUrl();
 
   if (!round) {
+    if (isClosed.value && finalWinnerEntries.value.length) {
+      selectedRoundId.value = finalRoundTabId;
+    }
     return;
   }
 
@@ -967,10 +1033,20 @@ const selectRoundStep = async (round) => {
   selectedRoundId.value = round.id;
   updateSelectedRoundUrl(round.id);
   await loadSelectedRoundContestants(round);
+  scrollToRoundDetail();
+};
+
+const selectFinalResultTab = async () => {
+  selectedRoundId.value = finalRoundTabId;
+  selectedRoundContestants.value = [];
+  updateSelectedRoundUrl("final");
+  await scrollToRoundDetail();
 };
 
 const shouldShowUpcomingRound = computed(() =>
   Boolean(
+    !isClosed.value &&
+    !isSelectingWinners.value &&
     rounds.value.length &&
     !rounds.value.some((round) => round.status === "live"),
   ),
@@ -1197,6 +1273,34 @@ const getRoundContestants = async (round) => {
     .sort((current, next) => next.totalVotes - current.totalVotes);
 };
 
+const subscribeRealtime = (pollId) => {
+  unsubscribeRealtime?.();
+  unsubscribeRealtime = null;
+
+  if (!pollId) {
+    return;
+  }
+
+  unsubscribeRealtime = subscribePollRealtime(pollId, {
+    onResultsDirty: () => {
+      const nowMs = Date.now();
+      if (nowMs - realtimeResultsThrottle < 800) {
+        return;
+      }
+      realtimeResultsThrottle = nowMs;
+      reloadPublicResults?.();
+    },
+    onPollStateChanged: () => {
+      const nowMs = Date.now();
+      if (nowMs - realtimeStateThrottle < 2500) {
+        return;
+      }
+      realtimeStateThrottle = nowMs;
+      loadPoll();
+    },
+  });
+};
+
 const listenContestants = async (pollId) => {
   const roundId = activeRound.value?.id || null;
   const contestantsKey = `${pollId}:${roundId || "root"}`;
@@ -1207,6 +1311,7 @@ const listenContestants = async (pollId) => {
 
   unsubscribeContestants?.();
   unsubscribePublicResults?.();
+  reloadPublicResults = null;
   listeningContestantsKey = contestantsKey;
 
   try {
@@ -1220,6 +1325,19 @@ const listenContestants = async (pollId) => {
             latestPublicResults,
           )
         : baseContestants;
+    };
+
+    reloadPublicResults = async () => {
+      try {
+        const results = await getPollResults({ pollId, roundId });
+        if (listeningContestantsKey !== contestantsKey) {
+          return;
+        }
+        latestPublicResults = results;
+        applyLatestResults();
+      } catch {
+        // El polling de respaldo recupera los resultados en el siguiente ciclo.
+      }
     };
 
     contestants.value = baseContestants;
@@ -1357,6 +1475,7 @@ const loadPoll = async () => {
     currentPollId.value = poll.value.id;
     unsubscribePoll = null;
     listenRounds(poll.value.id);
+    subscribeRealtime(poll.value.id);
   } catch {
     errorMessage.value = translate("polls.detail.loadError");
   } finally {
@@ -1367,7 +1486,52 @@ const loadPoll = async () => {
 const listenUserPoints = (user) => {
   unsubscribeUserPoints?.();
   unsubscribeUserPoints = null;
-  userPoints.value = user && !user.isAnonymous ? 1 : 0;
+  userPoints.value = user && !user.isAnonymous ? Number(user.points || 0) : 0;
+};
+
+const refreshUserPoints = async () => {
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    return;
+  }
+
+  try {
+    const me = await getMe();
+    if (me) {
+      currentUser.value = { ...currentUser.value, ...me };
+      userPoints.value = Number(me.points || 0);
+    }
+  } catch {
+    // Si falla, se mantiene el saldo local hasta el siguiente intento.
+  }
+};
+
+const syncStoredPoints = (points, spentPoints) => {
+  const nextPoints = Number(points || 0);
+  userPoints.value = nextPoints;
+
+  if (currentUser.value && !currentUser.value.isAnonymous) {
+    currentUser.value = {
+      ...currentUser.value,
+      points: nextPoints,
+      ...(spentPoints === undefined || spentPoints === null
+        ? {}
+        : { spentPoints: Number(spentPoints) }),
+    };
+  }
+
+  const stored = getStoredAuth();
+  if (stored?.user && !stored.user.isAnonymous) {
+    setStoredAuth({
+      ...stored,
+      user: {
+        ...stored.user,
+        points: nextPoints,
+        ...(spentPoints === undefined || spentPoints === null
+          ? {}
+          : { spentPoints: Number(spentPoints) }),
+      },
+    });
+  }
 };
 
 const refreshAnonymousVoteStatuses = async () => {
@@ -1712,10 +1876,33 @@ watch(
   },
 );
 
+watch(
+  () => activeRound.value?.id,
+  (nextRoundId, prevRoundId) => {
+    if (!currentPollId.value || nextRoundId === prevRoundId) {
+      return;
+    }
+
+    // La ronda activa cambio (admin lanzo otra ronda o avanzo de fase):
+    // recargamos participantes y resultados de la nueva ronda sin recargar la pagina.
+    listeningContestantsKey = "";
+    listenContestants(currentPollId.value);
+
+    if (poll.value?.status === "closed") {
+      loadFinalResultContestants();
+    }
+
+    nextTick(postEmbedHeight);
+  },
+);
+
 onMounted(() => {
   voteQueue = createVoteQueue({
     db,
-    onBatchCommitted: (batch) => {
+    onBatchCommitted: (batch, result) => {
+      if (result?.user && result.user.points !== undefined && result.user.points !== null) {
+        syncStoredPoints(result.user.points, result.user.spentPoints);
+      }
       window.setTimeout(() => {
         clearOptimisticVoteTotal(batch.artistId);
       }, 1200);
@@ -1737,6 +1924,7 @@ onMounted(() => {
   const syncAuth = (authState = getCurrentApiAuth()) => {
     currentUser.value = authState?.user || null;
     listenUserPoints(currentUser.value);
+    refreshUserPoints();
   };
   syncAuth();
   unsubscribeAuth = onStoredAuthChange(syncAuth);
@@ -1753,6 +1941,7 @@ onUnmounted(() => {
   unsubscribePoll?.();
   unsubscribeContestants?.();
   unsubscribePublicResults?.();
+  unsubscribeRealtime?.();
   unsubscribeRounds?.();
   unsubscribeUserPoints?.();
   embedResizeObserver?.disconnect();
@@ -1939,7 +2128,7 @@ onUnmounted(() => {
       </div>
 
       <section
-        v-if="!isEmbeddedPage && roundSteps.length && !isClosed"
+        v-if="!isEmbeddedPage && roundSteps.length"
         class="mt-6 rounded-4xl border border-white/10 bg-white/5 p-4 sm:p-5"
       >
         <div class="flex items-center justify-between gap-4">
@@ -2012,6 +2201,53 @@ onUnmounted(() => {
               <p class="mt-3 text-xs font-bold text-slate-500">
                 Toca para ver detalle
               </p>
+              <p
+                v-if="round.winners.length"
+                class="mt-2 line-clamp-2 max-w-36 text-xs font-black leading-4 text-amber-100"
+              >
+                {{
+                  round.winners.length === 1
+                    ? `Ganó ${round.winners[0]?.name || "ganador"}`
+                    : `Ganadores: ${round.winners
+                        .slice(0, 2)
+                        .map((winner) => winner?.name)
+                        .filter(Boolean)
+                        .join(", ")}`
+                }}
+              </p>
+            </button>
+
+            <button
+              v-if="isClosed && finalWinnerEntries.length"
+              type="button"
+              class="relative flex w-42 mr-2 cursor-pointer flex-col items-center rounded-3xl border px-2 pb-3 pt-3 text-center transition hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              :class="
+                isViewingFinalResult
+                  ? 'border-amber-300/45 bg-amber-400/10 ring-2 ring-amber-300/20'
+                  : 'border-transparent'
+              "
+              :aria-pressed="isViewingFinalResult"
+              @click="selectFinalResultTab"
+            >
+              <div
+                class="relative z-10 grid size-14 place-items-center rounded-full border border-amber-300/50 bg-amber-400/20 text-sm font-black text-amber-100 shadow-lg shadow-amber-950/30"
+              >
+                <i class="fa-solid fa-trophy" aria-hidden="true"></i>
+              </div>
+              <p class="mt-2 max-w-36 truncate text-sm font-black text-white">
+                Final
+              </p>
+              <p
+                class="mt-1 rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-amber-200"
+              >
+                Ganador
+              </p>
+              <p class="mt-3 text-xs font-bold text-slate-500">
+                Ver resultado final
+              </p>
+              <p class="mt-2 line-clamp-2 max-w-36 text-xs font-black leading-4 text-amber-100">
+                Ganó {{ finalWinnerEntries[0]?.artist?.name || "ganador" }}
+              </p>
             </button>
 
             <div
@@ -2050,7 +2286,8 @@ onUnmounted(() => {
       </p>
 
       <section
-        v-if="!isEmbeddedPage && isClosed && finalWinnerEntries.length"
+        v-if="!isEmbeddedPage && isViewingFinalResult"
+        ref="roundDetailSection"
         class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div
@@ -2224,8 +2461,7 @@ onUnmounted(() => {
       <section
         v-if="
           !isEmbeddedPage &&
-          isClosed &&
-          finalWinnerEntries.length &&
+          isViewingFinalResult &&
           secondaryFinalRankingEntries.length
         "
         class="relative mt-6 rounded-4xl border border-white/10 bg-white/4 p-4 shadow-xl shadow-fuchsia-950/15 sm:p-6"
@@ -2385,7 +2621,12 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="!isEmbeddedPage && isSelectingWinners"
+        v-else-if="
+          !isEmbeddedPage &&
+          isSelectingWinners &&
+          !isViewingSelectedClosedRound &&
+          !isViewingFinalResult
+        "
         class="waiting-card relative mt-8 grid min-h-[460px] place-items-center overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#080a18] p-8 text-center shadow-2xl shadow-fuchsia-950/25 sm:min-h-[560px] sm:p-12"
       >
         <div
@@ -2448,7 +2689,12 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="!isEmbeddedPage && isClosed"
+        v-else-if="
+          !isEmbeddedPage &&
+          isClosed &&
+          !isViewingSelectedClosedRound &&
+          !isViewingFinalResult
+        "
         class="mt-8 rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
       >
         <p
@@ -2465,7 +2711,11 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="activeRound?.type === 'versus'"
+        v-else-if="
+          activeRound?.type === 'versus' &&
+          !isViewingSelectedClosedRound &&
+          !isViewingFinalResult
+        "
         class="space-y-6"
         :class="!isEmbeddedPage && 'mt-8'"
       >
@@ -2695,7 +2945,33 @@ onUnmounted(() => {
         </p>
       </section>
 
-      <section v-else class="space-y-4" :class="!isEmbeddedPage && 'mt-8'">
+      <section
+        v-else-if="!isViewingFinalResult"
+        ref="roundDetailSection"
+        class="space-y-4"
+        :class="!isEmbeddedPage && 'mt-8'"
+      >
+        <article
+          v-if="isViewingSelectedClosedRound"
+          class="rounded-4xl border border-amber-300/25 bg-amber-400/10 p-5 shadow-xl shadow-amber-950/20 sm:p-6"
+        >
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-amber-200">
+            Detalle de fase finalizada
+          </p>
+          <h2 class="mt-2 text-3xl font-black text-white">
+            {{ selectedRoundStep?.title || "Ronda seleccionada" }}
+          </h2>
+          <p class="mt-3 text-sm font-bold leading-6 text-slate-300">
+            Aquí puedes revisar qué pasó en esta fase, el orden final de votos y quién avanzó.
+          </p>
+          <p
+            v-if="selectedRoundWinnerNames.length"
+            class="mt-4 rounded-2xl border border-amber-300/20 bg-slate-950/35 px-4 py-3 text-sm font-black text-amber-100"
+          >
+            Ganadores: {{ selectedRoundWinnerNames.join(", ") }}
+          </p>
+        </article>
+
         <div
           v-if="
             shouldShowVoteButtons && currentUser && !currentUser.isAnonymous
@@ -3016,6 +3292,7 @@ onUnmounted(() => {
       <div
         v-if="voteModalContestant"
         class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+        @click.self="closeVoteModal"
       >
         <div
           class="w-full max-w-lg overflow-hidden rounded-4xl border border-fuchsia-300/30 bg-[#090b19] text-white shadow-2xl shadow-fuchsia-950/50"
@@ -3029,7 +3306,7 @@ onUnmounted(() => {
               type="button"
               class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-xl font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
               :aria-label="$t('polls.detail.close')"
-              @click="closeVoteModal"
+              @click.stop.prevent="closeVoteModal"
             >
               ×
             </button>
