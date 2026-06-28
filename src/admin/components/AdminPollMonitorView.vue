@@ -1,21 +1,19 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  increment,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  writeBatch,
-} from '../../services/firebaseRemoved'
-import { db } from '../../services/firebaseRemoved'
+  adjustAdminContestantVotes,
+  closeAdminPoll,
+  createAdminContestant,
+  createAdminRound,
+  finishAdminRound,
+  getAdminArtists,
+  getAdminMetrics,
+  getAdminRounds,
+  launchAdminRound,
+  updateAdminRound,
+} from '../../services/api/adminApi'
+import { getPoll } from '../../services/api/pollsApi'
+import { subscribePollRealtime } from '../../services/api/realtimeApi'
 import {
   mergeContestantsWithPublicResults,
   startPublicResultsAggregator,
@@ -29,6 +27,13 @@ const props = defineProps({
     required: true,
   },
 })
+
+const db = null
+
+const buildRoundPayload = (round, extra = {}) => {
+  const { contestants: _contestants, artist: _artist, ...rest } = round || {}
+  return { ...rest, ...extra }
+}
 
 const poll = ref(null)
 const artists = ref([])
@@ -45,14 +50,15 @@ const roundForm = ref({
   type: 'list',
   endAt: '',
 })
-const isLaunchModalOpen = ref(false)
 const isFinishPollModalOpen = ref(false)
 const isRoundModalOpen = ref(false)
 const roundEndAtInput = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
-const copiedRoundEmbed = ref('')
-const copiedCounterEmbed = ref('')
+let unsubscribeRealtime = null
+let realtimeRefreshThrottle = 0
+let metricsTimer = null
+const serverMetrics = ref(null)
 let unsubscribePoll = null
 let unsubscribeContestants = null
 let unsubscribeRounds = null
@@ -62,84 +68,10 @@ let stopResultsAggregator = null
 
 const getArtist = (artistId) => artists.value.find((artist) => artist.id === artistId)
 const getArtistImage = (artist) =>
-  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
+  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.photoUrl || artist?.metadata?.image || artist?.metadata?.imageUrl || artist?.metadata?.photoUrl || artist?.metadata?.banner || artist?.banner || ''
 
 const getUserName = (user) => user?.displayName || user?.username || user?.name || user?.email || translate('admin.monitor.userFallback')
 const getUserAvatar = (user) => user?.photoURL || user?.avatar || user?.image || ''
-
-const roundEmbedUrl = (roundId) => {
-  const path = `/votacion/${poll.value?.year || new Date().getFullYear()}/${poll.value?.slug || props.pollId}`
-  const url = new URL(path, window.location.origin)
-
-  url.searchParams.set('ronda', roundId)
-  url.searchParams.set('embed', '1')
-
-  return url.toString()
-}
-
-const counterEmbedUrl = (roundId) => {
-  const url = new URL(roundEmbedUrl(roundId))
-  url.searchParams.set('contador', '1')
-
-  return url.toString()
-}
-
-const embedFrameId = (roundId) => `wmv-embed-${String(roundId).replace(/[^a-zA-Z0-9_-]/g, '-')}`
-const counterFrameId = (roundId) => `wmv-counter-${String(roundId).replace(/[^a-zA-Z0-9_-]/g, '-')}`
-
-const roundIframeCode = (roundId) =>
-  [
-    `<iframe id="${embedFrameId(roundId)}" src="${roundEmbedUrl(roundId)}" width="100%" style="width:100%; min-height:360px; border:0; border-radius:24px; overflow:hidden;" loading="lazy" scrolling="no"></iframe>`,
-    '<script>',
-    '  window.addEventListener("message", function(event) {',
-    '    var data = event.data || {};',
-    `    if (data.type !== "wmv-embed-height" || !data.src || data.src.indexOf("${roundEmbedUrl(roundId)}") !== 0) return;`,
-    `    var iframe = document.getElementById("${embedFrameId(roundId)}");`,
-    '    if (iframe) iframe.style.height = Math.max(360, Number(data.height || 0)) + "px";',
-    '  });',
-    '</scr' + 'ipt>',
-  ].join('\n')
-
-const counterIframeCode = (roundId) =>
-  [
-    `<iframe id="${counterFrameId(roundId)}" src="${counterEmbedUrl(roundId)}" width="100%" style="width:100%; min-height:220px; border:0; border-radius:24px; overflow:hidden;" loading="lazy" scrolling="no"></iframe>`,
-    '<script>',
-    '  window.addEventListener("message", function(event) {',
-    '    var data = event.data || {};',
-    `    if (data.type !== "wmv-embed-height" || !data.src || data.src.indexOf("${counterEmbedUrl(roundId)}") !== 0) return;`,
-    `    var iframe = document.getElementById("${counterFrameId(roundId)}");`,
-    '    if (iframe) iframe.style.height = Math.max(220, Number(data.height || 0)) + "px";',
-    '  });',
-    '</scr' + 'ipt>',
-  ].join('\n')
-
-const copyRoundEmbed = async (roundId) => {
-  try {
-    await navigator.clipboard.writeText(roundIframeCode(roundId))
-    copiedRoundEmbed.value = roundId
-    window.setTimeout(() => {
-      if (copiedRoundEmbed.value === roundId) {
-        copiedRoundEmbed.value = ''
-      }
-    }, 2200)
-  } catch {
-    errorMessage.value = 'No se pudo copiar el embed. Entra a Configurar para copiarlo manualmente.'
-  }
-}
-
-const copyCounterEmbed = async (roundId) => {
-  try {
-    await navigator.clipboard.writeText(counterIframeCode(roundId))
-    copiedCounterEmbed.value = roundId
-    window.setTimeout(() => {
-      if (copiedCounterEmbed.value === roundId) {
-        copiedCounterEmbed.value = ''
-      }
-    }, 2200)
-  } catch {
-    errorMessage.value = 'No se pudo copiar el contador. Entra a Configurar para copiarlo manualmente.'
-  }
-}
 
 const rankedContestants = computed(() =>
   contestants.value
@@ -152,10 +84,6 @@ const rankedContestants = computed(() =>
       }
     })
     .sort((current, next) => next.totalVotes - current.totalVotes),
-)
-
-const totalPollVotes = computed(() =>
-  rankedContestants.value.reduce((total, contestant) => total + contestant.totalVotes, 0),
 )
 
 const activeRound = computed(() =>
@@ -181,6 +109,24 @@ const nextRound = computed(() => {
 const isNextRoundLocked = computed(() =>
   Boolean(nextRound.value && nextRound.value.status !== 'draft'),
 )
+
+// Regla: una fase solo se puede lanzar si TODAS las fases anteriores estan cerradas con ganadores.
+const canLaunchRound = (round) => {
+  const index = rounds.value.findIndex((item) => item.id === round.id)
+  if (index <= 0) {
+    return true
+  }
+
+  for (let i = 0; i < index; i += 1) {
+    const previous = rounds.value[i]
+    const winnerIds = previous.winnerIds || previous.config?.winnerIds || []
+    if (previous.status !== 'closed' || !winnerIds.length) {
+      return false
+    }
+  }
+
+  return true
+}
 
 const activeRoundArtistIds = computed(() =>
   new Set(activeRoundContestants.value.map((contestant) => contestant.artistId)),
@@ -248,25 +194,149 @@ const userVoteLeaders = computed(() => {
   return [...totals.values()].sort((current, next) => next.amount - current.amount).slice(0, 8)
 })
 
-const phaseLabel = computed(
-  () =>
-    ({
-      initial: 'Inicial',
-      round: 'Ronda',
-      semifinal: 'Semifinal',
-      final: 'Final',
-    })[poll.value?.phase] || 'Inicial',
+const launchableRound = computed(() =>
+  rounds.value.find(
+    (round) => round.status !== 'live' && round.status !== 'closed' && canLaunchRound(round),
+  ) || null,
 )
 
-const typeLabel = computed(
+// Paso guiado: dice en que estado esta la votacion y cual es la accion principal a hacer ahora.
+const guidedStep = computed(() => {
+  const status = poll.value?.status || 'draft'
+
+  if (status === 'closed') {
+    return {
+      label: 'Votación cerrada',
+      hint: 'Esta votación terminó. Los resultados ya están publicados.',
+      tone: 'slate',
+      actionLabel: '',
+      action: null,
+    }
+  }
+
+  if (status === 'live') {
+    return {
+      label: 'En vivo',
+      hint: `Fase activa: "${activeRound.value?.title || '—'}". Los usuarios están votando en tiempo real.`,
+      tone: 'emerald',
+      actionLabel: `Finalizar fase y avanzar top ${winnersToAdvance.value}`,
+      action: 'finish',
+    }
+  }
+
+  if (status === 'selecting_winners') {
+    if (launchableRound.value) {
+      return {
+        label: 'Ganadores elegidos',
+        hint: `Listo. Ahora lanza la siguiente fase: "${launchableRound.value.title}".`,
+        tone: 'cyan',
+        actionLabel: `Lanzar ${launchableRound.value.title}`,
+        action: 'launch',
+      }
+    }
+
+    return {
+      label: 'Eligiendo ganadores',
+      hint: 'Los usuarios están esperando. Cuando no haya más fases, cierra la votación.',
+      tone: 'amber',
+      actionLabel: 'Cerrar votación',
+      action: 'close',
+    }
+  }
+
+  // Borrador
+  if (!rounds.value.length) {
+    return {
+      label: 'Borrador',
+      hint: 'Crea la primera fase para empezar la votación.',
+      tone: 'cyan',
+      actionLabel: 'Crear fase',
+      action: 'createRound',
+    }
+  }
+
+  if (launchableRound.value) {
+    return {
+      label: 'Lista para iniciar',
+      hint: `Lanza la fase "${launchableRound.value.title}" para que los usuarios voten.`,
+      tone: 'cyan',
+      actionLabel: `Lanzar ${launchableRound.value.title}`,
+      action: 'launch',
+    }
+  }
+
+  return {
+    label: 'Pendiente',
+    hint: 'Elige los ganadores de la fase anterior para habilitar la siguiente.',
+    tone: 'amber',
+    actionLabel: '',
+    action: null,
+  }
+})
+
+const guidedToneClass = computed(
   () =>
     ({
-      list: 'Lista',
-      versus: 'Versus',
-    })[poll.value?.type] || 'Lista',
+      emerald: 'border-emerald-300/30 from-emerald-500/15',
+      cyan: 'border-cyan-300/30 from-cyan-500/15',
+      amber: 'border-amber-300/30 from-amber-500/15',
+      slate: 'border-white/15 from-white/5',
+    })[guidedStep.value.tone] || 'border-white/15 from-white/5',
 )
 
-const toTimestamp = (value) => (value ? Timestamp.fromDate(new Date(value)) : null)
+const runGuidedAction = () => {
+  const step = guidedStep.value
+
+  if (step.action === 'createRound') {
+    isRoundModalOpen.value = true
+    return
+  }
+
+  if (step.action === 'launch' && launchableRound.value) {
+    updateRoundStatus(launchableRound.value, 'live')
+    return
+  }
+
+  if (step.action === 'finish') {
+    finishActiveRound()
+    return
+  }
+
+  if (step.action === 'close') {
+    isFinishPollModalOpen.value = true
+  }
+}
+
+const formatUptime = (seconds) => {
+  const total = Math.max(0, Math.floor(Number(seconds || 0)))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  if (h > 0) {
+    return `${h}h ${m}m`
+  }
+  return `${m}m`
+}
+
+const consumptionLevel = computed(() => {
+  const rpm = Number(serverMetrics.value?.requestsPerMinute || 0)
+  if (rpm < 200) {
+    return { label: 'Bajo', tone: 'text-emerald-300' }
+  }
+  if (rpm < 1000) {
+    return { label: 'Medio', tone: 'text-amber-300' }
+  }
+  return { label: 'Alto', tone: 'text-red-300' }
+})
+
+const loadServerMetrics = async () => {
+  try {
+    serverMetrics.value = await getAdminMetrics()
+  } catch {
+    // Silencioso: si falla, simplemente no se actualiza el panel de consumo.
+  }
+}
+
+const toApiDate = (value) => (value ? new Date(value).toISOString() : null)
 
 const openDatePicker = (input) => {
   input?.focus()
@@ -274,7 +344,7 @@ const openDatePicker = (input) => {
 }
 
 const formatDate = (value) => {
-  const date = value?.toDate?.() || null
+  const date = value?.toDate?.() || (value ? new Date(value) : null)
   return date
     ? new Intl.DateTimeFormat('es', {
         dateStyle: 'medium',
@@ -284,7 +354,7 @@ const formatDate = (value) => {
 }
 
 const formatTime = (value) => {
-  const date = value?.toDate?.() || null
+  const date = value?.toDate?.() || (value ? new Date(value) : null)
   return date
     ? new Intl.DateTimeFormat('es', {
         hour: '2-digit',
@@ -308,17 +378,25 @@ const winnerCountOptions = computed(() => {
 })
 
 const loadArtists = async () => {
-  const artistsSnap = await getDocs(query(collection(db, 'artists'), orderBy('createdAt', 'desc')))
-  artists.value = artistsSnap.docs.map((artistDoc) => ({
-    id: artistDoc.id,
-    ...artistDoc.data(),
+  const rows = await getAdminArtists()
+  artists.value = rows.map((artist) => ({
+    ...(artist.metadata || {}),
+    ...artist,
+    id: String(artist.id),
   }))
 }
 
 const listenPoll = () => {
-  getDoc(doc(db, 'polls', props.pollId))
-    .then((pollSnap) => {
-      poll.value = pollSnap.exists() ? { id: pollSnap.id, ...pollSnap.data() } : null
+  getPoll(props.pollId)
+    .then((row) => {
+      const config = row?.config || {}
+      poll.value = row ? {
+        ...config,
+        ...row,
+        id: String(row.id),
+        activeRoundId: config.activeRoundId || row.activeRoundId || '',
+        year: Number(config.year || row.year || new Date().getFullYear()),
+      } : null
     })
     .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenPoll')
@@ -326,12 +404,17 @@ const listenPoll = () => {
 }
 
 const listenContestants = () => {
-  getDocs(collection(db, 'polls', props.pollId, 'contestants'))
-    .then((contestantsSnap) => {
-      contestants.value = contestantsSnap.docs.map((contestantDoc) => ({
-        id: contestantDoc.id,
-        ...contestantDoc.data(),
-      }))
+  getPoll(props.pollId)
+    .then((row) => {
+      contestants.value = (row?.contestants || [])
+        .filter((contestant) => !contestant.roundId)
+        .map((contestant) => ({
+          ...(contestant.metadata || {}),
+          ...contestant,
+          id: String(contestant.id),
+          artistId: String(contestant.artistId),
+          totalVotes: Number(contestant.totalVotes ?? Number(contestant.votes || 0) + Number(contestant.manualVotes || 0)),
+        }))
     })
     .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenVotes')
@@ -339,11 +422,22 @@ const listenContestants = () => {
 }
 
 const listenRounds = () => {
-  getDocs(query(collection(db, 'polls', props.pollId, 'rounds'), orderBy('createdAt', 'asc')))
-    .then((roundsSnap) => {
-      rounds.value = roundsSnap.docs.map((roundDoc) => ({
-        id: roundDoc.id,
-        ...roundDoc.data(),
+  getAdminRounds(props.pollId)
+    .then((roundRows) => {
+      rounds.value = roundRows.map((round) => ({
+        ...(round.config || {}),
+        ...round,
+        id: String(round.id),
+        type: round.type === 'versus' ? 'versus' : 'list',
+        endAt: round.endsAt || round.config?.endAt || round.config?.endsAt || '',
+        winnerIds: round.config?.winnerIds || [],
+        contestants: (round.contestants || []).map((contestant) => ({
+          ...(contestant.metadata || {}),
+          ...contestant,
+          id: String(contestant.id),
+          artistId: String(contestant.artistId),
+          totalVotes: Number(contestant.totalVotes ?? Number(contestant.votes || 0) + Number(contestant.manualVotes || 0)),
+        })),
       }))
 
       if (!selectedRoundId.value || !rounds.value.some((round) => round.id === selectedRoundId.value)) {
@@ -375,16 +469,10 @@ const listenActiveRoundContestants = () => {
     return
   }
 
-  getDocs(collection(db, 'polls', props.pollId, 'rounds', activeRound.value.id, 'contestants'))
-    .then((contestantsSnap) => {
-      activeRoundContestants.value = contestantsSnap.docs.map((contestantDoc) => ({
-        id: contestantDoc.id,
-        ...contestantDoc.data(),
-      }))
-    })
-    .catch(() => {
-      errorMessage.value = translate('admin.monitor.errors.listenRoundContestants')
-    })
+  activeRoundContestants.value = (activeRound.value.contestants || []).map((contestant) => ({
+    ...contestant,
+    artistId: String(contestant.artistId),
+  }))
 
   unsubscribePublicResults = subscribePublicResults(db, {
     pollId: props.pollId,
@@ -417,26 +505,6 @@ const restartResultsAggregator = () => {
   })
 }
 
-const updatePollStatus = async (status) => {
-  errorMessage.value = ''
-  successMessage.value = ''
-
-  try {
-    const pollData = {
-      status,
-      isLive: status === 'live',
-      activeEndAt: status === 'live' ? activeRound.value?.endAt || poll.value?.endAt || null : null,
-      winnersStatus: status === 'selecting_winners' ? 'pending' : poll.value?.winnersStatus || 'pending',
-      updatedAt: serverTimestamp(),
-    }
-
-    await updateDoc(doc(db, 'polls', props.pollId), pollData)
-    successMessage.value = translate('admin.monitor.statusUpdated')
-  } catch {
-    errorMessage.value = translate('admin.monitor.errors.updateStatus')
-  }
-}
-
 const updateRoundStatus = async (round, status) => {
   errorMessage.value = ''
   successMessage.value = ''
@@ -448,36 +516,22 @@ const updateRoundStatus = async (round, status) => {
 
   try {
     if (status === 'live') {
-      const batch = writeBatch(db)
-
-      rounds.value.forEach((item) => {
-        batch.update(doc(db, 'polls', props.pollId, 'rounds', item.id), {
-          status: item.id === round.id ? 'live' : item.status === 'live' ? 'closed' : item.status,
-          liveStartedAt: item.id === round.id ? serverTimestamp() : item.liveStartedAt || null,
-          updatedAt: serverTimestamp(),
-        })
-      })
-
-      batch.update(doc(db, 'polls', props.pollId), {
-        activeRoundId: round.id,
-        activeEndAt: round.endAt || null,
-        status: 'live',
-        isLive: true,
-        updatedAt: serverTimestamp(),
-      })
-
-      await batch.commit()
+      // Accion atomica de 1 clic: el backend cierra otras fases, fija la activa y valida
+      // que las fases anteriores ya tengan ganadores elegidos.
+      await launchAdminRound(props.pollId, round.id)
     } else {
-      await updateDoc(doc(db, 'polls', props.pollId, 'rounds', round.id), {
+      await updateAdminRound(props.pollId, round.id, buildRoundPayload(round, {
+        type: round.type === 'versus' ? 'versus' : 'standard',
         status,
-        updatedAt: serverTimestamp(),
-      })
+      }))
     }
 
     selectedRoundId.value = round.id
     successMessage.value = status === 'live' ? translate('admin.monitor.roundLaunched') : translate('admin.monitor.roundUpdated')
-  } catch {
-    errorMessage.value = translate('admin.monitor.errors.updateRound')
+    listenPoll()
+    listenRounds()
+  } catch (error) {
+    errorMessage.value = error?.message || translate('admin.monitor.errors.updateRound')
   }
 }
 
@@ -504,93 +558,36 @@ const finishActiveRound = async () => {
   }
 
   try {
-    const batch = writeBatch(db)
     const winnerIds = winners.map((winner) => winner.artistId)
 
-    activeRoundRanking.value.forEach((contestant) => {
-      const winnerIndex = winnerIds.indexOf(contestant.artistId)
-      batch.update(doc(db, 'polls', props.pollId, 'rounds', activeRound.value.id, 'contestants', contestant.id), {
-        isWinner: winnerIndex >= 0,
-        winnerRank: winnerIndex >= 0 ? winnerIndex + 1 : null,
-      })
-    })
-
-    batch.update(doc(db, 'polls', props.pollId, 'rounds', activeRound.value.id), {
-      status: 'closed',
+    await finishAdminRound(props.pollId, activeRound.value.id, {
       winnerIds,
       winnerCount,
-      winnersSelectedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
     })
 
-    batch.update(doc(db, 'polls', props.pollId), {
-      activeRoundId: null,
-      activeEndAt: null,
-      status: 'selecting_winners',
-      isLive: false,
-      winnersStatus: 'pending',
-      updatedAt: serverTimestamp(),
-    })
-
-    if (nextRound.value?.status === 'draft') {
-      const nextContestantsSnap = await getDocs(
-        collection(db, 'polls', props.pollId, 'rounds', nextRound.value.id, 'contestants'),
-      )
-      const nextContestantIds = new Set(nextContestantsSnap.docs.map((contestantDoc) => contestantDoc.id))
-
-      nextContestantsSnap.docs.forEach((contestantDoc) => {
-        if (!winnerIds.includes(contestantDoc.id)) {
-          batch.delete(contestantDoc.ref)
-        }
-      })
-
-      winnerIds.forEach((artistId) => {
-        if (!nextContestantIds.has(artistId)) {
-          batch.set(doc(db, 'polls', props.pollId, 'rounds', nextRound.value.id, 'contestants', artistId), {
-            artistId,
-            votes: 0,
-            manualVotes: 0,
-            totalVotes: 0,
-            isWinner: false,
-            winnerRank: null,
-            addedAt: serverTimestamp(),
-          })
-        }
-      })
-    }
-
-    await batch.commit()
     successMessage.value = activeRound.value.status === 'closed'
       ? translate('admin.monitor.winnersUpdated', { count: winnerCount })
       : translate('admin.monitor.roundFinished', { count: winnerCount })
+    listenPoll()
+    listenRounds()
   } catch {
     errorMessage.value = translate('admin.monitor.errors.finishRound')
   }
 }
 
-const launchPoll = async () => {
-  if (activeRound.value?.id) {
-    await updateRoundStatus(activeRound.value, 'live')
-  } else {
-    await updatePollStatus('live')
-  }
-
-  isLaunchModalOpen.value = false
-}
-
-const cancelLaunch = async () => {
-  const confirmed = window.confirm(translate('admin.monitor.confirmCancelLaunch'))
-
-  if (!confirmed) {
-    return
-  }
-
-  await updatePollStatus('draft')
-}
-
 const finishPoll = async () => {
-  await updatePollStatus('closed')
-  isFinishPollModalOpen.value = false
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    await closeAdminPoll(props.pollId)
+    successMessage.value = translate('admin.monitor.statusUpdated')
+    listenPoll()
+  } catch (error) {
+    errorMessage.value = error?.message || translate('admin.monitor.errors.updateStatus')
+  } finally {
+    isFinishPollModalOpen.value = false
+  }
 }
 
 const addManualVotes = async (contestant) => {
@@ -615,18 +612,7 @@ const addManualVotes = async (contestant) => {
   }
 
   try {
-    await updateDoc(doc(db, 'polls', props.pollId, 'rounds', activeRound.value.id, 'contestants', contestant.id), {
-      manualVotes: increment(amount),
-      totalVotes: increment(amount),
-    })
-
-    await addDoc(collection(db, 'polls', props.pollId, 'adjustments'), {
-      roundId: activeRound.value.id,
-      artistId: contestant.artistId,
-      amount,
-      type: 'manual_votes',
-      createdAt: serverTimestamp(),
-    })
+    await adjustAdminContestantVotes(props.pollId, contestant.id, amount)
 
     manualVoteAmounts.value = {
       ...manualVoteAmounts.value,
@@ -635,6 +621,8 @@ const addManualVotes = async (contestant) => {
     successMessage.value = amount > 0
       ? translate('admin.monitor.manualVotesAdded', { count: amount })
       : translate('admin.monitor.manualVotesRemoved', { count: Math.abs(amount) })
+    restartResultsAggregator()
+    listenActiveRoundContestants()
   } catch {
     errorMessage.value = translate('admin.monitor.errors.adjustVotes')
   }
@@ -651,25 +639,25 @@ const createRound = async () => {
 
   try {
     const sourceWinnerIds = rounds.value[rounds.value.length - 1]?.winnerIds || []
-    const roundRef = await addDoc(collection(db, 'polls', props.pollId, 'rounds'), {
+    const endAt = toApiDate(roundForm.value.endAt)
+    const round = await createAdminRound(props.pollId, {
       title: roundForm.value.title.trim(),
-      type: roundForm.value.type,
-      endAt: toTimestamp(roundForm.value.endAt),
+      type: roundForm.value.type === 'versus' ? 'versus' : 'standard',
+      endAt,
+      endsAt: endAt,
       status: 'draft',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
     })
 
     await Promise.all(
       sourceWinnerIds.map((artistId) =>
-        setDoc(doc(db, 'polls', props.pollId, 'rounds', roundRef.id, 'contestants', artistId), {
+        createAdminContestant(props.pollId, {
+          roundId: round.id,
           artistId,
           votes: 0,
           manualVotes: 0,
           totalVotes: 0,
           isWinner: false,
           winnerRank: null,
-          addedAt: serverTimestamp(),
         }),
       ),
     )
@@ -683,9 +671,21 @@ const createRound = async () => {
     successMessage.value = sourceWinnerIds.length
       ? translate('admin.monitor.roundCreatedWithWinners')
       : translate('admin.monitor.roundCreated')
+    listenRounds()
   } catch {
     errorMessage.value = translate('admin.monitor.errors.createRound')
   }
+}
+
+const refreshFromRealtime = () => {
+  const nowMs = Date.now()
+  if (nowMs - realtimeRefreshThrottle < 800) {
+    return
+  }
+  realtimeRefreshThrottle = nowMs
+  listenPoll()
+  listenRounds()
+  listenActiveRoundContestants()
 }
 
 onMounted(async () => {
@@ -693,6 +693,16 @@ onMounted(async () => {
   listenPoll()
   listenContestants()
   listenRounds()
+
+  // Admin en vivo por socket: cuando cambia el estado, llegan votos o se ajustan votos manuales,
+  // el panel se refresca solo (sin recargar y sin polling agresivo).
+  unsubscribeRealtime = subscribePollRealtime(props.pollId, {
+    onPollStateChanged: refreshFromRealtime,
+    onResultsDirty: refreshFromRealtime,
+  })
+
+  loadServerMetrics()
+  metricsTimer = window.setInterval(loadServerMetrics, 10000)
 })
 
 onUnmounted(() => {
@@ -701,13 +711,15 @@ onUnmounted(() => {
   unsubscribeRounds?.()
   unsubscribeActiveRoundContestants?.()
   unsubscribePublicResults?.()
+  unsubscribeRealtime?.()
   stopResultsAggregator?.()
+  window.clearInterval(metricsTimer)
 })
 </script>
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div>
       <div>
         <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
           {{ $t('admin.monitor.panel') }}
@@ -719,71 +731,99 @@ onUnmounted(() => {
           {{ $t('admin.monitor.description') }}
         </p>
       </div>
+    </div>
 
-      <div class="flex flex-wrap gap-2">
+    <article
+      class="relative overflow-hidden rounded-3xl border bg-linear-to-br to-[#0a0c1c] p-5 sm:p-6"
+      :class="guidedToneClass"
+    >
+      <div class="pointer-events-none absolute -right-16 -top-16 size-44 rounded-full bg-white/5 blur-3xl"></div>
+      <div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-slate-300">
+            Paso actual
+          </p>
+          <h3 class="mt-2 flex items-center gap-3 text-2xl font-black text-white">
+            <span class="grid size-9 place-items-center rounded-2xl border border-white/15 bg-black/30 text-base">
+              <i
+                class="fa-solid"
+                :class="{
+                  'fa-tower-broadcast text-emerald-300': guidedStep.tone === 'emerald',
+                  'fa-rocket text-cyan-300': guidedStep.tone === 'cyan',
+                  'fa-hourglass-half text-amber-300': guidedStep.tone === 'amber',
+                  'fa-flag-checkered text-slate-300': guidedStep.tone === 'slate',
+                }"
+                aria-hidden="true"
+              ></i>
+            </span>
+            {{ guidedStep.label }}
+          </h3>
+          <p class="mt-2 max-w-2xl text-sm font-bold leading-6 text-slate-300">
+            {{ guidedStep.hint }}
+          </p>
+        </div>
+
         <button
-          v-if="poll?.status !== 'live'"
+          v-if="guidedStep.action"
           type="button"
-          class="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20"
-          @click="isLaunchModalOpen = true"
+          class="inline-flex min-h-13 shrink-0 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.02]"
+          @click="runGuidedAction"
         >
-          {{ $t('admin.monitor.launchLive') }}
+          <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+          {{ guidedStep.actionLabel }}
         </button>
-        <button
-          v-if="poll?.status === 'live'"
-          type="button"
-          class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
-          @click="cancelLaunch"
-        >
-          {{ $t('admin.monitor.cancelLaunch') }}
-        </button>
-        <button
-          v-if="poll?.status === 'live'"
-          type="button"
-          class="rounded-full border border-amber-300/25 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20"
-          @click="updatePollStatus('selecting_winners')"
-        >
-          {{ $t('admin.monitor.chooseWinners') }}
-        </button>
-        <a
-          :href="`/admin/votaciones/${props.pollId}/ganadores`"
-          class="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
-        >
-          {{ $t('admin.monitor.saveWinners') }}
-        </a>
       </div>
-    </div>
+    </article>
 
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <article class="rounded-3xl border border-white/10 bg-white/4 p-5">
-        <p class="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{{ $t('common.labels.status') }}</p>
-        <h3 class="mt-2 text-2xl font-black text-white">{{ poll?.status || 'draft' }}</h3>
-        <p class="mt-2 text-sm text-slate-400">
-          <span v-if="poll?.status === 'draft'">{{ $t('admin.monitor.statusDraft') }}</span>
-          <span v-else-if="poll?.status === 'live'">{{ $t('admin.monitor.statusLive') }}</span>
-          <span v-else-if="poll?.status === 'selecting_winners'">{{ $t('admin.monitor.statusSelecting') }}</span>
-          <span v-else>{{ $t('admin.monitor.statusClosed') }}</span>
-        </p>
-      </article>
+    <article class="relative overflow-hidden rounded-3xl border border-cyan-300/15 bg-[#0a0c1c]/80 p-5 sm:p-6">
+      <div class="pointer-events-none absolute -right-16 -bottom-16 size-44 rounded-full bg-cyan-500/10 blur-3xl"></div>
+      <div class="relative flex items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Consumo del servidor</p>
+          <h3 class="mt-1 text-xl font-black text-white">Uso en vivo (estimado)</h3>
+        </div>
+        <span
+          class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest"
+          :class="consumptionLevel.tone"
+        >
+          {{ consumptionLevel.label }}
+        </span>
+      </div>
 
-      <article class="rounded-3xl border border-white/10 bg-white/4 p-5">
-        <p class="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{{ $t('admin.categories.visual') }}</p>
-        <h3 class="mt-2 text-2xl font-black text-white">{{ typeLabel }}</h3>
-        <p class="mt-2 text-sm text-slate-400">{{ $t('admin.monitor.typeHelp') }}</p>
-      </article>
+      <div class="relative mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Llamados/min</p>
+          <p class="mt-1 text-2xl font-black text-white">{{ serverMetrics?.requestsPerMinute ?? '—' }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Llamados total</p>
+          <p class="mt-1 text-2xl font-black text-white">{{ (serverMetrics?.requests ?? 0).toLocaleString('es') }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Conexiones live</p>
+          <p class="mt-1 text-2xl font-black text-cyan-200">{{ serverMetrics?.realtimeConnections ?? 0 }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Votos en cola</p>
+          <p class="mt-1 text-2xl font-black text-fuchsia-200">{{ serverMetrics?.votesStreamLength ?? 0 }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Votos en base</p>
+          <p class="mt-1 text-2xl font-black text-white">{{ (serverMetrics?.db?.votes ?? 0).toLocaleString('es') }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Activo desde</p>
+          <p class="mt-1 text-2xl font-black text-white">{{ formatUptime(serverMetrics?.uptimeSeconds) }}</p>
+        </div>
+      </div>
 
-      <article class="rounded-3xl border border-white/10 bg-white/4 p-5">
-        <p class="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{{ $t('admin.monitor.rounds') }}</p>
-        <h3 class="mt-2 text-2xl font-black text-white">{{ phaseLabel }}</h3>
-        <p class="mt-2 text-sm text-slate-400">{{ $t('admin.monitor.phaseHelp') }}</p>
-      </article>
-
-      <article class="rounded-3xl border border-white/10 bg-white/4 p-5">
-        <p class="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{{ $t('admin.contestants.eyebrow') }}</p>
-        <h3 class="mt-2 text-2xl font-black text-white">{{ contestants.length }}</h3>
-        <p class="mt-2 text-sm text-slate-400">{{ $t('admin.monitor.participantsHelp', { votes: totalPollVotes }) }}</p>
-      </article>
-    </div>
+      <p class="relative mt-4 text-xs font-bold text-slate-500">
+        Usuarios, comentarios y artistas:
+        {{ (serverMetrics?.db?.users ?? 0).toLocaleString('es') }} usuarios ·
+        {{ (serverMetrics?.db?.comments ?? 0).toLocaleString('es') }} comentarios ·
+        {{ (serverMetrics?.db?.artists ?? 0).toLocaleString('es') }} artistas
+      </p>
+    </article>
 
     <p
       v-if="successMessage"
@@ -798,8 +838,8 @@ onUnmounted(() => {
       {{ errorMessage }}
     </p>
 
-    <section class="grid gap-6 xl:grid-cols-4">
-      <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6 xl:col-span-3">
+    <section>
+      <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
         <div class="flex items-center justify-between gap-4">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
@@ -847,59 +887,13 @@ onUnmounted(() => {
                 class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
                 @click="selectRound(round.id)"
               >
-                {{ $t('admin.monitor.viewData') }}
-              </button>
-              <button
-                v-if="round.status !== 'live' && round.status !== 'closed'"
-                type="button"
-                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20"
-                @click="updateRoundStatus(round, 'live')"
-              >
-                {{ $t('admin.monitor.launchRound') }}
-              </button>
-              <button
-                v-if="round.status === 'live' && activeRound?.id === round.id"
-                type="button"
-                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 text-xs font-black text-amber-100 transition hover:bg-amber-400/20"
-                @click="finishActiveRound"
-              >
-                {{ $t('admin.monitor.finishRound') }}
+                Ver resumen
               </button>
               <a
                 :href="`/admin/votaciones/${props.pollId}/rondas/${round.id}`"
                 class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               >
                 {{ $t('admin.monitor.configure') }}
-              </a>
-              <button
-                type="button"
-                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
-                @click="copyRoundEmbed(round.id)"
-              >
-                {{ copiedRoundEmbed === round.id ? 'Embed copiado' : 'Copiar embed' }}
-              </button>
-              <button
-                type="button"
-                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 text-xs font-black text-amber-100 transition hover:bg-amber-400/20"
-                @click="copyCounterEmbed(round.id)"
-              >
-                {{ copiedCounterEmbed === round.id ? 'Contador copiado' : 'Copiar contador' }}
-              </button>
-              <a
-                :href="roundEmbedUrl(round.id)"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10"
-              >
-                Ver iframe
-              </a>
-              <a
-                :href="counterEmbedUrl(round.id)"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10"
-              >
-                Ver contador
               </a>
             </div>
           </div>
@@ -912,14 +906,6 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <button
-          type="button"
-          class="mt-5 flex min-h-13 w-full items-center justify-center rounded-2xl border border-red-300/25 bg-red-500/10 px-5 text-sm font-black uppercase tracking-wide text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="poll?.status === 'closed'"
-          @click="isFinishPollModalOpen = true"
-        >
-          {{ poll?.status === 'closed' ? $t('admin.monitor.pollFinished') : $t('admin.monitor.finishPoll') }}
-        </button>
       </article>
     </section>
 
@@ -1176,51 +1162,6 @@ onUnmounted(() => {
               @click="finishPoll"
             >
               Sí, finalizar votación
-            </button>
-          </div>
-        </article>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <div
-        v-if="isLaunchModalOpen"
-        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
-        @click.self="isLaunchModalOpen = false"
-      >
-        <article class="w-full max-w-lg rounded-4xl border border-emerald-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-emerald-950/30">
-          <p class="text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
-            Confirmar lanzamiento
-          </p>
-          <h2 class="mt-3 text-3xl font-black">
-            Lanzar votación en vivo
-          </h2>
-          <p class="mt-3 text-sm leading-6 text-slate-300">
-            Al confirmar, los usuarios podrán entrar a la votación y empezar a votar en tiempo real.
-          </p>
-
-          <div class="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
-            <p class="text-xs font-black uppercase tracking-widest text-slate-400">{{ $t('admin.monitor.pollLabel') }}</p>
-            <p class="mt-2 text-lg font-black text-white">{{ poll?.title || 'Sin titulo' }}</p>
-            <p class="mt-1 text-sm text-slate-400">
-              {{ contestants.length }} participantes · {{ totalPollVotes }} votos actuales
-            </p>
-          </div>
-
-          <div class="mt-6 grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
-              @click="isLaunchModalOpen = false"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              class="min-h-12 rounded-2xl bg-linear-to-r from-emerald-500 to-cyan-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-emerald-950/40 transition hover:scale-[1.01]"
-              @click="launchPoll"
-            >
-              Confirmar lanzamiento
             </button>
           </div>
         </article>
