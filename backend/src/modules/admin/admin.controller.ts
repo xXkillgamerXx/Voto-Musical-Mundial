@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PollStatus, RoundType, UserRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -300,20 +300,27 @@ export class AdminController {
 
   @Post('polls')
   async createPoll(@Body() body: any) {
-    return serialize(await this.prisma.poll.create({
-      data: {
-        categoryId: body.categoryId ? toBigInt(body.categoryId) : null,
-        slug: body.slug || null,
-        title: body.title || body.name,
-        description: body.description || null,
-        status: statusFor(body.status),
-        type: roundTypeFor(body.type),
-        config: body,
-        startsAt: toDate(body.startsAt || body.startAt),
-        endsAt: toDate(body.endsAt || body.endAt),
-        activeEndAt: toDate(body.activeEndAt),
-      },
-    }));
+    try {
+      return serialize(await this.prisma.poll.create({
+        data: {
+          categoryId: body.categoryId ? toBigInt(body.categoryId) : null,
+          slug: body.slug || null,
+          title: body.title || body.name,
+          description: body.description || null,
+          status: statusFor(body.status),
+          type: roundTypeFor(body.type),
+          config: body,
+          startsAt: toDate(body.startsAt || body.startAt),
+          endsAt: toDate(body.endsAt || body.endAt),
+          activeEndAt: toDate(body.activeEndAt),
+        },
+      }));
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'P2002') {
+        throw new ConflictException('Ya existe una encuesta con ese slug.');
+      }
+      throw error;
+    }
   }
 
   @Patch('polls/:id')
