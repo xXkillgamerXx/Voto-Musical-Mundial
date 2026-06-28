@@ -35,6 +35,20 @@ const activeRoundEndListeners = new Map();
 const pollUrl = (poll) =>
   `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`;
 
+const asDate = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  const date =
+    value.toDate?.() ||
+    (value.toMillis?.() ? new Date(value.toMillis()) : null) ||
+    (typeof value === "string" || typeof value === "number"
+      ? new Date(value)
+      : null);
+
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+};
+
 const countdownFor = (poll) => {
   if (poll.status === "selecting_winners") {
     return [
@@ -46,18 +60,20 @@ const countdownFor = (poll) => {
   }
 
   const endDate =
-    poll.activeEndAt?.toDate?.() ||
-    poll.endAt?.toDate?.() ||
-    poll.activeRoundEndAt?.toDate?.();
+    asDate(poll.activeEndAt) ||
+    asDate(poll.endAt) ||
+    asDate(poll.endsAt) ||
+    asDate(poll.activeRoundEndAt);
 
   if (!endDate) {
     return ["LIVE", "", "", ""];
   }
 
-  const remainingSeconds = Math.max(
-    Math.floor((endDate.getTime() - now.value) / 1000),
-    0,
-  );
+  const remainingSeconds = Math.floor((endDate.getTime() - now.value) / 1000);
+  if (remainingSeconds <= 0 && poll.status === "live") {
+    return ["LIVE", "", "", ""];
+  }
+
   const days = Math.floor(remainingSeconds / 86400);
   const hours = Math.floor((remainingSeconds % 86400) / 3600);
   const minutes = Math.floor((remainingSeconds % 3600) / 60);
@@ -72,7 +88,8 @@ const countdownFor = (poll) => {
   ];
 };
 
-const getPollEndAt = (poll) => poll.activeEndAt || poll.endAt || null;
+const getPollEndAt = (poll) =>
+  poll.activeEndAt || poll.endAt || poll.endsAt || poll.activeRoundEndAt || null;
 
 const syncActiveRoundEndListeners = (pollRows) => {
   activeRoundEndListeners.forEach((listener, pollId) => {
