@@ -30,4 +30,8 @@ export class CastVoteDto {
   @IsInt()
   @Min(0)
   pointsPerVote?: number;
+
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }

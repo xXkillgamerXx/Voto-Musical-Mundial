@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CastVoteDto } from './dto/cast-vote.dto';
 import { VoteStatusDto } from './dto/vote-status.dto';
+import { TurnstileService } from './turnstile.service';
 
 const DEFAULT_COOLDOWN_MINUTES = 60;
 // Server-side hard cap on how many votes a single registered request may add.
@@ -31,6 +32,7 @@ export class VotesService {
     private readonly redis: RedisService,
     private readonly auth: AuthService,
     private readonly config: ConfigService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   async castVote(dto: CastVoteDto, request: Request) {
@@ -52,13 +54,16 @@ export class VotesService {
     }
 
     const voteScope = this.resolveVoteScope(context.round?.type, context.contestant.matchGroup);
-    const ipHash = hashIp(getClientIp(request), this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial');
+    const clientIp = getClientIp(request);
+    const ipHash = hashIp(clientIp, this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial');
     // Vote cost is resolved exclusively from server-side poll/round config; the client value is ignored.
     const costPerVote = this.resolveVoteCost(context.poll.config, context.round?.config);
 
     await this.enforceNotBlocked(ipHash, identity.userId || null);
     await this.enforceRateLimit(identity, ipHash, amount);
     if (identity.type === 'anonymous') {
+      // Bot protection: anonymous voters must pass a Cloudflare Turnstile challenge (when enabled).
+      await this.turnstile.verify(dto.turnstileToken, clientIp);
       await this.enforceAnonymousCooldown(identity, ipHash, context.poll.id, context.round?.id || null, voteScope, context.config);
     } else {
       await this.spendUserPoints(identity, amount, costPerVote);
