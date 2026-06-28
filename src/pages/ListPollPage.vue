@@ -23,6 +23,12 @@ import {
   createVoteQueue,
   shardCountForConcurrency,
 } from "../services/voteQueue";
+import {
+  isTurnstileEnabled,
+  removeTurnstileWidget,
+  renderTurnstileWidget,
+  resetTurnstileWidget,
+} from "../services/turnstile";
 
 const ActivePolls = defineAsyncComponent(() => import("../components/ActivePolls.vue"));
 const PollComments = defineAsyncComponent(() => import("../components/PollComments.vue"));
@@ -62,6 +68,9 @@ const voteFeedbacks = ref({});
 const optimisticVoteTotals = ref({});
 const animatedVoteCounts = ref({});
 const animatedDisplayedTotalVotes = ref(null);
+const turnstileContainer = ref(null);
+const turnstileToken = ref("");
+const turnstileError = ref("");
 const anonymousVoteStatuses = ref({});
 const isLoadingAnonymousStatus = ref(false);
 const isSignupPromptOpen = ref(false);
@@ -82,6 +91,7 @@ let clockTimer = null;
 let secondarySectionsTimer = null;
 let userPointsAnimationFrame = null;
 let voteQueue = null;
+let turnstileWidgetId = null;
 let listeningContestantsKey = "";
 let embedResizeObserver = null;
 let previousEmbedOverflowStyles = null;
@@ -690,6 +700,9 @@ const isAnonymousVotingFlow = computed(() =>
     (!currentUser.value || currentUser.value.isAnonymous),
   ),
 );
+const shouldShowTurnstile = computed(() =>
+  isAnonymousVotingFlow.value && isTurnstileEnabled(),
+);
 const hasEnoughPointsToVote = computed(() =>
   currentUser.value?.isAnonymous || !currentUser.value
     ? canUseAnonymousVote.value
@@ -744,6 +757,43 @@ const anonymousVoteMessageForScope = (scope = anonymousDefaultScope) => {
 const anonymousVoteMessage = computed(() =>
   anonymousVoteMessageForScope(selectedAnonymousVoteScope.value),
 );
+
+const renderVisibleTurnstile = async () => {
+  if (!shouldShowTurnstile.value) {
+    return;
+  }
+
+  await nextTick();
+  if (!turnstileContainer.value) {
+    return;
+  }
+
+  if (turnstileWidgetId !== null) {
+    removeTurnstileWidget(turnstileWidgetId);
+    turnstileWidgetId = null;
+  }
+
+  turnstileToken.value = "";
+  turnstileError.value = "";
+  try {
+    turnstileWidgetId = await renderTurnstileWidget(turnstileContainer.value, {
+      onSuccess: (token) => {
+        turnstileToken.value = token;
+        turnstileError.value = "";
+      },
+      onError: () => {
+        turnstileToken.value = "";
+        turnstileError.value = "No se pudo completar la verificación. Intenta de nuevo.";
+      },
+      onExpired: () => {
+        turnstileToken.value = "";
+        turnstileError.value = "La verificación expiró. Márcala de nuevo.";
+      },
+    });
+  } catch {
+    turnstileError.value = "No se pudo cargar la verificación anti-bots.";
+  }
+};
 
 const winners = computed(() =>
   rankedContestants.value.filter(
@@ -1878,8 +1928,17 @@ const voteButtonLabel = (contestant) => {
 };
 
 const closeVoteModal = () => {
+  resetVisibleTurnstile();
   voteModalContestant.value = null;
   voteAmount.value = 1;
+};
+
+const resetVisibleTurnstile = () => {
+  turnstileToken.value = "";
+  turnstileError.value = "";
+  if (turnstileWidgetId !== null) {
+    resetTurnstileWidget(turnstileWidgetId);
+  }
 };
 
 const closeSignupPrompt = () => {
@@ -1987,6 +2046,7 @@ const voteAnonymouslyFor = async (contestant) => {
       roundId: activeRound.value?.id || null,
       artistId,
       voteScope: voteScope === anonymousDefaultScope ? null : voteScope,
+      turnstileToken: turnstileToken.value || undefined,
     });
 
     anonymousVoteStatuses.value = {
@@ -1997,6 +2057,7 @@ const voteAnonymouslyFor = async (contestant) => {
     // the backend confirms the vote. That keeps the UI from bouncing on rejected votes.
     setOptimisticVoteTotal(artistId, currentVotes + 1);
     showVoteFeedback(artistId, 1);
+    resetVisibleTurnstile();
     closeVoteModal();
     shareMessage.value = translate("polls.detail.anonymousVoteSuccessLogin");
     isSignupPromptOpen.value = true;
@@ -2107,6 +2168,10 @@ const confirmVoteAmount = () => {
   }
 
   if (isAnonymousVotingFlow.value) {
+    if (shouldShowTurnstile.value && !turnstileToken.value) {
+      turnstileError.value = "Marca la verificación anti-bots antes de votar.";
+      return;
+    }
     voteFor(voteModalContestant.value, 1);
     return;
   }
@@ -2126,6 +2191,24 @@ watch(
     refreshAnonymousVoteStatuses();
     nextTick(postEmbedHeight);
   },
+);
+
+watch(
+  () => shouldShowTurnstile.value,
+  (enabled) => {
+    if (enabled) {
+      renderVisibleTurnstile();
+      return;
+    }
+
+    if (turnstileWidgetId !== null) {
+      removeTurnstileWidget(turnstileWidgetId);
+      turnstileWidgetId = null;
+    }
+    turnstileToken.value = "";
+    turnstileError.value = "";
+  },
+  { flush: "post" },
 );
 
 watch(
@@ -2222,6 +2305,10 @@ onUnmounted(() => {
   }
   voteQueue?.flush().catch(() => {});
   voteQueue?.dispose();
+  if (turnstileWidgetId !== null) {
+    removeTurnstileWidget(turnstileWidgetId);
+    turnstileWidgetId = null;
+  }
   restoreEmbeddedNoScroll();
   window.clearInterval(clockTimer);
   window.clearTimeout(secondarySectionsTimer);
@@ -3795,7 +3882,35 @@ onUnmounted(() => {
                 <div
                   class="rounded-3xl border border-emerald-300/20 bg-emerald-400/10 p-4"
                 >
-                  <div class="flex items-center gap-3">
+                  <div v-if="shouldShowTurnstile" class="space-y-3">
+                    <div class="flex items-center gap-3">
+                      <span
+                        class="grid size-11 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-300/15 text-emerald-100"
+                      >
+                        <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                      </span>
+                      <span class="min-w-0">
+                        <span
+                          class="block text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200"
+                        >
+                          Verificación anti-bots
+                        </span>
+                        <span class="mt-1 block text-sm font-bold leading-5 text-slate-200">
+                          Marca el check de Cloudflare antes de votar.
+                        </span>
+                      </span>
+                    </div>
+                    <div class="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 p-3">
+                      <div ref="turnstileContainer" class="min-h-[65px]"></div>
+                    </div>
+                    <p
+                      v-if="turnstileError"
+                      class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200"
+                    >
+                      {{ turnstileError }}
+                    </p>
+                  </div>
+                  <div v-else class="flex items-center gap-3">
                     <span
                       class="grid size-11 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-300/15 text-emerald-100"
                     >
@@ -3855,7 +3970,8 @@ onUnmounted(() => {
                     :disabled="
                       isVoting === getContestantArtistId(voteModalContestant) ||
                       (isAnonymousVotingFlow
-                        ? !canUseAnonymousVote
+                        ? !canUseAnonymousVote ||
+                          (shouldShowTurnstile && !turnstileToken)
                         : normalizedVoteAmount < 1 ||
                           normalizedVoteAmount > maxVoteAmount)
                     "
