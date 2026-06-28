@@ -1,8 +1,6 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { translate } from "../i18n";
-import ActivePolls from "../components/ActivePolls.vue";
-import PollComments from "../components/PollComments.vue";
 import { getArtistsCached } from "../services/firebaseCache";
 import { getCurrentApiAuth, getMe } from "../services/api/authApi";
 import {
@@ -26,6 +24,9 @@ import {
   shardCountForConcurrency,
 } from "../services/voteQueue";
 
+const ActivePolls = defineAsyncComponent(() => import("../components/ActivePolls.vue"));
+const PollComments = defineAsyncComponent(() => import("../components/PollComments.vue"));
+
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeYear = Number(pathParts[1]) || new Date().getFullYear();
 const routeSlug = pathParts[2] || "";
@@ -45,6 +46,7 @@ const selectedRoundContestants = ref([]);
 const finalResultContestants = ref([]);
 const currentUser = ref(null);
 const userPoints = ref(0);
+const displayUserPoints = ref(0);
 const isLoading = ref(true);
 const isLoadingSelectedRound = ref(false);
 const isVoting = ref("");
@@ -62,6 +64,7 @@ const anonymousVoteStatuses = ref({});
 const isLoadingAnonymousStatus = ref(false);
 const isSignupPromptOpen = ref(false);
 const roundDetailSection = ref(null);
+const showSecondarySections = ref(false);
 
 let unsubscribeAuth = null;
 let unsubscribePoll = null;
@@ -74,6 +77,8 @@ let reloadPublicResults = null;
 let realtimeResultsThrottle = 0;
 let realtimeStateThrottle = 0;
 let clockTimer = null;
+let secondarySectionsTimer = null;
+let userPointsAnimationFrame = null;
 let voteQueue = null;
 let listeningContestantsKey = "";
 let embedResizeObserver = null;
@@ -146,6 +151,7 @@ const normalizeApiContestant = (contestant) => {
     ...metadata,
     ...contestant,
     id: String(contestant.id),
+    firebaseId: contestant.firebaseId || metadata.id || null,
     artistId: String(contestant.artistId || artist?.id || metadata.artistId || contestant.id),
     artist,
     votes: Number(contestant.votes || 0),
@@ -292,6 +298,19 @@ const restoreEmbeddedNoScroll = () => {
 const getArtist = (artistId) =>
   artists.value.find((artist) => artist.id === artistId);
 
+const getPollArtist = (artistId) =>
+  poll.value?.contestants
+    ?.find((contestant) => contestant.artistId === artistId || contestant.artist?.id === artistId)
+    ?.artist ||
+  rounds.value
+    .flatMap((round) => round.contestants || [])
+    .find((contestant) => contestant.artistId === artistId || contestant.artist?.id === artistId)
+    ?.artist ||
+  null;
+
+const resolveArtist = (artistId, fallbackArtist = null) =>
+  fallbackArtist || getArtist(artistId) || getPollArtist(artistId);
+
 const getArtistImage = (artist) =>
   artist?.image ||
   artist?.imageUrl ||
@@ -358,9 +377,22 @@ const isSelectingWinners = computed(
     (poll.value?.status === "live" && hasEnded.value),
 );
 const isClosed = computed(() => poll.value?.status === "closed");
+const activeRoundContestantRows = computed(() => {
+  const roundId = activeRound.value?.id ? String(activeRound.value.id) : "";
+
+  if (!roundId) {
+    return contestants.value.filter((contestant) => !contestant.roundId);
+  }
+
+  return contestants.value.filter(
+    (contestant) =>
+      String(contestant.roundId || "") === roundId ||
+      String(contestant.firebaseId || "") === roundId,
+  );
+});
 
 const rankedContestants = computed(() =>
-  contestants.value
+  activeRoundContestantRows.value
     .map((contestant) => {
       const artistId = contestant.artistId || contestant.id;
       const serverTotalVotes = Number(
@@ -373,7 +405,7 @@ const rankedContestants = computed(() =>
       );
       return {
         ...contestant,
-        artist: getArtist(artistId),
+        artist: resolveArtist(artistId, contestant.artist),
         artistId,
         totalVotes,
       };
@@ -382,7 +414,7 @@ const rankedContestants = computed(() =>
 );
 
 const activeContestants = computed(() =>
-  contestants.value
+  activeRoundContestantRows.value
     .map((contestant, index) => {
       const artistId = contestant.artistId || contestant.id;
       const serverTotalVotes = Number(
@@ -398,7 +430,7 @@ const activeContestants = computed(() =>
         order: Number(contestant.order ?? index),
         matchGroup: Number(contestant.matchGroup || 0),
         matchOrder: Number(contestant.matchOrder ?? index),
-        artist: getArtist(artistId),
+        artist: resolveArtist(artistId, contestant.artist),
         artistId,
         totalVotes,
       };
@@ -629,7 +661,7 @@ const hasEnoughPointsToVoteFor = (contestant) =>
     ? canUseAnonymousVoteFor(contestant)
     : hasEnoughPointsToVote.value;
 const formattedUserPoints = computed(() =>
-  Number(userPoints.value || 0).toLocaleString("es"),
+  Number(displayUserPoints.value || 0).toLocaleString("es"),
 );
 const maxVoteAmount = computed(() =>
   currentUser.value && !currentUser.value.isAnonymous
@@ -755,7 +787,7 @@ const finalWinnerArtists = computed(() => {
 
   return winnerIds
     .slice(0, 1)
-    .map((artistId) => getArtist(artistId))
+    .map((artistId) => resolveArtist(artistId))
     .filter(Boolean);
 });
 
@@ -789,10 +821,10 @@ const finalWinnerEntries = computed(() => {
   return winnerIds
     .slice(0, 1)
     .map((artistId) => {
-      const artist = getArtist(artistId);
       const contestant = finalResultSourceContestants.value.find(
         (item) => item.artistId === artistId,
       );
+      const artist = resolveArtist(artistId, contestant?.artist);
       const votes = Number(contestant?.totalVotes || 0);
       const percent = finalResultSourceTotalVotes.value
         ? (votes / finalResultSourceTotalVotes.value) * 100
@@ -878,7 +910,7 @@ const previousRound = computed(() => {
 
 const previousRoundWinners = computed(() =>
   (previousRound.value?.winnerIds || [])
-    .map((artistId) => getArtist(artistId))
+    .map((artistId) => resolveArtist(artistId))
     .filter(Boolean),
 );
 
@@ -925,7 +957,7 @@ const roundSteps = computed(() =>
           isBeforeActiveRound ||
           isFinalResultVisible,
         winners: (round.winnerIds || [])
-          .map((artistId) => getArtist(artistId))
+          .map((artistId) => resolveArtist(artistId))
           .filter(Boolean),
       };
     })
@@ -1195,10 +1227,14 @@ const animateNumber = ({
   setTimer(timer);
 };
 
-const animateVoteCount = (artistId, from, to) => {
+const animationDurationForVoteDelta = (from, to) =>
+  Math.max(900, Math.min(2200, 700 + Math.abs(Number(to || 0) - Number(from || 0)) * 0.18));
+
+const animateVoteCount = (artistId, from, to, duration = 720) => {
   animateNumber({
     from,
     to,
+    duration,
     onUpdate: (value) => {
       animatedVoteCounts.value = {
         ...animatedVoteCounts.value,
@@ -1235,10 +1271,11 @@ const clearAnimatedDisplayedTotalVotes = () => {
   animatedDisplayedTotalVotes.value = null;
 };
 
-const animateDisplayedTotalVotes = (from, to) => {
+const animateDisplayedTotalVotes = (from, to, duration = 720) => {
   animateNumber({
     from,
     to,
+    duration,
     onUpdate: (value) => {
       animatedDisplayedTotalVotes.value = value;
     },
@@ -1255,6 +1292,53 @@ const animateDisplayedTotalVotes = (from, to) => {
       displayedTotalAnimationTimer = null;
     },
   });
+};
+
+const animateIncomingVoteTotals = (nextContestants) => {
+  const currentRows = activeRoundContestantRows.value;
+
+  if (!currentRows.length || !nextContestants.length) {
+    return;
+  }
+
+  const previousByArtist = new Map(
+    currentRows.map((contestant) => [
+      getContestantArtistId(contestant),
+      contestant,
+    ]),
+  );
+  const previousVisibleTotal = displayTotalVotes.value;
+  const nextTotal = nextContestants.reduce(
+    (total, contestant) => total + Number(contestant.totalVotes || 0),
+    0,
+  );
+  let changed = false;
+  let longestDuration = 900;
+
+  nextContestants.forEach((contestant) => {
+    const artistId = getContestantArtistId(contestant);
+    const previous = previousByArtist.get(artistId);
+
+    if (!artistId || !previous) {
+      return;
+    }
+
+    const from = displayVoteCountFor(previous);
+    const to = Number(contestant.totalVotes || 0);
+
+    if (from === to) {
+      return;
+    }
+
+    const duration = animationDurationForVoteDelta(from, to);
+    longestDuration = Math.max(longestDuration, duration);
+    changed = true;
+    animateVoteCount(artistId, from, to, duration);
+  });
+
+  if (changed && previousVisibleTotal !== nextTotal) {
+    animateDisplayedTotalVotes(previousVisibleTotal, nextTotal, longestDuration);
+  }
 };
 
 const getRoundContestants = async (round) => {
@@ -1282,7 +1366,13 @@ const subscribeRealtime = (pollId) => {
   }
 
   unsubscribeRealtime = subscribePollRealtime(pollId, {
-    onResultsDirty: () => {
+    onResultsDirty: (event = {}) => {
+      const dirtyRoundId = event.roundId ? String(event.roundId) : "";
+      const currentRoundId = activeRound.value?.id ? String(activeRound.value.id) : "";
+      if (dirtyRoundId && currentRoundId && dirtyRoundId !== currentRoundId) {
+        return;
+      }
+
       const nowMs = Date.now();
       if (nowMs - realtimeResultsThrottle < 800) {
         return;
@@ -1290,18 +1380,30 @@ const subscribeRealtime = (pollId) => {
       realtimeResultsThrottle = nowMs;
       reloadPublicResults?.();
     },
-    onPollStateChanged: () => {
+    onPollStateChanged: (event = {}) => {
+      if (
+        event.reason === "versus_generated" &&
+        (!event.roundId || String(event.roundId) === String(activeRound.value?.id || ""))
+      ) {
+        listeningContestantsKey = "";
+        listenContestants(pollId, { clear: false });
+        return;
+      }
+
       const nowMs = Date.now();
       if (nowMs - realtimeStateThrottle < 2500) {
         return;
       }
       realtimeStateThrottle = nowMs;
-      loadPoll();
+      if (["round_launched", "round_finished", "round_status", "versus_generated"].includes(event.reason)) {
+        listeningContestantsKey = "";
+      }
+      loadPoll({ silent: true });
     },
   });
 };
 
-const listenContestants = async (pollId) => {
+const listenContestants = async (pollId, { clear = true } = {}) => {
   const roundId = activeRound.value?.id || null;
   const contestantsKey = `${pollId}:${roundId || "root"}`;
 
@@ -1313,18 +1415,32 @@ const listenContestants = async (pollId) => {
   unsubscribePublicResults?.();
   reloadPublicResults = null;
   listeningContestantsKey = contestantsKey;
+  if (clear) {
+    contestants.value = [];
+  }
 
   try {
     const baseContestants = await loadContestantMetadata(db, pollId, roundId);
     let latestPublicResults = null;
 
+    if (listeningContestantsKey !== contestantsKey) {
+      return;
+    }
+
     const applyLatestResults = () => {
-      contestants.value = latestPublicResults
+      if (listeningContestantsKey !== contestantsKey) {
+        return;
+      }
+
+      const nextContestants = latestPublicResults
         ? mergeContestantsWithPublicResults(
             baseContestants,
             latestPublicResults,
           )
         : baseContestants;
+
+      animateIncomingVoteTotals(nextContestants);
+      contestants.value = nextContestants;
     };
 
     reloadPublicResults = async () => {
@@ -1448,13 +1564,13 @@ const loadArtists = async () => {
   artists.value = await getArtistsCached(db);
 };
 
-const loadPoll = async () => {
-  isLoading.value = true;
+const loadPoll = async ({ silent = false } = {}) => {
+  if (!silent || !poll.value) {
+    isLoading.value = true;
+  }
   errorMessage.value = "";
 
   try {
-    await loadArtists();
-
     const apiPoll = routeSlug
       ? await getPoll(routeSlug)
       : await getPolls(100).then((pollRows) =>
@@ -1476,10 +1592,13 @@ const loadPoll = async () => {
     unsubscribePoll = null;
     listenRounds(poll.value.id);
     subscribeRealtime(poll.value.id);
+    loadArtists().catch(() => {});
   } catch {
     errorMessage.value = translate("polls.detail.loadError");
   } finally {
-    isLoading.value = false;
+    if (!silent || !poll.value) {
+      isLoading.value = false;
+    }
   }
 };
 
@@ -1488,6 +1607,44 @@ const listenUserPoints = (user) => {
   unsubscribeUserPoints = null;
   userPoints.value = user && !user.isAnonymous ? Number(user.points || 0) : 0;
 };
+
+const animateUserPoints = (to) => {
+  const target = Number(to || 0);
+  const from = Number(displayUserPoints.value || 0);
+
+  if (userPointsAnimationFrame) {
+    window.cancelAnimationFrame(userPointsAnimationFrame);
+    userPointsAnimationFrame = null;
+  }
+
+  if (from === target) {
+    displayUserPoints.value = target;
+    return;
+  }
+
+  const duration = Math.min(1200, Math.max(520, Math.abs(target - from) * 10));
+  const startedAt = performance.now();
+
+  const step = (nowTs) => {
+    const progress = Math.min(1, (nowTs - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    displayUserPoints.value = Math.round(from + (target - from) * eased);
+
+    if (progress < 1) {
+      userPointsAnimationFrame = window.requestAnimationFrame(step);
+      return;
+    }
+
+    displayUserPoints.value = target;
+    userPointsAnimationFrame = null;
+  };
+
+  userPointsAnimationFrame = window.requestAnimationFrame(step);
+};
+
+watch(userPoints, (next) => {
+  animateUserPoints(next);
+});
 
 const refreshUserPoints = async () => {
   if (!currentUser.value || currentUser.value.isAnonymous) {
@@ -1933,6 +2090,9 @@ onMounted(() => {
   }, 1000);
   applyEmbeddedNoScroll();
   loadPoll();
+  secondarySectionsTimer = window.setTimeout(() => {
+    showSecondarySections.value = true;
+  }, 700);
   startEmbedHeightSync();
 });
 
@@ -1950,10 +2110,14 @@ onUnmounted(() => {
   voteCountAnimationTimers.forEach((timer) => window.clearInterval(timer));
   voteCountAnimationTimers.clear();
   clearAnimatedDisplayedTotalVotes();
+  if (userPointsAnimationFrame) {
+    window.cancelAnimationFrame(userPointsAnimationFrame);
+  }
   voteQueue?.flush().catch(() => {});
   voteQueue?.dispose();
   restoreEmbeddedNoScroll();
   window.clearInterval(clockTimer);
+  window.clearTimeout(secondarySectionsTimer);
 });
 </script>
 
@@ -1968,9 +2132,62 @@ onUnmounted(() => {
   >
     <div
       v-if="isLoading && !isEmbeddedPage"
-      class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-300"
+      class="space-y-6"
     >
-      {{ $t("polls.detail.loading") }}
+      <section class="relative overflow-hidden rounded-4xl border border-fuchsia-300/15 bg-[#080a18]/90 p-5 shadow-2xl shadow-fuchsia-950/20 sm:p-7">
+        <div class="pointer-events-none absolute -left-20 -top-20 size-72 rounded-full bg-fuchsia-500/15 blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 right-0 size-80 rounded-full bg-cyan-400/10 blur-3xl"></div>
+        <div class="relative grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <span class="block h-4 w-36 animate-pulse rounded-full bg-fuchsia-300/20"></span>
+            <span class="mt-4 block h-9 max-w-xl animate-pulse rounded-2xl bg-white/12"></span>
+            <span class="mt-3 block h-4 max-w-2xl animate-pulse rounded-full bg-white/8"></span>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <span
+              v-for="item in 4"
+              :key="`poll-loader-time-${item}`"
+              class="grid h-16 w-16 animate-pulse place-items-center rounded-2xl border border-white/10 bg-white/6 sm:w-20"
+            ></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-4xl border border-white/10 bg-white/5 p-4 sm:p-5">
+        <div class="flex items-center justify-between gap-4">
+          <span class="block h-4 w-40 animate-pulse rounded-full bg-cyan-300/20"></span>
+          <span class="block h-3 w-28 animate-pulse rounded-full bg-white/10"></span>
+        </div>
+        <div class="mt-5 flex gap-4 overflow-hidden">
+          <div
+            v-for="step in 3"
+            :key="`poll-loader-round-${step}`"
+            class="flex w-40 shrink-0 flex-col items-center rounded-3xl border border-white/10 bg-slate-950/35 px-3 py-4"
+          >
+            <span class="grid size-14 animate-pulse place-items-center rounded-full bg-amber-300/15"></span>
+            <span class="mt-3 h-4 w-20 animate-pulse rounded-full bg-white/12"></span>
+            <span class="mt-2 h-3 w-16 animate-pulse rounded-full bg-amber-300/15"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-3">
+        <article
+          v-for="item in 4"
+          :key="`poll-loader-contestant-${item}`"
+          class="rounded-3xl border border-white/10 bg-white/5 p-4 sm:p-5"
+        >
+          <div class="flex items-center gap-4">
+            <span class="size-20 shrink-0 animate-pulse rounded-3xl bg-linear-to-br from-violet-500/25 to-fuchsia-500/25 sm:size-24"></span>
+            <span class="min-w-0 flex-1">
+              <span class="block h-6 max-w-xs animate-pulse rounded-xl bg-white/12"></span>
+              <span class="mt-3 block h-3 max-w-sm animate-pulse rounded-full bg-white/8"></span>
+              <span class="mt-4 block h-3 animate-pulse rounded-full bg-white/10"></span>
+            </span>
+            <span class="hidden h-12 w-28 animate-pulse rounded-2xl bg-fuchsia-400/15 sm:block"></span>
+          </div>
+        </article>
+      </section>
     </div>
 
     <div
@@ -2288,7 +2505,7 @@ onUnmounted(() => {
       <section
         v-if="!isEmbeddedPage && isViewingFinalResult"
         ref="roundDetailSection"
-        class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
+        class="poll-state-panel winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div
           class="winner-light pointer-events-none absolute -left-24 -top-24 size-80 rounded-full bg-amber-300/20 blur-3xl"
@@ -2541,7 +2758,7 @@ onUnmounted(() => {
 
       <section
         v-if="!isEmbeddedPage && isRoundIntroVisible"
-        class="winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
+        class="poll-state-panel winner-modal relative mt-8 overflow-hidden rounded-4xl border border-amber-300/30 bg-[#080a18] p-6 text-center shadow-2xl shadow-amber-950/25 sm:p-10"
       >
         <div
           class="winner-light pointer-events-none absolute -left-24 -top-24 size-80 rounded-full bg-amber-300/20 blur-3xl"
@@ -2627,7 +2844,7 @@ onUnmounted(() => {
           !isViewingSelectedClosedRound &&
           !isViewingFinalResult
         "
-        class="waiting-card relative mt-8 grid min-h-[460px] place-items-center overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#080a18] p-8 text-center shadow-2xl shadow-fuchsia-950/25 sm:min-h-[560px] sm:p-12"
+        class="poll-state-panel waiting-card relative mt-8 grid min-h-[460px] place-items-center overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#080a18] p-8 text-center shadow-2xl shadow-fuchsia-950/25 sm:min-h-[560px] sm:p-12"
       >
         <div
           class="waiting-aurora pointer-events-none absolute -left-24 -top-24 size-80 rounded-full bg-fuchsia-500/20 blur-3xl"
@@ -2695,7 +2912,7 @@ onUnmounted(() => {
           !isViewingSelectedClosedRound &&
           !isViewingFinalResult
         "
-        class="mt-8 rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
+        class="poll-state-panel mt-8 rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
       >
         <p
           class="text-xs font-black uppercase tracking-[0.28em] text-slate-400"
@@ -2716,11 +2933,11 @@ onUnmounted(() => {
           !isViewingSelectedClosedRound &&
           !isViewingFinalResult
         "
-        class="space-y-6"
+        class="poll-state-panel space-y-6"
         :class="!isEmbeddedPage && 'mt-8'"
       >
         <article
-          v-for="match in displayedVersusMatches"
+          v-for="(match, matchIndex) in displayedVersusMatches"
           :key="match.id"
           class="rounded-4xl border border-white/10 bg-white/5"
           :class="
@@ -2730,6 +2947,7 @@ onUnmounted(() => {
                   : 'mx-auto max-w-5xl p-3 sm:p-4'
                 : 'p-4 sm:p-5'
           "
+          :style="{ animationDelay: `${Math.min(matchIndex, 6) * 80}ms` }"
         >
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p
@@ -2769,6 +2987,7 @@ onUnmounted(() => {
                 voteFeedbacks[contestant.artistId || contestant.id] &&
                 'vote-feedback-card'
               "
+              :style="{ animationDelay: `${Math.min(index, 2) * 90 + 80}ms` }"
             >
               <span
                 v-if="voteFeedbacks[contestant.artistId || contestant.id]"
@@ -2948,7 +3167,7 @@ onUnmounted(() => {
       <section
         v-else-if="!isViewingFinalResult"
         ref="roundDetailSection"
-        class="space-y-4"
+        class="poll-state-panel space-y-4"
         :class="!isEmbeddedPage && 'mt-8'"
       >
         <article
@@ -3047,11 +3266,16 @@ onUnmounted(() => {
           </article>
         </template>
 
-        <template v-else>
+        <TransitionGroup
+          v-else
+          name="ranking-shift"
+          tag="div"
+          class="space-y-4"
+        >
           <article
             v-for="(contestant, index) in displayedContestants"
             :key="contestant.id"
-            class="relative rounded-3xl border p-4 transition sm:p-5"
+            class="poll-contestant-enter relative rounded-3xl border p-4 transition sm:p-5"
             :class="[
               isContestantWinner(contestant)
                 ? winnerToneClasses(contestant, 'card')
@@ -3061,6 +3285,7 @@ onUnmounted(() => {
               voteFeedbacks[contestant.artistId || contestant.id] &&
                 'vote-feedback-card',
             ]"
+            :style="{ animationDelay: `${Math.min(index, 8) * 70}ms` }"
           >
             <span
               v-if="voteFeedbacks[contestant.artistId || contestant.id]"
@@ -3201,7 +3426,7 @@ onUnmounted(() => {
               </button>
             </div>
           </article>
-        </template>
+        </TransitionGroup>
 
         <p
           v-if="!isLoadingSelectedRound && !displayedContestants.length"
@@ -3213,11 +3438,11 @@ onUnmounted(() => {
     </template>
 
     <PollComments
-      v-if="!isEmbeddedPage && currentPollId"
+      v-if="!isEmbeddedPage && showSecondarySections && currentPollId"
       :poll-id="currentPollId"
     />
 
-    <div v-if="!isEmbeddedPage" class="mt-12 border-t border-white/10 pt-4">
+    <div v-if="!isEmbeddedPage && showSecondarySections" class="mt-12 border-t border-white/10 pt-4">
       <ActivePolls :exclude-poll-id="currentPollId" />
     </div>
 
@@ -3663,6 +3888,41 @@ onUnmounted(() => {
   animation-delay: 460ms;
 }
 
+.poll-contestant-enter {
+  animation: poll-contestant-in 0.48s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.poll-state-panel {
+  animation: poll-state-panel-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ranking-shift-move,
+.ranking-shift-enter-active,
+.ranking-shift-leave-active {
+  transition:
+    transform 0.58s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.32s ease,
+    filter 0.32s ease,
+    box-shadow 0.42s ease;
+}
+
+.ranking-shift-move {
+  box-shadow: 0 0 34px rgba(217, 70, 239, 0.18);
+  z-index: 2;
+}
+
+.ranking-shift-enter-from,
+.ranking-shift-leave-to {
+  opacity: 0;
+  filter: blur(5px);
+  transform: translateY(16px) scale(0.985);
+}
+
+.ranking-shift-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
 .vote-feedback-card {
   animation: vote-feedback-card 1.35s ease-out both;
 }
@@ -3881,6 +4141,34 @@ onUnmounted(() => {
   50% {
     transform: scaleX(1);
     filter: brightness(1.2);
+  }
+}
+
+@keyframes poll-contestant-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    filter: blur(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes poll-state-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
   }
 }
 

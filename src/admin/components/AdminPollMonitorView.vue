@@ -5,6 +5,7 @@ import {
   closeAdminPoll,
   createAdminContestant,
   createAdminRound,
+  deleteAdminRound,
   finishAdminRound,
   getAdminArtists,
   getAdminMetrics,
@@ -45,6 +46,7 @@ const publicResults = ref(null)
 const selectedRoundId = ref('')
 const winnersToAdvance = ref(2)
 const manualVoteAmounts = ref({})
+const adjustingVoteContestantId = ref('')
 const roundForm = ref({
   title: '',
   type: 'list',
@@ -52,9 +54,14 @@ const roundForm = ref({
 })
 const isFinishPollModalOpen = ref(false)
 const isRoundModalOpen = ref(false)
+const isCreatingRound = ref(false)
+const roundToDelete = ref(null)
+const isDeletingRound = ref(false)
 const roundEndAtInput = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
+const guidedLoading = ref(null)
+const isClosingPoll = ref(false)
 let unsubscribeRealtime = null
 let realtimeRefreshThrottle = 0
 let metricsTimer = null
@@ -284,7 +291,16 @@ const guidedToneClass = computed(
     })[guidedStep.value.tone] || 'border-white/15 from-white/5',
 )
 
-const runGuidedAction = () => {
+const guidedLoadingTitle = computed(() => guidedLoading.value?.title || 'Procesando accion')
+const guidedLoadingHint = computed(() => guidedLoading.value?.hint || 'Estamos actualizando la votacion.')
+
+const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+const runGuidedAction = async () => {
+  if (guidedLoading.value) {
+    return
+  }
+
   const step = guidedStep.value
 
   if (step.action === 'createRound') {
@@ -293,12 +309,36 @@ const runGuidedAction = () => {
   }
 
   if (step.action === 'launch' && launchableRound.value) {
-    updateRoundStatus(launchableRound.value, 'live')
+    guidedLoading.value = {
+      title: 'Lanzando en vivo',
+      hint: `Publicando "${launchableRound.value.title}" para los usuarios en tiempo real.`,
+    }
+
+    try {
+      await Promise.all([
+        updateRoundStatus(launchableRound.value, 'live'),
+        sleep(900),
+      ])
+    } finally {
+      guidedLoading.value = null
+    }
     return
   }
 
   if (step.action === 'finish') {
-    finishActiveRound()
+    guidedLoading.value = {
+      title: 'Finalizando fase',
+      hint: 'Guardando ganadores y preparando el siguiente paso.',
+    }
+
+    try {
+      await Promise.all([
+        finishActiveRound(),
+        sleep(900),
+      ])
+    } finally {
+      guidedLoading.value = null
+    }
     return
   }
 
@@ -557,6 +597,16 @@ const finishActiveRound = async () => {
     return
   }
 
+  const ownsLoading = !guidedLoading.value
+  if (ownsLoading) {
+    guidedLoading.value = {
+      title: activeRound.value.status === 'closed' ? 'Guardando ganadores' : 'Finalizando fase',
+      hint: activeRound.value.status === 'closed'
+        ? 'Actualizando los ganadores seleccionados para esta ronda.'
+        : 'Cerrando la ronda y enviando a los usuarios al conteo.',
+    }
+  }
+
   try {
     const winnerIds = winners.map((winner) => winner.artistId)
 
@@ -572,20 +622,35 @@ const finishActiveRound = async () => {
     listenRounds()
   } catch {
     errorMessage.value = translate('admin.monitor.errors.finishRound')
+  } finally {
+    if (ownsLoading) {
+      await sleep(650)
+      guidedLoading.value = null
+    }
   }
 }
 
 const finishPoll = async () => {
   errorMessage.value = ''
   successMessage.value = ''
+  isClosingPoll.value = true
+  guidedLoading.value = {
+    title: 'Cerrando votación',
+    hint: 'Publicando el resultado final y cerrando el proceso para los usuarios.',
+  }
 
   try {
-    await closeAdminPoll(props.pollId)
+    await Promise.all([
+      closeAdminPoll(props.pollId),
+      sleep(900),
+    ])
     successMessage.value = translate('admin.monitor.statusUpdated')
     listenPoll()
   } catch (error) {
     errorMessage.value = error?.message || translate('admin.monitor.errors.updateStatus')
   } finally {
+    guidedLoading.value = null
+    isClosingPoll.value = false
     isFinishPollModalOpen.value = false
   }
 }
@@ -612,6 +677,7 @@ const addManualVotes = async (contestant) => {
   }
 
   try {
+    adjustingVoteContestantId.value = contestant.id
     await adjustAdminContestantVotes(props.pollId, contestant.id, amount)
 
     manualVoteAmounts.value = {
@@ -625,6 +691,8 @@ const addManualVotes = async (contestant) => {
     listenActiveRoundContestants()
   } catch {
     errorMessage.value = translate('admin.monitor.errors.adjustVotes')
+  } finally {
+    adjustingVoteContestantId.value = ''
   }
 }
 
@@ -638,6 +706,7 @@ const createRound = async () => {
   }
 
   try {
+    isCreatingRound.value = true
     const sourceWinnerIds = rounds.value[rounds.value.length - 1]?.winnerIds || []
     const endAt = toApiDate(roundForm.value.endAt)
     const round = await createAdminRound(props.pollId, {
@@ -674,6 +743,51 @@ const createRound = async () => {
     listenRounds()
   } catch {
     errorMessage.value = translate('admin.monitor.errors.createRound')
+  } finally {
+    isCreatingRound.value = false
+  }
+}
+
+const openDeleteRoundModal = (round) => {
+  if (round?.status !== 'draft') {
+    errorMessage.value = 'Solo se puede eliminar una fase que aun no fue lanzada.'
+    return
+  }
+
+  roundToDelete.value = round
+}
+
+const closeDeleteRoundModal = () => {
+  if (isDeletingRound.value) {
+    return
+  }
+
+  roundToDelete.value = null
+}
+
+const confirmDeleteRound = async () => {
+  if (!roundToDelete.value?.id) {
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  isDeletingRound.value = true
+
+  try {
+    await deleteAdminRound(props.pollId, roundToDelete.value.id)
+
+    if (selectedRoundId.value === roundToDelete.value.id) {
+      selectedRoundId.value = ''
+    }
+
+    successMessage.value = 'Fase eliminada correctamente.'
+    roundToDelete.value = null
+    listenRounds()
+  } catch (error) {
+    errorMessage.value = error?.message || 'No se pudo eliminar la fase.'
+  } finally {
+    isDeletingRound.value = false
   }
 }
 
@@ -738,6 +852,32 @@ onUnmounted(() => {
       :class="guidedToneClass"
     >
       <div class="pointer-events-none absolute -right-16 -top-16 size-44 rounded-full bg-white/5 blur-3xl"></div>
+      <div
+        v-if="guidedLoading"
+        class="absolute inset-0 z-20 grid place-items-center bg-[#060817]/88 px-5 text-center backdrop-blur-md"
+      >
+        <div class="relative w-full max-w-md overflow-hidden rounded-4xl border border-cyan-300/25 bg-slate-950/85 p-6 shadow-2xl shadow-cyan-950/40">
+          <div class="pointer-events-none absolute -left-16 -top-16 size-40 rounded-full bg-cyan-400/20 blur-3xl"></div>
+          <div class="pointer-events-none absolute -bottom-20 right-0 size-48 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
+          <div class="relative">
+            <div class="mx-auto grid size-20 place-items-center rounded-full border border-cyan-300/35 bg-cyan-400/10 text-3xl text-cyan-100 shadow-[0_0_60px_rgba(34,211,238,0.28)]">
+              <i class="fa-solid fa-satellite-dish fa-beat" aria-hidden="true"></i>
+            </div>
+            <p class="mt-5 text-xs font-black uppercase tracking-[0.32em] text-cyan-200">
+              Enviando señal
+            </p>
+            <h3 class="mt-2 text-3xl font-black text-white">
+              {{ guidedLoadingTitle }}
+            </h3>
+            <p class="mx-auto mt-3 max-w-sm text-sm font-bold leading-6 text-slate-300">
+              {{ guidedLoadingHint }}
+            </p>
+            <div class="mx-auto mt-5 h-2 max-w-xs overflow-hidden rounded-full bg-white/10">
+              <div class="h-full w-1/2 animate-pulse rounded-full bg-linear-to-r from-cyan-300 via-fuchsia-300 to-violet-400"></div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div class="min-w-0">
           <p class="text-xs font-black uppercase tracking-[0.28em] text-slate-300">
@@ -766,11 +906,16 @@ onUnmounted(() => {
         <button
           v-if="guidedStep.action"
           type="button"
-          class="inline-flex min-h-13 shrink-0 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.02]"
+          class="inline-flex min-h-13 shrink-0 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70"
+          :disabled="Boolean(guidedLoading)"
           @click="runGuidedAction"
         >
-          <i class="fa-solid fa-bolt" aria-hidden="true"></i>
-          {{ guidedStep.actionLabel }}
+          <i
+            class="fa-solid"
+            :class="guidedLoading ? 'fa-circle-notch fa-spin' : 'fa-bolt'"
+            aria-hidden="true"
+          ></i>
+          {{ guidedLoading ? 'Procesando...' : guidedStep.actionLabel }}
         </button>
       </div>
     </article>
@@ -895,6 +1040,20 @@ onUnmounted(() => {
               >
                 {{ $t('admin.monitor.configure') }}
               </a>
+              <button
+                v-if="round.status === 'draft'"
+                type="button"
+                class="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-red-300/25 bg-red-400/10 px-4 text-xs font-black text-red-100 transition hover:bg-red-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isDeletingRound && roundToDelete?.id === round.id"
+                @click="openDeleteRoundModal(round)"
+              >
+                <i
+                  v-if="isDeletingRound && roundToDelete?.id === round.id"
+                  class="fa-solid fa-circle-notch fa-spin"
+                  aria-hidden="true"
+                ></i>
+                {{ isDeletingRound && roundToDelete?.id === round.id ? 'Eliminando...' : 'Eliminar' }}
+              </button>
             </div>
           </div>
 
@@ -945,11 +1104,22 @@ onUnmounted(() => {
             </label>
             <button
               type="button"
-              class="rounded-full border border-amber-300/25 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="!activeRoundRanking.length || isNextRoundLocked"
+              class="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-amber-300/25 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="!activeRoundRanking.length || isNextRoundLocked || Boolean(guidedLoading)"
               @click="finishActiveRound"
             >
-              {{ activeRound.status === 'closed' ? $t('admin.monitor.saveWinners') : $t('admin.monitor.finishRound') }}
+              <i
+                v-if="guidedLoading"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{
+                guidedLoading
+                  ? 'Guardando...'
+                  : activeRound.status === 'closed'
+                    ? $t('admin.monitor.saveWinners')
+                    : $t('admin.monitor.finishRound')
+              }}
             </button>
             <span
               v-if="activeRound.status === 'closed'"
@@ -1016,10 +1186,16 @@ onUnmounted(() => {
               />
               <button
                 type="button"
-                class="min-h-10 rounded-2xl border border-violet-300/25 bg-violet-400/10 px-4 text-xs font-black text-violet-100 transition hover:bg-violet-400/20"
+                class="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-2xl border border-violet-300/25 bg-violet-400/10 px-4 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="Boolean(adjustingVoteContestantId)"
                 @click="addManualVotes(contestant)"
               >
-                {{ $t('admin.monitor.adjustVotes') }}
+                <i
+                  v-if="adjustingVoteContestantId === contestant.id"
+                  class="fa-solid fa-circle-notch fa-spin"
+                  aria-hidden="true"
+                ></i>
+                {{ adjustingVoteContestantId === contestant.id ? 'Ajustando...' : $t('admin.monitor.adjustVotes') }}
               </button>
             </div>
           </div>
@@ -1127,7 +1303,7 @@ onUnmounted(() => {
       <div
         v-if="isFinishPollModalOpen"
         class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
-        @click.self="isFinishPollModalOpen = false"
+        @click.self="!isClosingPoll && (isFinishPollModalOpen = false)"
       >
         <article class="w-full max-w-lg rounded-4xl border border-red-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-red-950/30">
           <p class="text-xs font-black uppercase tracking-[0.28em] text-red-300">
@@ -1151,17 +1327,24 @@ onUnmounted(() => {
           <div class="mt-6 grid gap-3 sm:grid-cols-2">
             <button
               type="button"
-              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
+              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="isClosingPoll"
               @click="isFinishPollModalOpen = false"
             >
               Cancelar
             </button>
             <button
               type="button"
-              class="min-h-12 rounded-2xl bg-red-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-950/40 transition hover:bg-red-400"
+              class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-red-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-950/40 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isClosingPoll"
               @click="finishPoll"
             >
-              Sí, finalizar votación
+              <i
+                v-if="isClosingPoll"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ isClosingPoll ? 'Cerrando...' : 'Sí, finalizar votación' }}
             </button>
           </div>
         </article>
@@ -1172,7 +1355,7 @@ onUnmounted(() => {
       <div
         v-if="isRoundModalOpen"
         class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
-        @click.self="isRoundModalOpen = false"
+        @click.self="!isCreatingRound && (isRoundModalOpen = false)"
       >
         <article class="w-full max-w-lg rounded-4xl border border-fuchsia-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-fuchsia-950/30">
           <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
@@ -1254,17 +1437,80 @@ onUnmounted(() => {
           <div class="mt-6 grid gap-3 sm:grid-cols-2">
             <button
               type="button"
-              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
+              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="isCreatingRound"
               @click="isRoundModalOpen = false"
             >
               Cancelar
             </button>
             <button
               type="button"
-              class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
+              class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isCreatingRound"
               @click="createRound"
             >
-              Crear fase
+              <i
+                v-if="isCreatingRound"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ isCreatingRound ? 'Creando fase...' : 'Crear fase' }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="roundToDelete"
+        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
+        @click.self="closeDeleteRoundModal"
+      >
+        <article class="w-full max-w-md rounded-4xl border border-red-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-red-950/30">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-red-300">
+            Eliminar fase
+          </p>
+          <h2 class="mt-3 text-3xl font-black">
+            ¿Eliminar esta fase?
+          </h2>
+          <p class="mt-3 text-sm leading-6 text-slate-300">
+            Solo se puede eliminar porque todavia esta en borrador y no fue lanzada.
+          </p>
+
+          <div class="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
+            <p class="text-xs font-black uppercase tracking-widest text-red-200">
+              Fase
+            </p>
+            <p class="mt-2 text-lg font-black text-white">
+              {{ roundToDelete.title || 'Sin titulo' }}
+            </p>
+            <p class="mt-1 text-sm text-slate-400">
+              Estado: {{ roundToDelete.status || 'draft' }}
+            </p>
+          </div>
+
+          <div class="mt-6 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="isDeletingRound"
+              @click="closeDeleteRoundModal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-red-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-950/40 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isDeletingRound"
+              @click="confirmDeleteRound"
+            >
+              <i
+                v-if="isDeletingRound"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ isDeletingRound ? 'Eliminando...' : 'Sí, eliminar fase' }}
             </button>
           </div>
         </article>

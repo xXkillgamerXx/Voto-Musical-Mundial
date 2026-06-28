@@ -1,20 +1,16 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  writeBatch,
-} from '../../services/firebaseRemoved'
-import { db } from '../../services/firebaseRemoved'
+  createAdminContestant,
+  deleteAdminContestant,
+  deleteAdminRound,
+  generateAdminVersus,
+  getAdminArtists,
+  getAdminRounds,
+  updateAdminContestant,
+  updateAdminRound,
+} from '../../services/api/adminApi'
+import { getPoll } from '../../services/api/pollsApi'
 import { translate } from '../../i18n'
 
 const props = defineProps({
@@ -45,6 +41,9 @@ const isRemoveContestantModalOpen = ref(false)
 const isSavingRound = ref(false)
 const isDeletingRound = ref(false)
 const isRemovingContestant = ref(false)
+const isGeneratingVersus = ref(false)
+const addingArtistId = ref('')
+const removingContestantId = ref('')
 const roundEndAtInput = ref(null)
 const selectedGroupArtistIds = ref([])
 const contestantToRemove = ref(null)
@@ -131,9 +130,18 @@ const versusGroups = computed(() => {
 const ungroupedContestants = computed(() =>
   currentContestants.value.filter((contestant) => !contestant.matchGroup),
 )
+const versusCompletedGroups = computed(() =>
+  versusGroups.value.filter((group) => group.contestants.length === 2),
+)
+const versusIncompleteGroups = computed(() =>
+  versusGroups.value.filter((group) => group.contestants.length !== 2),
+)
+const canGenerateVersus = computed(() =>
+  roundForm.value.type === 'versus' && currentContestants.value.length >= 2,
+)
 
 const getArtistImage = (artist) =>
-  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
+  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.photoUrl || artist?.metadata?.image || artist?.metadata?.imageUrl || artist?.metadata?.photoUrl || artist?.metadata?.banner || artist?.banner || ''
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 const publicPollPath = computed(() =>
@@ -186,9 +194,24 @@ const availableArtistsHelp = computed(() =>
     ? `Solo puedes asignar ganadores de ${previousRound.value.title || 'la ronda anterior'}.`
     : 'Agrega artistas a esta ronda.',
 )
+const versusSetupHint = computed(() => {
+  if (currentContestants.value.length < 2) {
+    return 'Agrega al menos 2 artistas para crear el primer VS.'
+  }
+
+  if (currentContestants.value.length % 2 !== 0) {
+    return 'Hay un artista sin pareja. Puedes generar igual y completar ese duelo despues.'
+  }
+
+  if (!versusCompletedGroups.value.length) {
+    return 'Ya puedes generar los duelos automaticos con los artistas asignados.'
+  }
+
+  return 'Duelos listos. Revisa los pares antes de lanzar la fase.'
+})
 
 const formatDate = (value) => {
-  const date = value?.toDate?.() || null
+  const date = value?.toDate?.() || (value ? new Date(value) : null)
   return date
     ? new Intl.DateTimeFormat('es', {
         dateStyle: 'medium',
@@ -198,9 +221,9 @@ const formatDate = (value) => {
 }
 
 const toDatetimeLocal = (value) => {
-  const date = value?.toDate?.()
+  const date = value?.toDate?.() || (value ? new Date(value) : null)
 
-  if (!date) {
+  if (!date || Number.isNaN(date.getTime())) {
     return ''
   }
 
@@ -209,7 +232,7 @@ const toDatetimeLocal = (value) => {
   return localDate.toISOString().slice(0, 16)
 }
 
-const toTimestamp = (value) => (value ? Timestamp.fromDate(new Date(value)) : null)
+const toApiDate = (value) => (value ? new Date(value).toISOString() : null)
 
 const openDatePicker = (input) => {
   input?.focus()
@@ -231,49 +254,63 @@ const copyToClipboard = async (value, type) => {
 }
 
 const loadArtists = async () => {
-  const artistsSnap = await getDocs(query(collection(db, 'artists'), orderBy('createdAt', 'desc')))
-  artists.value = artistsSnap.docs.map((artistDoc) => ({
-    id: artistDoc.id,
-    ...artistDoc.data(),
+  const rows = await getAdminArtists()
+  artists.value = rows.map((artist) => ({
+    ...(artist.metadata || {}),
+    ...artist,
+    id: String(artist.id),
   }))
 }
 
 const listenBaseData = async () => {
-  const [pollSnap, roundSnap, roundsSnap, contestantsSnap] = await Promise.all([
-    getDoc(doc(db, 'polls', props.pollId)),
-    getDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId)),
-    getDocs(query(collection(db, 'polls', props.pollId, 'rounds'), orderBy('createdAt', 'asc'))),
-    getDocs(collection(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants')),
+  const [pollRow, roundRows] = await Promise.all([
+    getPoll(props.pollId),
+    getAdminRounds(props.pollId),
   ])
 
-  poll.value = pollSnap.exists() ? { id: pollSnap.id, ...pollSnap.data() } : null
-    round.value = roundSnap.exists() ? { id: roundSnap.id, ...roundSnap.data() } : null
+  poll.value = pollRow ? {
+    ...(pollRow.config || {}),
+    ...pollRow,
+    id: String(pollRow.id),
+    year: Number(pollRow.config?.year || pollRow.year || new Date().getFullYear()),
+  } : null
+  rounds.value = roundRows.map((roundRow) => ({
+    ...(roundRow.config || {}),
+    ...roundRow,
+    id: String(roundRow.id),
+    type: roundRow.type === 'versus' ? 'versus' : 'list',
+    endAt: roundRow.endsAt || roundRow.config?.endAt || roundRow.config?.endsAt || '',
+    winnerIds: roundRow.config?.winnerIds || [],
+    contestants: (roundRow.contestants || []).map((contestant) => ({
+      ...(contestant.metadata || {}),
+      ...contestant,
+      id: String(contestant.id),
+      artistId: String(contestant.artistId),
+      totalVotes: Number(contestant.totalVotes ?? Number(contestant.votes || 0) + Number(contestant.manualVotes || 0)),
+    })),
+  }))
+  round.value = rounds.value.find((item) => item.id === props.roundId) || null
 
   if (round.value) {
     roundForm.value = {
       title: round.value.title || '',
       type: round.value.type || 'list',
       status: round.value.status || 'draft',
-      endAt: toDatetimeLocal(round.value.endAt),
+      endAt: toDatetimeLocal(round.value.endAt || round.value.endsAt),
     }
   }
 
-  rounds.value = roundsSnap.docs.map((roundDoc) => ({
-    id: roundDoc.id,
-    ...roundDoc.data(),
-  }))
-  roundContestants.value = contestantsSnap.docs.map((contestantDoc) => ({
-    id: contestantDoc.id,
-    ...contestantDoc.data(),
-  }))
+  roundContestants.value = round.value?.contestants || []
 }
 
 const addRoundContestant = async (artist) => {
   errorMessage.value = ''
   successMessage.value = ''
+  addingArtistId.value = artist.id
 
   try {
-    await setDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', artist.id), {
+    await createAdminContestant(props.pollId, {
+      roundId: props.roundId,
       artistId: artist.id,
       votes: 0,
       manualVotes: 0,
@@ -281,13 +318,15 @@ const addRoundContestant = async (artist) => {
       isWinner: false,
       winnerRank: null,
       order: roundContestants.value.length,
-      matchGroup: null,
-      matchOrder: null,
-      addedAt: serverTimestamp(),
+      matchGroup: 0,
+      matchOrder: 0,
     })
     successMessage.value = translate('admin.round.added')
+    await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.add')
+  } finally {
+    addingArtistId.value = ''
   }
 }
 
@@ -312,6 +351,27 @@ const openGroupModal = () => {
   isGroupModalOpen.value = true
 }
 
+const generateVersusAuto = async () => {
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  if (currentContestants.value.length < 2) {
+    errorMessage.value = 'Agrega al menos 2 artistas para generar duelos.'
+    return
+  }
+
+  try {
+    isGeneratingVersus.value = true
+    const result = await generateAdminVersus(props.pollId, props.roundId)
+    successMessage.value = `Duelos generados: ${result.groups || ''}.`
+    await listenBaseData()
+  } catch (error) {
+    errorMessage.value = error?.message || 'No se pudieron generar los duelos.'
+  } finally {
+    isGeneratingVersus.value = false
+  }
+}
+
 const createVersusGroup = async () => {
   errorMessage.value = ''
   successMessage.value = ''
@@ -324,19 +384,16 @@ const createVersusGroup = async () => {
   const nextGroupNumber = Math.max(0, ...currentContestants.value.map((contestant) => Number(contestant.matchGroup || 0))) + 1
 
   try {
-    const batch = writeBatch(db)
-
-    selectedGroupArtistIds.value.forEach((contestantId, index) => {
-      batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestantId), {
+    await Promise.all(selectedGroupArtistIds.value.map((contestantId, index) =>
+      updateAdminContestant(props.pollId, contestantId, {
         matchGroup: nextGroupNumber,
         matchOrder: index,
-      })
-    })
-
-    await batch.commit()
+      }),
+    ))
     selectedGroupArtistIds.value = []
     isGroupModalOpen.value = false
     successMessage.value = `Grupo ${nextGroupNumber} creado.`
+    await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.createGroup')
   }
@@ -347,17 +404,14 @@ const removeVersusGroup = async (group) => {
   successMessage.value = ''
 
   try {
-    const batch = writeBatch(db)
-
-    group.contestants.forEach((contestant) => {
-      batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestant.id), {
-        matchGroup: null,
-        matchOrder: null,
-      })
-    })
-
-    await batch.commit()
+    await Promise.all(group.contestants.map((contestant) =>
+      updateAdminContestant(props.pollId, contestant.id, {
+        matchGroup: 0,
+        matchOrder: 0,
+      }),
+    ))
     successMessage.value = `Grupo ${group.groupNumber} eliminado.`
+    await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.deleteGroup')
   }
@@ -376,16 +430,15 @@ const moveRoundContestant = async (contestant, direction) => {
 
   try {
     const targetContestant = currentContestants.value[targetIndex]
-    const batch = writeBatch(db)
-
-    batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestant.id), {
+    await Promise.all([
+      updateAdminContestant(props.pollId, contestant.id, {
       order: targetContestant.order,
-    })
-    batch.update(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', targetContestant.id), {
-      order: contestant.order,
-    })
-
-    await batch.commit()
+      }),
+      updateAdminContestant(props.pollId, targetContestant.id, {
+        order: contestant.order,
+      }),
+    ])
+    await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.reorder')
   }
@@ -403,13 +456,19 @@ const saveRoundSettings = async () => {
   isSavingRound.value = true
 
   try {
-    await updateDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId), {
+    const endAt = toApiDate(roundForm.value.endAt)
+    const { contestants: _contestants, artist: _artist, ...roundRest } = round.value || {}
+
+    await updateAdminRound(props.pollId, props.roundId, {
+      ...roundRest,
       title: roundForm.value.title.trim(),
+      type: roundForm.value.type === 'versus' ? 'versus' : 'standard',
       status: roundForm.value.status,
-      endAt: toTimestamp(roundForm.value.endAt),
-      updatedAt: serverTimestamp(),
+      endAt,
+      endsAt: endAt,
     })
     successMessage.value = translate('admin.round.updated')
+    await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.update')
   } finally {
@@ -432,16 +491,19 @@ const confirmRemoveRoundContestant = async () => {
   errorMessage.value = ''
   successMessage.value = ''
   isRemovingContestant.value = true
+  removingContestantId.value = contestantToRemove.value.id
 
   try {
-    await deleteDoc(doc(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants', contestantToRemove.value.id))
+    await deleteAdminContestant(props.pollId, contestantToRemove.value.id)
     isRemoveContestantModalOpen.value = false
     contestantToRemove.value = null
     successMessage.value = translate('admin.round.removed')
+    await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.remove')
   } finally {
     isRemovingContestant.value = false
+    removingContestantId.value = ''
   }
 }
 
@@ -451,15 +513,7 @@ const deleteRound = async () => {
   isDeletingRound.value = true
 
   try {
-    const batch = writeBatch(db)
-    const contestantsSnap = await getDocs(collection(db, 'polls', props.pollId, 'rounds', props.roundId, 'contestants'))
-
-    contestantsSnap.docs.forEach((contestantDoc) => {
-      batch.delete(contestantDoc.ref)
-    })
-
-    batch.delete(doc(db, 'polls', props.pollId, 'rounds', props.roundId))
-    await batch.commit()
+    await deleteAdminRound(props.pollId, props.roundId)
 
     isDeleteModalOpen.value = false
     window.location.href = `/admin/votaciones/${props.pollId}`
@@ -728,7 +782,7 @@ onMounted(async () => {
           <h3 class="mt-1 text-xl font-black text-white">{{ $t('admin.round.assignArtists') }}</h3>
           <p class="mt-1 text-xs text-slate-400">
             <span v-if="roundForm.type === 'versus'">
-              {{ availableArtistsHelp }} Luego crea grupos de 2 artistas para cada duelo.
+              {{ availableArtistsHelp }} Despues genera los VS automaticamente.
             </span>
             <span v-else>{{ availableArtistsHelp }}</span>
           </p>
@@ -736,6 +790,53 @@ onMounted(async () => {
         <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-300">
           {{ currentContestants.length }} participantes
         </p>
+      </div>
+      <p
+        v-if="addingArtistId || removingContestantId || isRemovingContestant"
+        class="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm font-black text-cyan-100"
+      >
+        <i class="fa-solid fa-circle-notch fa-spin mr-2" aria-hidden="true"></i>
+        Actualizando artistas de esta ronda...
+      </p>
+
+      <div
+        v-if="roundForm.type === 'versus'"
+        class="mt-4 rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4 shadow-lg shadow-cyan-950/10"
+      >
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-200">
+              Crear VS rapido
+            </p>
+            <h4 class="mt-2 text-xl font-black text-white">
+              {{ versusCompletedGroups.length ? 'Duelos organizados' : 'Genera los duelos en un clic' }}
+            </h4>
+            <p class="mt-1 text-sm leading-6 text-slate-300">
+              {{ versusSetupHint }}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-300">
+              {{ currentContestants.length }} artistas
+            </span>
+            <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
+              {{ versusCompletedGroups.length }} VS listos
+            </span>
+            <button
+              type="button"
+              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-linear-to-r from-cyan-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-cyan-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="!canGenerateVersus || isGeneratingVersus"
+              @click="generateVersusAuto"
+            >
+              <i
+                v-if="isGeneratingVersus"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ isGeneratingVersus ? 'Generando...' : (versusCompletedGroups.length ? 'Recrear VS auto' : 'Generar VS auto') }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="mt-4 grid gap-4 xl:grid-cols-2">
@@ -769,10 +870,16 @@ onMounted(async () => {
               </div>
               <button
                 type="button"
-                class="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+                class="inline-flex min-w-24 items-center justify-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="Boolean(addingArtistId)"
                 @click="addRoundContestant(artist)"
               >
-                Agregar
+                <i
+                  v-if="addingArtistId === artist.id"
+                  class="fa-solid fa-circle-notch fa-spin"
+                  aria-hidden="true"
+                ></i>
+                {{ addingArtistId === artist.id ? 'Agregando...' : 'Agregar' }}
               </button>
             </div>
             <p v-if="!availableArtists.length" class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400">
@@ -841,10 +948,16 @@ onMounted(async () => {
                 </span>
                 <button
                   type="button"
-                  class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                  class="inline-flex min-w-24 items-center justify-center gap-2 rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="isRemovingContestant"
                   @click="removeRoundContestant(contestant)"
                 >
-                  Quitar
+                  <i
+                    v-if="removingContestantId === contestant.id"
+                    class="fa-solid fa-circle-notch fa-spin"
+                    aria-hidden="true"
+                  ></i>
+                  {{ removingContestantId === contestant.id ? 'Quitando...' : 'Quitar' }}
                 </button>
               </div>
             </div>
@@ -858,31 +971,55 @@ onMounted(async () => {
         v-if="roundForm.type === 'versus'"
         class="mt-4 rounded-2xl border border-white/10 bg-slate-950/35 p-3"
       >
-        <div class="flex items-center justify-between gap-3">
-          <h4 class="text-lg font-black text-white">{{ $t('admin.round.generatedDuels') }}</h4>
-          <div class="flex items-center gap-2">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300">
+              Duelos
+            </p>
+            <h4 class="mt-1 text-lg font-black text-white">{{ $t('admin.round.generatedDuels') }}</h4>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
             <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
               {{ versusGroups.length }} grupos
             </span>
+            <span
+              v-if="versusIncompleteGroups.length"
+              class="rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-100"
+            >
+              {{ versusIncompleteGroups.length }} incompleto
+            </span>
             <button
               type="button"
-              class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              class="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="!canGenerateVersus || isGeneratingVersus"
+              @click="generateVersusAuto"
+            >
+              <i
+                v-if="isGeneratingVersus"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ isGeneratingVersus ? 'Generando...' : 'Auto' }}
+            </button>
+            <button
+              type="button"
+              class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10"
               @click="openGroupModal"
             >
-              Crear grupo
+              Manual
             </button>
           </div>
         </div>
 
-        <div class="mt-3 grid gap-3 lg:grid-cols-2">
+        <div class="mt-3 space-y-3">
           <article
             v-for="group in versusGroups"
             :key="`group-${group.groupNumber}`"
-            class="rounded-2xl border border-white/10 bg-slate-950/45 p-3"
+            class="rounded-3xl border border-white/10 bg-slate-950/45 p-4 transition hover:border-cyan-300/20 hover:bg-slate-950/60"
           >
             <div class="mb-3 flex items-center justify-between gap-3">
               <p class="text-xs font-black uppercase tracking-widest text-fuchsia-300">
-                Grupo {{ group.groupNumber }}
+                Duelo {{ group.groupNumber }}
               </p>
               <button
                 v-if="group.contestants.some((contestant) => contestant.matchGroup)"
@@ -890,37 +1027,57 @@ onMounted(async () => {
                 class="rounded-full border border-red-300/25 bg-red-500/10 px-3 py-1 text-[10px] font-black text-red-100 transition hover:bg-red-500/20"
                 @click="removeVersusGroup(group)"
               >
-                Eliminar grupo
+                Reiniciar
               </button>
             </div>
 
-            <div class="space-y-2">
+            <div class="grid gap-3 md:grid-cols-2">
               <div
-                v-for="(contestant, index) in group.contestants"
-                :key="contestant.id"
-                class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3"
+                v-if="group.contestants[0]"
+                class="flex min-h-20 items-center gap-3 rounded-2xl border border-violet-300/15 bg-white/5 p-3"
               >
                 <span class="grid size-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-[10px] font-black text-slate-300">
-                  {{ index === 0 ? 'A' : 'B' }}
+                  A
                 </span>
                 <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-xs font-black text-white">
                   <img
-                    v-if="getArtistImage(contestant.artist)"
-                    :src="getArtistImage(contestant.artist)"
-                    :alt="contestant.artist?.name"
+                    v-if="getArtistImage(group.contestants[0].artist)"
+                    :src="getArtistImage(group.contestants[0].artist)"
+                    :alt="group.contestants[0].artist?.name"
                     class="size-full object-cover"
                   />
-                  <span v-else>{{ contestant.artist?.name?.charAt(0) || 'A' }}</span>
+                  <span v-else>{{ group.contestants[0].artist?.name?.charAt(0) || 'A' }}</span>
                 </span>
                 <span class="min-w-0">
-                  <span class="block truncate font-black text-white">{{ contestant.artist?.name || 'Artista' }}</span>
-                  <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(contestant.artist) || 'Sin grupo' }}</span>
+                  <span class="block truncate font-black text-white">{{ group.contestants[0].artist?.name || 'Artista' }}</span>
+                  <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(group.contestants[0].artist) || 'Sin grupo' }}</span>
+                </span>
+              </div>
+              <div
+                v-if="group.contestants[1]"
+                class="flex min-h-20 items-center gap-3 rounded-2xl border border-cyan-300/15 bg-white/5 p-3"
+              >
+                <span class="grid size-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-[10px] font-black text-slate-300">
+                  B
+                </span>
+                <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-cyan-500 to-blue-500 text-xs font-black text-white">
+                  <img
+                    v-if="getArtistImage(group.contestants[1].artist)"
+                    :src="getArtistImage(group.contestants[1].artist)"
+                    :alt="group.contestants[1].artist?.name"
+                    class="size-full object-cover"
+                  />
+                  <span v-else>{{ group.contestants[1].artist?.name?.charAt(0) || 'B' }}</span>
+                </span>
+                <span class="min-w-0">
+                  <span class="block truncate font-black text-white">{{ group.contestants[1].artist?.name || 'Artista' }}</span>
+                  <span class="block truncate text-xs text-slate-400">{{ getArtistGroup(group.contestants[1].artist) || 'Sin grupo' }}</span>
                 </span>
               </div>
 
               <p
                 v-if="group.contestants.length === 1"
-                class="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-xs font-bold text-amber-100"
+                class="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-xs font-bold text-amber-100 md:col-span-2"
               >
                 Falta 1 artista para completar este duelo.
               </p>
@@ -938,7 +1095,7 @@ onMounted(async () => {
           v-if="roundForm.type === 'versus' && ungroupedContestants.length"
           class="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-xs font-bold text-amber-100"
         >
-          Tienes {{ ungroupedContestants.length }} artista(s) sin grupo. Usa "Crear grupo" para armar los duelos.
+          Tienes {{ ungroupedContestants.length }} artista(s) sin grupo. Usa "Generar VS auto" para ordenarlos rapido o "Manual" si quieres escoger el par.
         </p>
       </section>
       </article>
@@ -1019,7 +1176,7 @@ onMounted(async () => {
       <div
         v-if="isRemoveContestantModalOpen"
         class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
-        @click.self="isRemoveContestantModalOpen = false"
+        @click.self="!isRemovingContestant && (isRemoveContestantModalOpen = false)"
       >
         <article class="w-full max-w-lg rounded-4xl border border-red-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-red-950/30">
           <p class="text-xs font-black uppercase tracking-[0.28em] text-red-300">
@@ -1063,10 +1220,15 @@ onMounted(async () => {
             </button>
             <button
               type="button"
-              class="rounded-full bg-red-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+              class="inline-flex min-w-40 items-center justify-center gap-2 rounded-full bg-red-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isRemovingContestant"
               @click="confirmRemoveRoundContestant"
             >
+              <i
+                v-if="isRemovingContestant"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
               {{ isRemovingContestant ? 'Quitando...' : 'Sí, quitar artista' }}
             </button>
           </div>
