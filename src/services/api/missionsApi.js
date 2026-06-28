@@ -1,6 +1,16 @@
 import { apiRequest, getStoredAuth } from './client'
 
-export const getMissions = () => apiRequest('/missions')
+export const getMissions = () => {
+  const auth = getStoredAuth()
+
+  if (auth?.accessToken) {
+    return apiRequest('/missions/me', {
+      token: auth.accessToken,
+    })
+  }
+
+  return apiRequest('/missions')
+}
 
 export const completeMission = (missionId, payload = {}) => {
   const auth = getStoredAuth()

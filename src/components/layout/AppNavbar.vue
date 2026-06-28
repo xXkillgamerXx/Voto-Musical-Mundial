@@ -366,6 +366,18 @@ onUnmounted(() => {
               {{ $t("nav.myProfile") }}
             </a>
             <a
+              href="/#misiones"
+              class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              Misiones
+            </a>
+            <a
+              href="/notificaciones"
+              class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              Notificaciones
+            </a>
+            <a
               v-if="isAdmin"
               href="/admin"
               class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
@@ -501,6 +513,22 @@ onUnmounted(() => {
             @click="isMenuOpen = false"
           >
             {{ $t("nav.myProfile") }}
+          </a>
+          <a
+            v-if="isSignedInUser"
+            href="/#misiones"
+            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
+            @click="isMenuOpen = false"
+          >
+            Misiones
+          </a>
+          <a
+            v-if="isSignedInUser"
+            href="/notificaciones"
+            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
+            @click="isMenuOpen = false"
+          >
+            Notificaciones
           </a>
           <a
             v-if="isSignedInUser && isAdmin"

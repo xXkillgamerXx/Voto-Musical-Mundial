@@ -61,12 +61,23 @@ const subscribeRealtime = (userId) => {
 }
 
 const giftAmount = computed(() =>
-  Number(giftNotification.value?.payload?.amount || 0).toLocaleString('es'),
+  Number(
+    giftNotification.value?.payload?.amount ||
+    giftNotification.value?.payload?.rewardPoints ||
+    0,
+  ).toLocaleString('es'),
 )
+const isMissionGift = computed(() => giftNotification.value?.type === 'mission_completed')
 const giftMessage = computed(() =>
-  giftNotification.value?.payload?.message || `Recibiste ${giftAmount.value} puntos de regalo.`,
+  giftNotification.value?.payload?.message ||
+  (isMissionGift.value
+    ? `Completaste una misión y ganaste ${giftAmount.value} puntos.`
+    : `Recibiste ${giftAmount.value} puntos de regalo.`),
 )
 const giftSender = computed(() =>
+  isMissionGift.value
+    ? 'Sistema de misiones'
+    :
   giftNotification.value?.payload?.senderName ||
   giftNotification.value?.payload?.adminName ||
   'Equipo Voto Musica Mundial',
@@ -124,7 +135,9 @@ const loadGiftNotification = async () => {
   try {
     const notifications = await getNotifications(10)
     const nextGift = (notifications || []).find(
-      (notification) => notification.type === 'admin_points_gift' && !notification.readAt,
+      (notification) =>
+        !notification.readAt &&
+        (notification.type === 'admin_points_gift' || notification.type === 'mission_completed'),
     )
 
     if (nextGift) {
@@ -158,9 +171,17 @@ const closeGift = async () => {
 
 const revealGift = () => {
   giftRevealed.value = true
+  const pointsAfterValue = Number(giftNotification.value?.payload?.pointsAfter || 0)
+  const rewardValue = Number(
+    giftNotification.value?.payload?.amount ||
+    giftNotification.value?.payload?.rewardPoints ||
+    0,
+  )
+
+  applyGiftPoints(pointsAfterValue)
   animatePointsAfter(
-    giftNotification.value?.payload?.pointsBefore || 0,
-    giftNotification.value?.payload?.pointsAfter || 0,
+    giftNotification.value?.payload?.pointsBefore || Math.max(0, pointsAfterValue - rewardValue),
+    pointsAfterValue,
   )
 }
 
@@ -223,13 +244,13 @@ onUnmounted(() => {
             <i class="fa-solid fa-gift text-slate-950" aria-hidden="true"></i>
           </div>
           <p class="mt-6 text-xs font-black uppercase tracking-[0.32em] text-amber-200">
-            {{ giftRevealed ? 'Regalo abierto' : 'Tienes un regalo' }}
+            {{ giftRevealed ? (isMissionGift ? 'Premio recibido' : 'Regalo abierto') : (isMissionGift ? 'Misión completada' : 'Tienes un regalo') }}
           </p>
           <h2 class="mt-3 text-5xl font-black leading-none text-white sm:text-7xl">
-            {{ giftRevealed ? `+${giftAmount} pts` : 'Sorpresa' }}
+            {{ giftRevealed ? `+${giftAmount} pts` : (isMissionGift ? 'Premio' : 'Sorpresa') }}
           </h2>
           <p class="mx-auto mt-4 max-w-md text-base font-bold leading-7 text-slate-300">
-            {{ giftRevealed ? giftMessage : 'Alguien del equipo te envió un regalo. Ábrelo para descubrir cuántos puntos recibiste.' }}
+            {{ giftRevealed ? giftMessage : (isMissionGift ? 'Completaste una misión. Abre tu premio para recibir los puntos.' : 'Alguien del equipo te envió un regalo. Ábrelo para descubrir cuántos puntos recibiste.') }}
           </p>
 
           <div

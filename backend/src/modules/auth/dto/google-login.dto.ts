@@ -10,4 +10,8 @@ export class GoogleLoginDto {
   @IsString()
   @Length(20, 4096)
   accessToken?: string;
+
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }

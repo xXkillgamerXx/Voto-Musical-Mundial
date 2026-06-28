@@ -15,6 +15,33 @@ export class MissionsService {
     return serialize(missions);
   }
 
+  async findForUser(userId: bigint) {
+    const missions = await this.prisma.mission.findMany({
+      where: { active: true },
+      include: {
+        completions: {
+          where: { userId },
+          take: 1,
+        },
+      },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return serialize(
+      missions.map((mission) => {
+        const completion = mission.completions[0] || null;
+        const { completions, ...missionData } = mission;
+
+        return {
+          ...missionData,
+          progress: completion?.progress || 0,
+          completedAt: completion?.completedAt || null,
+          rewardedAt: completion?.rewardedAt || null,
+        };
+      }),
+    );
+  }
+
   async complete(missionId: string, userId: bigint) {
     const mission = await this.prisma.mission.findFirst({
       where: {
@@ -42,17 +69,19 @@ export class MissionsService {
       const nextProgress = Math.min(Math.max(completion.progress, 1), mission.target);
 
       if (completion.rewardedAt) {
-        return completion;
+        return { completion, awarded: false, pointsAfter: null };
       }
 
       if (nextProgress < mission.target) {
-        return tx.missionCompletion.update({
+        const updatedCompletion = await tx.missionCompletion.update({
           where: { id: completion.id },
           data: { progress: nextProgress },
         });
+
+        return { completion: updatedCompletion, awarded: false, pointsAfter: null };
       }
 
-      await tx.user.update({
+      const updatedUser = await tx.user.update({
         where: { id: userId },
         data: { points: { increment: mission.rewardPoints } },
       });
@@ -62,13 +91,18 @@ export class MissionsService {
           userId,
           type: 'mission_completed',
           payload: {
+            title: 'Mision completada',
+            message: `Completaste "${mission.title}" y ganaste ${mission.rewardPoints} puntos.`,
             missionId: mission.id.toString(),
+            missionTitle: mission.title,
             rewardPoints: mission.rewardPoints,
+            pointsAfter: updatedUser.points.toString(),
+            url: '/notificaciones',
           },
         },
       });
 
-      return tx.missionCompletion.update({
+      const updatedCompletion = await tx.missionCompletion.update({
         where: { id: completion.id },
         data: {
           progress: mission.target,
@@ -76,9 +110,15 @@ export class MissionsService {
           rewardedAt: new Date(),
         },
       });
+
+      return {
+        completion: updatedCompletion,
+        awarded: true,
+        pointsAfter: updatedUser.points,
+      };
     });
 
-    return serialize({ mission, completion: result });
+    return serialize({ mission, ...result });
   }
 
   assertManualMissionAllowed(type: string) {

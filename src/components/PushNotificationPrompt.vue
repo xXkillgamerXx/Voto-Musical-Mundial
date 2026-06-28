@@ -32,6 +32,8 @@ const hasCookieConsentForPush = () => {
 }
 
 const userName = computed(() => currentUser.value?.displayName || currentUser.value?.username || 'fan')
+const friendlyPushError =
+  'No pudimos activar las alertas en este navegador. Puedes seguir usando la web normal y volver a intentarlo mas tarde.'
 
 const syncVisibility = async () => {
   errorMessage.value = ''
@@ -73,17 +75,15 @@ const enableNotifications = async () => {
     }
 
     if (result.permission === 'denied') {
-      errorMessage.value = 'El navegador bloqueo las notificaciones. Puedes activarlas desde ajustes del sitio.'
+      errorMessage.value = 'Las alertas estan bloqueadas en este navegador. Puedes activarlas desde los ajustes del sitio cuando quieras.'
     } else if (result.reason === 'token_error') {
-      errorMessage.value = result.code
-        ? `Firebase no pudo registrar este navegador (${result.code}). Revisa la consola para el detalle.`
-        : 'Firebase no pudo registrar este navegador. Revisa la consola para el detalle.'
+      errorMessage.value = friendlyPushError
     } else {
-      errorMessage.value = 'No se pudieron activar las notificaciones en este navegador.'
+      errorMessage.value = friendlyPushError
     }
   } catch (error) {
     console.error('[push] Notification permission failed', error)
-    errorMessage.value = error?.message || 'No se pudieron activar las notificaciones.'
+    errorMessage.value = friendlyPushError
   } finally {
     isEnabling.value = false
   }

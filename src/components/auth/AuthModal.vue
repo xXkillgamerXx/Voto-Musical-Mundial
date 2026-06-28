@@ -137,7 +137,11 @@ const handleGoogleAccess = async () => {
       throw new Error("El navegador bloqueo el popup de Google.");
     }
     const accessToken = await waitForGooglePopup(popup);
-    await loginWithGoogle({ accessToken });
+    const referralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toLowerCase();
+    await loginWithGoogle({
+      accessToken,
+      ...(referralCode ? { referralCode } : {}),
+    });
     emit("close");
   } catch (error) {
     errorMessage.value = friendlyAuthError(error);

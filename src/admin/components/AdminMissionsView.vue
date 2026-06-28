@@ -39,6 +39,37 @@ const missionTypes = [
   { value: "manual", label: "Manual / externa" },
 ];
 
+const missionCreationTypes = [
+  {
+    key: "referral_signup",
+    title: "Invitar a un amigo",
+    description:
+      "El usuario comparte su enlace personal. Cuando un amigo se registra con ese link, la mision avanza y ambos pueden ganar puntos.",
+    category: "referral",
+    type: "referral_signup",
+    icon: "fa-solid fa-user-plus",
+    target: 1,
+    rewardPoints: 50,
+    inviteeRewardPoints: 50,
+    actionUrl: "",
+    helper: "Validacion real por codigo de referido en el registro.",
+  },
+  {
+    key: "follow_social",
+    title: "Seguirnos en redes sociales",
+    description:
+      "El usuario abre la red social configurada para seguir la cuenta oficial y reclamar los puntos de la mision.",
+    category: "social",
+    type: "follow_social",
+    icon: "fa-solid fa-user-plus",
+    target: 1,
+    rewardPoints: 5,
+    inviteeRewardPoints: 0,
+    actionUrl: "https://instagram.com/",
+    helper: "Se valida por accion/clic al abrir la red social configurada.",
+  },
+];
+
 const missionTemplates = [
   {
     category: "social",
@@ -203,6 +234,8 @@ const emptyForm = {
   actionUrl: "",
   target: 1,
   rewardPoints: 25,
+  inviteeRewardPoints: 0,
+  frequency: "once",
   icon: "fa-solid fa-check",
   order: 1,
   active: true,
@@ -214,10 +247,12 @@ const form = ref({ ...emptyForm });
 const editingMissionId = ref("");
 const isLoading = ref(true);
 const isSaving = ref(false);
+const isTypeSelectorOpen = ref(false);
 const isMissionModalOpen = ref(false);
 const isTemplatesModalOpen = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
+const selectedMissionTypeKey = ref("");
 
 const formTitle = computed(() =>
   editingMissionId.value ? "Editar mision" : "Crear mision",
@@ -227,6 +262,38 @@ const typeLabel = (type) =>
   missionTypes.find((missionType) => missionType.value === type)?.label || "Manual";
 const categoryLabel = (category) =>
   missionCategories.find((missionCategory) => missionCategory.value === category)?.label || "General";
+const selectedCreationType = computed(() =>
+  missionCreationTypes.find((missionType) => missionType.key === selectedMissionTypeKey.value),
+);
+const isReferralSignupMission = computed(() => form.value.type === "referral_signup");
+const isShareMission = computed(() => String(form.value.type || "").startsWith("share_"));
+const isFollowSocialMission = computed(() => form.value.type === "follow_social");
+const shouldShowAdvancedFields = computed(
+  () => !selectedCreationType.value || selectedCreationType.value.key === "manual",
+);
+const shouldShowActionUrl = computed(() => shouldShowAdvancedFields.value || isFollowSocialMission.value);
+const targetLabel = computed(() => {
+  if (isReferralSignupMission.value) {
+    return "Cantidad de amigos";
+  }
+
+  if (isFollowSocialMission.value) {
+    return "Acciones requeridas";
+  }
+
+  if (isShareMission.value) {
+    return "Cantidad de compartidos";
+  }
+
+  return "Meta";
+});
+const rewardLabel = computed(() => {
+  if (isReferralSignupMission.value) {
+    return "Puntos para quien invita";
+  }
+
+  return "Puntos";
+});
 const templateKey = (mission) =>
   `${mission.category || "general"}:${mission.type || "manual"}:${mission.title || ""}:${Number(mission.target || 1)}`;
 const isTemplateCreated = (template) =>
@@ -241,6 +308,7 @@ const missionErrorMessage = (error, fallbackMessage) => {
 
 const resetForm = () => {
   editingMissionId.value = "";
+  selectedMissionTypeKey.value = "";
   form.value = {
     ...emptyForm,
     order: missions.value.length + 1,
@@ -249,6 +317,33 @@ const resetForm = () => {
 
 const openCreateMission = () => {
   resetForm();
+  isTypeSelectorOpen.value = true;
+};
+
+const closeTypeSelector = () => {
+  isTypeSelectorOpen.value = false;
+};
+
+const createMissionFromType = (missionType) => {
+  editingMissionId.value = "";
+  selectedMissionTypeKey.value = missionType.key;
+  form.value = {
+    ...emptyForm,
+    title: missionType.title,
+    description: missionType.description,
+    category: missionType.category,
+    type: missionType.type,
+    actionUrl: missionType.actionUrl || "",
+    target: missionType.target,
+    rewardPoints: missionType.rewardPoints,
+    inviteeRewardPoints: missionType.inviteeRewardPoints || 0,
+    icon: missionType.icon,
+    order: missions.value.length + 1,
+    active: true,
+    featured: missionType.type === "referral_signup",
+  };
+  isTypeSelectorOpen.value = false;
+  isTemplatesModalOpen.value = false;
   isMissionModalOpen.value = true;
 };
 
@@ -275,12 +370,16 @@ const editMission = (mission) => {
     actionUrl: mission.actionUrl || mission.url || "",
     target: Number(mission.target || 1),
     rewardPoints: Number(mission.rewardPoints || 0),
+    inviteeRewardPoints: Number(mission.metadata?.inviteeRewardPoints || 0),
+    frequency: mission.metadata?.frequency || "once",
     icon: mission.icon || "fa-solid fa-check",
     order: Number(mission.order || 1),
     active: mission.active !== false,
     featured: Boolean(mission.featured),
   };
+  selectedMissionTypeKey.value = mission.type || "";
   isTemplatesModalOpen.value = false;
+  isTypeSelectorOpen.value = false;
   isMissionModalOpen.value = true;
 };
 
@@ -292,6 +391,8 @@ const missionPayload = () => ({
   actionUrl: form.value.actionUrl.trim(),
   target: Math.max(1, Math.floor(Number(form.value.target || 1))),
   rewardPoints: Math.max(0, Math.floor(Number(form.value.rewardPoints || 0))),
+  inviteeRewardPoints: Math.max(0, Math.floor(Number(form.value.inviteeRewardPoints || 0))),
+  frequency: form.value.frequency || "once",
   icon: form.value.icon.trim() || "fa-solid fa-check",
   order: Math.max(1, Math.floor(Number(form.value.order || 1))),
   active: Boolean(form.value.active),
@@ -485,6 +586,52 @@ onMounted(async () => {
     </article>
 
     <div
+      v-if="isTypeSelectorOpen"
+      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
+    >
+      <article class="w-full max-w-5xl rounded-3xl border border-fuchsia-300/20 bg-[#090b19] p-5 shadow-2xl shadow-fuchsia-950/40 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+              Crear mision
+            </p>
+            <h2 class="mt-2 text-2xl font-black text-white">Elige el tipo de mision</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-400">
+              Primero selecciona que accion debe cumplir el usuario. Luego se abre el modal con los datos correctos para configurar esa mision.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+            aria-label="Cerrar"
+            @click="closeTypeSelector"
+          >
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div class="mt-6 grid gap-4 md:grid-cols-3">
+          <button
+            v-for="missionType in missionCreationTypes"
+            :key="missionType.key"
+            type="button"
+            class="group rounded-3xl border border-white/10 bg-white/5 p-5 text-left transition hover:border-fuchsia-300/35 hover:bg-white/10"
+            @click="createMissionFromType(missionType)"
+          >
+            <span class="grid size-12 place-items-center rounded-2xl border border-fuchsia-300/20 bg-fuchsia-400/10 text-fuchsia-100">
+              <i :class="missionType.icon" aria-hidden="true"></i>
+            </span>
+            <span class="mt-4 block text-lg font-black text-white">{{ missionType.title }}</span>
+            <span class="mt-2 block text-sm leading-6 text-slate-400">{{ missionType.description }}</span>
+            <span class="mt-4 block rounded-2xl border border-cyan-300/15 bg-cyan-400/10 px-3 py-2 text-xs font-bold leading-5 text-cyan-100">
+              {{ missionType.helper }}
+            </span>
+          </button>
+        </div>
+      </article>
+    </div>
+
+    <div
       v-if="isMissionModalOpen"
       class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
     >
@@ -498,6 +645,12 @@ onMounted(async () => {
             <p class="mt-2 text-sm leading-6 text-slate-400">
               Configura misiones para mostrar en el home. El tipo deja preparado que luego se pueda validar automaticamente.
             </p>
+            <p
+              v-if="selectedCreationType"
+              class="mt-3 inline-flex rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-xs font-black uppercase tracking-widest text-cyan-100"
+            >
+              {{ selectedCreationType.title }}
+            </p>
           </div>
           <button
             type="button"
@@ -510,6 +663,36 @@ onMounted(async () => {
         </div>
 
         <form class="mt-6 space-y-4" @submit.prevent="saveMission">
+        <div
+          v-if="isReferralSignupMission"
+          class="rounded-3xl border border-emerald-300/20 bg-emerald-400/10 p-4"
+        >
+          <p class="text-sm font-black text-emerald-100">Mision de referido real</p>
+          <p class="mt-1 text-sm leading-6 text-emerald-100/75">
+            El usuario comparte su link personal. Cuando el amigo se registra con ese codigo, el sistema puede completar la mision y entregar puntos a ambos.
+          </p>
+        </div>
+
+        <div
+          v-else-if="isShareMission"
+          class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4"
+        >
+          <p class="text-sm font-black text-cyan-100">Mision de compartir</p>
+          <p class="mt-1 text-sm leading-6 text-cyan-100/75">
+            La web valida el clic en compartir. Sirve para una meta simple como 1 compartir o una meta mayor como 5 compartidos.
+          </p>
+        </div>
+
+        <div
+          v-else-if="isFollowSocialMission"
+          class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4"
+        >
+          <p class="text-sm font-black text-cyan-100">Mision de redes sociales</p>
+          <p class="mt-1 text-sm leading-6 text-cyan-100/75">
+            El usuario toca el boton de la mision, se abre la red social configurada y puede reclamar los puntos por esa accion.
+          </p>
+        </div>
+
         <label class="block">
           <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Titulo</span>
           <input
@@ -530,7 +713,7 @@ onMounted(async () => {
           ></textarea>
         </label>
 
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div v-if="shouldShowAdvancedFields" class="grid gap-4 sm:grid-cols-2">
           <label class="block">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Categoria</span>
             <select
@@ -574,8 +757,10 @@ onMounted(async () => {
           </label>
         </div>
 
-        <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">URL de accion</span>
+        <label v-if="shouldShowActionUrl" class="block">
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+            {{ isFollowSocialMission ? "Enlace de la red social" : "URL de accion" }}
+          </span>
           <input
             v-model="form.actionUrl"
             type="url"
@@ -583,13 +768,13 @@ onMounted(async () => {
             placeholder="https://instagram.com/tu-cuenta"
           />
           <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
-            Para seguir redes, likes o comentarios, pega aqui la URL oficial que abrira el boton Hacer mision.
+            {{ isFollowSocialMission ? "Pega aqui el enlace oficial de Instagram, X, Facebook, TikTok u otra red." : "Para seguir redes, likes o comentarios, pega aqui la URL oficial que abrira el boton Hacer mision." }}
           </span>
         </label>
 
         <div class="grid gap-4 sm:grid-cols-3">
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Meta</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ targetLabel }}</span>
             <input
               v-model.number="form.target"
               type="number"
@@ -600,7 +785,7 @@ onMounted(async () => {
           </label>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Puntos</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ rewardLabel }}</span>
             <input
               v-model.number="form.rewardPoints"
               type="number"
@@ -610,7 +795,18 @@ onMounted(async () => {
             />
           </label>
 
-          <label class="block">
+          <label v-if="isReferralSignupMission" class="block">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Puntos amigo</span>
+            <input
+              v-model.number="form.inviteeRewardPoints"
+              type="number"
+              min="0"
+              step="1"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+            />
+          </label>
+
+          <label v-if="shouldShowAdvancedFields" class="block" :class="isReferralSignupMission ? 'sm:col-span-3' : ''">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Orden</span>
             <input
               v-model.number="form.order"
@@ -622,12 +818,31 @@ onMounted(async () => {
           </label>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
+        <label class="block">
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Frecuencia</span>
+          <select
+            v-model="form.frequency"
+            class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+          >
+            <option value="once">Una sola vez</option>
+            <option value="daily">Diaria</option>
+            <option value="weekly">Semanal</option>
+            <option value="monthly">Mensual</option>
+          </select>
+          <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
+            Esto queda guardado en la configuracion de la mision para aplicar el limite cuando activemos la validacion automatica completa.
+          </span>
+        </label>
+
+        <div class="grid gap-3" :class="shouldShowAdvancedFields ? 'sm:grid-cols-2' : 'sm:grid-cols-1'">
           <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-black text-slate-200">
             <input v-model="form.active" type="checkbox" class="size-4 accent-fuchsia-500" />
             Activa en el home
           </label>
-          <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-black text-slate-200">
+          <label
+            v-if="shouldShowAdvancedFields"
+            class="flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-black text-slate-200"
+          >
             <input v-model="form.featured" type="checkbox" class="size-4 accent-fuchsia-500" />
             Destacada
           </label>

@@ -12,6 +12,12 @@ export class MissionsController {
     return this.missions.findAll();
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  findForMe(@CurrentUser() user: { id: bigint }) {
+    return this.missions.findForUser(user.id);
+  }
+
   @Post(':id/complete')
   @UseGuards(JwtAuthGuard)
   complete(@Param('id') id: string, @CurrentUser() user: { id: bigint }) {

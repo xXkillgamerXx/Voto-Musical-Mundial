@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { User, UserRole } from '@prisma/client';
+import { Prisma, User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -40,9 +40,7 @@ export class AuthService {
     const normalizedEmail = dto.email.toLowerCase().trim();
     const normalizedUsername = dto.username.toLowerCase().trim();
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const referrer = dto.referralCode
-      ? await this.prisma.referralCode.findUnique({ where: { code: dto.referralCode.toLowerCase().trim() } })
-      : null;
+    const referrer = await this.findReferrer(dto.referralCode);
 
     const existing = await this.prisma.user.findFirst({
       where: { OR: [{ email: normalizedEmail }, { username: normalizedUsername }] },
@@ -105,6 +103,7 @@ export class AuthService {
             referralSignups: { increment: 1 },
           },
         });
+        await this.applyReferralSignupMissions(tx, referrer.userId);
       }
 
       return created;
@@ -149,6 +148,7 @@ export class AuthService {
       ? await this.googlePayloadFromCredential(client, clientId, dto.credential)
       : await this.googlePayloadFromAccessToken(client, clientId, dto.accessToken || '');
     const email = payload?.email?.toLowerCase().trim();
+    const referrer = await this.findReferrer(dto.referralCode);
 
     if (!payload?.sub || !email || !payload.email_verified) {
       throw new UnauthorizedException('No se pudo validar la cuenta de Google.');
@@ -193,6 +193,7 @@ export class AuthService {
           displayName: payload.name || username,
           photoUrl: payload.picture || null,
           referralCode: username,
+          referredById: referrer?.userId || null,
           points: 25,
           metadata: {
             googleSub: payload.sub,
@@ -209,6 +210,35 @@ export class AuthService {
           username,
         },
       });
+
+      if (referrer && referrer.userId !== created.id) {
+        const referrerUser = await tx.user.findUnique({ where: { id: referrer.userId } });
+        const nextSignupCount = Number(referrerUser?.referralSignups || 0) + 1;
+        const milestoneBonus = REFERRAL_MILESTONE_BONUSES[nextSignupCount] || 0;
+        const pointsAwarded = REFERRAL_SIGNUP_POINTS + milestoneBonus;
+
+        await tx.referralSignup.create({
+          data: {
+            userId: created.id,
+            referrerId: referrer.userId,
+            referralCode: referrer.code,
+            pointsAwarded,
+            signupPoints: REFERRAL_SIGNUP_POINTS,
+            milestoneBonus,
+            milestone: milestoneBonus ? nextSignupCount : null,
+          },
+        });
+        await tx.user.update({
+          where: { id: referrer.userId },
+          data: {
+            points: { increment: pointsAwarded },
+            referralPoints: { increment: pointsAwarded },
+            referralSignups: { increment: 1 },
+          },
+        });
+        await this.applyReferralSignupMissions(tx, referrer.userId);
+      }
+
       return created;
     });
 
@@ -346,6 +376,85 @@ export class AuthService {
       spentPoints: Number(user.spentPoints),
       referralCode: user.referralCode,
     };
+  }
+
+  private async findReferrer(referralCode?: string) {
+    const code = String(referralCode || '').trim().toLowerCase();
+    if (!code) {
+      return null;
+    }
+
+    return this.prisma.referralCode.findUnique({ where: { code } });
+  }
+
+  private async applyReferralSignupMissions(
+    tx: Prisma.TransactionClient,
+    referrerId: bigint,
+  ) {
+    const missions = await tx.mission.findMany({
+      where: {
+        active: true,
+        type: { in: ['referral_signup', 'referral_signup_milestone'] },
+      },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    for (const mission of missions) {
+      const completion = await tx.missionCompletion.upsert({
+        where: { missionId_userId: { missionId: mission.id, userId: referrerId } },
+        update: {
+          progress: { increment: 1 },
+        },
+        create: {
+          missionId: mission.id,
+          userId: referrerId,
+          progress: 1,
+        },
+      });
+      const nextProgress = Math.min(Math.max(completion.progress, 1), mission.target);
+
+      if (completion.rewardedAt) {
+        continue;
+      }
+
+      if (nextProgress < mission.target) {
+        await tx.missionCompletion.update({
+          where: { id: completion.id },
+          data: { progress: nextProgress },
+        });
+        continue;
+      }
+
+      const updatedUser = await tx.user.update({
+        where: { id: referrerId },
+        data: { points: { increment: mission.rewardPoints } },
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: referrerId,
+          type: 'mission_completed',
+          payload: {
+            title: 'Mision completada',
+            message: `Completaste "${mission.title}" y ganaste ${mission.rewardPoints} puntos.`,
+            missionId: mission.id.toString(),
+            missionTitle: mission.title,
+            rewardPoints: mission.rewardPoints,
+            pointsAfter: updatedUser.points.toString(),
+            url: '/notificaciones',
+          },
+        },
+      });
+
+      await tx.missionCompletion.update({
+        where: { id: completion.id },
+        data: {
+          progress: mission.target,
+          completedAt: new Date(),
+          rewardedAt: new Date(),
+        },
+      });
+    }
   }
 
   private async availableUsername(baseUsername: string, suffix: string) {
