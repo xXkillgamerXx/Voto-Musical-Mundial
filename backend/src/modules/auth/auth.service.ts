@@ -78,13 +78,15 @@ export class AuthService {
         },
       });
 
+      let createdUser = created;
+
       if (referrer && referrer.userId !== created.id) {
         const referrerUser = await tx.user.findUnique({ where: { id: referrer.userId } });
         const nextSignupCount = Number(referrerUser?.referralSignups || 0) + 1;
         const milestoneBonus = REFERRAL_MILESTONE_BONUSES[nextSignupCount] || 0;
         const pointsAwarded = REFERRAL_SIGNUP_POINTS + milestoneBonus;
 
-        await tx.referralSignup.create({
+        const referralSignup = await tx.referralSignup.create({
           data: {
             userId: created.id,
             referrerId: referrer.userId,
@@ -103,10 +105,11 @@ export class AuthService {
             referralSignups: { increment: 1 },
           },
         });
+        createdUser = await this.applyReferralSignupBonus(tx, created, referralSignup.id);
         await this.applyReferralSignupMissions(tx, referrer.userId);
       }
 
-      return created;
+      return createdUser;
     }).catch((error) => {
       if (error?.code === 'P2002') {
         throw new ConflictException('Ese correo o username ya esta registrado.');
@@ -211,13 +214,15 @@ export class AuthService {
         },
       });
 
+      let createdUser = created;
+
       if (referrer && referrer.userId !== created.id) {
         const referrerUser = await tx.user.findUnique({ where: { id: referrer.userId } });
         const nextSignupCount = Number(referrerUser?.referralSignups || 0) + 1;
         const milestoneBonus = REFERRAL_MILESTONE_BONUSES[nextSignupCount] || 0;
         const pointsAwarded = REFERRAL_SIGNUP_POINTS + milestoneBonus;
 
-        await tx.referralSignup.create({
+        const referralSignup = await tx.referralSignup.create({
           data: {
             userId: created.id,
             referrerId: referrer.userId,
@@ -236,10 +241,11 @@ export class AuthService {
             referralSignups: { increment: 1 },
           },
         });
+        createdUser = await this.applyReferralSignupBonus(tx, created, referralSignup.id);
         await this.applyReferralSignupMissions(tx, referrer.userId);
       }
 
-      return created;
+      return createdUser;
     });
 
     return this.authResponse(user);
@@ -385,6 +391,35 @@ export class AuthService {
     }
 
     return this.prisma.referralCode.findUnique({ where: { code } });
+  }
+
+  private async applyReferralSignupBonus(
+    tx: Prisma.TransactionClient,
+    user: User,
+    referralSignupId?: bigint,
+  ) {
+    const updatedUser = await tx.user.update({
+      where: { id: user.id },
+      data: { points: { increment: REFERRAL_SIGNUP_POINTS } },
+    });
+
+    await tx.notification.create({
+      data: {
+        userId: user.id,
+        type: 'admin_points_gift',
+        payload: {
+          amount: REFERRAL_SIGNUP_POINTS,
+          pointsBefore: user.points.toString(),
+          pointsAfter: updatedUser.points.toString(),
+          title: 'Regalo de bienvenida',
+          message: `Recibiste ${REFERRAL_SIGNUP_POINTS} puntos por registrarte con un enlace de invitación.`,
+          referralSignupId: referralSignupId?.toString() || null,
+          source: 'referral_signup',
+        },
+      },
+    });
+
+    return updatedUser;
   }
 
   private async applyReferralSignupMissions(
