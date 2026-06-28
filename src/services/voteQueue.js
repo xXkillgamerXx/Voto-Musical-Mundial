@@ -1,6 +1,6 @@
 import { castVote } from "./api/votesApi";
 
-const DEFAULT_FLUSH_MS = 1500;
+const DEFAULT_FLUSH_MS = 500;
 const DEFAULT_SHARD_COUNT = 512;
 const MAX_BATCH_VOTES = 1000;
 

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
+import { getStoredAuth } from '../services/api/client'
 import { subscribePollRealtime } from '../services/api/realtimeApi'
 
 const artists = ref([])
@@ -31,6 +32,32 @@ const getArtist = (artistId) => artists.value.find((artist) => artist.id === art
 const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
 
+const localUserForVote = (vote) => {
+  const authUser = getStoredAuth()?.user
+  return authUser?.id && String(authUser.id) === String(vote?.userId || '') ? authUser : null
+}
+const userDisplayName = (vote) => {
+  const localUser = localUserForVote(vote)
+  return (
+    vote?.userDisplayName ||
+    vote?.username ||
+    localUser?.displayName ||
+    localUser?.username ||
+    userLabel(vote?.userId || vote?.anonymousId)
+  )
+}
+const userPhoto = (vote) => {
+  const localUser = localUserForVote(vote)
+  return (
+    vote?.userPhotoUrl ||
+    vote?.userPhotoURL ||
+    vote?.photoUrl ||
+    vote?.photoURL ||
+    localUser?.photoUrl ||
+    localUser?.photoURL ||
+    ''
+  )
+}
 const formatTime = (createdAt) => {
   const date = createdAt?.toDate?.()
 
@@ -76,6 +103,9 @@ const syncPollRealtimeSubscriptions = (pollRows) => {
               contestantId: vote.contestantId ? String(vote.contestantId) : null,
               artistId: String(vote.artistId || ''),
               userId: vote.userId || vote.anonymousId || `live-${Date.now()}`,
+              username: vote.username || '',
+              userDisplayName: vote.userDisplayName || '',
+              userPhotoUrl: vote.userPhotoUrl || vote.userPhotoURL || '',
               amount: Number(vote.amount || 1),
               createdAt: dateLikeNow(),
             },
@@ -93,7 +123,8 @@ const realActivities = computed(() =>
     const artistName = artist?.name || 'Artista'
 
     return {
-      user: userLabel(vote.userId),
+      user: userDisplayName(vote),
+      userPhoto: userPhoto(vote),
       artist: artistName,
       artistImage: getArtistImage(artist),
       time: formatTime(vote.createdAt),
@@ -160,7 +191,8 @@ const buildPublicPollActivities = (pollRows) => {
     .filter((entry) => entry.artistId && Number(entry.amount || entry.votes || 0) > 0)
     .slice(0, 8)
     .map((entry, index) => ({
-      user: entry.userDisplayName || userLabel(entry.userId),
+      user: entry.userDisplayName || entry.username || userLabel(entry.userId),
+      userPhoto: entry.userPhotoUrl || entry.userPhotoURL || entry.photoUrl || entry.photoURL || '',
       artist: getArtist(entry.artistId)?.name || 'Artista',
       artistImage: getArtistImage(getArtist(entry.artistId)),
       time: 'en vivo',
@@ -265,8 +297,14 @@ onUnmounted(() => {
           </div>
 
           <div class="relative z-10 flex min-h-18 items-center gap-3 pr-24 sm:min-h-24 sm:gap-4 sm:pr-60">
-            <span class="relative grid size-12 shrink-0 place-items-center rounded-full bg-linear-to-br text-base font-black shadow-lg shadow-black/30 ring-2 ring-white/10 sm:size-16 sm:text-xl" :class="activity.color">
-              {{ activity.user.charAt(0) }}
+            <span class="relative grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-linear-to-br text-base font-black shadow-lg shadow-black/30 ring-2 ring-white/10 sm:size-16 sm:text-xl" :class="activity.color">
+              <img
+                v-if="activity.userPhoto"
+                :src="activity.userPhoto"
+                :alt="activity.user"
+                class="size-full object-cover"
+              />
+              <span v-else>{{ activity.user.charAt(0) }}</span>
             </span>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">

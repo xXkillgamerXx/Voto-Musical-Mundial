@@ -24,6 +24,8 @@ const DEFAULT_COOLDOWN_MINUTES = 60;
 // Anonymous requests are always forced to 1 (see castVote).
 const MAX_BATCH_VOTES = 100;
 const DEFAULT_POINTS_PER_VOTE = 1;
+const DEFAULT_USER_VOTES_PER_MINUTE_LIMIT = 3000;
+const DEFAULT_IP_VOTES_PER_MINUTE_LIMIT = 30000;
 
 @Injectable()
 export class VotesService {
@@ -73,6 +75,20 @@ export class VotesService {
     const counterKey = `votes:poll:${context.poll.id.toString()}:round:${roundKey}`;
     const rankingKey = `ranking:poll:${context.poll.id.toString()}:round:${roundKey}`;
     const channel = `poll:${context.poll.id.toString()}:votes`;
+    const voteUser = identity.type === 'user' && identity.userId
+      ? await this.prisma.user.findUnique({
+        where: { id: identity.userId },
+        select: {
+          username: true,
+          displayName: true,
+          photoUrl: true,
+          points: true,
+          spentPoints: true,
+        },
+      })
+      : null;
+    const userDisplayName = voteUser?.displayName || voteUser?.username || '';
+    const userPhotoUrl = voteUser?.photoUrl || '';
 
     const streamPayload = {
       pollId: context.poll.id.toString(),
@@ -80,6 +96,9 @@ export class VotesService {
       contestantId: context.contestant.id.toString(),
       artistId: context.contestant.artistId.toString(),
       userId: identity.userId?.toString() || '',
+      username: voteUser?.username || '',
+      userDisplayName,
+      userPhotoUrl,
       anonymousId: identity.type === 'anonymous' ? identity.id : '',
       ipHash,
       voteScope: voteScope || '',
@@ -102,20 +121,18 @@ export class VotesService {
           roundId: context.round?.id?.toString() || null,
           contestantId: context.contestant.id.toString(),
           artistId: context.contestant.artistId.toString(),
+          userId: identity.userId?.toString() || '',
+          username: voteUser?.username || null,
+          userDisplayName: userDisplayName || null,
+          userPhotoUrl: userPhotoUrl || null,
           amount,
         }),
       )
       .exec();
 
     let user: { points: number; spentPoints: number } | null = null;
-    if (identity.type === 'user' && identity.userId) {
-      const fresh = await this.prisma.user.findUnique({
-        where: { id: identity.userId },
-        select: { points: true, spentPoints: true },
-      });
-      if (fresh) {
-        user = { points: Number(fresh.points), spentPoints: Number(fresh.spentPoints) };
-      }
+    if (voteUser) {
+      user = { points: Number(voteUser.points), spentPoints: Number(voteUser.spentPoints) };
     }
 
     return {
@@ -284,7 +301,16 @@ export class VotesService {
     const userVotes = Number(result?.[0]?.[1] || 0);
     const ipVotes = Number(result?.[2]?.[1] || 0);
 
-    if (userVotes > 120 || ipVotes > 600) {
+    const userLimit = Math.max(
+      120,
+      Number(this.config.get('VOTE_RATE_LIMIT_USER_PER_MINUTE') || DEFAULT_USER_VOTES_PER_MINUTE_LIMIT),
+    );
+    const ipLimit = Math.max(
+      600,
+      Number(this.config.get('VOTE_RATE_LIMIT_IP_PER_MINUTE') || DEFAULT_IP_VOTES_PER_MINUTE_LIMIT),
+    );
+
+    if (userVotes > userLimit || ipVotes > ipLimit) {
       throw new HttpException('Demasiados votos en poco tiempo.', HttpStatus.TOO_MANY_REQUESTS);
     }
   }

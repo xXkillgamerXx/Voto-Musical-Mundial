@@ -327,6 +327,30 @@ const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
 const getOptimisticVoteTotal = (artistId) =>
   Number(optimisticVoteTotals.value[artistId] || 0);
 
+const serverVoteTotalForArtist = (artistId, rows = activeRoundContestantRows.value) => {
+  const contestant = rows.find((item) => getContestantArtistId(item) === artistId);
+  return Number(
+    contestant?.totalVotes ??
+      (contestant?.votes || 0) + (contestant?.manualVotes || 0),
+  );
+};
+
+const reconcileOptimisticVoteTotals = (rows = activeRoundContestantRows.value) => {
+  const nextTotals = { ...optimisticVoteTotals.value };
+  let changed = false;
+
+  Object.entries(nextTotals).forEach(([artistId, optimisticTotal]) => {
+    if (serverVoteTotalForArtist(artistId, rows) >= Number(optimisticTotal || 0)) {
+      delete nextTotals[artistId];
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    optimisticVoteTotals.value = nextTotals;
+  }
+};
+
 const getContestantArtistId = (contestant) =>
   contestant?.artistId || contestant?.id || "";
 
@@ -1201,12 +1225,17 @@ const clearOptimisticVoteTotal = (artistId) => {
     return;
   }
 
+  const optimisticTotal = getOptimisticVoteTotal(artistId);
+  if (optimisticTotal && serverVoteTotalForArtist(artistId) < optimisticTotal) {
+    return;
+  }
+
   const nextTotals = { ...optimisticVoteTotals.value };
   delete nextTotals[artistId];
   optimisticVoteTotals.value = nextTotals;
 };
 
-const showVoteFeedback = (artistId, amount) => {
+const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800 } = {}) => {
   if (!artistId || amount <= 0) {
     return;
   }
@@ -1216,6 +1245,7 @@ const showVoteFeedback = (artistId, amount) => {
     ...voteFeedbacks.value,
     [artistId]: {
       amount,
+      pending,
       token: Date.now(),
     },
   };
@@ -1226,7 +1256,7 @@ const showVoteFeedback = (artistId, amount) => {
       delete nextFeedbacks[artistId];
       voteFeedbacks.value = nextFeedbacks;
       voteFeedbackTimers.delete(artistId);
-    }, 2800),
+    }, duration),
   );
 };
 
@@ -1365,9 +1395,13 @@ const animateIncomingVoteTotals = (nextContestants) => {
     }
 
     const from = displayVoteCountFor(previous);
-    const to = Number(contestant.totalVotes || 0);
+    const serverTo = Number(contestant.totalVotes || 0);
+    const to = Math.max(serverTo, getOptimisticVoteTotal(artistId));
 
-    if (from === to) {
+    // Results can arrive before Redis/DB reconciliation catches up with the optimistic
+    // vote. Never animate downward in the live voting UI because it looks like votes
+    // were removed; keep the current visible value until the server total catches up.
+    if (from >= to) {
       return;
     }
 
@@ -1482,11 +1516,8 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
           )
         : baseContestants;
 
-      const isInitialHydration = isLoadingContestants.value;
-      if (!isInitialHydration) {
-        animateIncomingVoteTotals(nextContestants);
-      }
       contestants.value = nextContestants;
+      reconcileOptimisticVoteTotals(nextContestants);
       isLoadingContestants.value = false;
     };
 
@@ -1505,6 +1536,7 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
 
     if (activeRound.value?.type !== "versus") {
       contestants.value = baseContestants;
+      reconcileOptimisticVoteTotals(baseContestants);
     }
     unsubscribePublicResults = subscribePublicResults(db, {
       pollId,
@@ -1938,7 +1970,6 @@ const voteAnonymouslyFor = async (contestant) => {
     (item) => getContestantArtistId(item) === artistId,
   );
   const currentVotes = displayVoteCountFor(currentContestant || contestant);
-  const currentTotalVotes = displayTotalVotes.value;
 
   try {
     const anonymousUser = await ensureAnonymousUser();
@@ -1962,9 +1993,9 @@ const voteAnonymouslyFor = async (contestant) => {
       ...anonymousVoteStatuses.value,
       [voteScope]: result?.status || result || null,
     };
+    // Anonymous votes are sent immediately, so this visual update only happens after
+    // the backend confirms the vote. That keeps the UI from bouncing on rejected votes.
     setOptimisticVoteTotal(artistId, currentVotes + 1);
-    animateVoteCount(artistId, currentVotes, currentVotes + 1);
-    animateDisplayedTotalVotes(currentTotalVotes, currentTotalVotes + 1);
     showVoteFeedback(artistId, 1);
     closeVoteModal();
     shareMessage.value = translate("polls.detail.anonymousVoteSuccessLogin");
@@ -2040,11 +2071,6 @@ const voteFor = async (contestant, amount = 1) => {
 
   try {
     const artistId = contestant.artistId;
-    const currentContestant = displayedContestants.value.find(
-      (item) => getContestantArtistId(item) === artistId,
-    );
-    const currentVotes = displayVoteCountFor(currentContestant || contestant);
-    const currentTotalVotes = displayTotalVotes.value;
 
     isVoting.value = contestant.artistId;
     voteQueue.enqueue({
@@ -2061,17 +2087,9 @@ const voteFor = async (contestant, amount = 1) => {
       anonymous: false,
       shardCount: shardCountForConcurrency(100000),
     });
-    setOptimisticVoteTotal(artistId, currentVotes + votesToAdd);
-    animateVoteCount(artistId, currentVotes, currentVotes + votesToAdd);
-    animateDisplayedTotalVotes(
-      currentTotalVotes,
-      currentTotalVotes + votesToAdd,
-    );
-    showVoteFeedback(artistId, votesToAdd);
-    userPoints.value = Math.max(
-      0,
-      Number(userPoints.value || 0) - pointsToSpend,
-    );
+    // Registered votes are queued/batched. We wait for onBatchCommitted before moving
+    // the visible counters, so numbers never jump up and then down during reconciliation.
+    showVoteFeedback(artistId, votesToAdd, { pending: true, duration: 2600 });
     closeVoteModal();
   } catch (error) {
     errorMessage.value =
@@ -2137,6 +2155,15 @@ onMounted(() => {
       if (result?.user && result.user.points !== undefined && result.user.points !== null) {
         syncStoredPoints(result.user.points, result.user.spentPoints);
       }
+      const artistId = batch.artistId;
+      const currentContestant = displayedContestants.value.find(
+        (item) => getContestantArtistId(item) === artistId,
+      );
+      const currentVotes = displayVoteCountFor(currentContestant || { artistId });
+      const amount = Number(batch.amount || 1);
+
+      setOptimisticVoteTotal(artistId, currentVotes + amount);
+      showVoteFeedback(artistId, amount);
       window.setTimeout(() => {
         clearOptimisticVoteTotal(batch.artistId);
       }, 1200);
@@ -2145,8 +2172,11 @@ onMounted(() => {
       batches.forEach((batch) => {
         clearOptimisticVoteTotal(batch.artistId);
         clearAnimatedVoteCount(batch.artistId);
-        userPoints.value =
-          Number(userPoints.value || 0) + batch.amount * batch.pointsPerVote;
+        window.clearTimeout(voteFeedbackTimers.get(batch.artistId));
+        voteFeedbackTimers.delete(batch.artistId);
+        const nextFeedbacks = { ...voteFeedbacks.value };
+        delete nextFeedbacks[batch.artistId];
+        voteFeedbacks.value = nextFeedbacks;
       });
       clearAnimatedDisplayedTotalVotes();
       errorMessage.value =
@@ -3173,7 +3203,7 @@ onUnmounted(() => {
                     "
                   >
                     <div
-                      class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300"
+                      class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
                       :style="{ width: percentForMatch(contestant, match) }"
                     ></div>
                   </div>
@@ -3199,11 +3229,15 @@ onUnmounted(() => {
                       class="vote-feedback-badge"
                     >
                       {{
-                        $t("polls.detail.votesAdded", {
-                          count:
-                            voteFeedbacks[contestant.artistId || contestant.id]
-                              .amount,
-                        })
+                        voteFeedbacks[contestant.artistId || contestant.id]
+                          .pending
+                          ? "Procesando..."
+                          : $t("polls.detail.votesAdded", {
+                              count:
+                                voteFeedbacks[
+                                  contestant.artistId || contestant.id
+                                ].amount,
+                            })
                       }}
                     </span>
                   </p>
@@ -3373,10 +3407,8 @@ onUnmounted(() => {
           </article>
         </template>
 
-        <TransitionGroup
+        <div
           v-else
-          name="ranking-shift"
-          tag="div"
           class="space-y-4"
         >
           <article
@@ -3493,12 +3525,15 @@ onUnmounted(() => {
                         class="vote-feedback-badge right-0"
                       >
                         {{
-                          $t("polls.detail.votesAdded", {
-                            count:
-                              voteFeedbacks[
-                                contestant.artistId || contestant.id
-                              ].amount,
-                          })
+                          voteFeedbacks[contestant.artistId || contestant.id]
+                            .pending
+                            ? "Procesando..."
+                            : $t("polls.detail.votesAdded", {
+                                count:
+                                  voteFeedbacks[
+                                    contestant.artistId || contestant.id
+                                  ].amount,
+                              })
                         }}
                       </span>
                     </span>
@@ -3511,7 +3546,7 @@ onUnmounted(() => {
                 </div>
                 <div class="mt-5 h-3 overflow-hidden rounded-full bg-white/10">
                   <div
-                    class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300"
+                    class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
                     :style="{
                       width: percentForDisplayedContestant(contestant),
                     }"
@@ -3533,7 +3568,7 @@ onUnmounted(() => {
               </button>
             </div>
           </article>
-        </TransitionGroup>
+        </div>
 
         <p
           v-if="!isLoadingSelectedRound && !displayedContestants.length"
@@ -3756,6 +3791,28 @@ onUnmounted(() => {
                     }}
                   </span>
                 </label>
+
+                <div
+                  class="rounded-3xl border border-emerald-300/20 bg-emerald-400/10 p-4"
+                >
+                  <div class="flex items-center gap-3">
+                    <span
+                      class="grid size-11 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-300/15 text-emerald-100"
+                    >
+                      <i class="fa-solid fa-check" aria-hidden="true"></i>
+                    </span>
+                    <span class="min-w-0">
+                      <span
+                        class="block text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200"
+                      >
+                        Verificación anti-bots
+                      </span>
+                      <span class="mt-1 block text-sm font-bold leading-5 text-slate-200">
+                        Protección Cloudflare Turnstile activa antes de confirmar el voto.
+                      </span>
+                    </span>
+                  </div>
+                </div>
 
                 <div
                   v-if="!isAnonymousVotingFlow"
@@ -3996,7 +4053,7 @@ onUnmounted(() => {
 }
 
 .poll-contestant-enter {
-  animation: poll-contestant-in 0.48s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: none;
 }
 
 .poll-state-panel {
@@ -4031,7 +4088,7 @@ onUnmounted(() => {
 }
 
 .vote-feedback-card {
-  animation: vote-feedback-card 1.35s ease-out both;
+  animation: none;
 }
 
 .vote-feedback-badge {
@@ -4054,7 +4111,12 @@ onUnmounted(() => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   box-shadow: 0 0 28px rgba(45, 212, 191, 0.34);
-  animation: vote-feedback-badge 1.45s ease-out both;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
   pointer-events: none;
 }
 
