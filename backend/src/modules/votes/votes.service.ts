@@ -19,7 +19,10 @@ import { CastVoteDto } from './dto/cast-vote.dto';
 import { VoteStatusDto } from './dto/vote-status.dto';
 
 const DEFAULT_COOLDOWN_MINUTES = 60;
-const MAX_BATCH_VOTES = 1000;
+// Server-side hard cap on how many votes a single registered request may add.
+// Anonymous requests are always forced to 1 (see castVote).
+const MAX_BATCH_VOTES = 100;
+const DEFAULT_POINTS_PER_VOTE = 1;
 
 @Injectable()
 export class VotesService {
@@ -32,7 +35,10 @@ export class VotesService {
 
   async castVote(dto: CastVoteDto, request: Request) {
     const identity = await this.auth.resolveVoteIdentity(request.headers.authorization);
-    const amount = Math.min(MAX_BATCH_VOTES, Math.max(1, Math.floor(Number(dto.amount || 1))));
+    const requestedAmount = Math.max(1, Math.floor(Number(dto.amount || 1)));
+    // Anonymous votes are always single; only registered users may batch (capped server-side).
+    const amount =
+      identity.type === 'anonymous' ? 1 : Math.min(MAX_BATCH_VOTES, requestedAmount);
     const context = await this.loadContext(dto);
     const now = new Date();
 
@@ -47,13 +53,15 @@ export class VotesService {
 
     const voteScope = this.resolveVoteScope(context.round?.type, context.contestant.matchGroup);
     const ipHash = hashIp(getClientIp(request), this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial');
+    // Vote cost is resolved exclusively from server-side poll/round config; the client value is ignored.
+    const costPerVote = this.resolveVoteCost(context.poll.config, context.round?.config);
 
     await this.enforceNotBlocked(ipHash, identity.userId || null);
-    await this.enforceRateLimit(identity, ipHash);
+    await this.enforceRateLimit(identity, ipHash, amount);
     if (identity.type === 'anonymous') {
       await this.enforceAnonymousCooldown(identity, ipHash, context.poll.id, context.round?.id || null, voteScope, context.config);
     } else {
-      await this.spendUserPoints(identity, amount, Number(dto.pointsPerVote ?? 1));
+      await this.spendUserPoints(identity, amount, costPerVote);
     }
 
     const roundKey = context.round?.id?.toString() || '_root';
@@ -71,7 +79,7 @@ export class VotesService {
       ipHash,
       voteScope: voteScope || '',
       amount: amount.toString(),
-      pointsSpent: identity.type === 'user' ? String(amount * Number(dto.pointsPerVote ?? 1)) : '0',
+      pointsSpent: identity.type === 'user' ? String(amount * costPerVote) : '0',
       isAnonymous: identity.type === 'anonymous' ? '1' : '0',
       createdAt: now.toISOString(),
     };
@@ -223,6 +231,19 @@ export class VotesService {
     };
   }
 
+  private resolveVoteCost(pollConfig: unknown, roundConfig: unknown) {
+    const pollVoting =
+      typeof pollConfig === 'object' && pollConfig ? (pollConfig as Record<string, any>).voting || {} : {};
+    const roundVoting =
+      typeof roundConfig === 'object' && roundConfig ? (roundConfig as Record<string, any>).voting || {} : {};
+    const merged = { ...pollVoting, ...roundVoting };
+    const fallback = Number(this.config.get('DEFAULT_POINTS_PER_VOTE') || DEFAULT_POINTS_PER_VOTE);
+    const raw = merged.costPerVote === undefined ? fallback : Number(merged.costPerVote);
+    const cost = Number.isFinite(raw) ? Math.floor(raw) : fallback;
+    // Clamp to a sane range; defaults to 1 so the points economy can never be bypassed by accident.
+    return Math.min(1000, Math.max(0, cost));
+  }
+
   private resolveVoteScope(roundType?: RoundType | null, matchGroup = 0) {
     if (roundType !== RoundType.versus) {
       return null;
@@ -243,10 +264,18 @@ export class VotesService {
     }
   }
 
-  private async enforceRateLimit(identity: VoteIdentity, ipHash: string) {
-    const key = `rl:vote:${identity.type}:${identity.id}:${Math.floor(Date.now() / 60000)}`;
-    const ipKey = `rl:vote:ip:${ipHash}:${Math.floor(Date.now() / 60000)}`;
-    const result = await this.redis.client.multi().incr(key).expire(key, 60).incr(ipKey).expire(ipKey, 60).exec();
+  private async enforceRateLimit(identity: VoteIdentity, ipHash: string, amount: number) {
+    const window = Math.floor(Date.now() / 60000);
+    const key = `rl:vote:${identity.type}:${identity.id}:${window}`;
+    const ipKey = `rl:vote:ip:${ipHash}:${window}`;
+    // Count by number of votes (not requests) so batching cannot bypass the limit.
+    const result = await this.redis.client
+      .multi()
+      .incrby(key, amount)
+      .expire(key, 60)
+      .incrby(ipKey, amount)
+      .expire(ipKey, 60)
+      .exec();
     const userVotes = Number(result?.[0]?.[1] || 0);
     const ipVotes = Number(result?.[2]?.[1] || 0);
 

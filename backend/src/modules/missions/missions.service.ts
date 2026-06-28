@@ -2,6 +2,15 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 
+// Mission types that are credited by the backend itself (referrals, daily streak) or that
+// require manual/admin validation. None of these may be self-completed via the public endpoint.
+const SERVER_MANAGED_MISSION_TYPES = new Set([
+  'manual',
+  'referral_signup',
+  'referral_signup_milestone',
+  'daily_streak',
+]);
+
 @Injectable()
 export class MissionsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -53,6 +62,8 @@ export class MissionsService {
     if (!mission) {
       throw new NotFoundException('La mision no existe.');
     }
+
+    this.assertSelfCompletable(mission.type);
 
     const result = await this.prisma.$transaction(async (tx) => {
       const completion = await tx.missionCompletion.upsert({
@@ -121,9 +132,9 @@ export class MissionsService {
     return serialize({ mission, ...result });
   }
 
-  assertManualMissionAllowed(type: string) {
-    if (type === 'manual') {
-      throw new BadRequestException('Esta mision requiere validacion manual de administrador.');
+  assertSelfCompletable(type: string) {
+    if (SERVER_MANAGED_MISSION_TYPES.has(type)) {
+      throw new BadRequestException('Esta mision se valida automaticamente y no puede completarse manualmente.');
     }
   }
 }

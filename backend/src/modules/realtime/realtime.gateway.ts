@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
@@ -10,12 +12,19 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { JwtPayload } from '../auth/auth.types';
 import { MetricsService } from '../metrics/metrics.service';
 import { RedisService } from '../redis/redis.service';
 
+const realtimeOrigins = (process.env.APP_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: realtimeOrigins,
+    credentials: true,
   },
 })
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
@@ -27,6 +36,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   constructor(
     private readonly redis: RedisService,
     private readonly metrics: MetricsService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   handleConnection() {
@@ -111,10 +122,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   @SubscribeMessage('join_user')
-  joinUser(@ConnectedSocket() client: Socket, @MessageBody() body: { userId: string }) {
-    if (!body?.userId) return { ok: false };
-    client.join(`user:${body.userId}`);
-    return { ok: true, room: `user:${body.userId}` };
+  async joinUser(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { userId: string; token?: string },
+  ) {
+    const userId = String(body?.userId || '');
+    const token = String(body?.token || '');
+    if (!userId || !token) {
+      return { ok: false };
+    }
+
+    // Only allow joining a user's private room if the caller proves ownership with a valid
+    // access token whose subject matches the requested userId.
+    try {
+      const secret = this.config.get<string>('JWT_ACCESS_SECRET') || 'change-me-access-secret';
+      const payload = await this.jwt.verifyAsync<JwtPayload>(token, { secret });
+      if (payload.type !== 'access' || String(payload.sub) !== userId) {
+        return { ok: false };
+      }
+    } catch {
+      return { ok: false };
+    }
+
+    client.join(`user:${userId}`);
+    return { ok: true, room: `user:${userId}` };
   }
 
   @SubscribeMessage('leave_user')

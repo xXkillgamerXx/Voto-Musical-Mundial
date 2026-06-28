@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client'
-import { getApiBaseUrl } from './client'
+import { getApiBaseUrl, getStoredAuth } from './client'
 
 let socket = null
 
@@ -17,7 +17,7 @@ export const getRealtimeSocket = () => {
 
 export const subscribeUserRealtime = (userId, { onUserEvent } = {}) => {
   const client = getRealtimeSocket()
-  const join = () => client.emit('join_user', { userId })
+  const join = () => client.emit('join_user', { userId, token: getStoredAuth()?.accessToken })
 
   join()
   client.on('connect', join)

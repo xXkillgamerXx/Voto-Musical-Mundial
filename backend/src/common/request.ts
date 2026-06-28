@@ -2,11 +2,11 @@ import { createHash } from 'crypto';
 import { Request } from 'express';
 
 export const getClientIp = (request: Request) => {
-  const forwardedFor = request.headers['x-forwarded-for'];
-  const forwardedIp = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  const firstForwardedIp = String(forwardedIp || '').split(',')[0].trim();
-
-  return firstForwardedIp || request.ip || request.socket.remoteAddress || 'unknown';
+  // With `trust proxy` configured in bootstrap, Express resolves request.ip to the real
+  // client (the right-most untrusted hop), which cannot be spoofed by a client-supplied
+  // X-Forwarded-For. We must NOT trust the raw header ourselves.
+  const resolved = request.ip || request.socket?.remoteAddress || 'unknown';
+  return resolved.replace(/^::ffff:/, '');
 };
 
 export const hashIp = (ip: string, salt: string) =>
