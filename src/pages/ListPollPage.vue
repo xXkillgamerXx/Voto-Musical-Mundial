@@ -44,11 +44,13 @@ const contestants = ref([]);
 const rounds = ref([]);
 const selectedRoundContestants = ref([]);
 const finalResultContestants = ref([]);
+const finalOverallContestants = ref([]);
 const currentUser = ref(null);
 const userPoints = ref(0);
 const displayUserPoints = ref(0);
 const isLoading = ref(true);
 const isLoadingSelectedRound = ref(false);
+const isLoadingContestants = ref(false);
 const isVoting = ref("");
 const errorMessage = ref("");
 const shareMessage = ref("");
@@ -528,6 +530,19 @@ const finalResultSourceTotalVotes = computed(() =>
     ? finalResultTotalVotes.value
     : totalVotes.value,
 );
+const finalOverallTotalVotes = computed(() =>
+  finalOverallContestants.value.reduce(
+    (total, contestant) => total + Number(contestant.totalVotes || 0),
+    0,
+  ),
+);
+const finalResultRound = computed(() =>
+  rounds.value
+    .filter((round) => round.status === "closed" && round.winnerIds?.length)
+    .at(-1) ||
+  rounds.value.filter((round) => round.status === "closed").at(-1) ||
+  null,
+);
 
 const displayedContestants = computed(() =>
   selectedRoundStep.value?.status === "closed"
@@ -842,12 +857,29 @@ const finalWinnerEntries = computed(() => {
     .filter((entry) => entry.artist);
 });
 
-const finalRankingEntries = computed(() =>
-  finalResultSourceContestants.value
+const finalRankingEntries = computed(() => {
+  const winnerId = finalWinnerEntries.value[0]?.id || "";
+  const sourceContestants = finalOverallContestants.value.length
+    ? finalOverallContestants.value
+    : finalResultSourceContestants.value;
+  const totalVotesForRanking = finalOverallContestants.value.length
+    ? finalOverallTotalVotes.value
+    : finalResultSourceTotalVotes.value;
+
+  return sourceContestants
+    .slice()
+    .sort((current, next) => {
+      if (winnerId) {
+        if (current.artistId === winnerId) return -1;
+        if (next.artistId === winnerId) return 1;
+      }
+
+      return Number(next.totalVotes || 0) - Number(current.totalVotes || 0);
+    })
     .map((contestant, index) => {
       const votes = Number(contestant.totalVotes || 0);
-      const percent = finalResultSourceTotalVotes.value
-        ? (votes / finalResultSourceTotalVotes.value) * 100
+      const percent = totalVotesForRanking
+        ? (votes / totalVotesForRanking) * 100
         : 0;
 
       return {
@@ -860,8 +892,8 @@ const finalRankingEntries = computed(() =>
         percentWidth: `${Math.min(percent, 100)}%`,
       };
     })
-    .filter((entry) => entry.artist),
-);
+    .filter((entry) => entry.artist);
+});
 
 const podiumEntries = computed(() => finalRankingEntries.value.slice(1, 3));
 const secondaryFinalRankingEntries = computed(() =>
@@ -969,16 +1001,26 @@ const selectedRoundStep = computed(
     roundSteps.value.find((round) => round.id === selectedRoundId.value) ||
     null,
 );
+const isSelectedFinalResultRound = computed(
+  () =>
+    Boolean(
+      isClosed.value &&
+        finalResultRound.value?.id &&
+        selectedRoundId.value === finalResultRound.value.id,
+    ),
+);
 
 const isViewingSelectedClosedRound = computed(
-  () => selectedRoundStep.value?.status === "closed",
+  () => selectedRoundStep.value?.status === "closed" && !isSelectedFinalResultRound.value,
 );
 
 const isViewingFinalResult = computed(
   () =>
     isClosed.value &&
     finalWinnerEntries.value.length > 0 &&
-    (!selectedRoundId.value || selectedRoundId.value === finalRoundTabId),
+    (!selectedRoundId.value ||
+      selectedRoundId.value === finalRoundTabId ||
+      isSelectedFinalResultRound.value),
 );
 
 const selectedRoundWinnerNames = computed(() =>
@@ -1408,6 +1450,7 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
   const contestantsKey = `${pollId}:${roundId || "root"}`;
 
   if (listeningContestantsKey === contestantsKey && contestants.value.length) {
+    isLoadingContestants.value = false;
     return;
   }
 
@@ -1415,6 +1458,7 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
   unsubscribePublicResults?.();
   reloadPublicResults = null;
   listeningContestantsKey = contestantsKey;
+  isLoadingContestants.value = true;
   if (clear) {
     contestants.value = [];
   }
@@ -1439,8 +1483,12 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
           )
         : baseContestants;
 
-      animateIncomingVoteTotals(nextContestants);
+      const isInitialHydration = isLoadingContestants.value;
+      if (!isInitialHydration) {
+        animateIncomingVoteTotals(nextContestants);
+      }
       contestants.value = nextContestants;
+      isLoadingContestants.value = false;
     };
 
     reloadPublicResults = async () => {
@@ -1456,7 +1504,9 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
       }
     };
 
-    contestants.value = baseContestants;
+    if (activeRound.value?.type !== "versus") {
+      contestants.value = baseContestants;
+    }
     unsubscribePublicResults = subscribePublicResults(db, {
       pollId,
       roundId,
@@ -1470,10 +1520,16 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
       },
       onError: () => {
         errorMessage.value = translate("polls.detail.liveResultsError");
+        if (listeningContestantsKey === contestantsKey) {
+          isLoadingContestants.value = false;
+        }
       },
     });
   } catch {
     errorMessage.value = translate("polls.detail.contestantsError");
+    if (listeningContestantsKey === contestantsKey) {
+      isLoadingContestants.value = false;
+    }
   }
 };
 
@@ -1513,15 +1569,34 @@ const loadSelectedRoundContestants = async (round) => {
 
 const loadFinalResultContestants = async () => {
   finalResultContestants.value = [];
+  finalOverallContestants.value = [];
 
-  if (!currentPollId.value || !rounds.value.length) {
+  if (!currentPollId.value || !finalResultRound.value?.id) {
     return;
   }
 
-  const closedRounds = rounds.value
-    .filter((round) => round.status === "closed")
-    .slice();
+  try {
+    const winnerIds = finalResultRound.value.winnerIds || [];
+    finalResultContestants.value = (await getRoundContestants(finalResultRound.value))
+      .filter((contestant) => contestant.artist)
+      .sort((current, next) => {
+        const currentWinnerIndex = winnerIds.indexOf(current.artistId);
+        const nextWinnerIndex = winnerIds.indexOf(next.artistId);
+        const currentRank = currentWinnerIndex >= 0 ? currentWinnerIndex : Number.POSITIVE_INFINITY;
+        const nextRank = nextWinnerIndex >= 0 ? nextWinnerIndex : Number.POSITIVE_INFINITY;
+
+        if (currentRank !== nextRank) {
+          return currentRank - nextRank;
+        }
+
+        return next.totalVotes - current.totalVotes;
+      });
+  } catch {
+    finalResultContestants.value = [];
+  }
+
   const totalsByArtist = new Map();
+  const closedRounds = rounds.value.filter((round) => round.status === "closed");
 
   for (const round of closedRounds) {
     try {
@@ -1531,7 +1606,7 @@ const loadFinalResultContestants = async () => {
         const artistId = contestant.artistId || contestant.id;
         const currentTotal = totalsByArtist.get(artistId);
         const totalVotes =
-          (currentTotal?.totalVotes || 0) + contestant.totalVotes;
+          Number(currentTotal?.totalVotes || 0) + Number(contestant.totalVotes || 0);
 
         totalsByArtist.set(artistId, {
           ...contestant,
@@ -1540,13 +1615,13 @@ const loadFinalResultContestants = async () => {
         });
       });
     } catch {
-      // Skip rounds that cannot be read and continue aggregating the rest.
+      // Si una fase no carga, seguimos mostrando las demas.
     }
   }
 
-  finalResultContestants.value = [...totalsByArtist.values()]
+  finalOverallContestants.value = [...totalsByArtist.values()]
     .filter((contestant) => contestant.artist)
-    .sort((current, next) => next.totalVotes - current.totalVotes);
+    .sort((current, next) => Number(next.totalVotes || 0) - Number(current.totalVotes || 0));
 };
 
 const listenRounds = (pollId) => {
@@ -1554,6 +1629,9 @@ const listenRounds = (pollId) => {
   unsubscribeRounds = null;
   rounds.value = (poll.value?.rounds || []).map(normalizeApiRound);
   listenContestants(pollId);
+  if (isClosed.value && !new URLSearchParams(window.location.search).get(roundQueryParam)) {
+    selectedRoundId.value = finalRoundTabId;
+  }
   syncSelectedRoundFromUrl();
   if (poll.value?.status === "closed") {
     loadFinalResultContestants();
@@ -2936,19 +3014,20 @@ onUnmounted(() => {
         class="poll-state-panel space-y-6"
         :class="!isEmbeddedPage && 'mt-8'"
       >
-        <article
-          v-for="(match, matchIndex) in displayedVersusMatches"
-          :key="match.id"
-          class="rounded-4xl border border-white/10 bg-white/5"
-          :class="
-              match.contestants.length === 2
-                ? isEmbeddedPage
-                  ? 'p-2 sm:p-4'
-                  : 'mx-auto max-w-5xl p-3 sm:p-4'
-                : 'p-4 sm:p-5'
-          "
-          :style="{ animationDelay: `${Math.min(matchIndex, 6) * 80}ms` }"
-        >
+        <template v-if="!isLoadingContestants">
+          <article
+            v-for="(match, matchIndex) in displayedVersusMatches"
+            :key="match.id"
+            class="rounded-4xl border border-white/10 bg-white/5"
+            :class="
+                match.contestants.length === 2
+                  ? isEmbeddedPage
+                    ? 'p-2 sm:p-4'
+                    : 'mx-auto max-w-5xl p-3 sm:p-4'
+                  : 'p-4 sm:p-5'
+            "
+            :style="{ animationDelay: `${Math.min(matchIndex, 6) * 80}ms` }"
+          >
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p
               class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300"
@@ -3154,10 +3233,36 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-        </article>
+          </article>
+        </template>
+
+        <template v-if="isLoadingContestants">
+          <article
+            v-for="index in 2"
+            :key="`versus-skeleton-${index}`"
+            class="mx-auto max-w-5xl rounded-4xl border border-white/10 bg-white/5 p-3 sm:p-4"
+          >
+            <div class="mb-4 h-4 w-24 animate-pulse rounded-full bg-fuchsia-300/20"></div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div
+                v-for="side in 2"
+                :key="`versus-skeleton-${index}-${side}`"
+                class="overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
+              >
+                <div class="min-h-52 animate-pulse bg-linear-to-br from-violet-500/20 via-fuchsia-500/10 to-cyan-500/10 md:min-h-78"></div>
+                <div class="p-3 sm:p-4">
+                  <div class="h-6 w-40 animate-pulse rounded-full bg-white/12"></div>
+                  <div class="mt-3 h-3 w-full animate-pulse rounded-full bg-white/10"></div>
+                  <div class="mt-3 h-4 w-24 animate-pulse rounded-full bg-white/10"></div>
+                  <div class="mt-4 h-10 w-full animate-pulse rounded-2xl bg-fuchsia-400/15"></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </template>
 
         <p
-          v-if="!displayedVersusMatches.length"
+          v-if="!isLoadingContestants && !displayedVersusMatches.length"
           class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400"
         >
           Esta ronda versus todavía no tiene participantes.
@@ -3165,7 +3270,10 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="!isViewingFinalResult"
+        v-else-if="
+          isViewingSelectedClosedRound ||
+          (!isViewingFinalResult && !isClosed && !isSelectingWinners)
+        "
         ref="roundDetailSection"
         class="poll-state-panel space-y-4"
         :class="!isEmbeddedPage && 'mt-8'"
