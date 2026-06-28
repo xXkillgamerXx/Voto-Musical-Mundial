@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -8,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PollStatus, RoundType } from '@prisma/client';
 import { Request } from 'express';
+import { BLOCKED_IPS_KEY, BLOCKED_USERS_KEY } from '../../common/moderation-keys';
 import { getClientIp, hashIp } from '../../common/request';
 import { AuthService } from '../auth/auth.service';
 import { VoteIdentity } from '../auth/auth.types';
@@ -46,6 +48,7 @@ export class VotesService {
     const voteScope = this.resolveVoteScope(context.round?.type, context.contestant.matchGroup);
     const ipHash = hashIp(getClientIp(request), this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial');
 
+    await this.enforceNotBlocked(ipHash, identity.userId || null);
     await this.enforceRateLimit(identity, ipHash);
     if (identity.type === 'anonymous') {
       await this.enforceAnonymousCooldown(identity, ipHash, context.poll.id, context.round?.id || null, voteScope, context.config);
@@ -91,6 +94,17 @@ export class VotesService {
       )
       .exec();
 
+    let user: { points: number; spentPoints: number } | null = null;
+    if (identity.type === 'user' && identity.userId) {
+      const fresh = await this.prisma.user.findUnique({
+        where: { id: identity.userId },
+        select: { points: true, spentPoints: true },
+      });
+      if (fresh) {
+        user = { points: Number(fresh.points), spentPoints: Number(fresh.spentPoints) };
+      }
+    }
+
     return {
       ok: true,
       pollId: context.poll.id.toString(),
@@ -98,6 +112,7 @@ export class VotesService {
       contestantId: context.contestant.id.toString(),
       artistId: context.contestant.artistId.toString(),
       amount,
+      user,
       status: identity.type === 'anonymous'
         ? this.statusPayload(context.config.cooldownMinutes, Date.now() + context.config.cooldownMs)
         : null,
@@ -216,6 +231,18 @@ export class VotesService {
     return `match_${matchGroup || 1}`;
   }
 
+  private async enforceNotBlocked(ipHash: string, userId: bigint | null) {
+    const checks: Promise<number>[] = [this.redis.client.hexists(BLOCKED_IPS_KEY, ipHash)];
+    if (userId) {
+      checks.push(this.redis.client.hexists(BLOCKED_USERS_KEY, userId.toString()));
+    }
+
+    const [ipBlocked, userBlocked] = await Promise.all(checks);
+    if (ipBlocked || userBlocked) {
+      throw new ForbiddenException('Tu acceso a las votaciones esta bloqueado.');
+    }
+  }
+
   private async enforceRateLimit(identity: VoteIdentity, ipHash: string) {
     const key = `rl:vote:${identity.type}:${identity.id}:${Math.floor(Date.now() / 60000)}`;
     const ipKey = `rl:vote:ip:${ipHash}:${Math.floor(Date.now() / 60000)}`;
@@ -256,7 +283,11 @@ export class VotesService {
       );
     }
 
-    await this.redis.client.multi(...keys.map((key) => ['set', key, '1', 'EX', ttlSeconds] as any)).exec();
+    const pipeline = this.redis.client.multi();
+    keys.forEach((key) => {
+      pipeline.set(key, '1', 'EX', ttlSeconds);
+    });
+    await pipeline.exec();
   }
 
   private cooldownKeys(

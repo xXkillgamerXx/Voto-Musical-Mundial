@@ -7,6 +7,7 @@ import { getMissions } from '../services/api/missionsApi'
 const dbMissions = ref([])
 const selectedMission = ref(null)
 const referralCode = ref('')
+const userProfile = ref(null)
 let unsubscribeMissions = null
 let unsubscribeAuth = null
 
@@ -18,6 +19,10 @@ const missions = computed(() => {
     .slice(0, 8)
     .map((mission) => {
       const target = Math.max(1, Number(mission.target || 1))
+      const currentProgress = mission.type === 'daily_streak'
+        ? Math.min(target, Number(userProfile.value?.dailyRewardStreak || 0))
+        : 0
+      const done = currentProgress >= target
 
       return {
         id: mission.id,
@@ -27,11 +32,11 @@ const missions = computed(() => {
         type: mission.type || 'manual',
         actionUrl: mission.actionUrl || mission.url || '',
         reward: `+${Number(mission.rewardPoints || 0)} pts`,
-        progress: `0/${target}`,
-        percent: 0,
-        statusKey: 'common.status.pending',
+        progress: `${currentProgress}/${target}`,
+        percent: Math.round((currentProgress / target) * 100),
+        statusKey: done ? 'common.status.completed' : 'common.status.pending',
         featured: Boolean(mission.featured),
-        done: false,
+        done,
       }
     })
 })
@@ -131,6 +136,7 @@ const performMissionAction = (mission) => {
 
 const syncReferralCode = (authState = getCurrentApiAuth()) => {
   referralCode.value = ''
+  userProfile.value = null
 
   const user = authState?.user
   if (!user) {
@@ -144,6 +150,7 @@ const syncReferralCode = (authState = getCurrentApiAuth()) => {
   getMe()
     .then((userData) => {
       if (userData) {
+        userProfile.value = userData
         referralCode.value = String(userData.referralCode || userData.username || referralCode.value || '')
           .trim()
           .toLowerCase()

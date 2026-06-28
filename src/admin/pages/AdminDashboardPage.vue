@@ -4,11 +4,13 @@ import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
 import AdminMissionsView from '../components/AdminMissionsView.vue'
+import AdminModerationView from '../components/AdminModerationView.vue'
 import AdminPollCategoriesView from '../components/AdminPollCategoriesView.vue'
 import AdminPollContestantsView from '../components/AdminPollContestantsView.vue'
 import AdminPollFormView from '../components/AdminPollFormView.vue'
 import AdminPollMonitorView from '../components/AdminPollMonitorView.vue'
 import AdminPollsView from '../components/AdminPollsView.vue'
+import AdminPushNotificationsView from '../components/AdminPushNotificationsView.vue'
 import AdminPollRoundView from '../components/AdminPollRoundView.vue'
 import AdminPollWinnersView from '../components/AdminPollWinnersView.vue'
 import AdminUsersView from '../components/AdminUsersView.vue'
@@ -32,6 +34,8 @@ const isArtistEditView = computed(() => currentPath.startsWith('/admin/artistas/
 const artistEditId = computed(() => currentPath.replace('/admin/artistas/editar/', ''))
 const isUsersView = computed(() => currentPath === '/admin/usuarios')
 const isMissionsView = computed(() => currentPath === '/admin/misiones')
+const isPushNotificationsView = computed(() => currentPath === '/admin/notificaciones')
+const isModerationView = computed(() => currentPath === '/admin/reportes')
 const isCategoriesView = computed(() => currentPath === '/admin/categorias')
 const isCategoryCreateView = computed(() => currentPath === '/admin/categorias/crear')
 const pageTitle = computed(() => {
@@ -87,6 +91,14 @@ const pageTitle = computed(() => {
     return 'Misiones'
   }
 
+  if (isPushNotificationsView.value) {
+    return 'Notificaciones Push'
+  }
+
+  if (isModerationView.value) {
+    return 'Reportes / Moderación'
+  }
+
   if (isCategoriesView.value) {
     return 'Categorías'
   }
@@ -118,6 +130,7 @@ const navItems = [
   { label: 'Categorías', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
   { label: 'Misiones', href: '/admin/misiones', icon: 'fa-solid fa-bullseye' },
+  { label: 'Notificaciones', href: '/admin/notificaciones', icon: 'fa-solid fa-bell' },
   { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
   { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-flag' },
   { label: 'Ajustes', href: '/admin/ajustes', icon: 'fa-solid fa-gear' },
@@ -288,13 +301,13 @@ onMounted(() => {
               >
                 {{ $t('admin.page.viewWeb') }}
               </a>
-              <button
-                type="button"
+              <a
+                href="/admin/notificaciones"
                 class="grid size-11 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 hover:text-white"
                 :aria-label="$t('admin.page.notifications')"
               >
                 <i class="fa-solid fa-bell" aria-hidden="true"></i>
-              </button>
+              </a>
             </div>
           </div>
         </header>
@@ -338,6 +351,8 @@ onMounted(() => {
           />
           <AdminArtistsView v-else-if="isArtistsView" />
           <AdminMissionsView v-else-if="isMissionsView" />
+          <AdminPushNotificationsView v-else-if="isPushNotificationsView" />
+          <AdminModerationView v-else-if="isModerationView" />
           <AdminUsersView v-else-if="isUsersView" />
           <AdminPollCategoriesView
             v-else-if="isCategoriesView || isCategoryCreateView"

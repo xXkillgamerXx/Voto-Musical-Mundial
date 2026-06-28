@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { NotificationsService } from './notifications.service';
@@ -16,5 +16,19 @@ export class NotificationsController {
   @Patch(':id/read')
   markRead(@CurrentUser() user: { id: bigint }, @Param('id') id: string) {
     return this.notifications.markRead(user.id, id);
+  }
+
+  @Post('push-token')
+  registerPushToken(
+    @CurrentUser() user: { id: bigint },
+    @Body() body: { token?: string; platform?: string; permission?: string },
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.notifications.registerPushToken(user.id, body, userAgent);
+  }
+
+  @Delete('push-token')
+  unregisterPushToken(@CurrentUser() user: { id: bigint }, @Body() body: { token?: string }) {
+    return this.notifications.unregisterPushToken(user.id, body?.token || '');
   }
 }

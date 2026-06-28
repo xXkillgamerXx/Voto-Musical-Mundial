@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
+import { subscribePollRealtime } from '../services/api/realtimeApi'
 
 const artists = ref([])
 const recentVotes = ref([])
 const publicPollActivities = ref([])
 let unsubscribeArtists = null
 let unsubscribeLivePolls = null
+let unsubscribePollRealtime = []
 
 const colorOptions = [
   'from-fuchsia-500 to-violet-500',
@@ -52,6 +54,38 @@ const formatTime = (createdAt) => {
 }
 
 const userLabel = (userId) => `Fan ${String(userId || '').slice(-4).toUpperCase() || 'VMM'}`
+const dateLikeNow = () => ({
+  toDate: () => new Date(),
+  toMillis: () => Date.now(),
+})
+
+const syncPollRealtimeSubscriptions = (pollRows) => {
+  unsubscribePollRealtime.forEach((unsubscribe) => unsubscribe?.())
+  unsubscribePollRealtime = []
+
+  pollRows
+    .filter((poll) => poll?.id)
+    .forEach((poll) => {
+      const unsubscribe = subscribePollRealtime(poll.id, {
+        onVoteDelta: (vote) => {
+          recentVotes.value = [
+            {
+              id: `${vote.pollId || poll.id}-${vote.roundId || 'round'}-${vote.contestantId || vote.artistId}-${Date.now()}`,
+              pollId: String(vote.pollId || poll.id),
+              roundId: vote.roundId ? String(vote.roundId) : null,
+              contestantId: vote.contestantId ? String(vote.contestantId) : null,
+              artistId: String(vote.artistId || ''),
+              userId: vote.userId || vote.anonymousId || `live-${Date.now()}`,
+              amount: Number(vote.amount || 1),
+              createdAt: dateLikeNow(),
+            },
+            ...recentVotes.value,
+          ].slice(0, 12)
+        },
+      })
+      unsubscribePollRealtime.push(unsubscribe)
+    })
+}
 
 const realActivities = computed(() =>
   recentVotes.value.map((vote, index) => {
@@ -83,7 +117,7 @@ const activities = computed(() => {
 
 const activeUsers = computed(() =>
   realActivities.value.length
-    ? new Set(recentVotes.value.map((vote) => vote.userId).filter(Boolean)).size
+    ? recentVotes.value.length
     : publicPollActivities.value.length,
 )
 const votesPerMinute = computed(() =>
@@ -146,9 +180,11 @@ onMounted(() => {
     null,
     (pollRows) => {
       buildPublicPollActivities(pollRows)
+      syncPollRealtimeSubscriptions(pollRows)
     },
     () => {
       publicPollActivities.value = []
+      syncPollRealtimeSubscriptions([])
     },
   )
 })
@@ -156,6 +192,8 @@ onMounted(() => {
 onUnmounted(() => {
   unsubscribeArtists?.()
   unsubscribeLivePolls?.()
+  unsubscribePollRealtime.forEach((unsubscribe) => unsubscribe?.())
+  unsubscribePollRealtime = []
 })
 </script>
 

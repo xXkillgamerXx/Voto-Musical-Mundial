@@ -3,7 +3,13 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { getCurrentApiAuth } from "../services/api/authApi";
+import {
+  followArtist,
+  getArtistFollowStatus,
+  unfollowArtist,
+} from "../services/api/artistsApi";
 import { onStoredAuthChange } from "../services/api/client";
+import { getPoll, getPolls } from "../services/api/pollsApi";
 import { getArtistsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
@@ -18,6 +24,7 @@ const isFollowing = ref(false);
 const isLoading = ref(true);
 const isTogglingFollow = ref(false);
 const isUnfollowModalOpen = ref(false);
+const isFollowSuccessModalOpen = ref(false);
 const errorMessage = ref("");
 
 let unsubscribeAuth = null;
@@ -121,8 +128,19 @@ const loadArtist = async () => {
   }
 };
 
-const listenFollowState = () => {
-  isFollowing.value = false;
+const syncFollowStatus = async () => {
+  if (!currentUser.value || !artist.value?.id) {
+    isFollowing.value = false;
+    return;
+  }
+
+  try {
+    const status = await getArtistFollowStatus(artist.value.id);
+    isFollowing.value = Boolean(status?.following);
+    followersCount.value = Number(status?.followersCount ?? followersCount.value);
+  } catch {
+    isFollowing.value = false;
+  }
 };
 
 const normalizeStoredPollStats = () => {
@@ -140,13 +158,66 @@ const normalizeStoredPollStats = () => {
     .slice(0, 6);
 };
 
+const normalizeContestantVotes = (contestant) =>
+  Number(
+    contestant.totalVotes ??
+      Number(contestant.votes || 0) + Number(contestant.manualVotes || 0),
+  );
+
 const loadArtistPollStats = async () => {
   if (!artist.value?.id) {
     artistPolls.value = [];
     return;
   }
 
-  artistPolls.value = normalizeStoredPollStats();
+  const artistId = String(artist.value.id);
+  const storedStats = normalizeStoredPollStats();
+
+  try {
+    const pollRows = await getPolls(60);
+    const pollDetails = await Promise.all(
+      pollRows.map((poll) =>
+        getPoll(poll.slug || poll.id).catch(() => null),
+      ),
+    );
+    const stats = [];
+
+    pollDetails.filter(Boolean).forEach((poll) => {
+      const contestants = (poll.contestants || []).filter(
+        (contestant) => String(contestant.artistId || contestant.artist?.id || "") === artistId,
+      );
+
+      if (!contestants.length) {
+        return;
+      }
+
+      const votes = contestants.reduce(
+        (total, contestant) => total + normalizeContestantVotes(contestant),
+        0,
+      );
+      const pollTotalVotes = (poll.contestants || []).reduce(
+        (total, contestant) => total + normalizeContestantVotes(contestant),
+        0,
+      );
+      const latestRound = (poll.rounds || [])
+        .filter((round) => contestants.some((contestant) => String(contestant.roundId || "") === String(round.id)))
+        .at(-1);
+
+      stats.push({
+        title: latestRound?.title || poll.title || "Votación",
+        status: latestRound?.status || poll.status || "draft",
+        votes,
+        totalVotes: pollTotalVotes,
+        percent: pollTotalVotes ? (votes / pollTotalVotes) * 100 : 0,
+      });
+    });
+
+    artistPolls.value = stats.length
+      ? stats.sort((current, next) => next.votes - current.votes).slice(0, 6)
+      : storedStats;
+  } catch {
+    artistPolls.value = storedStats;
+  }
 };
 
 const toggleFollow = async () => {
@@ -159,24 +230,57 @@ const toggleFollow = async () => {
     return;
   }
 
-  errorMessage.value = translate("artists.profileErrors.followPending");
+  if (isFollowing.value) {
+    isUnfollowModalOpen.value = true;
+    return;
+  }
+
+  errorMessage.value = "";
+  isTogglingFollow.value = true;
+
+  try {
+    const result = await followArtist(artist.value.id);
+    isFollowing.value = true;
+    followersCount.value = Number(result?.followersCount ?? followersCount.value + 1);
+    isFollowSuccessModalOpen.value = true;
+  } catch (error) {
+    errorMessage.value = error?.message || translate("artists.profileErrors.follow");
+  } finally {
+    isTogglingFollow.value = false;
+  }
 };
 
 const confirmUnfollow = async () => {
-  isUnfollowModalOpen.value = false;
+  if (!artist.value?.id || isTogglingFollow.value) {
+    return;
+  }
+
+  errorMessage.value = "";
+  isTogglingFollow.value = true;
+
+  try {
+    const result = await unfollowArtist(artist.value.id);
+    isFollowing.value = false;
+    followersCount.value = Number(result?.followersCount ?? Math.max(0, followersCount.value - 1));
+    isUnfollowModalOpen.value = false;
+  } catch (error) {
+    errorMessage.value = error?.message || translate("artists.profileErrors.follow");
+  } finally {
+    isTogglingFollow.value = false;
+  }
 };
 
 onMounted(async () => {
   const syncAuth = (authState = getCurrentApiAuth()) => {
     currentUser.value = authState?.user || null;
-    listenFollowState();
+    syncFollowStatus();
   };
 
   syncAuth();
   unsubscribeAuth = onStoredAuthChange(syncAuth);
 
   await loadArtist();
-  listenFollowState();
+  syncFollowStatus();
 });
 
 onUnmounted(() => {
@@ -289,7 +393,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="flex gap-3">
+            <div class="flex flex-wrap gap-3">
               <button
                 class="rounded-full px-7 py-3 text-sm font-black uppercase transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-70"
                 :class="
@@ -414,12 +518,32 @@ onUnmounted(() => {
           {{ $t("artists.profile.votesCount", { count: poll.votes.toLocaleString(locale) }) }}
         </p>
       </article>
-      <p
+      <article
         v-if="!artistPolls.length && artist"
-        class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-400 lg:col-span-3"
+        class="relative overflow-hidden rounded-4xl border border-fuchsia-300/15 bg-[#090b19]/90 p-6 text-center shadow-2xl shadow-fuchsia-950/20 lg:col-span-3 sm:p-8"
       >
-        {{ $t("artists.profile.noRoundVotes") }}
-      </p>
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(217,70,239,0.18),transparent_34%),radial-gradient(circle_at_88%_18%,rgba(34,211,238,0.12),transparent_30%)]"></div>
+        <div class="relative">
+          <div class="mx-auto grid size-18 place-items-center rounded-4xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-3xl text-fuchsia-100 shadow-xl shadow-fuchsia-950/20">
+            <i class="fa-solid fa-music" aria-hidden="true"></i>
+          </div>
+          <p class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
+            Sin rondas registradas
+          </p>
+          <h2 class="mt-3 text-2xl font-black text-white">
+            Aún no hay votos de {{ artist.name }}
+          </h2>
+          <p class="mx-auto mt-3 max-w-xl text-sm font-bold leading-6 text-slate-300">
+            Este artista todavía no aparece con votos registrados en rondas cerradas o activas. Cuando participe en una votación, aquí verás su apoyo, porcentaje y resultados.
+          </p>
+          <a
+            href="/votaciones"
+            class="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-linear-to-r from-fuchsia-500 to-cyan-400 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.02]"
+          >
+            Ver votaciones
+          </a>
+        </div>
+      </article>
     </div>
 
   </section>
@@ -469,6 +593,61 @@ onUnmounted(() => {
             >
               {{ isTogglingFollow ? "Quitando..." : "Dejar de seguir" }}
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="isFollowSuccessModalOpen"
+      class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      @click.self="isFollowSuccessModalOpen = false"
+    >
+      <div class="relative w-full max-w-lg overflow-hidden rounded-4xl border border-emerald-300/25 bg-[#090b19] p-6 text-white shadow-2xl shadow-emerald-950/40">
+        <div class="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-emerald-400/20 blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 right-0 size-72 rounded-full bg-fuchsia-400/15 blur-3xl"></div>
+
+        <div class="relative text-center">
+          <div class="mx-auto grid size-18 place-items-center rounded-4xl border border-emerald-300/30 bg-emerald-400/10 text-3xl text-emerald-100 shadow-xl shadow-emerald-950/25">
+            <i class="fa-solid fa-bell" aria-hidden="true"></i>
+          </div>
+          <p class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
+            Ahora sigues a este artista
+          </p>
+          <h2 class="mt-3 text-3xl font-black text-white">
+            {{ artist?.name || "Artista" }} está en tus favoritos
+          </h2>
+          <p class="mx-auto mt-3 max-w-md text-sm font-bold leading-6 text-slate-300">
+            Te avisaremos cuando participe en una votación, avance de ronda o gane una fase importante.
+          </p>
+
+          <div class="mt-5 grid gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 text-left">
+            <p class="text-sm font-black text-white">
+              <i class="fa-solid fa-check mr-2 text-emerald-300" aria-hidden="true"></i>
+              Recibirás novedades de sus rondas activas.
+            </p>
+            <p class="text-sm font-black text-white">
+              <i class="fa-solid fa-trophy mr-2 text-amber-300" aria-hidden="true"></i>
+              Si gana, aparecerá en tus favoritos y actividad.
+            </p>
+          </div>
+
+          <div class="mt-6 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase text-slate-200 transition hover:bg-white/10"
+              @click="isFollowSuccessModalOpen = false"
+            >
+              Seguir viendo
+            </button>
+            <a
+              href="/perfil"
+              class="inline-flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-cyan-400 px-5 text-sm font-black uppercase text-slate-950 shadow-lg shadow-emerald-950/25 transition hover:scale-[1.01]"
+            >
+              Ver mi perfil
+            </a>
           </div>
         </div>
       </div>

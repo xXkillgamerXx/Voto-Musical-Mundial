@@ -12,6 +12,8 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const origin = config.get<string>('APP_ORIGIN') || 'http://localhost:5173';
 
+  app.useBodyParser('json', { limit: '5mb' });
+  app.useBodyParser('urlencoded', { limit: '5mb', extended: true });
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(cookieParser());
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });

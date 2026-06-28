@@ -31,7 +31,7 @@ const successMessage = ref('')
 const contestantIds = computed(() => new Set(contestants.value.map((contestant) => contestant.artistId)))
 
 const getArtistImage = (artist) =>
-  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
+  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.photoUrl || artist?.metadata?.image || artist?.metadata?.imageUrl || artist?.metadata?.photoUrl || artist?.metadata?.banner || artist?.banner || ''
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 

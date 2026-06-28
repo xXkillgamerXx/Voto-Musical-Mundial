@@ -3,6 +3,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000
 const storageKey = 'vmm_api_auth'
 const anonymousStorageKey = 'vmm_api_anonymous'
 const authChangeEvent = 'vmm-api-auth-change'
+let refreshPromise = null
 
 export const getStoredAuth = () => {
   try {
@@ -38,22 +39,67 @@ export const setStoredAnonymousAuth = (auth) => {
   window.localStorage.setItem(anonymousStorageKey, JSON.stringify(auth))
 }
 
+const refreshStoredAuth = async () => {
+  const current = getStoredAuth()
+
+  if (!current?.refreshToken) {
+    return null
+  }
+
+  if (!refreshPromise) {
+    refreshPromise = window.fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refreshToken: current.refreshToken }),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          setStoredAuth(null)
+          return null
+        }
+
+        setStoredAuth(payload)
+        return payload
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+
+  return refreshPromise
+}
+
 export const apiRequest = async (path, {
   method = 'GET',
   body,
   token,
   headers = {},
 } = {}) => {
-  const response = await window.fetch(`${API_BASE_URL}${path}`, {
+  const buildRequest = (requestToken) => ({
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(requestToken ? { Authorization: `Bearer ${requestToken}` } : {}),
       ...headers,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
-  const payload = await response.json().catch(() => null)
+
+  let response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(token))
+  let payload = await response.json().catch(() => null)
+
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    const refreshedAuth = await refreshStoredAuth()
+
+    if (refreshedAuth?.accessToken) {
+      response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(refreshedAuth.accessToken))
+      payload = await response.json().catch(() => null)
+    }
+  }
 
   if (!response.ok) {
     const message = payload?.message || payload?.error?.message || 'No se pudo completar la solicitud.'
@@ -75,15 +121,26 @@ export const apiFormRequest = async (path, {
   token,
   headers = {},
 } = {}) => {
-  const response = await window.fetch(`${API_BASE_URL}${path}`, {
+  const buildRequest = (requestToken) => ({
     method,
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(requestToken ? { Authorization: `Bearer ${requestToken}` } : {}),
       ...headers,
     },
     body,
   })
-  const payload = await response.json().catch(() => null)
+
+  let response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(token))
+  let payload = await response.json().catch(() => null)
+
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    const refreshedAuth = await refreshStoredAuth()
+
+    if (refreshedAuth?.accessToken) {
+      response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(refreshedAuth.accessToken))
+      payload = await response.json().catch(() => null)
+    }
+  }
 
   if (!response.ok) {
     const message = payload?.message || payload?.error?.message || 'No se pudo completar la solicitud.'

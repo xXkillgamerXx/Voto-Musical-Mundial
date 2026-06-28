@@ -12,44 +12,6 @@ const dragState = ref({
 });
 const suppressCategoryClickUntil = ref(0);
 
-const fallbackCategories = [
-  {
-    id: "artist-of-year",
-    title: "Artista del Ano",
-    action: "Votar",
-    icon: "fa-solid fa-star",
-    visual: "from-violet-950 via-fuchsia-700 to-indigo-950",
-  },
-  {
-    id: "group-of-year",
-    title: "Grupo del Ano",
-    action: "Votar",
-    icon: "fa-solid fa-crown",
-    visual: "from-slate-800 via-violet-700 to-slate-950",
-  },
-  {
-    id: "song-of-year",
-    title: "Cancion del Ano",
-    action: "Votar",
-    icon: "fa-solid fa-microphone-lines",
-    visual: "from-fuchsia-900 via-pink-700 to-slate-950",
-  },
-  {
-    id: "album-of-year",
-    title: "Album del Ano",
-    action: "Votar",
-    icon: "fa-solid fa-trophy",
-    visual: "from-indigo-950 via-purple-700 to-fuchsia-900",
-  },
-  {
-    id: "rookie-of-year",
-    title: "Rookie del Ano",
-    action: "Votar",
-    icon: "fa-solid fa-fire",
-    visual: "from-violet-900 via-slate-800 to-indigo-950",
-  },
-];
-
 const fallbackVisuals = [
   "from-violet-950 via-fuchsia-700 to-indigo-950",
   "from-slate-800 via-violet-700 to-slate-950",
@@ -131,11 +93,7 @@ const preventClickAfterDrag = (event) => {
 
 const categories = computed(() => {
   if (!dbCategories.value.length) {
-    return fallbackCategories.map((category) => ({
-      ...category,
-      action: "Ver categoria",
-      href: categoryHref(category.id),
-    }));
+    return [];
   }
 
   return dbCategories.value.slice(0, 10).map((category, index) => ({
@@ -246,7 +204,7 @@ onMounted(() => {
     </div>
 
     <div
-      v-else
+      v-else-if="categories.length"
       class="mobile-categories-slider flex snap-x gap-3 overflow-x-auto pb-2 pl-4 pr-4 sm:pl-6 lg:hidden"
     >
       <article
@@ -367,7 +325,7 @@ onMounted(() => {
     </div>
 
     <div
-      v-else
+      v-else-if="categories.length"
       class="categories-slider hidden cursor-grab snap-x gap-3 overflow-x-auto pb-3 select-none lg:flex"
       @pointerdown="startCategoryDrag"
       @pointermove="moveCategoryDrag"
@@ -452,6 +410,22 @@ onMounted(() => {
         </div>
         </a>
       </article>
+    </div>
+
+    <div
+      v-if="!isLoadingCategories && !categories.length"
+      class="relative overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-fuchsia-950/15"
+    >
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(217,70,239,0.22),transparent_34%),radial-gradient(circle_at_15%_80%,rgba(34,211,238,0.12),transparent_30%)]"></div>
+      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-cyan-200/20 bg-cyan-300/10 text-2xl text-cyan-200 shadow-lg shadow-cyan-950/20">
+        <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+      </div>
+      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
+        Categorias en preparacion
+      </h3>
+      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
+        Cuando existan votaciones con categorias en la base de datos, aqui apareceran para explorar la comunidad.
+      </p>
     </div>
   </section>
 </template>

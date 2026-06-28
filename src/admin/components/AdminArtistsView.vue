@@ -1,28 +1,133 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { translate } from '../../i18n'
-import { deleteAdminArtist, getAdminArtists } from '../../services/api/adminApi'
+import {
+  deleteAdminArtist,
+  getAdminArtists,
+  getAdminPushUsers,
+  sendAdminArtistPush,
+  sendAdminPush,
+} from '../../services/api/adminApi'
 
 const artists = ref([])
 const isLoading = ref(true)
+const isSendingPush = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const pushArtist = ref(null)
+const pushResult = ref(null)
+const pushMode = ref('followers')
+const pushUsers = ref([])
+const selectedPushUserIds = ref([])
+const pushUserSearch = ref('')
+const isLoadingPushUsers = ref(false)
+const pushForm = ref({
+  title: '',
+  body: '',
+})
 
-const getArtistImage = (artist) =>
-  artist.image
-  || artist.imageUrl
-  || artist.photo
-  || artist.photoURL
-  || artist.foto
-  || artist.banner
-  || artist.bannerUrl
-  || artist.cover
-  || artist.coverImage
-  || artist.portada
-  || ''
+const getArtistImage = (artist) => {
+  const metadata = artist?.metadata || {}
 
-const getArtistGroup = (artist) => artist.group || artist.fandom || ''
+  return artist?.photoUrl
+    || artist?.image
+    || artist?.imageUrl
+    || artist?.photo
+    || artist?.photoURL
+    || artist?.foto
+    || metadata.photoUrl
+    || metadata.image
+    || metadata.imageUrl
+    || metadata.photo
+    || metadata.photoURL
+    || metadata.foto
+    || artist?.banner
+    || artist?.bannerUrl
+    || artist?.cover
+    || artist?.coverImage
+    || artist?.portada
+    || metadata.banner
+    || metadata.bannerUrl
+    || metadata.cover
+    || metadata.coverImage
+    || metadata.portada
+    || ''
+}
+
+const getArtistGroup = (artist) => {
+  const metadata = artist?.metadata || {}
+  return artist?.group || artist?.fandom || metadata.group || metadata.fandom || ''
+}
 const artistProfileUrl = (artist) => `/artista/${artist.slug || artist.id}`
+
+const openPushModal = (artist) => {
+  pushArtist.value = artist
+  pushResult.value = null
+  pushMode.value = 'followers'
+  selectedPushUserIds.value = []
+  pushUserSearch.value = ''
+  errorMessage.value = ''
+  successMessage.value = ''
+  pushForm.value = {
+    title: `${artist.name} tiene novedades`,
+    body: `Mira el perfil de ${artist.name} y apoya sus votaciones.`,
+  }
+  loadPushUsers()
+}
+
+const closePushModal = () => {
+  if (isSendingPush.value) return
+  pushArtist.value = null
+  pushResult.value = null
+}
+
+const sendArtistPush = async () => {
+  if (!pushArtist.value?.id || isSendingPush.value) return
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  pushResult.value = null
+  isSendingPush.value = true
+
+  try {
+    const payload = {
+      title: pushForm.value.title,
+      body: pushForm.value.body,
+      url: artistProfileUrl(pushArtist.value),
+    }
+    const result = pushMode.value === 'followers'
+      ? await sendAdminArtistPush(pushArtist.value.id, payload)
+      : await sendAdminPush({
+          ...payload,
+          sendToAll: pushMode.value === 'all',
+          userIds: pushMode.value === 'selected' ? selectedPushUserIds.value : [],
+        })
+    pushResult.value = result
+    successMessage.value = `Push enviado: ${result.sent}/${result.total} tokens.`
+  } catch (error) {
+    errorMessage.value = error?.message || 'No se pudo enviar el push del artista.'
+  } finally {
+    isSendingPush.value = false
+  }
+}
+
+const loadPushUsers = async () => {
+  isLoadingPushUsers.value = true
+  try {
+    pushUsers.value = await getAdminPushUsers(pushUserSearch.value, 80)
+  } catch {
+    pushUsers.value = []
+  } finally {
+    isLoadingPushUsers.value = false
+  }
+}
+
+const togglePushUser = (userId) => {
+  const value = String(userId)
+  selectedPushUserIds.value = selectedPushUserIds.value.includes(value)
+    ? selectedPushUserIds.value.filter((id) => id !== value)
+    : [...selectedPushUserIds.value, value]
+}
 
 const loadArtists = async () => {
   isLoading.value = true
@@ -176,6 +281,13 @@ onMounted(loadArtists)
                     >
                       {{ $t('admin.artists.profile') }}
                     </a>
+                    <button
+                      type="button"
+                      class="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+                      @click="openPushModal(artist)"
+                    >
+                      Push
+                    </button>
                     <a
                       :href="`/admin/artistas/editar/${artist.id}`"
                       class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
@@ -211,5 +323,176 @@ onMounted(loadArtists)
         </div>
       </div>
     </article>
+
+    <Teleport to="body">
+      <div
+        v-if="pushArtist"
+        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 text-white backdrop-blur-md"
+        @click.self="closePushModal"
+      >
+        <div class="relative w-full max-w-xl overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#090b19] p-6 shadow-2xl shadow-fuchsia-950/45">
+          <div class="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
+          <div class="pointer-events-none absolute -bottom-24 right-0 size-72 rounded-full bg-cyan-400/15 blur-3xl"></div>
+
+          <div class="relative">
+            <button
+              type="button"
+              class="absolute right-0 top-0 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
+              :disabled="isSendingPush"
+              @click="closePushModal"
+            >
+              ×
+            </button>
+
+            <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
+              Push de artista
+            </p>
+            <h2 class="mt-3 pr-12 text-3xl font-black text-white">
+              Enviar push de {{ pushArtist.name }}
+            </h2>
+            <p class="mt-2 text-sm font-bold leading-6 text-slate-300">
+              Puedes enviarlo a sus seguidores, a todos los usuarios con push activo o solo a usuarios seleccionados. Al abrir la notificación irán a
+              <span class="font-mono text-cyan-100">{{ artistProfileUrl(pushArtist) }}</span>.
+            </p>
+
+            <div class="mt-5 grid gap-3">
+              <div class="grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  class="rounded-2xl border px-3 py-3 text-xs font-black uppercase tracking-wide transition"
+                  :class="pushMode === 'followers' ? 'border-fuchsia-300/40 bg-fuchsia-400/15 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+                  @click="pushMode = 'followers'"
+                >
+                  Seguidores
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border px-3 py-3 text-xs font-black uppercase tracking-wide transition"
+                  :class="pushMode === 'selected' ? 'border-cyan-300/40 bg-cyan-400/15 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+                  @click="pushMode = 'selected'"
+                >
+                  Seleccionar
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border px-3 py-3 text-xs font-black uppercase tracking-wide transition"
+                  :class="pushMode === 'all' ? 'border-amber-300/40 bg-amber-400/15 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+                  @click="pushMode = 'all'"
+                >
+                  Todos
+                </button>
+              </div>
+
+              <div
+                v-if="pushMode === 'selected'"
+                class="rounded-3xl border border-white/10 bg-slate-950/45 p-3"
+              >
+                <form class="flex gap-2" @submit.prevent="loadPushUsers">
+                  <input
+                    v-model="pushUserSearch"
+                    class="min-h-10 flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-bold text-white outline-none transition focus:border-cyan-300/50"
+                    placeholder="Buscar usuario con token"
+                  />
+                  <button
+                    type="submit"
+                    class="rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase text-slate-200 transition hover:bg-white/10"
+                  >
+                    Buscar
+                  </button>
+                </form>
+
+                <p class="mt-3 text-xs font-bold text-slate-400">
+                  Seleccionados: {{ selectedPushUserIds.length }}
+                </p>
+
+                <div class="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
+                  <p v-if="isLoadingPushUsers" class="text-sm font-bold text-slate-400">
+                    Cargando usuarios...
+                  </p>
+                  <button
+                    v-for="user in pushUsers"
+                    :key="user.id"
+                    type="button"
+                    class="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-left transition hover:bg-white/10"
+                    @click="togglePushUser(user.id)"
+                  >
+                    <span
+                      class="grid size-5 place-items-center rounded-md border text-[10px]"
+                      :class="selectedPushUserIds.includes(String(user.id)) ? 'border-cyan-300 bg-cyan-400 text-slate-950' : 'border-white/20 text-transparent'"
+                    >
+                      ✓
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-black text-white">{{ user.name }}</span>
+                      <span class="block truncate text-xs text-slate-500">{{ user.email || 'sin email' }} · {{ user.tokenCount }} token(s)</span>
+                    </span>
+                  </button>
+                  <p v-if="!isLoadingPushUsers && !pushUsers.length" class="text-sm font-bold text-slate-500">
+                    No hay usuarios con token push.
+                  </p>
+                </div>
+              </div>
+
+              <label class="grid gap-2">
+                <span class="text-xs font-black uppercase tracking-widest text-slate-400">Título</span>
+                <input
+                  v-model="pushForm.title"
+                  class="min-h-12 rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+                />
+              </label>
+
+              <label class="grid gap-2">
+                <span class="text-xs font-black uppercase tracking-widest text-slate-400">Mensaje</span>
+                <textarea
+                  v-model="pushForm.body"
+                  rows="4"
+                  class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+                ></textarea>
+              </label>
+
+              <div
+                v-if="pushResult"
+                class="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-3 text-sm font-bold text-emerald-200"
+              >
+                Enviados: {{ pushResult.sent }} / {{ pushResult.total }} · Fallidos: {{ pushResult.failed }}
+              </div>
+
+              <div
+                v-if="pushResult?.errors?.length"
+                class="rounded-2xl border border-red-300/20 bg-red-500/10 p-3 text-xs text-red-100"
+              >
+                <p class="font-black uppercase tracking-widest">Errores</p>
+                <p
+                  v-for="item in pushResult.errors"
+                  :key="`${item.token}-${item.code}`"
+                  class="mt-2"
+                >
+                  {{ item.code }} · {{ item.message }}
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase text-slate-200 transition hover:bg-white/10 disabled:opacity-60"
+                :disabled="isSendingPush"
+                @click="closePushModal"
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl bg-linear-to-r from-fuchsia-500 to-cyan-400 px-5 text-sm font-black uppercase text-white shadow-lg shadow-fuchsia-950/25 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isSendingPush || (pushMode === 'selected' && !selectedPushUserIds.length)"
+                @click="sendArtistPush"
+              >
+                {{ isSendingPush ? 'Enviando...' : 'Enviar push' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>

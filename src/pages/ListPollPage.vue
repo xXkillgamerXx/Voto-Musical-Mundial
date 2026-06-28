@@ -1006,7 +1006,7 @@ const isSelectedFinalResultRound = computed(
     Boolean(
       isClosed.value &&
         finalResultRound.value?.id &&
-        selectedRoundId.value === finalResultRound.value.id,
+        selectedRoundId.value === finalRoundTabId,
     ),
 );
 
@@ -1019,8 +1019,7 @@ const isViewingFinalResult = computed(
     isClosed.value &&
     finalWinnerEntries.value.length > 0 &&
     (!selectedRoundId.value ||
-      selectedRoundId.value === finalRoundTabId ||
-      isSelectedFinalResultRound.value),
+      selectedRoundId.value === finalRoundTabId),
 );
 
 const selectedRoundWinnerNames = computed(() =>

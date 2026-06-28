@@ -53,6 +53,56 @@ export class RewardsService {
         },
       });
 
+      const streakMissions = await tx.mission.findMany({
+        where: {
+          active: true,
+          type: 'daily_streak',
+        },
+      });
+      let missionRewardPoints = 0;
+
+      for (const mission of streakMissions) {
+        const progress = Math.min(nextStreak, mission.target);
+        const completion = await tx.missionCompletion.upsert({
+          where: { missionId_userId: { missionId: mission.id, userId } },
+          update: { progress },
+          create: {
+            missionId: mission.id,
+            userId,
+            progress,
+          },
+        });
+
+        if (!completion.rewardedAt && progress >= mission.target) {
+          missionRewardPoints += Number(mission.rewardPoints || 0);
+          await tx.missionCompletion.update({
+            where: { id: completion.id },
+            data: {
+              progress: mission.target,
+              completedAt: new Date(),
+              rewardedAt: new Date(),
+            },
+          });
+          await tx.notification.create({
+            data: {
+              userId,
+              type: 'mission_completed',
+              payload: {
+                missionId: mission.id.toString(),
+                rewardPoints: mission.rewardPoints,
+              },
+            },
+          });
+        }
+      }
+
+      const finalUser = missionRewardPoints
+        ? await tx.user.update({
+          where: { id: userId },
+          data: { points: { increment: missionRewardPoints } },
+        })
+        : updatedUser;
+
       await tx.notification.create({
         data: {
           userId,
@@ -61,7 +111,11 @@ export class RewardsService {
         },
       });
 
-      return { reward, user: updatedUser };
+      return {
+        reward,
+        user: finalUser,
+        missionRewardPoints,
+      };
     });
 
     return serialize(result);

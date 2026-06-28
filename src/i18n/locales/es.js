@@ -556,6 +556,8 @@ export default {
     notFoundDescription: 'No encontramos ese perfil de usuario.',
     backHome: 'Volver al inicio',
     followedArtists: 'Artistas seguidos',
+    emptyFollowingEyebrow: 'Explora',
+    emptyFollowingTitle: 'Artistas para seguir',
     profileSummary: 'Fan de Votos Música Mundial con actividad, artistas favoritos y progreso dentro de la comunidad.',
     publicActivity: 'Actividad pública',
     countryLabel: 'País',
@@ -569,6 +571,20 @@ export default {
     defaultArtist: 'Artista',
     following: 'Siguiendo',
     emptyFollowing: 'Todavía no sigues artistas. Entra a un perfil de artista y pulsa seguir.',
+    emptyFollowingActions: {
+      artists: {
+        title: 'Artistas populares',
+        text: 'Descubre perfiles y sigue a tus favoritos.',
+      },
+      ranking: {
+        title: 'Ranking Popularity',
+        text: 'Mira quién lidera el chart global.',
+      },
+      polls: {
+        title: 'Votaciones',
+        text: 'Apoya a tus artistas en votaciones activas.',
+      },
+    },
     edit: {
       open: 'Editar perfil',
       eyebrow: 'Perfil',

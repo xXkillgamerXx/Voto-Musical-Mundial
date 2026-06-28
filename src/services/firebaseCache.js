@@ -233,6 +233,13 @@ export const subscribeLivePollsCached = (_db, callback, onError = () => {}) => {
   };
 };
 
+export const refreshLivePollsCached = async () => {
+  const pollRows = await getLivePolls(LIVE_POLLS_LIMIT);
+  livePollsCache.rows = pollRows.map(normalizePoll);
+  notify(livePollsCache.subscribers, livePollsCache.rows);
+  return livePollsCache.rows;
+};
+
 const buildRankingArtistRows = (artistRows) =>
   artistRows.map((artist) => {
     const followersCount = Number(artist.followersCount || 0);

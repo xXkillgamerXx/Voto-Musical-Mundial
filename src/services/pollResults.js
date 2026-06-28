@@ -1,7 +1,7 @@
 import { getPoll, getPollResults } from "./api/pollsApi";
 
-const DEFAULT_AGGREGATION_MS = 30 * 1000;
-const PUBLIC_RESULTS_REFRESH_MS = 30 * 1000;
+const DEFAULT_AGGREGATION_MS = 15 * 1000;
+const PUBLIC_RESULTS_REFRESH_MS = 8 * 1000;
 
 const normalizeArtist = (artist) => {
   if (!artist) return null;

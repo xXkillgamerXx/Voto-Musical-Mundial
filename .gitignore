@@ -13,6 +13,10 @@ dist-ssr
 .env
 *.local
 backend/uploads/
+backend/firebase-service-account*.json
+firebase-service-account*.json
+vmm-*-deploy.tar.gz
+vite.config.js.timestamp-*.mjs
 
 # Editor directories and files
 .vscode/*

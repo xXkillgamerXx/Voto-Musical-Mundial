@@ -17,6 +17,10 @@ export class CastVoteDto {
   artistId?: string;
 
   @IsOptional()
+  @IsString()
+  voteScope?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(1000)

@@ -22,6 +22,10 @@ export class UsersService {
     dailyRewardStreakDay: true,
     lastDailyRewardClaimDate: true,
     metadata: true,
+    followingArtists: {
+      include: { artist: true },
+      orderBy: { createdAt: 'desc' },
+    },
   } as const;
 
   async findById(id: bigint) {
@@ -121,6 +125,25 @@ export class UsersService {
 
   private profilePayload(user: any, includeEmail = true) {
     const metadata = (user.metadata as Record<string, unknown>) || {};
+    const followedArtists = (user.followingArtists || [])
+      .map((follow: any) => {
+        const artist = follow.artist;
+        const artistMetadata = (artist?.metadata as Record<string, unknown>) || {};
+        const image = artist?.photoUrl || artistMetadata.image || artistMetadata.imageUrl || artistMetadata.photoUrl || artistMetadata.banner || '';
+
+        return artist ? {
+          id: follow.id,
+          artistId: artist.id,
+          artistSlug: artist.slug,
+          artistName: artist.name,
+          artistImage: image,
+          artistPhoto: image,
+          artistGroup: artistMetadata.group || artistMetadata.fandom || artist.genre || '',
+          followedAt: follow.createdAt,
+        } : null;
+      })
+      .filter(Boolean);
+
     return serialize({
       id: user.id,
       username: user.username,
@@ -142,7 +165,7 @@ export class UsersService {
       dailyRewardStreak: user.dailyRewardStreak,
       dailyRewardStreakDay: user.dailyRewardStreakDay,
       lastDailyRewardClaimDate: user.lastDailyRewardClaimDate,
-      followedArtists: [],
+      followedArtists,
     });
   }
 

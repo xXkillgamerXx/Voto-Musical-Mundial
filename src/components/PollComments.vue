@@ -2,6 +2,12 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { getMe, getCurrentApiAuth } from "../services/api/authApi";
 import { onStoredAuthChange } from "../services/api/client";
+import {
+  createPollComment,
+  deletePollComment,
+  getPollComments,
+} from "../services/api/commentsApi";
+import { subscribePollRealtime } from "../services/api/realtimeApi";
 
 const props = defineProps({
   pollId: {
@@ -33,10 +39,14 @@ const selectedGif = ref(null);
 const currentCommentsPage = ref(1);
 const commentsRoot = ref(null);
 const isCommentsVisible = ref(false);
+const isLoadingComments = ref(false);
+const hasLoadedComments = ref(false);
 
 let unsubscribeAuth = null;
 let cooldownTimer = null;
 let commentsObserver = null;
+let unsubscribeCommentsRealtime = null;
+let subscribedCommentsPollId = null;
 
 const remainingCharacters = computed(
   () => MAX_COMMENT_LENGTH - commentText.value.length,
@@ -84,9 +94,9 @@ const getDisplayName = (user) =>
   currentUserProfile.value?.name || user?.displayName || user?.email?.split("@")[0] || "Fan";
 
 const formatTime = (createdAt) => {
-  const date = createdAt?.toDate?.();
+  const date = createdAt?.toDate?.() || (createdAt ? new Date(createdAt) : null);
 
-  if (!date) {
+  if (!date || Number.isNaN(date.getTime())) {
     return "Ahora";
   }
 
@@ -199,8 +209,7 @@ const goToCommentsPage = (page) => {
   );
 };
 
-const startCooldown = () => {
-  cooldownRemaining.value = COMMENT_COOLDOWN_SECONDS;
+const runCooldownTimer = () => {
   window.clearInterval(cooldownTimer);
   cooldownTimer = window.setInterval(() => {
     cooldownRemaining.value = Math.max(0, cooldownRemaining.value - 1);
@@ -211,17 +220,89 @@ const startCooldown = () => {
   }, 1000);
 };
 
+const startCooldown = () => {
+  cooldownRemaining.value = COMMENT_COOLDOWN_SECONDS;
+  runCooldownTimer();
+};
+
+const startCooldownFromRemaining = () => {
+  runCooldownTimer();
+};
+
+const normalizeComment = (comment) => ({
+  id: String(comment.id),
+  userId: comment.userId === null || comment.userId === undefined ? null : String(comment.userId),
+  displayName: comment.displayName || "Fan",
+  photoURL: comment.photoUrl || comment.photoURL || "",
+  text: comment.text || "",
+  gif: comment.gif?.url ? comment.gif : null,
+  createdAt: comment.createdAt || null,
+});
+
+const canDeleteComment = (comment) =>
+  isAdminUser.value ||
+  (currentUser.value && comment.userId && comment.userId === String(currentUser.value.id));
+
+const subscribeCommentsRealtime = (pollId) => {
+  if (!pollId || subscribedCommentsPollId === pollId) {
+    return;
+  }
+
+  unsubscribeCommentsRealtime?.();
+  subscribedCommentsPollId = pollId;
+
+  unsubscribeCommentsRealtime = subscribePollRealtime(pollId, {
+    onCommentEvent: (event) => {
+      if (!event) {
+        return;
+      }
+
+      if (event.action === "new" && event.comment) {
+        const incoming = normalizeComment(event.comment);
+        if (comments.value.some((item) => item.id === incoming.id)) {
+          return;
+        }
+        comments.value = [incoming, ...comments.value];
+        return;
+      }
+
+      if (event.action === "deleted" && event.commentId) {
+        const removedId = String(event.commentId);
+        comments.value = comments.value.filter((item) => item.id !== removedId);
+      }
+    },
+  });
+};
+
+const stopCommentsRealtime = () => {
+  unsubscribeCommentsRealtime?.();
+  unsubscribeCommentsRealtime = null;
+  subscribedCommentsPollId = null;
+};
+
 const loadComments = async () => {
   if (!props.pollId || !isCommentsVisible.value) {
     return;
   }
 
-  comments.value = [];
   errorMessage.value = "";
+  isLoadingComments.value = true;
+
+  try {
+    const rows = await getPollComments(props.pollId, 100);
+    comments.value = (rows || []).map(normalizeComment);
+    subscribeCommentsRealtime(props.pollId);
+  } catch {
+    errorMessage.value = "No se pudieron cargar los comentarios.";
+  } finally {
+    isLoadingComments.value = false;
+    hasLoadedComments.value = true;
+  }
 };
 
 const resetAndLoadComments = () => {
   comments.value = [];
+  hasLoadedComments.value = false;
   loadComments();
 };
 
@@ -254,26 +335,60 @@ const publishComment = async () => {
   successMessage.value = "";
 
   try {
-    throw new Error("comments-api-pending");
-  } catch {
-    errorMessage.value = "Los comentarios se activaran cuando el modulo API este listo.";
+    const created = await createPollComment(props.pollId, {
+      text,
+      gif: selectedGif.value
+        ? { url: selectedGif.value.url, title: selectedGif.value.title }
+        : null,
+    });
+
+    comments.value = [normalizeComment(created), ...comments.value];
+    commentText.value = "";
+    selectedGif.value = null;
+    currentCommentsPage.value = 1;
+    successMessage.value = "Comentario publicado.";
+
+    if (!isAdminUser.value) {
+      startCooldown();
+    }
+  } catch (error) {
+    if (error.status === 429) {
+      const remainingMs = Number(error.payload?.remainingMs || 0);
+      if (remainingMs > 0) {
+        cooldownRemaining.value = Math.ceil(remainingMs / 1000);
+        startCooldownFromRemaining();
+      }
+      errorMessage.value = "Espera antes de comentar otra vez.";
+    } else if (error.status === 401) {
+      errorMessage.value = "Inicia sesión para comentar.";
+    } else {
+      errorMessage.value = error.message || "No se pudo publicar el comentario.";
+    }
   } finally {
     isPublishing.value = false;
   }
 };
 
 const removeComment = async (comment) => {
-  if (!currentUser.value || comment.userId !== (currentUser.value.id || currentUser.value.uid)) {
+  if (!canDeleteComment(comment)) {
     return;
   }
 
-  errorMessage.value = "Los comentarios se activaran cuando el modulo API este listo.";
+  errorMessage.value = "";
+
+  try {
+    await deletePollComment(props.pollId, comment.id);
+    comments.value = comments.value.filter((item) => item.id !== comment.id);
+  } catch {
+    errorMessage.value = "No se pudo eliminar el comentario.";
+  }
 };
 
 watch(
   () => props.pollId,
   () => {
     stopCommentsListener();
+    stopCommentsRealtime();
     resetAndLoadComments();
   },
 );
@@ -340,6 +455,7 @@ onMounted(() => {
 onUnmounted(() => {
   unsubscribeAuth?.();
   commentsObserver?.disconnect();
+  stopCommentsRealtime();
   window.clearInterval(cooldownTimer);
 });
 </script>
@@ -499,7 +615,7 @@ onUnmounted(() => {
               </span>
             </p>
             <button
-              v-if="currentUser?.uid === comment.userId"
+              v-if="canDeleteComment(comment)"
               class="rounded-full bg-red-500/10 px-3 py-1 text-xs font-black text-red-200 transition hover:bg-red-500/20"
               type="button"
               @click="removeComment(comment)"
@@ -527,11 +643,45 @@ onUnmounted(() => {
       </article>
 
       <p
-        v-if="!comments.length"
-        class="rounded-3xl border border-white/8 bg-white/5 p-6 text-center text-sm font-bold text-slate-400"
+        v-if="isLoadingComments && !comments.length"
+        class="flex items-center justify-center gap-2 rounded-3xl border border-white/8 bg-white/5 p-6 text-center text-sm font-bold text-slate-400"
       >
-        Sé el primero en comentar lo que está pasando en esta votación.
+        <i class="fa-solid fa-spinner fa-spin text-fuchsia-300" aria-hidden="true"></i>
+        Cargando comentarios...
       </p>
+      <div
+        v-else-if="!comments.length && hasLoadedComments"
+        class="comments-empty relative overflow-hidden rounded-3xl border border-fuchsia-300/15 bg-[#0a0c1c]/80 p-8 text-center"
+      >
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_0%,rgba(217,70,239,0.18),transparent_38%),radial-gradient(circle_at_85%_100%,rgba(34,211,238,0.14),transparent_40%)]"></div>
+        <div class="pointer-events-none absolute -right-16 -top-16 size-40 rounded-full bg-fuchsia-500/10 blur-3xl"></div>
+
+        <div class="relative">
+          <div class="comments-empty-orb mx-auto grid size-16 place-items-center rounded-3xl border border-fuchsia-300/25 bg-linear-to-br from-fuchsia-500/20 to-cyan-400/15 text-2xl text-fuchsia-200 shadow-lg shadow-fuchsia-950/30">
+            <i class="fa-solid fa-comments" aria-hidden="true"></i>
+          </div>
+          <h3 class="mt-4 text-lg font-black text-white">
+            Aún no hay comentarios
+          </h3>
+          <p class="mx-auto mt-2 max-w-md text-sm font-bold leading-6 text-slate-400">
+            Sé el primero en comentar lo que está pasando en esta votación.
+          </p>
+          <span
+            v-if="isSignedInUser"
+            class="mt-4 inline-flex items-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-fuchsia-100"
+          >
+            <i class="fa-solid fa-pen-nib" aria-hidden="true"></i>
+            Escribe arriba para empezar
+          </span>
+          <span
+            v-else
+            class="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-cyan-100"
+          >
+            <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+            Inicia sesión para comentar
+          </span>
+        </div>
+      </div>
     </div>
 
     <div
@@ -663,5 +813,21 @@ onUnmounted(() => {
 .gif-modal-enter-from,
 .gif-modal-leave-to {
   opacity: 0;
+}
+
+.comments-empty-orb {
+  animation: comments-empty-float 3s ease-in-out infinite;
+}
+
+@keyframes comments-empty-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 14px 30px rgba(217, 70, 239, 0.18);
+  }
+  50% {
+    transform: translateY(-6px);
+    box-shadow: 0 0 42px rgba(217, 70, 239, 0.4);
+  }
 }
 </style>

@@ -1,0 +1,29 @@
+---
+description: Production deployment instructions for vote.musicmundial.com
+alwaysApply: true
+---
+
+# Production Deploy
+
+When the user asks to deploy production (for example: "sube prod", "sube produccion", "deploy prod"), follow `DEPLOYMENT.md` first.
+
+Key facts:
+
+- Production domain: `https://vote.musicmundial.com`
+- SSH host: `213.136.69.57`
+- SSH port: `2981`
+- SSH user: `root`
+- SSH key: `~/.ssh/vmm_server`
+- Frontend root: `/www/wwwroot/vote.musicmundial.com`
+- Backend root: `/www/wwwroot/vote.musicmundial.com/backend`
+- Active server compose: `/www/wwwroot/vote.musicmundial.com/backend/docker-compose.vote-db.yml`
+
+Rules:
+
+- Do not deploy with Firebase Hosting. Firebase is only used for Web Push notifications.
+- Do not upload local `.env`, `node_modules`, `dist`, `backend/dist`, or generated deploy archives.
+- Preserve server folders/files: `backend`, `uploads`, `.well-known`, `.user.ini`, and server `.env`.
+- Build frontend locally with `VITE_API_BASE_URL=/api` and `VITE_FIREBASE_VAPID_KEY` from `DEPLOYMENT.md`.
+- Validate backend with `npm run lint` and `npm run build` inside `backend`.
+- Deploy backend source only, then run `docker compose -f docker-compose.vote-db.yml build` and `docker compose -f docker-compose.vote-db.yml up -d` on the server.
+- Verify after deploy: web `200 OK`, `/api/health` returns `ok: true`, and containers `vmm-api`, `vmm-worker`, `vmm-redis` are running.

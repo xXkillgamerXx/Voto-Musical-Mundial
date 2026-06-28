@@ -40,7 +40,10 @@ const daysBetween = (nextDateKey, previousDateKey) => {
   return Math.round((getDateFromKey(nextDateKey) - getDateFromKey(previousDateKey)) / MS_PER_DAY)
 }
 
-const getRewardDayFromStreak = (streak) => Math.min(7, Math.max(1, Number(streak || 1)))
+const getRewardDayFromStreak = (streak) => {
+  const normalizedStreak = Math.max(1, Number(streak || 1))
+  return ((normalizedStreak - 1) % 7) + 1
+}
 
 const nextStreakForClaim = computed(() => {
   const lastClaimDate = rewardState.value.lastClaimDate
@@ -159,10 +162,12 @@ const claimReward = async () => {
     const claimedUser = response?.user || {}
     const claimedReward = response?.reward || {}
     const claimedPoints = Number(claimedReward.points || rewardPoints.value)
+    const missionRewardPoints = Number(response?.missionRewardPoints || 0)
+    const totalAwardedPoints = claimedPoints + missionRewardPoints
     const claimedStreak = Number(claimedUser.dailyRewardStreak || nextStreakForClaim.value)
     const nextPointsTotal = Number(claimedUser.points || 0)
 
-    pointsBeforeClaim.value = Math.max(0, nextPointsTotal - claimedPoints)
+    pointsBeforeClaim.value = Math.max(0, nextPointsTotal - totalAwardedPoints)
     pointsAfterClaim.value = nextPointsTotal
 
     rewardState.value = {

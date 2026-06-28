@@ -12,6 +12,7 @@ import { preloadRouteData } from './services/firebaseCache'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
 const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
+const CookieConsentBanner = defineAsyncComponent(() => import('./components/CookieConsentBanner.vue'))
 const DailyRewardModal = defineAsyncComponent(() => import('./components/DailyRewardModal.vue'))
 const GiftNotificationModal = defineAsyncComponent(() => import('./components/GiftNotificationModal.vue'))
 const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
@@ -23,7 +24,9 @@ const ArtistProfilePage = defineAsyncComponent(() => import('./pages/ArtistProfi
 const HallOfFamePage = defineAsyncComponent(() => import('./pages/HallOfFamePage.vue'))
 const ListPollPage = defineAsyncComponent(() => import('./pages/ListPollPage.vue'))
 const NewsPage = defineAsyncComponent(() => import('./pages/NewsPage.vue'))
+const NotificationsPage = defineAsyncComponent(() => import('./pages/NotificationsPage.vue'))
 const PollsPage = defineAsyncComponent(() => import('./pages/PollsPage.vue'))
+const PushNotificationPrompt = defineAsyncComponent(() => import('./components/PushNotificationPrompt.vue'))
 const RankingPopularityPage = defineAsyncComponent(() => import('./pages/RankingPopularityPage.vue'))
 const RegisterPage = defineAsyncComponent(() => import('./pages/RegisterPage.vue'))
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
@@ -45,6 +48,7 @@ const isHallOfFamePage = computed(() => currentPath.value === '/salon-de-la-fama
 const isArtistsPage = computed(() => currentPath.value === '/artistas')
 const isRankingPopularityPage = computed(() => currentPath.value === '/ranking-popularity')
 const isNewsPage = computed(() => currentPath.value === '/noticias')
+const isNotificationsPage = computed(() => currentPath.value === '/notificaciones')
 const isUserProfilePage = computed(() => currentPath.value === '/perfil')
 const isPublicUserProfilePage = computed(() => /^\/user\/[a-z0-9_]{3,20}$/.test(currentPath.value))
 const isListPollPage = computed(() => currentPath.value === '/votacion/lista')
@@ -209,6 +213,7 @@ onUnmounted(() => {
       <ArtistsPage v-else-if="isArtistsPage" />
       <RankingPopularityPage v-else-if="isRankingPopularityPage" />
       <NewsPage v-else-if="isNewsPage" />
+      <NotificationsPage v-else-if="isNotificationsPage" />
       <UserProfilePage v-else-if="isUserProfilePage || isPublicUserProfilePage" />
       <VersusEmbed v-else-if="isVersusEmbedPage" />
       <AdminDashboardPage v-else-if="isAdminPage" />
@@ -239,6 +244,8 @@ onUnmounted(() => {
     <AppFooter v-if="!isPlainPage" />
     <DailyRewardModal v-if="shouldShowDailyRewardModal" />
     <GiftNotificationModal v-if="!isPlainPage" />
+    <CookieConsentBanner v-if="!isPlainPage" />
+    <PushNotificationPrompt v-if="!isPlainPage" />
 
   </div>
 </template>

@@ -572,8 +572,19 @@ export class AdminController {
     }
 
     const target = rounds[index];
+    const shouldResetVotesOnLaunch = target.status === PollStatus.draft;
 
     await this.prisma.$transaction(async (tx) => {
+      if (shouldResetVotesOnLaunch) {
+        await tx.contestant.updateMany({
+          where: { pollId: pollIdBig, roundId: roundIdBig },
+          data: {
+            votes: 0,
+            manualVotes: 0,
+          },
+        });
+      }
+
       for (const round of rounds) {
         if (round.id === roundIdBig) {
           const config = {
@@ -596,6 +607,15 @@ export class AdminController {
         data: { status: PollStatus.live, activeEndAt: target.endsAt, config: pollConfig as any },
       });
     });
+
+    if (shouldResetVotesOnLaunch) {
+      const pollKey = pollIdBig.toString();
+      const roundKey = roundIdBig.toString();
+      await this.redis.client.del(
+        `votes:poll:${pollKey}:round:${roundKey}`,
+        `ranking:poll:${pollKey}:round:${roundKey}`,
+      );
+    }
 
     await this.publishPollState(pollId, {
       reason: 'round_launched',

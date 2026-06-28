@@ -32,14 +32,28 @@ services:
       timeout: 5s
       retries: 5
 
+  adminer:
+    image: adminer:latest
+    container_name: vmm-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build: .
     container_name: vmm-api
     restart: unless-stopped
     env_file: .env
-    command: npm run start
+    command: npm run start:dev
     ports:
       - "4000:4000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,7 +65,11 @@ services:
     container_name: vmm-worker
     restart: unless-stopped
     env_file: .env
-    command: npm run start:worker
+    command: npm run start:worker:dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
     depends_on:
       postgres:
         condition: service_healthy

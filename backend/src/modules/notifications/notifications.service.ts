@@ -27,4 +27,47 @@ export class NotificationsService {
 
     return serialize(notification);
   }
+
+  async registerPushToken(
+    userId: bigint,
+    payload: { token?: string; platform?: string; permission?: string },
+    userAgent?: string,
+  ) {
+    const token = String(payload.token || '').trim();
+    if (!token) {
+      return { ok: false, reason: 'missing_token' };
+    }
+
+    const pushToken = await this.prisma.pushToken.upsert({
+      where: { token },
+      update: {
+        userId,
+        platform: payload.platform || 'web',
+        permission: payload.permission || 'granted',
+        userAgent: userAgent || null,
+      },
+      create: {
+        userId,
+        token,
+        platform: payload.platform || 'web',
+        permission: payload.permission || 'granted',
+        userAgent: userAgent || null,
+      },
+    });
+
+    return serialize({ ok: true, id: pushToken.id });
+  }
+
+  async unregisterPushToken(userId: bigint, token: string) {
+    const value = String(token || '').trim();
+    if (!value) {
+      return { ok: true };
+    }
+
+    await this.prisma.pushToken.deleteMany({
+      where: { userId, token: value },
+    });
+
+    return { ok: true };
+  }
 }

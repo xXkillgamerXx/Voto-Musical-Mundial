@@ -47,8 +47,8 @@ export const createVoteQueue = ({
     }, flushMs);
   };
 
-  const commitBatch = async (batch) => {
-    await castVote({
+  const commitBatch = async (batch) =>
+    castVote({
       pollId: batch.pollId,
       roundId: batch.roundId || null,
       artistId: batch.artistId,
@@ -59,7 +59,6 @@ export const createVoteQueue = ({
     }, {
       anonymous: batch.anonymous !== false,
     });
-  };
 
   const flush = async () => {
     clearFlushTimer();
@@ -75,8 +74,8 @@ export const createVoteQueue = ({
 
     try {
       for (const batch of batches) {
-        await commitBatch(batch);
-        onBatchCommitted(batch);
+        const result = await commitBatch(batch);
+        onBatchCommitted(batch, result);
       }
     } catch (error) {
       batches.forEach((batch) => {

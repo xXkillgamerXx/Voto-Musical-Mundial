@@ -145,11 +145,9 @@ export class AuthService {
     }
 
     const client = new OAuth2Client(clientId);
-    const ticket = await client.verifyIdToken({
-      idToken: dto.credential,
-      audience: clientId,
-    });
-    const payload = ticket.getPayload();
+    const payload = dto.credential
+      ? await this.googlePayloadFromCredential(client, clientId, dto.credential)
+      : await this.googlePayloadFromAccessToken(client, clientId, dto.accessToken || '');
     const email = payload?.email?.toLowerCase().trim();
 
     if (!payload?.sub || !email || !payload.email_verified) {
@@ -215,6 +213,41 @@ export class AuthService {
     });
 
     return this.authResponse(user);
+  }
+
+  private async googlePayloadFromCredential(client: OAuth2Client, clientId: string, credential: string) {
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: clientId,
+    });
+    return ticket.getPayload();
+  }
+
+  private async googlePayloadFromAccessToken(client: OAuth2Client, clientId: string, accessToken: string) {
+    if (!accessToken) {
+      throw new UnauthorizedException('No se recibio token de Google.');
+    }
+
+    const tokenInfo = await client.getTokenInfo(accessToken);
+    if (tokenInfo.aud !== clientId) {
+      throw new UnauthorizedException('Token de Google invalido para esta aplicacion.');
+    }
+
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      throw new UnauthorizedException('No se pudo leer el perfil de Google.');
+    }
+
+    const profile = await response.json();
+    return {
+      sub: profile.sub,
+      email: profile.email,
+      email_verified: profile.email_verified,
+      name: profile.name,
+      picture: profile.picture,
+    };
   }
 
   async refresh(dto: RefreshTokenDto) {

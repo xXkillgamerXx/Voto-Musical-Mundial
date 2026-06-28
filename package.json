@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "powershell -ExecutionPolicy Bypass -File ./dev-local.ps1",
     "build": "vite build",
     "deploy": "npm run build && firebase deploy --only hosting",
     "preview": "vite preview"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",
+    "firebase": "^12.15.0",
     "socket.io-client": "^4.8.1",
     "vue": "^3.5.12",
     "vue-i18n": "^10.0.8",

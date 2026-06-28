@@ -62,6 +62,30 @@ const isUsernameBlocked = computed(() => {
 
 const artistUrl = (artist) => `/artista/${artist.artistSlug || artist.artistId}`
 
+const emptyFollowingActions = computed(() => [
+  {
+    title: translate('profile.emptyFollowingActions.artists.title'),
+    text: translate('profile.emptyFollowingActions.artists.text'),
+    href: '/artistas',
+    icon: 'fa-solid fa-microphone-lines',
+    visual: 'from-violet-950 via-fuchsia-700 to-indigo-950',
+  },
+  {
+    title: translate('profile.emptyFollowingActions.ranking.title'),
+    text: translate('profile.emptyFollowingActions.ranking.text'),
+    href: '/ranking-popularity',
+    icon: 'fa-solid fa-ranking-star',
+    visual: 'from-slate-800 via-violet-700 to-slate-950',
+  },
+  {
+    title: translate('profile.emptyFollowingActions.polls.title'),
+    text: translate('profile.emptyFollowingActions.polls.text'),
+    href: '/votaciones',
+    icon: 'fa-solid fa-check-to-slot',
+    visual: 'from-fuchsia-900 via-pink-700 to-slate-950',
+  },
+])
+
 const openDailyRewardModal = () => {
   window.dispatchEvent(new CustomEvent('open-daily-reward-modal'))
 }
@@ -440,9 +464,50 @@ onUnmounted(() => {
           </a>
         </div>
 
-        <p v-else class="mt-5 rounded-3xl border border-white/10 bg-slate-950/45 p-6 text-sm font-bold text-slate-400">
-          {{ $t('profile.emptyFollowing') }}
-        </p>
+        <div v-else class="mt-5 overflow-hidden rounded-3xl border border-violet-300/15 bg-slate-950/45">
+          <div class="relative p-5 sm:p-6">
+            <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(217,70,239,0.18),transparent_32%),radial-gradient(circle_at_85%_35%,rgba(34,211,238,0.12),transparent_30%)]"></div>
+            <div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+                  {{ $t('profile.emptyFollowingEyebrow') }}
+                </p>
+                <h3 class="mt-2 text-2xl font-black text-white">
+                  {{ $t('profile.emptyFollowingTitle') }}
+                </h3>
+                <p class="mt-2 max-w-2xl text-sm font-bold leading-6 text-slate-400">
+                  {{ $t('profile.emptyFollowing') }}
+                </p>
+              </div>
+              <a
+                href="/artistas"
+                class="inline-flex min-h-11 items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
+              >
+                {{ $t('profile.viewPopular') }}
+              </a>
+            </div>
+
+            <div class="relative mt-5 grid gap-3 md:grid-cols-3">
+              <a
+                v-for="action in emptyFollowingActions"
+                :key="action.href"
+                :href="action.href"
+                class="group overflow-hidden rounded-3xl border border-white/10 bg-[#090b19]/85 transition hover:-translate-y-1 hover:border-fuchsia-300/30"
+              >
+                <div class="relative h-32 bg-linear-to-br" :class="action.visual">
+                  <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.25),transparent_24%),linear-gradient(to_top,rgba(8,10,23,0.95),transparent)]"></div>
+                  <span class="absolute left-1/2 top-1/2 grid size-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/25 bg-black/35 text-3xl text-white shadow-2xl shadow-fuchsia-500/25 backdrop-blur transition group-hover:scale-110">
+                    <i :class="action.icon" aria-hidden="true"></i>
+                  </span>
+                </div>
+                <div class="p-4">
+                  <h4 class="text-sm font-black uppercase text-white">{{ action.title }}</h4>
+                  <p class="mt-2 line-clamp-2 text-xs font-bold leading-5 text-slate-400">{{ action.text }}</p>
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section

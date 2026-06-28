@@ -2,7 +2,11 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
-import { subscribeLivePollsCached } from "../services/firebaseCache";
+import {
+  refreshLivePollsCached,
+  subscribeLivePollsCached,
+} from "../services/firebaseCache";
+import { subscribeLivePollsRealtime } from "../services/api/realtimeApi";
 
 const props = defineProps({
   excludePollId: {
@@ -22,7 +26,10 @@ const timeLabels = computed(() => [
 ]);
 
 let unsubscribePolls = null;
+let unsubscribeLivePollsRealtime = null;
 let clockTimer = null;
+let livePollsRefreshTimer = null;
+let lastLivePollsRefresh = 0;
 const activeRoundEndListeners = new Map();
 
 const pollUrl = (poll) =>
@@ -135,6 +142,17 @@ const activePolls = computed(() => {
     }));
 });
 
+const refreshLivePolls = () => {
+  const nowMs = Date.now();
+  const waitMs = Math.max(0, 1200 - (nowMs - lastLivePollsRefresh));
+
+  window.clearTimeout(livePollsRefreshTimer);
+  livePollsRefreshTimer = window.setTimeout(() => {
+    lastLivePollsRefresh = Date.now();
+    refreshLivePollsCached().catch(() => {});
+  }, waitMs);
+};
+
 onMounted(() => {
   unsubscribePolls = subscribeLivePollsCached(null, (pollRows) => {
     const previousPolls = new Map(polls.value.map((poll) => [poll.id, poll]));
@@ -155,6 +173,10 @@ onMounted(() => {
     syncActiveRoundEndListeners(pollRows);
   });
 
+  unsubscribeLivePollsRealtime = subscribeLivePollsRealtime({
+    onPollStateChanged: refreshLivePolls,
+  });
+
   clockTimer = window.setInterval(() => {
     now.value = Date.now();
   }, 1000);
@@ -162,9 +184,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubscribePolls?.();
+  unsubscribeLivePollsRealtime?.();
   activeRoundEndListeners.forEach((listener) => listener.unsubscribe());
   activeRoundEndListeners.clear();
   window.clearInterval(clockTimer);
+  window.clearTimeout(livePollsRefreshTimer);
 });
 </script>
 

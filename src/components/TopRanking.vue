@@ -15,6 +15,7 @@ const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
+const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`
 
 const getWeeklyRotationIndex = (itemsLength) => {
   if (!itemsLength) {
@@ -91,10 +92,11 @@ onMounted(loadArtists)
       <div class="absolute bottom-0 left-0 h-36 w-full bg-linear-to-t from-[#050716] via-[#050716]/75 to-transparent"></div>
 
       <div class="mobile-ranking-slider relative flex snap-x gap-4 overflow-x-auto px-4 pb-2 pt-8 sm:hidden">
-        <article
+        <a
           v-for="artist in mobileTopArtists"
           :key="artist.id"
-          class="top-ranking-card relative min-w-[88%] snap-center rounded-3xl border bg-black/25 shadow-2xl shadow-black/40 backdrop-blur"
+          :href="artistUrl(artist)"
+          class="top-ranking-card relative min-w-[88%] snap-center rounded-3xl border bg-black/25 text-white shadow-2xl shadow-black/40 backdrop-blur transition hover:-translate-y-1 hover:border-fuchsia-300/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
           :class="[artist.border, artist.featured ? 'min-h-112' : 'min-h-96']"
         >
           <div class="top-ranking-info-overlay absolute inset-x-0 bottom-0 z-10 h-68 rounded-b-3xl bg-linear-to-t from-black/90 via-black/65 to-transparent"></div>
@@ -176,14 +178,15 @@ onMounted(loadArtists)
             v-if="artist.rank === 1"
             class="absolute -top-4 left-1/2 h-12 w-28 -translate-x-1/2 rounded-full border border-amber-200/40 bg-amber-300/10 blur-sm"
           ></div>
-        </article>
+        </a>
       </div>
 
       <div class="relative mx-auto hidden max-w-5xl gap-4 sm:grid sm:grid-cols-3 sm:items-end">
-        <article
+        <a
           v-for="artist in podiumArtists"
           :key="artist.id"
-          class="top-ranking-card relative rounded-3xl border bg-black/25 shadow-2xl shadow-black/40 backdrop-blur"
+          :href="artistUrl(artist)"
+          class="top-ranking-card relative rounded-3xl border bg-black/25 text-white shadow-2xl shadow-black/40 backdrop-blur transition hover:-translate-y-1 hover:border-fuchsia-300/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
           :class="[artist.border, artist.featured ? 'min-h-112 sm:min-h-120 sm:-translate-y-6' : 'min-h-96 sm:min-h-104 sm:scale-[0.94]']"
         >
           <div class="top-ranking-info-overlay absolute inset-x-0 bottom-0 z-10 h-68 rounded-b-3xl bg-linear-to-t from-black/90 via-black/65 to-transparent"></div>
@@ -265,7 +268,7 @@ onMounted(loadArtists)
             v-if="artist.rank === 1"
             class="absolute -top-4 left-1/2 h-12 w-28 -translate-x-1/2 rounded-full border border-amber-200/40 bg-amber-300/10 blur-sm"
           ></div>
-        </article>
+        </a>
       </div>
     </div>
 

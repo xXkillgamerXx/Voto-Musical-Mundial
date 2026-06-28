@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { availableLocales, setLocale, translate } from "../../i18n";
 import AuthModal from "../auth/AuthModal.vue";
 import ThemeToggle from "../theme/ThemeToggle.vue";
+import UserNotificationsMenu from "../UserNotificationsMenu.vue";
 import { getMe, getCurrentApiAuth, logout } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
 
@@ -27,8 +28,55 @@ const currentUser = ref(null);
 const userRole = ref("");
 const userUsername = ref("");
 const userPoints = ref(0);
+const displayPoints = ref(0);
+const pointsPulse = ref("");
 let unsubscribeAuth = null;
+let pointsAnimationFrame = null;
+let pointsPulseTimer = null;
 const adminRoles = new Set(["admin", "superadmin", "owner"]);
+
+const animatePoints = (to) => {
+  const target = Number(to || 0);
+  const from = Number(displayPoints.value || 0);
+
+  if (pointsAnimationFrame) {
+    window.cancelAnimationFrame(pointsAnimationFrame);
+    pointsAnimationFrame = null;
+  }
+
+  if (from === target) {
+    displayPoints.value = target;
+    return;
+  }
+
+  pointsPulse.value = target > from ? "up" : "down";
+  window.clearTimeout(pointsPulseTimer);
+  pointsPulseTimer = window.setTimeout(() => {
+    pointsPulse.value = "";
+  }, 900);
+
+  const duration = 650;
+  const start = performance.now();
+
+  const step = (nowTs) => {
+    const progress = Math.min(1, (nowTs - start) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    displayPoints.value = Math.round(from + (target - from) * eased);
+
+    if (progress < 1) {
+      pointsAnimationFrame = window.requestAnimationFrame(step);
+    } else {
+      displayPoints.value = target;
+      pointsAnimationFrame = null;
+    }
+  };
+
+  pointsAnimationFrame = window.requestAnimationFrame(step);
+};
+
+watch(userPoints, (next) => {
+  animatePoints(next);
+});
 
 const userName = computed(
   () => currentUser.value?.displayName || currentUser.value?.username || translate("nav.fanAccount"),
@@ -37,7 +85,7 @@ const userEmail = computed(() => currentUser.value?.email || "");
 const isSignedInUser = computed(() => Boolean(currentUser.value));
 const isAdmin = computed(() => adminRoles.has(userRole.value));
 const formattedUserPoints = computed(() =>
-  Number(userPoints.value || 0).toLocaleString(locale.value),
+  Number(displayPoints.value || 0).toLocaleString(locale.value),
 );
 const profileHref = computed(() =>
   userUsername.value ? `/user/${userUsername.value}` : "/perfil",
@@ -109,11 +157,15 @@ const handleEscape = (event) => {
 const listenUserProfile = (user) => {
   userRole.value = "";
   userUsername.value = "";
-  userPoints.value = 0;
 
   if (!user) {
+    userPoints.value = 0;
     return;
   }
+
+  userRole.value = String(user.role || "").trim().toLowerCase();
+  userUsername.value = user.username || "";
+  userPoints.value = Number(user.points || 0);
 
   getMe()
     .then((userData) => {
@@ -121,13 +173,15 @@ const listenUserProfile = (user) => {
         currentUser.value = { ...currentUser.value, ...userData };
         userRole.value = String(userData?.role || "").trim().toLowerCase();
         userUsername.value = userData?.username || "";
-        userPoints.value = Number(userData?.points || 0);
+        if (userData?.points !== undefined && userData?.points !== null) {
+          userPoints.value = Number(userData.points || 0);
+        }
       }
     })
     .catch(() => {
-      userRole.value = "";
-      userUsername.value = "";
-      userPoints.value = 0;
+      userRole.value = String(user.role || "").trim().toLowerCase();
+      userUsername.value = user.username || "";
+      userPoints.value = Number(user.points || 0);
     });
 };
 
@@ -151,6 +205,10 @@ onUnmounted(() => {
   document.removeEventListener("click", handleDocumentClick);
   document.removeEventListener("keydown", handleEscape);
   unsubscribeAuth?.();
+  if (pointsAnimationFrame) {
+    window.cancelAnimationFrame(pointsAnimationFrame);
+  }
+  window.clearTimeout(pointsPulseTimer);
 });
 </script>
 
@@ -201,11 +259,14 @@ onUnmounted(() => {
       <div class="flex items-center gap-2">
         <div
           v-if="isSignedInUser"
-          class="hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
+          class="points-chip hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
+          :class="pointsPulse === 'up' ? 'points-chip-up' : pointsPulse === 'down' ? 'points-chip-down' : ''"
         >
           <span class="text-amber-300">◆</span>
           <span>{{ $t("common.points", { count: formattedUserPoints }) }}</span>
         </div>
+
+        <UserNotificationsMenu v-if="isSignedInUser" />
 
         <div ref="settingsMenuRef" class="relative hidden md:block">
           <button
@@ -396,10 +457,17 @@ onUnmounted(() => {
 
           <div
             v-if="isSignedInUser"
-            class="flex items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
+            class="points-chip flex items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
+            :class="pointsPulse === 'up' ? 'points-chip-up' : pointsPulse === 'down' ? 'points-chip-down' : ''"
           >
             <span class="text-amber-300">◆</span>
             <span>{{ $t("common.points", { count: formattedUserPoints }) }}</span>
+          </div>
+          <div
+            v-if="isSignedInUser"
+            class="sm:col-span-3 flex justify-center"
+          >
+            <UserNotificationsMenu />
           </div>
           <div
             class="rounded-2xl border border-white/10 bg-white/5 p-2 text-center sm:col-span-3"
@@ -472,3 +540,33 @@ onUnmounted(() => {
     <AuthModal v-if="isAuthModalOpen" @close="isAuthModalOpen = false" />
   </header>
 </template>
+
+<style scoped>
+.points-chip {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.points-chip-up {
+  animation: points-pop-up 0.7s ease;
+  border-color: rgba(74, 222, 128, 0.55);
+  box-shadow: 0 0 22px rgba(74, 222, 128, 0.45);
+}
+
+.points-chip-down {
+  animation: points-pop-down 0.7s ease;
+  border-color: rgba(248, 113, 113, 0.5);
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.35);
+}
+
+@keyframes points-pop-up {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+
+@keyframes points-pop-down {
+  0% { transform: scale(1); }
+  35% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+</style>

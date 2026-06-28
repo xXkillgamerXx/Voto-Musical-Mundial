@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AdminModule } from './modules/admin/admin.module';
 import { ArtistsModule } from './modules/artists/artists.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CommentsModule } from './modules/comments/comments.module';
 import { HealthModule } from './modules/health/health.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 import { MissionsModule } from './modules/missions/missions.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PollsModule } from './modules/polls/polls.module';
@@ -21,6 +25,7 @@ import { WorkersModule } from './workers/workers.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     RedisModule,
+    MetricsModule,
     HealthModule,
     AdminModule,
     AuthModule,
@@ -28,12 +33,19 @@ import { WorkersModule } from './workers/workers.module';
     ArtistsModule,
     PollsModule,
     VotesModule,
+    CommentsModule,
     RankingsModule,
     RealtimeModule,
     MissionsModule,
     RewardsModule,
     NotificationsModule,
     WorkersModule,
+  ],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
+    },
   ],
 })
 export class AppModule {}

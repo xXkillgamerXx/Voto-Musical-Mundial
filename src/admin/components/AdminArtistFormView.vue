@@ -1,15 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  serverTimestamp,
-  updateDoc,
-} from '../../services/firebaseRemoved'
-import { getDownloadURL, ref as storageRef, uploadBytes } from '../../services/firebaseRemoved'
-import { db, storage } from '../../services/firebaseRemoved'
+  createAdminArtist,
+  updateAdminArtist,
+  uploadAdminImage,
+} from '../../services/api/adminApi'
+import { getArtist } from '../../services/api/artistsApi'
 import { translate } from '../../i18n'
 
 const props = defineProps({
@@ -47,6 +43,22 @@ const getArtistImage = (artist) =>
 const getArtistBanner = (artist) =>
   artist.banner || artist.bannerUrl || artist.cover || artist.coverImage || artist.portada || ''
 
+const normalizeArtist = (artist) => {
+  const metadata = artist?.metadata || {}
+
+  return {
+    ...metadata,
+    ...artist,
+    id: String(artist.id),
+    group: metadata.group || metadata.fandom || artist.group || '',
+    role: metadata.role || artist.role || artist.genre || '',
+    image: getArtistImage({ ...metadata, ...artist }),
+    banner: getArtistBanner({ ...metadata, ...artist }),
+    bio: metadata.bio || artist.bio || '',
+    status: metadata.status || artist.status || 'active',
+  }
+}
+
 const createSlug = (value) =>
   value
     .trim()
@@ -56,13 +68,6 @@ const createSlug = (value) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 
-const sanitizeFileName = (value) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-
 const isAcceptedImageFile = (file) => {
   const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp']
   const acceptedExtensions = ['.jpg', '.jpeg', '.png', '.webp']
@@ -70,24 +75,6 @@ const isAcceptedImageFile = (file) => {
 
   return acceptedTypes.includes(file.type)
     || acceptedExtensions.some((extension) => fileName.endsWith(extension))
-}
-
-const getImageContentType = (file) => {
-  const fileName = file.name.toLowerCase()
-
-  if (file.type) {
-    return file.type
-  }
-
-  if (fileName.endsWith('.webp')) {
-    return 'image/webp'
-  }
-
-  if (fileName.endsWith('.png')) {
-    return 'image/png'
-  }
-
-  return 'image/jpeg'
 }
 
 const uploadArtistImage = async (file, field) => {
@@ -103,30 +90,20 @@ const uploadArtistImage = async (file, field) => {
     return
   }
 
-  const isBanner = field === 'banner'
-  const artistSlug = createSlug(artistForm.value.name || 'artista')
-  const fileName = sanitizeFileName(file.name)
-  const imageRef = storageRef(storage, `artists/${artistSlug}/${Date.now()}-${field}-${fileName}`)
-
-  if (isBanner) {
-    isUploadingBanner.value = true
-  } else {
-    isUploadingProfile.value = true
-  }
+  const uploadType = field === 'banner' ? 'artist-banner' : 'artist-profile'
+  const uploadingState = field === 'banner' ? isUploadingBanner : isUploadingProfile
+  uploadingState.value = true
 
   try {
-    await uploadBytes(imageRef, file, { contentType: getImageContentType(file) })
-    artistForm.value[field] = await getDownloadURL(imageRef)
-    successMessage.value = isBanner ? 'Banner subido.' : 'Foto de perfil subida.'
-  } catch {
-    errorMessage.value = translate('admin.artistForm.errors.upload')
+    const upload = await uploadAdminImage(uploadType, file)
+    artistForm.value[field] = upload.path || upload.url || ''
+    successMessage.value = field === 'banner'
+      ? 'Banner subido correctamente.'
+      : 'Foto subida correctamente.'
+  } catch (error) {
+    errorMessage.value = error.message || 'No se pudo subir la imagen.'
   } finally {
-    if (isBanner) {
-      isUploadingBanner.value = false
-    } else {
-      isUploadingProfile.value = false
-    }
-
+    uploadingState.value = false
   }
 }
 
@@ -150,14 +127,13 @@ const loadArtist = async () => {
   errorMessage.value = ''
 
   try {
-    const artistSnap = await getDoc(doc(db, 'artists', props.artistId))
+    const artist = normalizeArtist(await getArtist(props.artistId))
 
-    if (!artistSnap.exists()) {
+    if (!artist?.id) {
       errorMessage.value = translate('admin.artistForm.errors.missingArtist')
       return
     }
 
-    const artist = artistSnap.data()
     artistForm.value = {
       name: artist.name || '',
       group: artist.group || artist.fandom || '',
@@ -197,18 +173,17 @@ const saveArtist = async () => {
     banner: artistForm.value.banner.trim(),
     bio: artistForm.value.bio.trim(),
     slug: createSlug(artistForm.value.name),
-    updatedAt: serverTimestamp(),
+    imageUrl: artistForm.value.image.trim(),
+    photoUrl: artistForm.value.image.trim(),
+    genre: artistForm.value.role.trim(),
   }
 
   try {
     if (isEditing.value) {
-      await updateDoc(doc(db, 'artists', props.artistId), artistData)
+      await updateAdminArtist(props.artistId, artistData)
       successMessage.value = translate('admin.artistForm.updated')
     } else {
-      await addDoc(collection(db, 'artists'), {
-        ...artistData,
-        createdAt: serverTimestamp(),
-      })
+      await createAdminArtist(artistData)
       successMessage.value = translate('admin.artistForm.created')
       artistForm.value = { ...emptyArtist }
     }
@@ -340,6 +315,12 @@ onMounted(loadArtist)
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
               <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.banner') }}</span>
+              <input
+                v-model="artistForm.banner"
+                type="text"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+                placeholder="/uploads/admin/artist-banner/imagen.webp"
+              />
               <label
                 class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-fuchsia-300/35 bg-fuchsia-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
                 @dragover.prevent
@@ -362,6 +343,12 @@ onMounted(loadArtist)
 
             <div>
               <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.profilePhoto') }}</span>
+              <input
+                v-model="artistForm.image"
+                type="text"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40"
+                placeholder="/uploads/admin/artist-profile/imagen.webp"
+              />
               <label
                 class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-300/35 bg-cyan-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
                 @dragover.prevent

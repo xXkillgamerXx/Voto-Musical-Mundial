@@ -12,3 +12,21 @@ export const markNotificationRead = (id) =>
     method: 'PATCH',
     token: authToken(),
   })
+
+export const registerPushToken = (token, permission = 'granted') =>
+  apiRequest('/notifications/push-token', {
+    method: 'POST',
+    token: authToken(),
+    body: {
+      token,
+      permission,
+      platform: 'web',
+    },
+  })
+
+export const unregisterPushToken = (token) =>
+  apiRequest('/notifications/push-token', {
+    method: 'DELETE',
+    token: authToken(),
+    body: { token },
+  })

@@ -1,16 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  serverTimestamp,
-  updateDoc,
-} from '../../services/firebaseRemoved'
-import { getDownloadURL, ref as storageRef, uploadBytes } from '../../services/firebaseRemoved'
-import { db, storage } from '../../services/firebaseRemoved'
+  createAdminPoll,
+  getAdminPollCategories,
+  updateAdminPoll,
+  uploadAdminImage,
+} from '../../services/api/adminApi'
+import { getPoll } from '../../services/api/pollsApi'
 import { translate } from '../../i18n'
 
 const props = defineProps({
@@ -44,7 +40,7 @@ const successMessage = ref('')
 const isEditing = computed(() => Boolean(props.pollId))
 const formTitle = computed(() => (isEditing.value ? translate('admin.pollForm.editTitle') : translate('admin.pollForm.createTitle')))
 const selectedCategory = computed(() =>
-  categories.value.find((category) => category.id === pollForm.value.categoryId) || null,
+  categories.value.find((category) => String(category.id) === String(pollForm.value.categoryId)) || null,
 )
 
 const createSlug = (value) =>
@@ -56,13 +52,6 @@ const createSlug = (value) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 
-const sanitizeFileName = (value) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-
 const isAcceptedImageFile = (file) => {
   const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp']
   const acceptedExtensions = ['.jpg', '.jpeg', '.png', '.webp']
@@ -72,22 +61,33 @@ const isAcceptedImageFile = (file) => {
     || acceptedExtensions.some((extension) => fileName.endsWith(extension))
 }
 
-const getImageContentType = (file) => {
-  const fileName = file.name.toLowerCase()
+const normalizeCategory = (category) => {
+  const metadata = category?.metadata || {}
 
-  if (file.type) {
-    return file.type
+  return {
+    ...metadata,
+    ...category,
+    id: String(category.id),
+    year: Number(metadata.year || category.year || new Date().getFullYear()),
+    icon: metadata.icon || category.icon || '',
+    visual: metadata.visual || category.visual || '',
   }
+}
 
-  if (fileName.endsWith('.webp')) {
-    return 'image/webp'
+const normalizePoll = (poll) => {
+  const metadata = poll?.metadata || poll?.config || {}
+  const category = poll?.category || null
+
+  return {
+    ...metadata,
+    ...poll,
+    id: String(poll.id),
+    banner: metadata.banner || poll.banner || '',
+    categoryId: poll.categoryId ? String(poll.categoryId) : metadata.categoryId || '',
+    categoryName: category?.name || metadata.categoryName || poll.categoryName || poll.title || '',
+    year: Number(metadata.year || poll.year || new Date().getFullYear()),
+    anonymousVoting: metadata.anonymousVoting || poll.anonymousVoting || {},
   }
-
-  if (fileName.endsWith('.png')) {
-    return 'image/png'
-  }
-
-  return 'image/jpeg'
 }
 
 const uploadPollBanner = async (file) => {
@@ -103,18 +103,14 @@ const uploadPollBanner = async (file) => {
     return
   }
 
-  const pollSlug = createSlug(pollForm.value.title || 'votacion')
-  const fileName = sanitizeFileName(file.name)
-  const bannerRef = storageRef(storage, `polls/${pollSlug}/${Date.now()}-banner-${fileName}`)
-
   isUploadingBanner.value = true
 
   try {
-    await uploadBytes(bannerRef, file, { contentType: getImageContentType(file) })
-    pollForm.value.banner = await getDownloadURL(bannerRef)
-    successMessage.value = translate('admin.pollForm.uploaded')
-  } catch {
-    errorMessage.value = translate('admin.pollForm.errors.upload')
+    const upload = await uploadAdminImage('poll-banner', file)
+    pollForm.value.banner = upload.path || upload.url || ''
+    successMessage.value = 'Banner subido correctamente.'
+  } catch (error) {
+    errorMessage.value = error.message || 'No se pudo subir el banner.'
   } finally {
     isUploadingBanner.value = false
   }
@@ -132,11 +128,8 @@ const handleBannerDrop = (event) => {
 }
 
 const loadCategories = async () => {
-  const categoriesSnap = await getDocs(collection(db, 'pollCategories'))
-  categories.value = categoriesSnap.docs.map((categoryDoc) => ({
-    id: categoryDoc.id,
-    ...categoryDoc.data(),
-  })).sort((current, next) =>
+  const rows = await getAdminPollCategories()
+  categories.value = rows.map(normalizeCategory).sort((current, next) =>
     Number(next.year || 0) - Number(current.year || 0)
       || String(current.name || '').localeCompare(String(next.name || '')),
   )
@@ -165,14 +158,7 @@ const loadPoll = async () => {
   errorMessage.value = ''
 
   try {
-    const pollSnap = await getDoc(doc(db, 'polls', props.pollId))
-
-    if (!pollSnap.exists()) {
-      errorMessage.value = translate('admin.pollForm.errors.missingPoll')
-      return
-    }
-
-    const poll = pollSnap.data()
+    const poll = normalizePoll(await getPoll(props.pollId))
     pollForm.value = {
       title: poll.title || '',
       description: poll.description || '',
@@ -210,7 +196,8 @@ const savePoll = async () => {
     status: pollForm.value.status,
     categoryId: pollForm.value.categoryId || '',
     categoryName: selectedCategory.value?.name || pollForm.value.categoryName.trim() || pollForm.value.title.trim(),
-    type: 'list',
+    type: 'standard',
+    displayType: 'list',
     phase: 'initial',
     year: Number(pollForm.value.year || selectedCategory.value?.year || new Date().getFullYear()),
     slug: createSlug(pollForm.value.title),
@@ -224,22 +211,18 @@ const savePoll = async () => {
     },
     isLive: pollForm.value.status === 'live',
     winnersStatus: pollForm.value.status === 'closed' ? 'selected' : 'pending',
-    updatedAt: serverTimestamp(),
   }
 
   try {
     if (isEditing.value) {
-      await updateDoc(doc(db, 'polls', props.pollId), pollData)
+      await updateAdminPoll(props.pollId, pollData)
       successMessage.value = translate('admin.pollForm.updated')
     } else {
-      await addDoc(collection(db, 'polls'), {
+      await createAdminPoll({
         ...pollData,
         winnerIds: [],
-        startAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
       })
-      successMessage.value = translate('admin.pollForm.created')
-      pollForm.value = { ...emptyPoll }
+      window.location.href = '/admin/votaciones'
     }
   } catch {
     errorMessage.value = translate('admin.pollForm.errors.save')
@@ -384,6 +367,12 @@ onMounted(async () => {
 
           <div>
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.banner') }}</span>
+            <input
+              v-model="pollForm.banner"
+              type="text"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              placeholder="/uploads/admin/poll-banner/imagen.webp"
+            />
             <label
               class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-fuchsia-300/35 bg-fuchsia-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
               @dragover.prevent

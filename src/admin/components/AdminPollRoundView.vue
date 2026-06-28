@@ -47,6 +47,9 @@ const removingContestantId = ref('')
 const roundEndAtInput = ref(null)
 const selectedGroupArtistIds = ref([])
 const contestantToRemove = ref(null)
+const artistSearch = ref('')
+const draggedVersusContestantId = ref('')
+const isReorderingVersus = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const copiedEmbed = ref('')
@@ -61,12 +64,32 @@ const previousRound = computed(() => {
   return rounds.value[currentRoundIndex.value - 1] || null
 })
 const previousWinnerIds = computed(() => previousRound.value?.winnerIds || [])
-const availableArtists = computed(() => {
+const availableArtistsBase = computed(() => {
   const sourceArtists = previousRound.value
     ? artists.value.filter((artist) => previousWinnerIds.value.includes(artist.id))
     : artists.value
 
   return sourceArtists.filter((artist) => !roundArtistIds.value.has(artist.id))
+})
+const availableArtists = computed(() => {
+  const search = artistSearch.value.trim().toLowerCase()
+
+  if (!search) {
+    return availableArtistsBase.value
+  }
+
+  return availableArtistsBase.value.filter((artist) =>
+    [
+      artist.name,
+      artist.group,
+      artist.fandom,
+      artist.country,
+      artist.role,
+      artist.genre,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(search)),
+  )
 })
 const currentContestants = computed(() =>
   roundContestants.value
@@ -414,6 +437,65 @@ const removeVersusGroup = async (group) => {
     await listenBaseData()
   } catch {
     errorMessage.value = translate('admin.round.errors.deleteGroup')
+  }
+}
+
+const startVersusDrag = (contestant) => {
+  draggedVersusContestantId.value = contestant?.id || ''
+}
+
+const clearVersusDrag = () => {
+  draggedVersusContestantId.value = ''
+}
+
+const dropVersusContestant = async (targetContestant, targetGroupNumber, targetOrder) => {
+  const draggedId = draggedVersusContestantId.value
+  clearVersusDrag()
+
+  if (!draggedId || isReorderingVersus.value) {
+    return
+  }
+
+  const draggedContestant = currentContestants.value.find((contestant) => contestant.id === draggedId)
+  if (!draggedContestant || draggedContestant.id === targetContestant?.id) {
+    return
+  }
+
+  const fromGroup = Number(draggedContestant.matchGroup || 0)
+  const fromOrder = Number(draggedContestant.matchOrder || 0)
+  const toGroup = Number(targetGroupNumber || targetContestant?.matchGroup || 0)
+  const toOrder = Number(targetOrder ?? targetContestant?.matchOrder ?? 0)
+
+  if (!toGroup) {
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  isReorderingVersus.value = true
+
+  try {
+    const updates = [
+      updateAdminContestant(props.pollId, draggedContestant.id, {
+        matchGroup: toGroup,
+        matchOrder: toOrder,
+      }),
+    ]
+
+    if (targetContestant?.id) {
+      updates.push(updateAdminContestant(props.pollId, targetContestant.id, {
+        matchGroup: fromGroup || toGroup,
+        matchOrder: fromGroup ? fromOrder : toOrder,
+      }))
+    }
+
+    await Promise.all(updates)
+    successMessage.value = 'Duelo actualizado.'
+    await listenBaseData()
+  } catch {
+    errorMessage.value = 'No se pudo actualizar el duelo.'
+  } finally {
+    isReorderingVersus.value = false
   }
 }
 
@@ -844,9 +926,29 @@ onMounted(async () => {
           <div class="flex items-center justify-between gap-3">
             <h4 class="text-lg font-black text-white">{{ $t('admin.round.available') }}</h4>
             <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
-              {{ availableArtists.length }} artistas
+              {{ availableArtists.length }} / {{ availableArtistsBase.length }} artistas
             </span>
           </div>
+          <label class="relative mt-3 block">
+            <i
+              class="fa-solid fa-magnifying-glass pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xs text-slate-500"
+              aria-hidden="true"
+            ></i>
+            <input
+              v-model="artistSearch"
+              type="search"
+              class="min-h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-10 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40 focus:bg-white/8"
+              placeholder="Buscar artista, fandom, pais o rol..."
+            />
+            <button
+              v-if="artistSearch"
+              type="button"
+              class="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-xl border border-white/10 bg-white/5 text-xs font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
+              @click="artistSearch = ''"
+            >
+              ×
+            </button>
+          </label>
           <div class="mt-3 max-h-[300px] space-y-2 overflow-y-auto pr-1">
             <div
               v-for="artist in availableArtists"
@@ -885,6 +987,9 @@ onMounted(async () => {
             <p v-if="!availableArtists.length" class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400">
               <span v-if="previousRound && !previousWinnerIds.length">
                 La ronda anterior aun no tiene ganadores seleccionados.
+              </span>
+              <span v-else-if="artistSearch">
+                No encontramos artistas con esa busqueda.
               </span>
               <span v-else>{{ $t('admin.round.emptyAvailable') }}</span>
             </p>
@@ -971,12 +1076,22 @@ onMounted(async () => {
         v-if="roundForm.type === 'versus'"
         class="mt-4 rounded-2xl border border-white/10 bg-slate-950/35 p-3"
       >
+        <p
+          v-if="isReorderingVersus"
+          class="mb-3 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm font-black text-cyan-100"
+        >
+          <i class="fa-solid fa-circle-notch fa-spin mr-2" aria-hidden="true"></i>
+          Guardando orden de duelos...
+        </p>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-300">
               Duelos
             </p>
             <h4 class="mt-1 text-lg font-black text-white">{{ $t('admin.round.generatedDuels') }}</h4>
+            <p class="mt-1 text-xs font-bold text-slate-400">
+              Arrastra una tarjeta sobre otra para cambiar quien va contra quien.
+            </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
@@ -1034,7 +1149,13 @@ onMounted(async () => {
             <div class="grid gap-3 md:grid-cols-2">
               <div
                 v-if="group.contestants[0]"
-                class="flex min-h-20 items-center gap-3 rounded-2xl border border-violet-300/15 bg-white/5 p-3"
+                draggable="true"
+                class="flex min-h-20 cursor-grab items-center gap-3 rounded-2xl border border-violet-300/15 bg-white/5 p-3 transition hover:border-fuchsia-300/35 active:cursor-grabbing"
+                :class="draggedVersusContestantId === group.contestants[0].id && 'opacity-50'"
+                @dragstart="startVersusDrag(group.contestants[0])"
+                @dragend="clearVersusDrag"
+                @dragover.prevent
+                @drop.prevent="dropVersusContestant(group.contestants[0], group.groupNumber, 0)"
               >
                 <span class="grid size-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-[10px] font-black text-slate-300">
                   A
@@ -1055,7 +1176,13 @@ onMounted(async () => {
               </div>
               <div
                 v-if="group.contestants[1]"
-                class="flex min-h-20 items-center gap-3 rounded-2xl border border-cyan-300/15 bg-white/5 p-3"
+                draggable="true"
+                class="flex min-h-20 cursor-grab items-center gap-3 rounded-2xl border border-cyan-300/15 bg-white/5 p-3 transition hover:border-cyan-300/45 active:cursor-grabbing"
+                :class="draggedVersusContestantId === group.contestants[1].id && 'opacity-50'"
+                @dragstart="startVersusDrag(group.contestants[1])"
+                @dragend="clearVersusDrag"
+                @dragover.prevent
+                @drop.prevent="dropVersusContestant(group.contestants[1], group.groupNumber, 1)"
               >
                 <span class="grid size-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-[10px] font-black text-slate-300">
                   B

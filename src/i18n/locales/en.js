@@ -542,6 +542,8 @@ export default {
     notFoundDescription: 'We could not find that user profile.',
     backHome: 'Back to home',
     followedArtists: 'Followed artists',
+    emptyFollowingEyebrow: 'Explore',
+    emptyFollowingTitle: 'Artists to follow',
     user: 'User',
     email: 'Email',
     role: 'Role',
@@ -551,6 +553,20 @@ export default {
     defaultArtist: 'Artist',
     following: 'Following',
     emptyFollowing: 'You are not following artists yet. Open an artist profile and tap follow.',
+    emptyFollowingActions: {
+      artists: {
+        title: 'Popular artists',
+        text: 'Discover profiles and follow your favorites.',
+      },
+      ranking: {
+        title: 'Popularity Ranking',
+        text: 'See who is leading the global chart.',
+      },
+      polls: {
+        title: 'Polls',
+        text: 'Support your artists in active polls.',
+      },
+    },
   },
   register: {
     backHome: '← Back to home',

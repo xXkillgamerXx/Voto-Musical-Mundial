@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vmm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-votomusicamundial}
+      POSTGRES_USER: ${POSTGRES_USER:-votomusicamundial}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-votomusicamundial}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-votomusicamundial} -d ${POSTGRES_DB:-votomusicamundial}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vmm-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Sincroniza el esquema de Prisma con la base de datos (una sola vez al arrancar).
+  migrate:
+    build:
+      context: .
+      target: build
+    image: vmm-api-build:latest
+    env_file: .env
+    command: npx prisma db push --skip-generate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    image: vmm-api:latest
+    container_name: vmm-api
+    restart: unless-stopped
+    env_file: .env
+    command: node dist/main.js
+    # PRUEBA: expuesto a la IP publica. Accede en http://TU_IP:4000/api
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    image: vmm-api:latest
+    container_name: vmm-worker
+    restart: unless-stopped
+    env_file: .env
+    command: node dist/workers/main.js
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
