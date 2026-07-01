@@ -28,6 +28,7 @@ const NotificationsPage = defineAsyncComponent(() => import('./pages/Notificatio
 const PollsPage = defineAsyncComponent(() => import('./pages/PollsPage.vue'))
 const PushNotificationPrompt = defineAsyncComponent(() => import('./components/PushNotificationPrompt.vue'))
 const RankingPopularityPage = defineAsyncComponent(() => import('./pages/RankingPopularityPage.vue'))
+const SubscriptionsPage = defineAsyncComponent(() => import('./pages/SubscriptionsPage.vue'))
 const RegisterPage = defineAsyncComponent(() => import('./pages/RegisterPage.vue'))
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
 const UserProfilePage = defineAsyncComponent(() => import('./pages/UserProfilePage.vue'))
@@ -46,6 +47,7 @@ const isTermsPage = computed(() => currentPath.value === '/terminos-y-condicione
 const isPollsPage = computed(() => currentPath.value === '/votaciones')
 const isHallOfFamePage = computed(() => currentPath.value === '/salon-de-la-fama')
 const isArtistsPage = computed(() => currentPath.value === '/artistas')
+const isSubscriptionsPage = computed(() => currentPath.value === '/votos-plus')
 const isRankingPopularityPage = computed(() => currentPath.value === '/ranking-popularity')
 const isNewsPage = computed(() => currentPath.value === '/noticias')
 const isNotificationsPage = computed(() => currentPath.value === '/notificaciones')
@@ -211,6 +213,7 @@ onUnmounted(() => {
       <PollsPage v-else-if="isPollsPage" />
       <HallOfFamePage v-else-if="isHallOfFamePage" />
       <ArtistsPage v-else-if="isArtistsPage" />
+      <SubscriptionsPage v-else-if="isSubscriptionsPage" />
       <RankingPopularityPage v-else-if="isRankingPopularityPage" />
       <NewsPage v-else-if="isNewsPage" />
       <NotificationsPage v-else-if="isNotificationsPage" />

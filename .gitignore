@@ -16,6 +16,8 @@ backend/uploads/
 backend/firebase-service-account*.json
 firebase-service-account*.json
 vmm-*-deploy.tar.gz
+vmm_server
+vmm_server.pub
 vite.config.js.timestamp-*.mjs
 
 # Editor directories and files

@@ -12,6 +12,7 @@ const navItems = [
   { labelKey: "nav.home", href: "/" },
   { labelKey: "nav.polls", href: "/votaciones" },
   { labelKey: "nav.artists", href: "/artistas" },
+  { labelKey: "nav.subscriptions", href: "/votos-plus" },
   { labelKey: "nav.rankingPopularity", href: "/ranking-popularity" },
   { labelKey: "nav.hallOfFame", href: "/salon-de-la-fama" },
   { labelKey: "nav.news", href: "/noticias" },

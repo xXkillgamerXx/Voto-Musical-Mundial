@@ -3,6 +3,7 @@ const footerLinks = [
   { titleKey: 'nav.home', href: '/' },
   { titleKey: 'nav.polls', href: '/votaciones' },
   { titleKey: 'nav.artists', href: '/artistas' },
+  { titleKey: 'nav.subscriptions', href: '/votos-plus' },
   { titleKey: 'nav.rankingPopularity', href: '/ranking-popularity' },
   { titleKey: 'nav.hallOfFame', href: '/salon-de-la-fama' },
   { titleKey: 'nav.news', href: '/noticias' },
