@@ -5,14 +5,38 @@ let socket = null
 
 export const getRealtimeSocket = () => {
   if (!socket) {
-    const baseUrl = getApiBaseUrl().replace(/\/api$/, '')
+    const baseUrl = getApiBaseUrl().replace(/\/api$/, '') || window.location.origin
     socket = io(baseUrl, {
-      transports: ['websocket'],
+      path: '/socket.io',
+      transports: ['polling', 'websocket'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     })
   }
 
   return socket
+}
+
+export const onRealtimeConnectionChange = (callback) => {
+  const client = getRealtimeSocket()
+  const onConnect = () => callback(true)
+  const onDisconnect = () => callback(false)
+
+  client.on('connect', onConnect)
+  client.on('disconnect', onDisconnect)
+
+  if (client.connected) {
+    callback(true)
+  }
+
+  return () => {
+    client.off('connect', onConnect)
+    client.off('disconnect', onDisconnect)
+  }
 }
 
 export const subscribeUserRealtime = (userId, { onUserEvent } = {}) => {
@@ -55,7 +79,11 @@ export const subscribePollRealtime = (pollId, { onVoteDelta, onResultsDirty, onP
 
 export const subscribeLivePollsRealtime = ({ onPollStateChanged, onVoteDelta } = {}) => {
   const client = getRealtimeSocket()
-  const join = () => client.emit('join_live_polls')
+  const join = () => {
+    if (client.connected) {
+      client.emit('join_live_polls')
+    }
+  }
 
   join()
   client.on('connect', join)

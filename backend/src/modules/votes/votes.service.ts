@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PollStatus, RoundType } from '@prisma/client';
+import { PollStatus, RoundType, UserRole } from '@prisma/client';
 import { Request } from 'express';
 import { BLOCKED_IPS_KEY, BLOCKED_USERS_KEY } from '../../common/moderation-keys';
 import { getClientIp, hashIp } from '../../common/request';
@@ -23,10 +23,11 @@ import { TurnstileService } from './turnstile.service';
 const DEFAULT_COOLDOWN_MINUTES = 60;
 // Server-side hard cap on how many votes a single registered request may add.
 // Must stay aligned with CastVoteDto @Max(amount) and the frontend vote queue chunk size.
-const MAX_BATCH_VOTES = 1000;
+const MAX_BATCH_VOTES = 100000;
 const DEFAULT_POINTS_PER_VOTE = 1;
 const DEFAULT_USER_VOTES_PER_MINUTE_LIMIT = 20000;
 const DEFAULT_IP_VOTES_PER_MINUTE_LIMIT = 30000;
+const STAFF_ROLES = new Set<UserRole>([UserRole.admin, UserRole.superadmin, UserRole.owner]);
 
 @Injectable()
 export class VotesService {
@@ -85,11 +86,13 @@ export class VotesService {
           photoUrl: true,
           points: true,
           spentPoints: true,
+          role: true,
         },
       })
       : null;
     const userDisplayName = voteUser?.displayName || voteUser?.username || '';
     const userPhotoUrl = voteUser?.photoUrl || '';
+    const isStaffVote = Boolean(voteUser?.role && STAFF_ROLES.has(voteUser.role));
 
     const artistName = context.contestant.artist?.name || '';
     const pollTitle = context.poll.title || '';
@@ -137,6 +140,8 @@ export class VotesService {
           userPhotoUrl: userPhotoUrl || null,
           amount,
           isAnonymous: identity.type === 'anonymous',
+          staffVote: isStaffVote,
+          createdAt: now.toISOString(),
         }),
       )
       .exec();
@@ -301,10 +306,12 @@ export class VotesService {
     const window = Math.floor(Date.now() / 60000);
     const key = `rl:vote:${identity.type}:${identity.id}:${window}`;
     const ipKey = `rl:vote:ip:${ipHash}:${window}`;
-    // Count by number of votes (not requests) so batching cannot bypass the limit.
+    // Registered users: limit requests/minute so bulk voting can send many votes per call.
+    // Anonymous/IP paths still count votes to prevent abuse.
+    const userIncrement = identity.type === 'user' ? 1 : amount;
     const result = await this.redis.client
       .multi()
-      .incrby(key, amount)
+      .incrby(key, userIncrement)
       .expire(key, 60)
       .incrby(ipKey, amount)
       .expire(ipKey, 60)
@@ -408,7 +415,7 @@ export class VotesService {
 
   async recentRegisteredActivity(limitValue?: string, hoursValue?: string) {
     const limit = Math.min(Math.max(Number(limitValue || 24), 1), 50);
-    const hours = Math.min(Math.max(Number(hoursValue || 168), 1), 720);
+    const hours = Math.min(Math.max(Number(hoursValue || 24), 1), 720);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     const rows = await this.prisma.voteLedger.findMany({
@@ -416,6 +423,12 @@ export class VotesService {
         isAnonymous: false,
         userId: { not: null },
         createdAt: { gte: since },
+        poll: {
+          status: PollStatus.live,
+        },
+        user: {
+          role: { notIn: [UserRole.admin, UserRole.superadmin, UserRole.owner] },
+        },
       },
       take: limit,
       orderBy: { createdAt: 'desc' },
@@ -458,7 +471,7 @@ export class VotesService {
         return {
           id: row.id.toString(),
           createdAt: row.createdAt,
-          amount: Number(row.amount || 0),
+          amount: Math.min(Number(row.amount || 0), 5),
           pollId: row.pollId.toString(),
           pollTitle: row.poll?.title || '',
           pollSlug: row.poll?.slug || '',

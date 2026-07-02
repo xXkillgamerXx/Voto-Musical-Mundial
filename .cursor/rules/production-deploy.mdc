@@ -14,16 +14,24 @@ Key facts:
 - SSH port: `2981`
 - SSH user: `root`
 - SSH key: `~/.ssh/vmm_server`
-- Frontend root: `/www/wwwroot/vote.musicmundial.com`
+- Frontend root: `/www/wwwroot/vote.musicmundial.com` (Apache static files)
 - Backend root: `/www/wwwroot/vote.musicmundial.com/backend`
 - Active server compose: `/www/wwwroot/vote.musicmundial.com/backend/docker-compose.vote-db.yml`
+
+Architecture:
+
+- Frontend = Apache static build
+- Backend = Docker (`vmm-api`, `vmm-worker`, `vmm-redis`)
+- PostgreSQL = aaPanel on host, not Docker
+- Never run backend with `npm start` on the host for production
 
 Rules:
 
 - Do not deploy with Firebase Hosting. Firebase is only used for Web Push notifications.
 - Do not upload local `.env`, `node_modules`, `dist`, `backend/dist`, or generated deploy archives.
 - Preserve server folders/files: `backend`, `uploads`, `.well-known`, `.user.ini`, and server `.env`.
-- Build frontend locally with `VITE_API_BASE_URL=/api` and `VITE_FIREBASE_VAPID_KEY` from `DEPLOYMENT.md`.
+- Build frontend locally with `VITE_API_BASE_URL=/api`, `VITE_FIREBASE_VAPID_KEY`, and `VITE_TURNSTILE_SITE_KEY` from `DEPLOYMENT.md`.
 - Validate backend with `npm run lint` and `npm run build` inside `backend`.
 - Deploy backend source only, then run `docker compose -f docker-compose.vote-db.yml build` and `docker compose -f docker-compose.vote-db.yml up -d` on the server.
-- Verify after deploy: web `200 OK`, `/api/health` returns `ok: true`, and containers `vmm-api`, `vmm-worker`, `vmm-redis` are running.
+- After uploading frontend `dist`, always fix permissions on the server: `assets/` must be `755`, files `644`. Otherwise Apache returns 403 on JS/CSS and the page appears broken.
+- Verify after deploy: web `200 OK`, at least one `/assets/*.js` returns `200 OK`, `/api/health` returns `ok: true`, and containers `vmm-api`, `vmm-worker`, `vmm-redis` are running.

@@ -23,7 +23,7 @@ export class CastVoteDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(1000)
+  @Max(100000)
   amount?: number;
 
   @IsOptional()

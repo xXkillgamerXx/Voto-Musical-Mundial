@@ -1,20 +1,20 @@
 <script setup>
 const communityLinks = [
   {
-    titleKey: 'home.community.x.title',
-    descriptionKey: 'home.community.x.description',
-    href: 'https://x.com/MusicMundial',
-    icon: 'fa-brands fa-x-twitter',
-    labelKey: 'home.community.x.label',
-    visual: 'from-slate-950 via-violet-950 to-black',
-  },
-  {
     titleKey: 'home.community.startly.title',
     descriptionKey: 'home.community.startly.description',
     href: 'https://startlyapp.com/musicmundial',
     icon: 'fa-solid fa-link',
     labelKey: 'home.community.startly.label',
     visual: 'from-fuchsia-950 via-purple-900 to-slate-950',
+  },
+  {
+    titleKey: 'home.community.x.title',
+    descriptionKey: 'home.community.x.description',
+    href: 'https://x.com/MusicMundial',
+    icon: 'fa-brands fa-x-twitter',
+    labelKey: 'home.community.x.label',
+    visual: 'from-slate-950 via-violet-950 to-black',
   },
 ]
 </script>
@@ -24,7 +24,7 @@ const communityLinks = [
     <div class="mb-5 flex items-end justify-between gap-4">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
-          Music Mundial
+          {{ $t('home.community.eyebrow') }}
         </p>
         <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
           {{ $t('home.community.title') }}

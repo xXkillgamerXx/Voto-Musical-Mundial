@@ -1,17 +1,26 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { getStoredAuth } from '../services/api/client'
-import { subscribeLivePollsRealtime } from '../services/api/realtimeApi'
+import { onRealtimeConnectionChange, subscribeLivePollsRealtime } from '../services/api/realtimeApi'
 import { getRecentVoteActivity } from '../services/api/votesApi'
 
 const artists = ref([])
 const pollTitleById = ref({})
 const pollMetaById = ref({})
+const livePollIds = ref(new Set())
 const recentVotes = ref([])
+const now = ref(Date.now())
+const isLiveConnected = ref(false)
+const pulseIds = ref([])
+const statPulse = ref({ fans: false, activity: false, polls: false })
+
 let unsubscribeArtists = null
 let unsubscribeLivePolls = null
 let unsubscribeLiveActivity = null
+let unsubscribeConnection = null
+let clockTimer = null
+let refreshTimer = null
 
 const colorOptions = [
   'from-fuchsia-500 to-violet-500',
@@ -34,7 +43,28 @@ const getArtist = (artistId) => artists.value.find((artist) => String(artist.id)
 const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || artist?.photoUrl || ''
 
-const isRegisteredVote = (vote) => Boolean(vote?.userId) && !vote?.isAnonymous && vote?.isAnonymous !== '1'
+const isRegisteredVote = (vote) =>
+  Boolean(vote?.userId)
+  && !vote?.isAnonymous
+  && vote?.isAnonymous !== '1'
+  && !vote?.staffVote
+  && vote?.staffVote !== '1'
+
+const isActivePollVote = (vote) => {
+  const pollId = String(vote?.pollId || '')
+
+  if (!pollId) {
+    return false
+  }
+
+  if (!livePollIds.value.size) {
+    return true
+  }
+
+  return livePollIds.value.has(pollId)
+}
+
+const acceptsVote = (vote) => isRegisteredVote(vote) && isActivePollVote(vote)
 
 const localUserForVote = (vote) => {
   const authUser = getStoredAuth()?.user
@@ -68,14 +98,14 @@ const pollUrlFor = (vote) => {
   return slug ? `/votacion/${year}/${slug}` : '/votaciones'
 }
 
-const formatTime = (createdAt) => {
+const formatTime = (createdAt, currentNow = now.value) => {
   const date = createdAt?.toDate?.() || (createdAt ? new Date(createdAt) : null)
 
   if (!date || Number.isNaN(date.getTime())) {
     return 'ahora'
   }
 
-  const seconds = Math.max(Math.floor((Date.now() - date.getTime()) / 1000), 0)
+  const seconds = Math.max(Math.floor((currentNow - date.getTime()) / 1000), 0)
 
   if (seconds < 60) {
     return `hace ${seconds || 1} s`
@@ -107,8 +137,20 @@ const dateLike = (value) => {
   }
 }
 
+const MAX_PUBLIC_VOTE_AMOUNT = 5
+const MERGE_WINDOW_MS = 90_000
+
+const capPublicVoteAmount = (amount) =>
+  Math.max(1, Math.min(MAX_PUBLIC_VOTE_AMOUNT, Math.floor(Number(amount || 1))))
+
+const buildVoteId = (vote) =>
+  String(
+    vote.id
+    || `${vote.pollId}-${vote.userId}-${vote.createdAt || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  )
+
 const normalizeVoteRow = (vote) => ({
-  id: String(vote.id || `${vote.pollId}-${vote.userId}-${vote.createdAt}`),
+  id: buildVoteId(vote),
   pollId: String(vote.pollId || ''),
   pollTitle: vote.pollTitle || '',
   pollSlug: vote.pollSlug || '',
@@ -120,23 +162,72 @@ const normalizeVoteRow = (vote) => ({
   username: vote.username || '',
   userDisplayName: vote.userDisplayName || '',
   userPhotoUrl: vote.userPhotoUrl || '',
-  amount: Number(vote.amount || 1),
-  createdAt: dateLike(vote.createdAt),
+  amount: capPublicVoteAmount(vote.amount),
+  createdAt: dateLike(vote.createdAt || new Date().toISOString()),
 })
 
+const triggerPulse = (id) => {
+  if (!id || pulseIds.value.includes(id)) {
+    return
+  }
+
+  pulseIds.value = [...pulseIds.value, id]
+  window.setTimeout(() => {
+    pulseIds.value = pulseIds.value.filter((entryId) => entryId !== id)
+  }, 2800)
+}
+
+const triggerStatPulse = (key) => {
+  statPulse.value = { ...statPulse.value, [key]: true }
+  window.setTimeout(() => {
+    statPulse.value = { ...statPulse.value, [key]: false }
+  }, 650)
+}
+
 const pushVote = (vote) => {
-  if (!isRegisteredVote(vote)) {
+  if (!acceptsVote(vote)) {
     return
   }
 
   const normalized = normalizeVoteRow(vote)
+  const mergeIndex = recentVotes.value.findIndex(
+    (entry) =>
+      entry.userId === normalized.userId
+      && entry.artistId === normalized.artistId
+      && entry.pollId === normalized.pollId
+      && Date.now() - entry.createdAt.toMillis() <= MERGE_WINDOW_MS,
+  )
+
+  if (mergeIndex >= 0) {
+    const existing = recentVotes.value[mergeIndex]
+    const merged = {
+      ...existing,
+      createdAt: normalized.createdAt,
+      amount: capPublicVoteAmount(existing.amount + normalized.amount),
+    }
+
+    recentVotes.value = [
+      merged,
+      ...recentVotes.value.filter((_, index) => index !== mergeIndex),
+    ].slice(0, 24)
+    triggerPulse(merged.id)
+    return
+  }
+
   recentVotes.value = [
     normalized,
     ...recentVotes.value.filter((entry) => entry.id !== normalized.id),
   ].slice(0, 24)
+  triggerPulse(normalized.id)
 }
 
 const syncPollTitles = (pollRows) => {
+  livePollIds.value = new Set(
+    (pollRows || [])
+      .filter((poll) => poll?.id)
+      .map((poll) => String(poll.id)),
+  )
+
   pollTitleById.value = Object.fromEntries(
     (pollRows || [])
       .filter((poll) => poll?.id)
@@ -153,10 +244,16 @@ const syncPollTitles = (pollRows) => {
         },
       ]),
   )
+
+  if (livePollIds.value.size) {
+    recentVotes.value = recentVotes.value.filter((vote) => livePollIds.value.has(vote.pollId))
+  }
 }
 
-const activities = computed(() =>
-  recentVotes.value.map((vote, index) => {
+const activities = computed(() => {
+  now.value
+
+  return recentVotes.value.map((vote, index) => {
     const artist = getArtist(vote.artistId)
     const artistName = vote.artistName || artist?.name || 'Artista'
 
@@ -170,21 +267,21 @@ const activities = computed(() =>
       pollUrl: pollUrlFor(vote),
       time: formatTime(vote.createdAt),
       votes: Number(vote.amount || 1),
+      showVoteCount: Number(vote.amount || 1) <= 1,
+      isPulsing: pulseIds.value.includes(vote.id),
       color: colorOptions[index % colorOptions.length],
       visual: visualOptions[index % visualOptions.length],
     }
-  }),
-)
+  })
+})
 
 const activeUsers = computed(() => new Set(recentVotes.value.map((vote) => vote.userId).filter(Boolean)).size)
 
 const votesPerMinute = computed(() =>
-  recentVotes.value
-    .filter((vote) => {
-      const voteTime = vote.createdAt?.toMillis?.()
-      return voteTime && Date.now() - voteTime <= 60000
-    })
-    .reduce((total, vote) => total + Number(vote.amount || 1), 0),
+  recentVotes.value.filter((vote) => {
+    const voteTime = vote.createdAt?.toMillis?.()
+    return voteTime && now.value - voteTime <= 60000
+  }).length,
 )
 
 const activePollsCount = computed(() =>
@@ -193,32 +290,92 @@ const activePollsCount = computed(() =>
 
 const liveStats = computed(() => [
   {
+    key: 'fans',
     labelKey: 'widgets.activity.activeFans',
     value: activeUsers.value.toLocaleString('es'),
     icon: 'fa-solid fa-users',
   },
   {
+    key: 'activity',
     labelKey: 'widgets.activity.votesPerMinute',
     value: votesPerMinute.value.toLocaleString('es'),
     icon: 'fa-solid fa-bolt',
   },
   {
+    key: 'polls',
     labelKey: 'widgets.activity.activePolls',
     value: activePollsCount.value.toLocaleString('es'),
     icon: 'fa-solid fa-check-to-slot',
   },
 ])
 
+watch(activeUsers, (next, prev) => {
+  if (next !== prev) triggerStatPulse('fans')
+})
+
+watch(votesPerMinute, (next, prev) => {
+  if (next !== prev) triggerStatPulse('activity')
+})
+
+watch(activePollsCount, (next, prev) => {
+  if (next !== prev) triggerStatPulse('polls')
+})
+
 const loadRecentActivity = async () => {
   try {
-    const rows = await getRecentVoteActivity(24, 168)
+    const rows = await getRecentVoteActivity(24, 6)
     recentVotes.value = (Array.isArray(rows) ? rows : [])
-      .filter(isRegisteredVote)
+      .filter(acceptsVote)
       .map(normalizeVoteRow)
   } catch {
     recentVotes.value = []
   }
 }
+
+const syncRecentActivity = async () => {
+  if (document.visibilityState === 'hidden') {
+    return
+  }
+
+  try {
+    const rows = await getRecentVoteActivity(24, 6)
+    const incoming = (Array.isArray(rows) ? rows : [])
+      .filter(acceptsVote)
+      .map(normalizeVoteRow)
+    const mergedById = new Map(recentVotes.value.map((vote) => [vote.id, vote]))
+    let hasNew = false
+
+    for (const row of incoming) {
+      if (!mergedById.has(row.id)) {
+        hasNew = true
+        triggerPulse(row.id)
+      }
+      mergedById.set(row.id, row)
+    }
+
+    const merged = [...mergedById.values()]
+      .filter((vote) => isActivePollVote(vote))
+      .sort((left, right) => right.createdAt.toMillis() - left.createdAt.toMillis())
+      .slice(0, 24)
+
+    if (hasNew || merged.length !== recentVotes.value.length) {
+      recentVotes.value = merged
+    }
+  } catch {
+    // Keep the current feed if sync fails.
+  }
+}
+
+const scheduleRefresh = () => {
+  window.clearInterval(refreshTimer)
+  refreshTimer = window.setInterval(syncRecentActivity, 5000)
+}
+
+watch(isLiveConnected, (connected) => {
+  if (connected) {
+    syncRecentActivity()
+  }
+})
 
 onMounted(async () => {
   await loadRecentActivity()
@@ -238,6 +395,10 @@ onMounted(async () => {
     },
   )
 
+  unsubscribeConnection = onRealtimeConnectionChange((connected) => {
+    isLiveConnected.value = connected
+  })
+
   unsubscribeLiveActivity = subscribeLivePollsRealtime({
     onVoteDelta: (vote) => {
       pushVote({
@@ -247,12 +408,21 @@ onMounted(async () => {
       })
     },
   })
+
+  clockTimer = window.setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+
+  scheduleRefresh()
 })
 
 onUnmounted(() => {
   unsubscribeArtists?.()
   unsubscribeLivePolls?.()
   unsubscribeLiveActivity?.()
+  unsubscribeConnection?.()
+  window.clearInterval(clockTimer)
+  window.clearInterval(refreshTimer)
 })
 </script>
 
@@ -261,6 +431,10 @@ onUnmounted(() => {
     <div class="relative overflow-hidden rounded-4xl border border-violet-300/15 bg-[#070918]/90 p-4 shadow-2xl shadow-violet-950/20 sm:p-6">
       <div class="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full bg-fuchsia-400/15 blur-3xl"></div>
       <div class="pointer-events-none absolute -bottom-24 right-0 size-80 rounded-full bg-cyan-400/10 blur-3xl"></div>
+      <div
+        class="live-scan pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-fuchsia-300/70 to-transparent"
+        :class="{ 'live-scan-active': isLiveConnected }"
+      ></div>
 
       <div class="relative mb-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
         <div class="flex items-start gap-4">
@@ -272,9 +446,19 @@ onUnmounted(() => {
               <h2 class="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
                 {{ $t('widgets.activity.title') }}
               </h2>
-              <span class="inline-flex items-center gap-2 rounded-full border border-red-300/30 bg-red-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red-100">
-                <span class="size-2 rounded-full bg-red-300 shadow-[0_0_12px_rgba(252,165,165,0.9)]"></span>
-                Live
+              <span
+                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest transition"
+                :class="isLiveConnected
+                  ? 'border-red-300/30 bg-red-500/15 text-red-100'
+                  : 'border-amber-300/30 bg-amber-500/10 text-amber-100'"
+              >
+                <span
+                  class="size-2 rounded-full"
+                  :class="isLiveConnected
+                    ? 'live-pulse-dot bg-red-300 shadow-[0_0_12px_rgba(252,165,165,0.9)]'
+                    : 'bg-amber-300 animate-pulse'"
+                ></span>
+                {{ isLiveConnected ? $t('widgets.activity.liveBadge') : $t('widgets.activity.liveConnecting') }}
               </span>
             </div>
             <p class="mt-1 text-sm text-slate-400">
@@ -287,7 +471,8 @@ onUnmounted(() => {
           <div
             v-for="stat in liveStats"
             :key="stat.labelKey"
-            class="rounded-2xl border border-white/10 bg-white/6 px-3 py-3 text-center shadow-inner shadow-black/20"
+            class="rounded-2xl border border-white/10 bg-white/6 px-3 py-3 text-center shadow-inner shadow-black/20 transition"
+            :class="{ 'live-stat-bump': statPulse[stat.key] }"
           >
             <i class="text-sm text-fuchsia-200" :class="stat.icon" aria-hidden="true"></i>
             <p class="mt-1 text-lg font-black text-white">{{ stat.value }}</p>
@@ -296,14 +481,19 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div
+      <TransitionGroup
         v-if="activities.length"
+        name="live-activity"
+        tag="div"
         class="live-scroll relative max-h-[520px] space-y-2 overflow-y-auto sm:max-h-[650px] sm:space-y-3 sm:pr-2"
       >
         <article
           v-for="activity in activities"
           :key="activity.id"
-          class="group relative min-h-24 overflow-hidden rounded-3xl border border-white/8 bg-[#070b1a]/90 p-3 shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:border-fuchsia-300/25 hover:bg-[#101429] sm:min-h-32 sm:p-4"
+          class="group relative min-h-24 overflow-hidden rounded-3xl border bg-[#070b1a]/90 p-3 shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:border-fuchsia-300/25 hover:bg-[#101429] sm:min-h-32 sm:p-4"
+          :class="activity.isPulsing
+            ? 'live-card-pulse border-fuchsia-300/40'
+            : 'border-white/8'"
         >
           <div class="absolute inset-y-0 right-0 w-32 bg-linear-to-l opacity-95 sm:w-72" :class="activity.visual">
             <div class="absolute inset-0 bg-[radial-gradient(circle_at_76%_30%,rgba(255,255,255,0.24),transparent_18%),linear-gradient(90deg,#070b1a_0%,rgba(7,11,26,0.72)_38%,transparent_78%)] sm:bg-[radial-gradient(circle_at_72%_28%,rgba(255,255,255,0.28),transparent_18%),linear-gradient(90deg,#070b1a_0%,rgba(7,11,26,0.55)_34%,transparent_72%)]"></div>
@@ -337,7 +527,7 @@ onUnmounted(() => {
               <div class="flex flex-wrap items-center gap-2">
                 <h3 class="text-sm font-black leading-tight text-white sm:text-base">{{ activity.user }}</h3>
                 <span class="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-200">
-                  {{ $t('widgets.activity.registered') }}
+                  {{ $t('widgets.activity.fan') }}
                 </span>
               </div>
 
@@ -353,7 +543,10 @@ onUnmounted(() => {
               <p class="mt-0.5 text-sm font-black uppercase leading-tight text-white sm:text-base">{{ activity.artist }}</p>
 
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-black text-fuchsia-100">
+                <span
+                  v-if="activity.showVoteCount"
+                  class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-black text-fuchsia-100"
+                >
                   <i class="fa-solid fa-heart mr-1" aria-hidden="true"></i>
                   {{ $t('widgets.activity.votes', { count: activity.votes }) }}
                 </span>
@@ -362,7 +555,7 @@ onUnmounted(() => {
             </div>
           </div>
         </article>
-      </div>
+      </TransitionGroup>
 
       <div
         v-else
@@ -407,6 +600,55 @@ onUnmounted(() => {
   animation: live-orb 2.5s ease-in-out infinite;
 }
 
+.live-pulse-dot {
+  animation: live-pulse-dot 1.35s ease-in-out infinite;
+}
+
+.live-scan {
+  opacity: 0;
+}
+
+.live-scan-active {
+  opacity: 1;
+  animation: live-scan 3.2s linear infinite;
+}
+
+.live-card-pulse {
+  animation: live-card-pulse 2.8s ease-out;
+}
+
+.live-stat-bump {
+  animation: live-stat-bump 0.65s ease;
+}
+
+.live-activity-enter-active {
+  transition:
+    opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.live-activity-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+  position: absolute;
+  width: calc(100% - 0.5rem);
+}
+
+.live-activity-enter-from {
+  opacity: 0;
+  transform: translateY(-28px) scale(0.96);
+}
+
+.live-activity-leave-to {
+  opacity: 0;
+  transform: translateY(12px) scale(0.98);
+}
+
+.live-activity-move {
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes live-orb {
   0%,
   100% {
@@ -417,6 +659,57 @@ onUnmounted(() => {
   50% {
     transform: scale(1.08);
     box-shadow: 0 0 52px rgba(217, 70, 239, 0.42);
+  }
+}
+
+@keyframes live-pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.55;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes live-scan {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes live-card-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.45);
+  }
+
+  35% {
+    box-shadow: 0 0 0 10px rgba(217, 70, 239, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 70, 239, 0);
+  }
+}
+
+@keyframes live-stat-bump {
+  0% {
+    transform: scale(1);
+  }
+
+  35% {
+    transform: scale(1.06);
+  }
+
+  100% {
+    transform: scale(1);
   }
 }
 </style>

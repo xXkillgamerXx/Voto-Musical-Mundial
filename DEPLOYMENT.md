@@ -10,17 +10,18 @@
 - Site root: `/www/wwwroot/vote.musicmundial.com`
 - Backend root: `/www/wwwroot/vote.musicmundial.com/backend`
 
-## Runtime
+## Runtime (important)
 
-- Web server: aaPanel Apache
-- Frontend: Vue static build served from the site root
-- Backend: Docker containers
-- Database: aaPanel PostgreSQL, not Docker PostgreSQL
-- Database host from backend: `127.0.0.1:5432`
-- Database name/user: `vote_db`
-- Redis: Docker container `vmm-redis`, exposed only on `127.0.0.1:6379`
-- Uploads folder: `/www/wwwroot/vote.musicmundial.com/uploads`
-- API uploads mount: `/www/wwwroot/vote.musicmundial.com/uploads:/app/uploads`
+| Layer | How it runs |
+| --- | --- |
+| Frontend | Static Vue build served by **aaPanel Apache** from the site root |
+| Backend API | **Docker** container `vmm-api` |
+| Background jobs | **Docker** container `vmm-worker` |
+| Redis | **Docker** container `vmm-redis` on `127.0.0.1:6379` |
+| PostgreSQL | **aaPanel**, not Docker (`127.0.0.1:5432`, db `vote_db`) |
+| Uploads | Host folder mounted into Docker: `/www/wwwroot/vote.musicmundial.com/uploads:/app/uploads` |
+
+Do **not** deploy backend with `npm start` on the host. Always rebuild/restart the Docker stack.
 
 ## Active Docker Compose
 
@@ -65,9 +66,21 @@ Preserve these server folders/files:
 - `/www/wwwroot/vote.musicmundial.com/.well-known`
 - aaPanel config files such as `.user.ini`
 
-## Backend Deploy
+### Fix permissions after upload (required)
 
-Upload backend source to:
+`scp` as `root` can recreate `assets/` with mode `700`. Apache then returns **403** on JS/CSS and the page looks frozen.
+
+Run on the server immediately after uploading `dist`:
+
+```bash
+chmod 755 /www/wwwroot/vote.musicmundial.com/assets
+find /www/wwwroot/vote.musicmundial.com/assets -type d -exec chmod 755 {} \;
+find /www/wwwroot/vote.musicmundial.com/assets -type f -exec chmod 644 {} \;
+```
+
+## Backend Deploy (Docker)
+
+Upload backend **source** to:
 
 ```bash
 /www/wwwroot/vote.musicmundial.com/backend
@@ -79,7 +92,7 @@ Do not upload:
 - `dist`
 - local `.env`
 
-Then run on the server:
+Then rebuild and restart the Docker stack on the server:
 
 ```bash
 cd /www/wwwroot/vote.musicmundial.com/backend
@@ -87,12 +100,20 @@ docker compose -f docker-compose.vote-db.yml build
 docker compose -f docker-compose.vote-db.yml up -d
 ```
 
+The API runs inside `vmm-api`. Apache proxies `/api` to that container.
+
 ## Verification
 
 Check web:
 
 ```bash
 curl -I http://127.0.0.1 -H 'Host: vote.musicmundial.com'
+```
+
+Check a JS asset (must be `200`, not `403`):
+
+```bash
+curl -I http://127.0.0.1/assets/index-*.js -H 'Host: vote.musicmundial.com'
 ```
 
 Check API:
@@ -107,6 +128,8 @@ Check Docker:
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 ```
 
+Expected running containers: `vmm-api`, `vmm-worker`, `vmm-redis`.
+
 Check uploads mount:
 
 ```bash
@@ -119,3 +142,15 @@ Expected upload mount:
 /www/wwwroot/vote.musicmundial.com/uploads -> /app/uploads
 ```
 
+## Quick deploy script
+
+From repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy-prod.ps1
+```
+
+Optional flags:
+
+- `-FrontendOnly` — only upload `dist` and fix permissions
+- `-BackendOnly` — only upload backend source and rebuild Docker

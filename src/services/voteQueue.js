@@ -3,9 +3,9 @@ import { castVote } from "./api/votesApi";
 const DEFAULT_FLUSH_MS = 500;
 const DEFAULT_SHARD_COUNT = 512;
 /** Must match backend CastVoteDto @Max(amount) and VotesService MAX_BATCH_VOTES. */
-export const SERVER_MAX_BATCH_VOTES = 1000;
-const CHUNK_DELAY_MS = 80;
-const MAX_RETRY_ATTEMPTS = 4;
+export const SERVER_MAX_BATCH_VOTES = 100000;
+const CHUNK_DELAY_MS = 40;
+const MAX_RETRY_ATTEMPTS = 6;
 
 const cleanId = (value) => String(value || "").replaceAll("/", "_");
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -53,7 +53,7 @@ const commitChunkWithRetry = async (batch, amount) => {
         throw error;
       }
 
-      await wait(400 * attempt);
+      await wait(500 * attempt);
     }
   }
 
@@ -67,16 +67,28 @@ const commitBatch = async (batch) => {
 
   while (remaining > 0) {
     const chunk = Math.min(SERVER_MAX_BATCH_VOTES, remaining);
-    lastResult = await commitChunkWithRetry(batch, chunk);
-    const applied = Math.max(
-      0,
-      Math.floor(Number(lastResult?.amount || chunk)),
-    );
-    totalApplied += applied;
-    remaining -= chunk;
 
-    if (remaining > 0) {
-      await wait(CHUNK_DELAY_MS);
+    try {
+      lastResult = await commitChunkWithRetry(batch, chunk);
+      const applied = Math.max(
+        0,
+        Math.floor(Number(lastResult?.amount || chunk)),
+      );
+
+      if (applied <= 0) {
+        break;
+      }
+
+      totalApplied += applied;
+      remaining -= applied;
+
+      if (remaining > 0) {
+        await wait(CHUNK_DELAY_MS);
+      }
+    } catch (error) {
+      error.partialApplied = totalApplied;
+      error.remaining = remaining;
+      throw error;
     }
   }
 
@@ -133,12 +145,22 @@ export const createVoteQueue = ({
       batches.forEach((batch) => {
         const key = buildBatchKey(batch);
         const current = pendingVotes.get(key);
-        pendingVotes.set(key, {
-          ...batch,
-          amount: Number(current?.amount || 0) + Number(batch.amount || 0),
-        });
+        const remaining = Math.max(
+          0,
+          Math.floor(Number(error.remaining ?? batch.amount ?? 0)),
+        );
+
+        if (remaining > 0) {
+          pendingVotes.set(key, {
+            ...batch,
+            amount: Number(current?.amount || 0) + remaining,
+          });
+        }
       });
-      onError(error, batches);
+      onError(error, batches, {
+        partialApplied: Number(error.partialApplied || 0),
+        remaining: Number(error.remaining || 0),
+      });
       throw error;
     } finally {
       isFlushing = false;

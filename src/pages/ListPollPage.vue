@@ -103,9 +103,46 @@ let previousEmbedOverflowStyles = null;
 const voteFeedbackTimers = new Map();
 const voteCountAnimationTimers = new Map();
 let displayedTotalAnimationTimer = null;
-const POINTS_PER_VOTE = 1;
+const POINTS_PER_VOTE_FALLBACK = 1;
 const DEFAULT_ANONYMOUS_COOLDOWN_MINUTES = 60;
+const resolvePointsPerVote = () => {
+  const pollConfig = poll.value?.config || {};
+  const pollVoting = pollConfig.voting || poll.value?.voting || {};
+  const roundConfig = activeRound.value?.config || {};
+  const roundVoting = roundConfig.voting || {};
+  const merged = { ...pollVoting, ...roundVoting };
+  const raw = Number(merged.costPerVote ?? POINTS_PER_VOTE_FALLBACK);
+  const cost = Number.isFinite(raw) ? Math.floor(raw) : POINTS_PER_VOTE_FALLBACK;
+
+  return Math.min(1000, Math.max(1, cost));
+};
+
+const pointsPerVote = computed(() => resolvePointsPerVote());
 const db = null;
+
+const applyCommittedVotes = (batch, result) => {
+  if (result?.user && result.user.points !== undefined && result.user.points !== null) {
+    syncStoredPoints(result.user.points, result.user.spentPoints);
+  }
+
+  const artistId = batch.artistId;
+  const amount = Number(result?.amount || 0);
+
+  if (!artistId || amount <= 0) {
+    return;
+  }
+
+  const currentContestant = displayedContestants.value.find(
+    (item) => getContestantArtistId(item) === artistId,
+  );
+  const currentVotes = displayVoteCountFor(currentContestant || { artistId });
+
+  setOptimisticVoteTotal(artistId, currentVotes + amount);
+  showVoteFeedback(artistId, amount);
+  window.setTimeout(() => {
+    clearOptimisticVoteTotal(batch.artistId);
+  }, 1200);
+};
 
 const dateLike = (value) => {
   if (!value || typeof value !== "string") {
@@ -763,7 +800,7 @@ const shouldShowTurnstile = computed(() =>
 const hasEnoughPointsToVote = computed(() =>
   currentUser.value?.isAnonymous || !currentUser.value
     ? canUseAnonymousVote.value
-    : Number(userPoints.value || 0) >= POINTS_PER_VOTE,
+    : Number(userPoints.value || 0) >= pointsPerVote.value,
 );
 const hasEnoughPointsToVoteFor = (contestant) =>
   currentUser.value?.isAnonymous || !currentUser.value
@@ -774,8 +811,8 @@ const formattedUserPoints = computed(() =>
 );
 const maxVoteAmount = computed(() =>
   currentUser.value && !currentUser.value.isAnonymous
-    ? Math.max(1, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE))
-    : Math.max(0, Math.floor(Number(userPoints.value || 0) / POINTS_PER_VOTE)),
+    ? Math.max(1, Math.floor(Number(userPoints.value || 0) / pointsPerVote.value))
+    : Math.max(0, Math.floor(Number(userPoints.value || 0) / pointsPerVote.value)),
 );
 const normalizedVoteAmount = computed(() =>
   Math.min(
@@ -2135,6 +2172,10 @@ const openVoteModal = (contestant) => {
   voteAmount.value = Math.min(1, maxVoteAmount.value);
 };
 
+const setVoteAmountToMax = () => {
+  setVoteAmount(maxVoteAmount.value);
+};
+
 const setVoteAmount = (amount) => {
   voteAmount.value = Math.min(
     maxVoteAmount.value,
@@ -2258,7 +2299,7 @@ const voteFor = async (contestant, amount = 1) => {
   }
 
   const votesToAdd = Math.floor(Number(amount || 1));
-  const pointsToSpend = votesToAdd * POINTS_PER_VOTE;
+  const pointsToSpend = votesToAdd * pointsPerVote.value;
 
   if (!Number.isInteger(votesToAdd) || votesToAdd < 1) {
     errorMessage.value = translate("polls.detail.voteAmountRequired");
@@ -2284,7 +2325,7 @@ const voteFor = async (contestant, amount = 1) => {
         votingUser.displayName || votingUser.email || "",
       userPhotoURL: votingUser.photoUrl || votingUser.photoURL || "",
       amount: votesToAdd,
-      pointsPerVote: POINTS_PER_VOTE,
+      pointsPerVote: pointsPerVote.value,
       anonymous: false,
       shardCount: shardCountForConcurrency(100000),
     });
@@ -2397,24 +2438,20 @@ onMounted(() => {
   voteQueue = createVoteQueue({
     db,
     onBatchCommitted: (batch, result) => {
-      if (result?.user && result.user.points !== undefined && result.user.points !== null) {
-        syncStoredPoints(result.user.points, result.user.spentPoints);
-      }
-      const artistId = batch.artistId;
-      const currentContestant = displayedContestants.value.find(
-        (item) => getContestantArtistId(item) === artistId,
-      );
-      const currentVotes = displayVoteCountFor(currentContestant || { artistId });
-      const amount = Number(result?.amount || batch.amount || 1);
-
-      setOptimisticVoteTotal(artistId, currentVotes + amount);
-      showVoteFeedback(artistId, amount);
-      window.setTimeout(() => {
-        clearOptimisticVoteTotal(batch.artistId);
-      }, 1200);
+      applyCommittedVotes(batch, result);
     },
-    onError: (error, batches = []) => {
+    onError: (error, batches = [], progress = {}) => {
+      if (progress.partialApplied > 0) {
+        batches.forEach((batch) => {
+          applyCommittedVotes(batch, { amount: progress.partialApplied });
+        });
+      }
+
       batches.forEach((batch) => {
+        if (progress.partialApplied > 0) {
+          return;
+        }
+
         clearOptimisticVoteTotal(batch.artistId);
         clearAnimatedVoteCount(batch.artistId);
         window.clearTimeout(voteFeedbackTimers.get(batch.artistId));
@@ -2427,7 +2464,11 @@ onMounted(() => {
       errorMessage.value =
         error.message === "not-enough-points"
           ? translate("polls.detail.notEnoughPoints")
-          : translate("polls.detail.batchVoteError");
+          : progress.partialApplied > 0
+            ? translate("polls.detail.batchVotePartial", {
+                applied: progress.partialApplied.toLocaleString("es"),
+              })
+            : translate("polls.detail.batchVoteError");
     },
   });
   const syncAuth = (authState = getCurrentApiAuth()) => {
@@ -3600,7 +3641,7 @@ onUnmounted(() => {
             >
           </span>
           <span class="text-xs uppercase tracking-widest text-amber-200/75">
-            Cada voto cuesta {{ POINTS_PER_VOTE }} punto
+            Cada voto cuesta {{ pointsPerVote }} {{ pointsPerVote === 1 ? 'punto' : 'puntos' }}
           </span>
         </div>
 
@@ -4135,6 +4176,14 @@ onUnmounted(() => {
                         ? $t("polls.detail.voteUnit", { count: quickAmount })
                         : $t("polls.detail.votesCount", { count: quickAmount })
                     }}
+                  </button>
+                  <button
+                    type="button"
+                    class="col-span-4 min-h-11 rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-sm font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="maxVoteAmount <= 1"
+                    @click="setVoteAmountToMax"
+                  >
+                    {{ $t("polls.detail.voteAllPoints", { count: maxVoteAmount.toLocaleString("es") }) }}
                   </button>
                 </div>
 

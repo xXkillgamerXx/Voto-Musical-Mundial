@@ -1,9 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getArtistsWithFollowersCached } from '../services/firebaseCache'
+import { getPollResults, getPolls } from '../services/api/pollsApi'
 
 const artists = ref([])
+const isLoading = ref(true)
 const WEEKLY_ROTATION_POOL_SIZE = 12
+const CLOSED_POLLS_LIMIT = 12
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 const accents = [
   { accent: 'from-amber-300 to-fuchsia-500', border: 'border-amber-300/45' },
@@ -17,6 +20,21 @@ const getArtistImage = (artist) =>
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`
 
+const getPollClosedAt = (poll) => {
+  const config = poll?.config || {}
+
+  return new Date(
+    poll?.activeEndAt
+      || poll?.endAt
+      || poll?.endsAt
+      || config.closedAt
+      || config.winnersSelectedAt
+      || poll?.updatedAt
+      || poll?.createdAt
+      || 0,
+  )
+}
+
 const getWeeklyRotationIndex = (itemsLength) => {
   if (!itemsLength) {
     return 0
@@ -24,7 +42,7 @@ const getWeeklyRotationIndex = (itemsLength) => {
 
   const now = new Date()
   const yearStart = new Date(now.getFullYear(), 0, 1)
-  const weekNumber = Math.floor((now - yearStart) / (7 * 24 * 60 * 60 * 1000))
+  const weekNumber = Math.floor((now - yearStart) / WEEK_MS)
 
   return weekNumber % itemsLength
 }
@@ -39,8 +57,8 @@ const topArtists = computed(() =>
   rotateWeekly(artists.value
     .slice()
     .sort((current, next) =>
-      next.followersCount - current.followersCount
-        || next.popularityScore - current.popularityScore
+      next.totalVotes - current.totalVotes
+        || next.closedPollCount - current.closedPollCount
         || current.name.localeCompare(next.name),
     )
     .slice(0, WEEKLY_ROTATION_POOL_SIZE))
@@ -60,11 +78,82 @@ const podiumArtists = computed(() => {
 
 const mobileTopArtists = computed(() => topArtists.value)
 
-const loadArtists = async () => {
-  artists.value = await getArtistsWithFollowersCached(null)
+const buildArtistEntry = (resultRow, currentEntry) => {
+  const artist = resultRow?.artist || {}
+  const artistId = String(resultRow?.artistId || artist.id || '')
+
+  return {
+    ...artist,
+    id: artist.id || artistId,
+    slug: artist.slug || artistId,
+    name: artist.name || 'Artista',
+    followersCount: Number(
+      currentEntry?.followersCount || artist.followersCount || 0,
+    ),
+    totalVotes:
+      Number(currentEntry?.totalVotes || 0)
+      + Number(resultRow?.totalVotes || 0),
+    closedPollCount: Number(currentEntry?.closedPollCount || 0) + 1,
+  }
 }
 
-onMounted(loadArtists)
+const loadClosedPollArtists = async () => {
+  isLoading.value = true
+
+  try {
+    const pollRows = (await getPolls(100)).filter(
+      (poll) => poll.status === 'closed',
+    )
+    const cutoff = Date.now() - WEEK_MS
+    const weeklyClosedPolls = pollRows
+      .filter((poll) => getPollClosedAt(poll).getTime() >= cutoff)
+      .sort(
+        (current, next) =>
+          getPollClosedAt(next).getTime() - getPollClosedAt(current).getTime(),
+      )
+
+    const pollsToUse = (weeklyClosedPolls.length
+      ? weeklyClosedPolls
+      : pollRows.sort(
+          (current, next) =>
+            getPollClosedAt(next).getTime() - getPollClosedAt(current).getTime(),
+        )
+    ).slice(0, CLOSED_POLLS_LIMIT)
+
+    const artistMap = new Map()
+
+    await Promise.all(
+      pollsToUse.map(async (poll) => {
+        try {
+          const payload = await getPollResults({ pollId: poll.id })
+          for (const resultRow of payload?.results || []) {
+            const artistId = String(resultRow?.artistId || resultRow?.artist?.id || '')
+            if (!artistId) {
+              continue
+            }
+
+            artistMap.set(
+              artistId,
+              buildArtistEntry(resultRow, artistMap.get(artistId)),
+            )
+          }
+        } catch {
+          // Ignore polls that fail to load results.
+        }
+      }),
+    )
+
+    artists.value = [...artistMap.values()].filter(
+      (artist) => Number(artist.totalVotes || 0) > 0,
+    )
+  } catch {
+    artists.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(loadClosedPollArtists)
 </script>
 
 <template>
@@ -72,19 +161,29 @@ onMounted(loadArtists)
     <div class="mb-5 flex items-end justify-between gap-4">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
-          Artistas populares
+          {{ $t('widgets.topRanking.eyebrow') }}
         </p>
         <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
-          De la semana
+          {{ $t('widgets.topRanking.title') }}
         </h2>
+        <p class="mt-2 max-w-2xl text-sm font-bold leading-6 text-slate-400">
+          {{ $t('widgets.topRanking.subtitle') }}
+        </p>
       </div>
-      <a href="/artistas" class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
-        Ver artistas
+      <a href="/artistas" class="shrink-0 text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
+        {{ $t('widgets.topRanking.viewArtists') }}
       </a>
     </div>
 
+    <p
+      v-if="isLoading"
+      class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-300"
+    >
+      {{ $t('artists.list.loading') }}
+    </p>
+
     <div
-      v-if="topArtists.length"
+      v-else-if="topArtists.length"
       class="relative overflow-visible rounded-4xl border border-violet-300/10 bg-[#050716] px-0 pb-5 pt-10 shadow-2xl shadow-violet-950/30 sm:px-6 sm:pt-20 lg:px-10 lg:pb-8 lg:pt-24"
     >
       <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_115%,rgba(168,85,247,0.55),transparent_32%),radial-gradient(circle_at_50%_5%,rgba(59,130,246,0.18),transparent_30%)]"></div>
@@ -167,9 +266,9 @@ onMounted(loadArtists)
                   class="text-2xl font-black leading-none"
                   :class="artist.rank === 1 ? 'text-fuchsia-200' : 'text-cyan-200'"
                 >
-                  {{ artist.popularityScore.toLocaleString('es') }}
+                  {{ Number(artist.totalVotes || 0).toLocaleString('es') }}
                 </p>
-                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">pts</p>
+                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">{{ $t('widgets.topRanking.votes') }}</p>
               </div>
             </div>
           </div>
@@ -257,9 +356,9 @@ onMounted(loadArtists)
                   class="text-2xl font-black leading-none"
                   :class="artist.rank === 1 ? 'text-fuchsia-200' : 'text-cyan-200'"
                 >
-                  {{ artist.popularityScore.toLocaleString('es') }}
+                  {{ Number(artist.totalVotes || 0).toLocaleString('es') }}
                 </p>
-                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">pts</p>
+                <p class="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-300">{{ $t('widgets.topRanking.votes') }}</p>
               </div>
             </div>
           </div>
@@ -281,10 +380,10 @@ onMounted(loadArtists)
         <i class="fa-solid fa-ranking-star" aria-hidden="true"></i>
       </div>
       <h3 class="relative mt-5 text-xl font-black uppercase text-white">
-        Ranking en preparacion
+        {{ $t('widgets.topRanking.emptyTitle') }}
       </h3>
       <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
-        Cuando los artistas empiecen a recibir actividad, aqui apareceran los mas populares de la comunidad.
+        {{ $t('widgets.topRanking.emptyDescription') }}
       </p>
     </div>
   </section>
@@ -327,4 +426,3 @@ onMounted(loadArtists)
 }
 
 </style>
-

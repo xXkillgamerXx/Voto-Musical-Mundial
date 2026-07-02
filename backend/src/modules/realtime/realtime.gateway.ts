@@ -93,7 +93,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       });
 
       const isRegisteredVote = Boolean(payload.userId) && payload.isAnonymous !== true && payload.isAnonymous !== '1';
-      if (isRegisteredVote) {
+      const isStaffVote = payload.staffVote === true || payload.staffVote === '1';
+      if (isRegisteredVote && !isStaffVote) {
         this.server.to('polls:live').emit('vote_delta', payload);
       }
     });
