@@ -88,8 +88,12 @@ export class RewardsService {
               userId,
               type: 'mission_completed',
               payload: {
+                title: 'Misión completada',
+                message: `Completaste "${mission.title}" y ganaste ${mission.rewardPoints} puntos.`,
                 missionId: mission.id.toString(),
+                missionTitle: mission.title,
                 rewardPoints: mission.rewardPoints,
+                url: '/notificaciones',
               },
             },
           });
@@ -102,14 +106,6 @@ export class RewardsService {
           data: { points: { increment: missionRewardPoints } },
         })
         : updatedUser;
-
-      await tx.notification.create({
-        data: {
-          userId,
-          type: 'daily_reward_claimed',
-          payload: { points, streak: nextStreak, streakDay },
-        },
-      });
 
       return {
         reward,

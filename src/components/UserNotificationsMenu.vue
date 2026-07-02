@@ -4,6 +4,12 @@ import { getCurrentApiAuth } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
 import { getNotifications, markNotificationRead } from '../services/api/notificationsApi'
 import { isPushSupported, requestAndRegisterPushToken } from '../services/firebasePush'
+import {
+  getNotificationBody,
+  getNotificationIcon,
+  getNotificationTitle,
+  shouldDisplayNotification,
+} from '../utils/notificationDisplay'
 
 const isOpen = ref(false)
 const isLoading = ref(false)
@@ -18,29 +24,17 @@ const menuRef = ref(null)
 let unsubscribeAuth = null
 let refreshTimer = null
 
-const unreadCount = computed(() => notifications.value.filter((item) => !item.readAt).length)
+const visibleNotifications = computed(() =>
+  notifications.value.filter(shouldDisplayNotification),
+)
+const unreadCount = computed(() =>
+  visibleNotifications.value.filter((item) => !item.readAt).length,
+)
 const hasSession = computed(() => Boolean(currentUser.value))
 
-const notificationTitle = (notification) => {
-  const payload = notification?.payload || {}
-  if (payload.title) return payload.title
-  if (notification.type === 'admin_points_gift') return 'Tienes un regalo'
-  if (notification.type === 'mission_completed') return 'Mision completada'
-  if (notification.type === 'admin_push') return 'Notificacion'
-  return 'Notificacion'
-}
-
-const notificationBody = (notification) => {
-  const payload = notification?.payload || {}
-  return payload.message || payload.body || payload.description || 'Tienes una nueva notificacion.'
-}
-
-const notificationIcon = (notification) => {
-  if (notification.type === 'admin_points_gift') return 'fa-solid fa-gift text-amber-200'
-  if (notification.type === 'mission_completed') return 'fa-solid fa-bullseye text-emerald-200'
-  if (notification.type === 'admin_push') return 'fa-solid fa-bell text-cyan-200'
-  return 'fa-solid fa-circle-info text-fuchsia-200'
-}
+const notificationTitle = getNotificationTitle
+const notificationBody = getNotificationBody
+const notificationIcon = getNotificationIcon
 
 const formatDate = (value) => {
   if (!value) return ''
@@ -82,20 +76,27 @@ const handleEscape = (event) => {
   if (event.key === 'Escape') closeMenu()
 }
 
-const readNotification = async (notification) => {
-  if (!notification?.id || notification.readAt) return
-  notification.readAt = new Date().toISOString()
-  await markNotificationRead(notification.id).catch(() => {})
-}
-
-const openNotificationPage = (notification) => {
+const openNotification = async (notification) => {
   if (!notification?.id) return
+
+  if (!notification.readAt) {
+    notification.readAt = new Date().toISOString()
+    await markNotificationRead(notification.id).catch(() => {})
+  }
+
   closeMenu()
-  window.location.href = `/notificaciones?id=${encodeURIComponent(notification.id)}`
+
+  const url = notification?.payload?.url
+  if (url) {
+    window.location.href = url
+    return
+  }
+
+  window.location.href = '/notificaciones'
 }
 
 const markAllRead = async () => {
-  const unread = notifications.value.filter((item) => !item.readAt)
+  const unread = visibleNotifications.value.filter((item) => !item.readAt)
   unread.forEach((item) => {
     item.readAt = new Date().toISOString()
   })
@@ -137,7 +138,7 @@ onMounted(async () => {
   pushPermission.value = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
   await syncAuth()
   unsubscribeAuth = onStoredAuthChange(syncAuth)
-  refreshTimer = window.setInterval(loadNotifications, 60 * 1000)
+  refreshTimer = window.setInterval(loadNotifications, 5 * 60 * 1000)
   document.addEventListener('click', handleDocumentClick)
   document.addEventListener('keydown', handleEscape)
 })
@@ -230,12 +231,12 @@ onUnmounted(() => {
         </div>
 
         <button
-          v-for="notification in notifications"
+          v-for="notification in visibleNotifications"
           :key="notification.id"
           type="button"
           class="flex w-full gap-3 rounded-2xl p-3 text-left transition hover:bg-white/8"
           :class="notification.readAt ? 'opacity-70' : 'bg-white/5'"
-          @click="openNotificationPage(notification)"
+          @click="openNotification(notification)"
         >
           <span class="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/8">
             <i :class="notificationIcon(notification)" aria-hidden="true"></i>
@@ -258,7 +259,7 @@ onUnmounted(() => {
         </button>
 
         <div
-          v-if="!isLoading && !notifications.length"
+          v-if="!isLoading && !visibleNotifications.length"
           class="p-5 text-center text-sm font-bold text-slate-400"
         >
           Todavia no tienes notificaciones.

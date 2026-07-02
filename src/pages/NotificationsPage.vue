@@ -3,6 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { getCurrentApiAuth } from '../services/api/authApi'
 import { getNotifications, markNotificationRead } from '../services/api/notificationsApi'
 import { isPushSupported, requestAndRegisterPushToken } from '../services/firebasePush'
+import {
+  getNotificationBody,
+  getNotificationIcon,
+  getNotificationTitle,
+  shouldDisplayNotification,
+} from '../utils/notificationDisplay'
 
 const notifications = ref([])
 const isLoading = ref(true)
@@ -10,32 +16,17 @@ const isEnablingPush = ref(false)
 const errorMessage = ref('')
 const pushSupported = ref(false)
 const pushPermission = ref(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission)
-const selectedNotification = ref(null)
 
-const unreadCount = computed(() => notifications.value.filter((item) => !item.readAt).length)
+const visibleNotifications = computed(() =>
+  notifications.value.filter(shouldDisplayNotification),
+)
+const unreadCount = computed(() =>
+  visibleNotifications.value.filter((item) => !item.readAt).length,
+)
 
-const titleFor = (notification) => {
-  const payload = notification?.payload || {}
-  if (payload.title) return payload.title
-  if (notification.type === 'admin_points_gift') return 'Tienes un regalo'
-  if (notification.type === 'mission_completed') return 'Mision completada'
-  if (notification.type === 'artist_push') return payload.artistName ? `Novedades de ${payload.artistName}` : 'Novedades de artista'
-  if (notification.type === 'admin_push') return 'Notificacion'
-  return 'Notificacion'
-}
-
-const bodyFor = (notification) => {
-  const payload = notification?.payload || {}
-  return payload.message || payload.body || payload.description || 'Tienes una nueva notificacion.'
-}
-
-const iconFor = (notification) => {
-  if (notification.type === 'admin_points_gift') return 'fa-solid fa-gift text-amber-200'
-  if (notification.type === 'mission_completed') return 'fa-solid fa-bullseye text-emerald-200'
-  if (notification.type === 'artist_push') return 'fa-solid fa-star text-fuchsia-200'
-  if (notification.type === 'admin_push') return 'fa-solid fa-bell text-cyan-200'
-  return 'fa-solid fa-circle-info text-violet-200'
-}
+const titleFor = getNotificationTitle
+const bodyFor = getNotificationBody
+const iconFor = getNotificationIcon
 
 const formatDate = (value) => {
   if (!value) return ''
@@ -68,29 +59,21 @@ const loadNotifications = async () => {
 }
 
 const openNotification = async (notification) => {
-  if (!notification?.id) return
-  if (!notification.readAt) {
-    notification.readAt = new Date().toISOString()
-    await markNotificationRead(notification.id).catch(() => {})
+  if (!notification?.id || notification.readAt) {
+    return
   }
-  selectedNotification.value = notification
-  window.history.replaceState({}, '', `/notificaciones?id=${encodeURIComponent(notification.id)}`)
-}
 
-const closeNotificationModal = () => {
-  selectedNotification.value = null
-  window.history.replaceState({}, '', '/notificaciones')
-}
+  notification.readAt = new Date().toISOString()
+  await markNotificationRead(notification.id).catch(() => {})
 
-const goToNotificationUrl = () => {
-  const url = selectedNotification.value?.payload?.url
+  const url = notification?.payload?.url
   if (url) {
     window.location.href = url
   }
 }
 
 const markAllRead = async () => {
-  const unread = notifications.value.filter((item) => !item.readAt)
+  const unread = visibleNotifications.value.filter((item) => !item.readAt)
   unread.forEach((item) => {
     item.readAt = new Date().toISOString()
   })
@@ -120,13 +103,6 @@ onMounted(async () => {
   pushSupported.value = await isPushSupported()
   pushPermission.value = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
   await loadNotifications()
-  const requestedId = new URLSearchParams(window.location.search).get('id')
-  if (requestedId) {
-    const notification = notifications.value.find((item) => String(item.id) === requestedId)
-    if (notification) {
-      await openNotification(notification)
-    }
-  }
 })
 </script>
 
@@ -200,7 +176,7 @@ onMounted(async () => {
       </div>
 
       <button
-        v-for="notification in notifications"
+        v-for="notification in visibleNotifications"
         :key="notification.id"
         type="button"
         class="group flex w-full gap-4 rounded-3xl border border-white/10 bg-slate-950/65 p-4 text-left text-white transition hover:border-fuchsia-300/30 hover:bg-white/7"
@@ -235,7 +211,7 @@ onMounted(async () => {
       </button>
 
       <div
-        v-if="!isLoading && !notifications.length"
+        v-if="!isLoading && !visibleNotifications.length"
         class="rounded-4xl border border-white/10 bg-white/5 p-8 text-center"
       >
         <div class="mx-auto grid size-16 place-items-center rounded-3xl bg-white/8 text-2xl text-fuchsia-200">
@@ -248,62 +224,4 @@ onMounted(async () => {
       </div>
     </div>
   </section>
-
-  <Teleport to="body">
-    <div
-      v-if="selectedNotification"
-      class="fixed inset-0 z-90 grid place-items-center bg-slate-950/80 px-4 py-6 text-white backdrop-blur-md"
-      @click.self="closeNotificationModal"
-    >
-      <article class="relative w-full max-w-lg overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#090b19] p-6 shadow-2xl shadow-fuchsia-950/45 sm:p-7">
-        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(217,70,239,0.24),transparent_34%),radial-gradient(circle_at_90%_20%,rgba(34,211,238,0.16),transparent_28%)]"></div>
-        <button
-          type="button"
-          class="absolute right-4 top-4 z-20 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
-          @click="closeNotificationModal"
-        >
-          ×
-        </button>
-
-        <div class="relative z-10">
-          <span class="grid size-16 place-items-center rounded-3xl bg-white/8 text-2xl ring-1 ring-white/10">
-            <i :class="iconFor(selectedNotification)" aria-hidden="true"></i>
-          </span>
-          <p class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-            Detalle de notificación
-          </p>
-          <h2 class="mt-2 pr-10 text-3xl font-black leading-tight text-white">
-            {{ titleFor(selectedNotification) }}
-          </h2>
-          <p class="mt-4 text-base font-bold leading-7 text-slate-300">
-            {{ bodyFor(selectedNotification) }}
-          </p>
-          <p class="mt-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-            {{ formatDate(selectedNotification.createdAt) }}
-          </p>
-
-          <div
-            class="mt-6 grid gap-3"
-            :class="selectedNotification?.payload?.url ? 'sm:grid-cols-2' : 'sm:grid-cols-1'"
-          >
-            <button
-              type="button"
-              class="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase text-slate-200 transition hover:bg-white/10"
-              @click="closeNotificationModal"
-            >
-              Cerrar
-            </button>
-            <button
-              v-if="selectedNotification?.payload?.url"
-              type="button"
-              class="min-h-12 rounded-2xl bg-linear-to-r from-fuchsia-500 to-cyan-400 px-5 text-sm font-black uppercase text-white shadow-lg shadow-fuchsia-950/25 transition hover:scale-[1.01]"
-              @click="goToNotificationUrl"
-            >
-              Ir al enlace
-            </button>
-          </div>
-        </div>
-      </article>
-    </div>
-  </Teleport>
 </template>

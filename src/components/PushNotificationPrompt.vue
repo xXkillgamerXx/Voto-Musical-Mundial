@@ -95,10 +95,17 @@ onMounted(() => {
   window.addEventListener(cookieConsentChangeEvent, syncVisibility)
   listenForegroundPushMessages((payload) => {
     const data = payload?.data || {}
+    const title = payload?.notification?.title || data.title || ''
+    const body = payload?.notification?.body || data.body || data.message || ''
+
+    if (!title.trim() && !body.trim()) {
+      return
+    }
+
     foregroundMessage.value = {
-      title: payload?.notification?.title || data.title || 'Votos Mundial',
-      body: payload?.notification?.body || data.body || data.message || 'Tienes una nueva notificacion.',
-      url: data.url || '/',
+      title: title.trim() || 'Votos Mundial',
+      body: body.trim() || title.trim(),
+      url: data.url || '/notificaciones',
     }
     window.setTimeout(() => {
       foregroundMessage.value = null
