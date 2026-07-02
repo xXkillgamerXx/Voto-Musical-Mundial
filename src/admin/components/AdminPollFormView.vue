@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import RichTextEditor from '../../components/RichTextEditor.vue'
 import {
   createAdminPoll,
   getAdminPollCategories,
@@ -8,6 +9,7 @@ import {
 } from '../../services/api/adminApi'
 import { getPoll } from '../../services/api/pollsApi'
 import { translate } from '../../i18n'
+import { hasRichTextContent, richTextToHtml } from '../../utils/richText'
 
 const props = defineProps({
   pollId: {
@@ -19,6 +21,7 @@ const props = defineProps({
 const emptyPoll = {
   title: '',
   description: '',
+  body: '',
   banner: '',
   status: 'draft',
   categoryId: '',
@@ -43,6 +46,12 @@ const formTitle = computed(() => (isEditing.value ? translate('admin.pollForm.ed
 const selectedCategory = computed(() =>
   categories.value.find((category) => String(category.id) === String(pollForm.value.categoryId)) || null,
 )
+const previewDescriptionHtml = computed(() => richTextToHtml(pollForm.value.description))
+const previewBodyHtml = computed(() => richTextToHtml(pollForm.value.body))
+const hasPreviewDescription = computed(() => hasRichTextContent(pollForm.value.description))
+const hasPreviewBody = computed(() => hasRichTextContent(pollForm.value.body))
+
+const normalizeRichText = (value) => (hasRichTextContent(value) ? String(value).trim() : '')
 
 const createSlug = (value) =>
   value
@@ -163,6 +172,7 @@ const loadPoll = async () => {
     pollForm.value = {
       title: poll.title || '',
       description: poll.description || '',
+      body: poll.body || '',
       banner: poll.banner || '',
       status: poll.status || 'draft',
       categoryId: poll.categoryId || '',
@@ -193,7 +203,8 @@ const savePoll = async () => {
 
   const pollData = {
     title: pollForm.value.title.trim(),
-    description: pollForm.value.description.trim(),
+    description: normalizeRichText(pollForm.value.description),
+    body: normalizeRichText(pollForm.value.body),
     banner: pollForm.value.banner.trim(),
     status: pollForm.value.status,
     categoryId: pollForm.value.categoryId || '',
@@ -294,12 +305,43 @@ onMounted(async () => {
             </span>
           </div>
           <div class="p-5">
-            <h3 class="text-2xl font-black text-white">
+            <p class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-200">
+              {{ $t('polls.detail.liveEyebrow') }}
+            </p>
+            <h3 class="mt-2 text-2xl font-black text-white">
               {{ pollForm.title || $t('admin.pollForm.previewTitle') }}
             </h3>
-            <p class="mt-2 line-clamp-3 text-sm leading-6 text-slate-300">
-              {{ pollForm.description || $t('admin.pollForm.previewDescription') }}
+            <div
+              v-if="hasPreviewDescription"
+              class="poll-rich-text mt-3 text-sm leading-7 text-slate-300"
+              v-html="previewDescriptionHtml"
+            ></div>
+          </div>
+
+          <div
+            v-if="hasPreviewBody"
+            class="border-t border-white/10 px-5 py-4"
+          >
+            <div
+              class="poll-rich-text text-sm leading-7 text-slate-300"
+              v-html="previewBodyHtml"
+            ></div>
+          </div>
+
+          <div class="border-t border-white/10 p-4">
+            <p class="text-center text-[10px] font-black uppercase tracking-[0.24em] text-cyan-300">
+              {{ $t('polls.detail.countdownTitle') }}
             </p>
+            <div class="mt-3 grid grid-cols-4 gap-2">
+              <div
+                v-for="label in ['Días', 'Horas', 'Min', 'Seg']"
+                :key="label"
+                class="rounded-2xl bg-slate-950/60 p-3 text-center"
+              >
+                <p class="text-xl font-black text-white">00</p>
+                <p class="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">{{ label }}</p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -358,15 +400,31 @@ onMounted(async () => {
             />
           </label>
 
-          <label class="block">
+          <div class="block">
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.description') }}</span>
-            <textarea
-              v-model="pollForm.description"
-              rows="4"
-              class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
-              :placeholder="$t('admin.pollForm.descriptionPlaceholder')"
-            ></textarea>
-          </label>
+            <div class="mt-2">
+              <RichTextEditor
+                v-model="pollForm.description"
+                :placeholder="$t('admin.pollForm.descriptionPlaceholder')"
+              />
+            </div>
+            <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
+              {{ $t('admin.pollForm.descriptionHelp') }}
+            </span>
+          </div>
+
+          <div class="block">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.body') }}</span>
+            <div class="mt-2">
+              <RichTextEditor
+                v-model="pollForm.body"
+                :placeholder="$t('admin.pollForm.bodyPlaceholder')"
+              />
+            </div>
+            <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
+              {{ $t('admin.pollForm.bodyHelp') }}
+            </span>
+          </div>
 
           <div>
             <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.banner') }}</span>

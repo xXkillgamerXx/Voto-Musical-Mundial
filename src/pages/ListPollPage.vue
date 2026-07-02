@@ -9,6 +9,7 @@ import {
   setStoredAuth,
 } from "../services/api/client";
 import { getPoll, getPolls, getPollResults } from "../services/api/pollsApi";
+import { hasRichTextContent, richTextToHtml } from "../utils/richText";
 import {
   castVote as castApiVote,
   getAnonymousVoteStatus,
@@ -666,6 +667,10 @@ const hideVoteCounts = computed(() =>
       false,
   ),
 );
+const pollDescriptionHtml = computed(() => richTextToHtml(poll.value?.description));
+const pollBodyHtml = computed(() => richTextToHtml(poll.value?.body));
+const hasPollDescription = computed(() => hasRichTextContent(poll.value?.description));
+const hasPollBody = computed(() => hasRichTextContent(poll.value?.body));
 const anonymousVotingConfig = computed(() => ({
   enabled:
     activeRound.value?.anonymousVoting?.enabled ??
@@ -2535,17 +2540,16 @@ onUnmounted(() => {
       <section class="relative overflow-hidden rounded-4xl border border-fuchsia-300/15 bg-[#080a18]/90 p-5 shadow-2xl shadow-fuchsia-950/20 sm:p-7">
         <div class="pointer-events-none absolute -left-20 -top-20 size-72 rounded-full bg-fuchsia-500/15 blur-3xl"></div>
         <div class="pointer-events-none absolute -bottom-24 right-0 size-80 rounded-full bg-cyan-400/10 blur-3xl"></div>
-        <div class="relative grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div class="relative grid gap-5">
           <div>
             <span class="block h-4 w-36 animate-pulse rounded-full bg-fuchsia-300/20"></span>
             <span class="mt-4 block h-9 max-w-xl animate-pulse rounded-2xl bg-white/12"></span>
-            <span class="mt-3 block h-4 max-w-2xl animate-pulse rounded-full bg-white/8"></span>
           </div>
-          <div class="grid grid-cols-4 gap-2">
+          <div class="grid grid-cols-4 gap-2 sm:max-w-2xl">
             <span
               v-for="item in 4"
               :key="`poll-loader-time-${item}`"
-              class="grid h-16 w-16 animate-pulse place-items-center rounded-2xl border border-white/10 bg-white/6 sm:w-20"
+              class="grid h-16 animate-pulse place-items-center rounded-2xl border border-white/10 bg-white/6 sm:h-20"
             ></span>
           </div>
         </div>
@@ -2657,7 +2661,7 @@ onUnmounted(() => {
           <span
             class="self-start rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-cyan-100 sm:self-auto"
           >
-            {{ hasEnded ? "Finalizado" : "Tiempo restante" }}
+            {{ hasEnded ? $t("polls.detail.finished") : $t("polls.detail.countdownTitle") }}
           </span>
         </div>
 
@@ -2714,19 +2718,34 @@ onUnmounted(() => {
             >
               {{ poll?.title }}
             </h1>
-            <p
-              class="mt-4 max-w-3xl text-sm leading-6 text-slate-300 sm:text-base"
-            >
-              {{ poll?.description }}
-            </p>
+            <div
+              v-if="hasPollDescription"
+              class="poll-rich-text mt-4 max-w-3xl text-sm font-medium leading-7 text-slate-200/95 sm:text-base"
+              v-html="pollDescriptionHtml"
+            ></div>
           </div>
         </div>
       </article>
+
+      <div
+        v-if="hasPollBody"
+        class="mt-6 rounded-4xl border border-white/10 bg-white/5 p-5 sm:p-6"
+      >
+        <div
+          class="poll-rich-text text-sm leading-7 text-slate-300 sm:text-base"
+          v-html="pollBodyHtml"
+        ></div>
+      </div>
 
       <div v-if="!isEmbeddedPage" class="mt-6 flex justify-center">
         <div
           class="grid w-full max-w-2xl grid-cols-4 gap-2 rounded-3xl border border-white/10 bg-white/5 p-4"
         >
+          <div class="col-span-4 mb-1 text-center">
+            <p class="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-300">
+              {{ hasEnded ? $t("polls.detail.finished") : $t("polls.detail.countdownTitle") }}
+            </p>
+          </div>
           <div
             v-for="item in countdown"
             :key="item.label"

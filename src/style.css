@@ -716,3 +716,31 @@ html[data-theme='light'] .vti__dropdown-item.highlighted,
 html[data-theme='light'] .vti__dropdown-item:hover {
   background: var(--theme-surface-hover) !important;
 }
+
+.poll-rich-text :is(p, ul, ol, blockquote, h1, h2, h3) + :is(p, ul, ol, blockquote, h1, h2, h3) {
+  margin-top: 0.75rem;
+}
+
+.poll-rich-text ul,
+.poll-rich-text ol {
+  padding-left: 1.25rem;
+}
+
+.poll-rich-text ul {
+  list-style: disc;
+}
+
+.poll-rich-text ol {
+  list-style: decimal;
+}
+
+.poll-rich-text a {
+  color: #67e8f9;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.poll-rich-text strong,
+.poll-rich-text b {
+  font-weight: 800;
+}
