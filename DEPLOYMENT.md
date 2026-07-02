@@ -45,9 +45,11 @@ From local repo:
 ```powershell
 $env:VITE_API_BASE_URL='/api'
 $env:VITE_FIREBASE_VAPID_KEY='BNQEx4dNvUVEV_CJ1qV64yzOA3xXPB2Y30EN_m4RLTf22tbVe_E1lkV-jNK7lbh4pbTxN2aOAN5mLPUMdYcRZuc'
+$env:VITE_TURNSTILE_SITE_KEY='0x4AAAAAADscx-A_CXbgnFea'
 npm run build
 Remove-Item Env:VITE_API_BASE_URL
 Remove-Item Env:VITE_FIREBASE_VAPID_KEY
+Remove-Item Env:VITE_TURNSTILE_SITE_KEY
 ```
 
 Upload the generated `dist` contents to:

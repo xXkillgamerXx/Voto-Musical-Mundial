@@ -2331,6 +2331,16 @@ watch(
 );
 
 watch(
+  () => voteModalContestant.value,
+  (contestant) => {
+    if (contestant && shouldShowTurnstile.value) {
+      renderVisibleTurnstile();
+    }
+  },
+  { flush: "post" },
+);
+
+watch(
   () => activeRound.value?.id,
   (nextRoundId, prevRoundId) => {
     if (!currentPollId.value || nextRoundId === prevRoundId) {
@@ -4035,9 +4045,10 @@ onUnmounted(() => {
                 </label>
 
                 <div
+                  v-if="shouldShowTurnstile"
                   class="rounded-3xl border border-emerald-300/20 bg-emerald-400/10 p-4"
                 >
-                  <div v-if="shouldShowTurnstile" class="space-y-3">
+                  <div class="space-y-3">
                     <div class="flex items-center gap-3">
                       <span
                         class="grid size-11 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-300/15 text-emerald-100"
