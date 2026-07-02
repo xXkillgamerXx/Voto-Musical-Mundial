@@ -316,6 +316,7 @@ export default {
       useFreeVote: 'Use free vote',
       anonymousVoteSuccessLogin: 'Your free vote was counted. Log in to keep voting and earn points.',
       anonymousVoteSuccessTitle: 'Vote counted',
+      anonymousVoteSuccessNotice: 'Your vote for {artist} has been registered.',
       signupPromptTitle: 'Register with us',
       signupPromptDescription: 'Your free vote is in. Create your account to earn points, keep voting, and support your favorite artists.',
       signupPromptAction: 'Create account',

@@ -76,6 +76,8 @@ const turnstileError = ref("");
 const anonymousVoteStatuses = ref({});
 const isLoadingAnonymousStatus = ref(false);
 const isSignupPromptOpen = ref(false);
+const pendingAnonymousVoteFeedback = ref(null);
+const anonymousVoteSuccessToast = ref(null);
 const roundDetailSection = ref(null);
 const showSecondarySections = ref(false);
 
@@ -94,6 +96,7 @@ let secondarySectionsTimer = null;
 let userPointsAnimationFrame = null;
 let voteQueue = null;
 let turnstileWidgetId = null;
+let anonymousVoteToastTimer = null;
 let listeningContestantsKey = "";
 let embedResizeObserver = null;
 let previousEmbedOverflowStyles = null;
@@ -2045,8 +2048,35 @@ const resetVisibleTurnstile = () => {
   }
 };
 
+const revealAnonymousVoteSuccess = () => {
+  const pending = pendingAnonymousVoteFeedback.value;
+  if (!pending?.artistId) {
+    return;
+  }
+
+  pendingAnonymousVoteFeedback.value = null;
+  showVoteFeedback(pending.artistId, 1, { duration: 6500 });
+  anonymousVoteSuccessToast.value = {
+    artistName: pending.artistName,
+    token: Date.now(),
+  };
+
+  nextTick(() => {
+    document
+      .querySelector(`[data-artist-id="${pending.artistId}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    postEmbedHeight();
+  });
+
+  window.clearTimeout(anonymousVoteToastTimer);
+  anonymousVoteToastTimer = window.setTimeout(() => {
+    anonymousVoteSuccessToast.value = null;
+  }, 5500);
+};
+
 const closeSignupPrompt = () => {
   isSignupPromptOpen.value = false;
+  revealAnonymousVoteSuccess();
   nextTick(postEmbedHeight);
 };
 
@@ -2161,10 +2191,13 @@ const voteAnonymouslyFor = async (contestant) => {
     // Anonymous votes are sent immediately, so this visual update only happens after
     // the backend confirms the vote. That keeps the UI from bouncing on rejected votes.
     setOptimisticVoteTotal(artistId, currentVotes + 1);
-    showVoteFeedback(artistId, 1);
+    pendingAnonymousVoteFeedback.value = {
+      artistId,
+      artistName:
+        contestant.artist?.name || translate("polls.detail.voteFallback"),
+    };
     resetVisibleTurnstile();
     closeVoteModal();
-    shareMessage.value = translate("polls.detail.anonymousVoteSuccessLogin");
     isSignupPromptOpen.value = true;
     nextTick(postEmbedHeight);
   } catch (error) {
@@ -2426,6 +2459,7 @@ onUnmounted(() => {
   embedResizeObserver?.disconnect();
   voteFeedbackTimers.forEach((timer) => window.clearTimeout(timer));
   voteFeedbackTimers.clear();
+  window.clearTimeout(anonymousVoteToastTimer);
   voteCountAnimationTimers.forEach((timer) => window.clearInterval(timer));
   voteCountAnimationTimers.clear();
   clearAnimatedDisplayedTotalVotes();
@@ -3310,6 +3344,7 @@ onUnmounted(() => {
             <div
               v-for="(contestant, index) in match.contestants"
               :key="contestant.id"
+              :data-artist-id="getContestantArtistId(contestant)"
               class="relative overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
               :class="
                 voteFeedbacks[contestant.artistId || contestant.id] &&
@@ -3664,6 +3699,7 @@ onUnmounted(() => {
           <article
             v-for="(contestant, index) in displayedContestants"
             :key="contestant.id"
+            :data-artist-id="getContestantArtistId(contestant)"
             class="poll-contestant-enter relative rounded-3xl border p-4 transition sm:p-5"
             :class="[
               isContestantWinner(contestant)
@@ -4216,6 +4252,37 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <Transition name="anonymous-vote-toast">
+        <div
+          v-if="anonymousVoteSuccessToast"
+          :key="anonymousVoteSuccessToast.token"
+          class="fixed inset-x-4 top-4 z-100 mx-auto flex max-w-lg items-center gap-4 rounded-3xl border border-emerald-300/35 bg-[#052e2b]/95 px-5 py-4 text-white shadow-2xl shadow-emerald-950/50 backdrop-blur-md sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            class="grid size-12 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-400/15 text-xl text-emerald-100"
+            aria-hidden="true"
+          >
+            <i class="fa-solid fa-check"></i>
+          </span>
+          <div class="min-w-0">
+            <p class="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-200">
+              {{ $t("polls.detail.anonymousVoteSuccessTitle") }}
+            </p>
+            <p class="mt-1 text-sm font-bold leading-6 text-emerald-50">
+              {{
+                $t("polls.detail.anonymousVoteSuccessNotice", {
+                  artist: anonymousVoteSuccessToast.artistName,
+                })
+              }}
+            </p>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </section>
 </template>
 
@@ -4410,7 +4477,7 @@ onUnmounted(() => {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08) inset,
     0 0 30px rgba(16, 185, 129, 0.38);
-  animation: vote-feedback-notice 2.35s ease-out both;
+  animation: vote-feedback-notice 0.45s ease-out both;
   pointer-events: none;
 }
 
@@ -4663,19 +4730,9 @@ onUnmounted(() => {
     transform: translateY(-0.5rem) scale(0.88);
   }
 
-  14% {
-    opacity: 1;
-    transform: translateY(0) scale(1.04);
-  }
-
-  74% {
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(-0.35rem) scale(0.96);
   }
 }
 
@@ -4769,5 +4826,18 @@ onUnmounted(() => {
     transform: scale(1.08);
     box-shadow: 0 0 70px rgba(217, 70, 239, 0.45);
   }
+}
+
+:global(.anonymous-vote-toast-enter-active),
+:global(.anonymous-vote-toast-leave-active) {
+  transition:
+    opacity 0.32s ease,
+    transform 0.32s ease;
+}
+
+:global(.anonymous-vote-toast-enter-from),
+:global(.anonymous-vote-toast-leave-to) {
+  opacity: 0;
+  transform: translateY(-14px);
 }
 </style>
