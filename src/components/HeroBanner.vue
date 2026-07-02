@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { translate } from '../i18n'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { subscribePublicResults } from '../services/pollResults'
 
 const activeSlide = ref(0)
-const animatedVotes = ref(0)
+const animatedLeaderVotes = ref(0)
 const animatedPercent = ref(0)
 const animatedProgress = ref(0)
 const livePolls = ref([])
@@ -25,12 +26,15 @@ const emptyBannerSlide = {
     'Cuando haya una votacion activa, aqui veras el lider, los votos y el avance real del ranking.',
   category: '',
   leader: '',
-  votes: '0',
+  leaderVotes: 0,
+  totalVotes: 0,
   percent: '0.00%',
   progress: 0,
+  hideVoteCounts: false,
+  contestantCount: 0,
+  stats: [],
   time: '',
   href: '/votaciones',
-  socialStats: [],
   isEmpty: true,
 }
 
@@ -51,26 +55,42 @@ const goToNextSlide = () => {
 let autoplayTimer
 let statsAnimationFrame
 
-const parseVotes = (value) => Number(String(value || 0).replaceAll(',', ''))
-const parsePercent = (value) => Number(value.replace('%', ''))
+const parsePercent = (value) => Number(String(value || 0).replace('%', ''))
 
-const formatVotes = (value) => Math.round(value).toLocaleString('en-US')
-const formatPercent = (value) => `${value.toFixed(2)}%`
+const formatVotes = (value) => Math.round(Number(value || 0)).toLocaleString('es-ES')
+const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`
 const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
 const getArtistName = (artistId) =>
   artists.value.find((artist) => artist.id === artistId)?.name || 'Tu artista favorito'
 const getEffectiveRoundId = (poll) => poll.activeRoundId || activeRoundIds.value[poll.id] || ''
 
-const estimatedStats = (votes) => {
-  const safeVotes = Math.max(Number(votes || 0), 1)
-  const activeFans = Math.max(120, Math.round(safeVotes * 0.018))
-  const todayVotes = Math.max(480, Math.round(safeVotes * 0.12))
-  const pushPercent = Math.min(99, Math.max(61, Math.round(58 + Math.log10(safeVotes) * 7)))
+const buildStats = ({ hideVoteCounts, leaderVotes, totalVotes, percent, contestantCount }) => {
+  if (hideVoteCounts) {
+    return [
+      {
+        label: translate('widgets.hero.leaderShare'),
+        value: formatPercent(percent),
+      },
+      {
+        label: translate('widgets.hero.contestants'),
+        value: String(contestantCount),
+      },
+    ]
+  }
 
   return [
-    { label: 'Fans activos', value: activeFans.toLocaleString('en-US') },
-    { label: 'Votos hoy', value: todayVotes.toLocaleString('en-US') },
-    { label: 'Fandom push', value: `${pushPercent}%` },
+    {
+      label: translate('widgets.hero.leaderVotes'),
+      value: formatVotes(leaderVotes),
+    },
+    {
+      label: translate('widgets.hero.totalVotes'),
+      value: formatVotes(totalVotes),
+    },
+    {
+      label: translate('widgets.hero.contestants'),
+      value: String(contestantCount),
+    },
   ]
 }
 
@@ -168,6 +188,7 @@ const syncPollResultListeners = (pollRows) => {
           totalVotes: Number(poll.totalVotes || 0),
           leaderArtistId: poll.leaderArtistId || null,
           leaderVotes: Number(poll.leaderVotes || 0),
+          results: [],
         })
       },
       onError: () => clearPollResult(poll.id),
@@ -190,13 +211,13 @@ const animateBannerStats = () => {
     return
   }
 
-  const targetVotes = parseVotes(slide.votes)
+  const targetLeaderVotes = Number(slide.leaderVotes || 0)
   const targetPercent = parsePercent(slide.percent)
   const targetProgress = slide.progress
   const duration = 1300
   const startTime = performance.now()
 
-  animatedVotes.value = 0
+  animatedLeaderVotes.value = 0
   animatedPercent.value = 0
   animatedProgress.value = 0
 
@@ -204,7 +225,7 @@ const animateBannerStats = () => {
     const progress = Math.min((currentTime - startTime) / duration, 1)
     const easedProgress = easeOutCubic(progress)
 
-    animatedVotes.value = targetVotes * easedProgress
+    animatedLeaderVotes.value = targetLeaderVotes * easedProgress
     animatedPercent.value = targetPercent * easedProgress
     animatedProgress.value = targetProgress * easedProgress
 
@@ -213,7 +234,7 @@ const animateBannerStats = () => {
       return
     }
 
-    animatedVotes.value = targetVotes
+    animatedLeaderVotes.value = targetLeaderVotes
     animatedPercent.value = targetPercent
     animatedProgress.value = targetProgress
   }
@@ -228,6 +249,8 @@ const buildLiveSlide = (poll, index) => {
   const percent = totalVotes ? (leaderVotes / totalVotes) * 100 : 0
   const leaderArtistId = liveResult.leaderArtistId || poll.leaderArtistId
   const leaderName = getArtistName(leaderArtistId)
+  const contestantCount = Number(liveResult.results?.length || 0)
+  const hideVoteCounts = Boolean(poll.hideVoteCounts)
 
   return {
     badge: index === 0 ? '#1 en vivo' : 'Votacion en vivo',
@@ -235,14 +258,24 @@ const buildLiveSlide = (poll, index) => {
     eyebrow: poll.title || 'Votacion activa',
     title: leaderArtistId ? `${leaderName} lidera la votacion` : poll.title || 'Vota por tu artista favorito',
     description: poll.description || 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
-    category: poll.category || 'Lista',
+    category: poll.categoryName || poll.category || '',
     leader: leaderName,
-    votes: String(totalVotes || leaderVotes || 0),
+    leaderVotes,
+    totalVotes,
     percent: `${percent.toFixed(2)}%`,
-    progress: Math.min(Math.max(percent * 2.1, totalVotes ? 18 : 8), 100),
+    progress: totalVotes ? Math.min(Math.max(percent, 4), 100) : 0,
+    hideVoteCounts,
+    contestantCount,
+    stats: buildStats({
+      hideVoteCounts,
+      leaderVotes,
+      totalVotes,
+      percent,
+      contestantCount,
+    }),
     time: 'Live',
     href: pollUrl(poll),
-    socialStats: estimatedStats(totalVotes || leaderVotes),
+    isEmpty: false,
   }
 }
 
@@ -349,20 +382,34 @@ onUnmounted(() => {
 
         <div
           v-if="!currentSlide.isEmpty"
-          class="mt-6 flex flex-wrap items-end gap-4"
+          class="mt-6 flex flex-wrap items-end gap-5"
         >
-          <div>
+          <div v-if="!currentSlide.hideVoteCounts">
             <p class="text-xs font-black uppercase tracking-widest text-slate-400">
-              {{ currentSlide.category }}
+              {{ $t('widgets.hero.leaderVotes') }}
             </p>
-            <div class="mt-1 flex items-center gap-3">
-              <span class="text-4xl font-black text-white">❤ {{ formatVotes(animatedVotes) }}</span>
-              <span class="text-sm font-bold text-slate-300">{{ $t('widgets.hero.votes') }}</span>
-            </div>
+            <p class="mt-1 text-4xl font-black text-white">
+              {{ formatVotes(animatedLeaderVotes) }}
+            </p>
           </div>
           <div>
-            <p class="text-2xl font-black text-fuchsia-300">{{ formatPercent(animatedPercent) }}</p>
-            <p class="text-xs text-slate-400">{{ $t('widgets.hero.currentTop') }}</p>
+            <p class="text-xs font-black uppercase tracking-widest text-slate-400">
+              {{ currentSlide.hideVoteCounts ? $t('widgets.hero.leading') : $t('widgets.hero.leaderShare') }}
+            </p>
+            <p class="mt-1 text-3xl font-black text-fuchsia-300">
+              {{ formatPercent(animatedPercent) }}
+            </p>
+          </div>
+          <div
+            v-if="!currentSlide.hideVoteCounts && currentSlide.totalVotes"
+            class="min-w-28"
+          >
+            <p class="text-xs font-black uppercase tracking-widest text-slate-400">
+              {{ $t('widgets.hero.totalVotes') }}
+            </p>
+            <p class="mt-1 text-xl font-black text-slate-200">
+              {{ formatVotes(currentSlide.totalVotes) }}
+            </p>
           </div>
         </div>
 
@@ -377,11 +424,12 @@ onUnmounted(() => {
         </div>
 
         <div
-          v-if="currentSlide.socialStats.length"
-          class="mt-4 grid w-full gap-2 sm:max-w-md sm:grid-cols-3"
+          v-if="currentSlide.stats.length"
+          class="mt-4 grid w-full gap-2 sm:max-w-md"
+          :class="currentSlide.stats.length === 2 ? 'grid-cols-2' : 'sm:grid-cols-3'"
         >
           <div
-            v-for="stat in currentSlide.socialStats"
+            v-for="stat in currentSlide.stats"
             :key="stat.label"
             class="rounded-2xl border border-white/10 bg-white/7 px-3 py-3 backdrop-blur"
           >

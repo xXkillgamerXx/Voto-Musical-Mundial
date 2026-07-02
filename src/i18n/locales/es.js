@@ -444,8 +444,11 @@ export default {
     hero: {
       previous: 'Banner anterior',
       next: 'Banner siguiente',
-      votes: 'votos',
-      currentTop: 'del top actual',
+      leaderVotes: 'Votos del líder',
+      leaderShare: 'Participación del líder',
+      leading: 'Liderando',
+      totalVotes: 'Votos totales',
+      contestants: 'Artistas',
       viewBanner: 'Ver banner {number}',
       viewRankings: 'Ver rankings',
     },
