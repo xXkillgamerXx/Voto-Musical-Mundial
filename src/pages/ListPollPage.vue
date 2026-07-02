@@ -25,6 +25,7 @@ import {
 } from "../services/voteQueue";
 import {
   isTurnstileEnabled,
+  isTurnstileMocked,
   removeTurnstileWidget,
   renderTurnstileWidget,
   resetTurnstileWidget,
@@ -59,6 +60,7 @@ const isLoadingSelectedRound = ref(false);
 const isLoadingContestants = ref(false);
 const isVoting = ref("");
 const errorMessage = ref("");
+const anonymousCooldownNotice = ref("");
 const shareMessage = ref("");
 const now = ref(Date.now());
 const selectedRoundId = ref("");
@@ -670,15 +672,60 @@ const anonymousVoteScopes = computed(() => {
 const anonymousVoteStatusForScope = (scope = anonymousDefaultScope) =>
   anonymousVoteStatuses.value[scope] || null;
 const anonymousNextVoteAtMsForScope = (scope = anonymousDefaultScope) => {
-  const nextVoteAt = anonymousVoteStatusForScope(scope)?.nextVoteAt;
+  const status = anonymousVoteStatusForScope(scope);
+  const nextVoteAt = status?.nextVoteAt;
 
-  if (!nextVoteAt) {
-    return 0;
+  if (nextVoteAt) {
+    const parsed = new Date(nextVoteAt).getTime();
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
   }
 
-  const parsed = new Date(nextVoteAt).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
+  const remainingMs = Number(status?.remainingMs || 0);
+  if (remainingMs > 0) {
+    return Date.now() + remainingMs;
+  }
+
+  return 0;
 };
+const normalizeAnonymousStatus = (status) => {
+  if (!status || typeof status !== "object") {
+    return null;
+  }
+
+  if (status.nextVoteAt) {
+    return status;
+  }
+
+  const remainingMs = Number(status.remainingMs || 0);
+  if (remainingMs > 0) {
+    return {
+      ...status,
+      nextVoteAt: new Date(Date.now() + remainingMs).toISOString(),
+    };
+  }
+
+  return status;
+};
+const activeAnonymousStatusScope = computed(() => {
+  if (voteModalContestant.value) {
+    return getAnonymousVoteScope(voteModalContestant.value);
+  }
+
+  let scopeWithMostWait = anonymousDefaultScope;
+  let longestWait = 0;
+
+  anonymousVoteScopes.value.forEach((scope) => {
+    const remainingMs = anonymousRemainingMsForScope(scope);
+    if (remainingMs > longestWait) {
+      longestWait = remainingMs;
+      scopeWithMostWait = scope;
+    }
+  });
+
+  return scopeWithMostWait;
+});
 const anonymousRemainingMsForScope = (scope = anonymousDefaultScope) =>
   Math.max(0, anonymousNextVoteAtMsForScope(scope) - now.value);
 const selectedAnonymousVoteScope = computed(() =>
@@ -755,8 +802,52 @@ const anonymousVoteMessageForScope = (scope = anonymousDefaultScope) => {
   });
 };
 const anonymousVoteMessage = computed(() =>
-  anonymousVoteMessageForScope(selectedAnonymousVoteScope.value),
+  anonymousVoteMessageForScope(activeAnonymousStatusScope.value),
 );
+const anonymousLiveCountdownLabel = computed(() =>
+  anonymousCooldownLabelForScope(activeAnonymousStatusScope.value),
+);
+const isAnonymousWaitingToVote = computed(
+  () =>
+    (!currentUser.value || currentUser.value.isAnonymous) &&
+    anonymousVoteScopes.value.some(
+      (scope) => anonymousRemainingMsForScope(scope) > 0,
+    ),
+);
+const isAnonymousOnCooldownFor = (contestant) => {
+  if (currentUser.value && !currentUser.value.isAnonymous) {
+    return false;
+  }
+
+  return anonymousRemainingMsForScope(getAnonymousVoteScope(contestant)) > 0;
+};
+const isVoteButtonDisabled = (contestant) => {
+  if (!isVotingOpen.value) {
+    return true;
+  }
+
+  if (isVoting.value === getContestantArtistId(contestant)) {
+    return true;
+  }
+
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    return false;
+  }
+
+  return !hasEnoughPointsToVoteFor(contestant);
+};
+const showAnonymousCooldownNotice = (contestant) => {
+  anonymousCooldownNotice.value = anonymousVoteMessageForScope(
+    getAnonymousVoteScope(contestant),
+  );
+  errorMessage.value = "";
+
+  nextTick(() => {
+    document
+      .getElementById("anonymous-vote-status-banner")
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+};
 
 const renderVisibleTurnstile = async () => {
   if (!shouldShowTurnstile.value) {
@@ -1851,8 +1942,11 @@ const syncStoredPoints = (points, spentPoints) => {
 };
 
 const refreshAnonymousVoteStatuses = async () => {
+  const isGuestOrAnonymous =
+    !currentUser.value || Boolean(currentUser.value.isAnonymous);
+
   if (
-    !currentUser.value?.isAnonymous ||
+    !isGuestOrAnonymous ||
     !poll.value?.id ||
     !anonymousVotingConfig.value.enabled
   ) {
@@ -1871,7 +1965,10 @@ const refreshAnonymousVoteStatuses = async () => {
           voteScope: scope === anonymousDefaultScope ? null : scope,
         });
 
-        return [scope, result?.status || result || null];
+        return [
+          scope,
+          normalizeAnonymousStatus(result?.status || result || null),
+        ];
       }),
     );
 
@@ -1962,6 +2059,7 @@ const embedUserInitial = computed(
 
 const openVoteModal = (contestant) => {
   errorMessage.value = "";
+  anonymousCooldownNotice.value = "";
 
   if (!currentUser.value && !anonymousVotingConfig.value.enabled) {
     errorMessage.value = translate("polls.detail.loginToVote");
@@ -1982,7 +2080,7 @@ const openVoteModal = (contestant) => {
     const scope = getAnonymousVoteScope(contestant);
 
     if (!canUseAnonymousVoteForScope(scope)) {
-      errorMessage.value = anonymousVoteMessageForScope(scope);
+      showAnonymousCooldownNotice(contestant);
       return;
     }
 
@@ -2020,7 +2118,7 @@ const voteAnonymouslyFor = async (contestant) => {
   const voteScope = getAnonymousVoteScope(contestant);
 
   if (anonymousRemainingMsForScope(voteScope) > 0) {
-    errorMessage.value = anonymousVoteMessageForScope(voteScope);
+    showAnonymousCooldownNotice(contestant);
     return;
   }
 
@@ -2051,7 +2149,7 @@ const voteAnonymouslyFor = async (contestant) => {
 
     anonymousVoteStatuses.value = {
       ...anonymousVoteStatuses.value,
-      [voteScope]: result?.status || result || null,
+      [voteScope]: normalizeAnonymousStatus(result?.status || result || null),
     };
     // Anonymous votes are sent immediately, so this visual update only happens after
     // the backend confirms the vote. That keeps the UI from bouncing on rejected votes.
@@ -2064,20 +2162,22 @@ const voteAnonymouslyFor = async (contestant) => {
     nextTick(postEmbedHeight);
   } catch (error) {
     if (
+      error.status === 429 ||
       error.code === "functions/resource-exhausted" ||
       error.code === "resource-exhausted"
     ) {
+      const details = error.payload || error.details || {};
       anonymousVoteStatuses.value = {
         ...anonymousVoteStatuses.value,
-        [voteScope]: {
+        [voteScope]: normalizeAnonymousStatus({
           ...(anonymousVoteStatuses.value[voteScope] || {}),
-          nextVoteAt: error.details?.nextVoteAt || null,
-          remainingMs: error.details?.remainingMs || 0,
-        },
+          enabled: true,
+          cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
+          nextVoteAt: details.nextVoteAt || null,
+          remainingMs: Number(details.remainingMs || 0),
+        }),
       };
-      errorMessage.value = translate("polls.detail.anonymousWait", {
-        time: anonymousCooldownLabelForScope(voteScope),
-      });
+      showAnonymousCooldownNotice(contestant);
       return;
     }
 
@@ -2190,6 +2290,15 @@ watch(
   () => {
     refreshAnonymousVoteStatuses();
     nextTick(postEmbedHeight);
+  },
+);
+
+watch(
+  () => anonymousRemainingMs.value,
+  (remainingMs) => {
+    if (remainingMs <= 0) {
+      anonymousCooldownNotice.value = "";
+    }
   },
 );
 
@@ -3332,7 +3441,7 @@ onUnmounted(() => {
 
                 <button
                   type="button"
-                  class="flex items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  class="flex items-center justify-center rounded-2xl px-6 text-sm font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   :class="[
                     match.contestants.length === 2
                       ? isEmbeddedPage
@@ -3340,12 +3449,11 @@ onUnmounted(() => {
                         : 'm-3 min-h-10'
                       : 'm-4 min-h-12',
                     match.contestants.length !== 2 && 'md:min-w-32',
+                    isAnonymousOnCooldownFor(contestant)
+                      ? 'border border-amber-300/35 bg-amber-400/15 text-amber-100 shadow-lg shadow-amber-950/20 hover:bg-amber-400/20'
+                      : 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/30',
                   ]"
-                  :disabled="
-                    !isVotingOpen ||
-                    !hasEnoughPointsToVoteFor(contestant) ||
-                    isVoting === getContestantArtistId(contestant)
-                  "
+                  :disabled="isVoteButtonDisabled(contestant)"
                   @click="openVoteModal(contestant)"
                 >
                   {{ voteButtonLabel(contestant) }}
@@ -3440,19 +3548,49 @@ onUnmounted(() => {
           v-if="
             shouldShowVoteButtons && (!currentUser || currentUser.isAnonymous)
           "
-          class="flex flex-col gap-2 rounded-3xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-bold text-cyan-100 sm:flex-row sm:items-center sm:justify-between"
+          id="anonymous-vote-status-banner"
+          class="flex flex-col gap-2 rounded-3xl border px-4 py-3 text-sm font-bold sm:flex-row sm:items-center sm:justify-between"
+          :class="
+            isAnonymousWaitingToVote
+              ? 'border-amber-300/25 bg-amber-300/10 text-amber-100'
+              : 'border-cyan-300/20 bg-cyan-300/10 text-cyan-100'
+          "
         >
           <span>
-            {{ anonymousVoteMessage }}
+            <template v-if="isAnonymousWaitingToVote">
+              <span class="block text-[10px] font-black uppercase tracking-[0.24em] text-amber-200/90">
+                {{ $t("polls.detail.anonymousWaitTitle") }}
+              </span>
+              <span class="mt-1 block text-3xl font-black tabular-nums tracking-tight text-amber-100">
+                {{ anonymousLiveCountdownLabel }}
+              </span>
+            </template>
+            <template v-else>
+              {{ anonymousVoteMessage }}
+            </template>
           </span>
-          <span class="text-xs uppercase tracking-widest text-cyan-200/75">
+          <span
+            class="text-xs uppercase tracking-widest"
+            :class="
+              isAnonymousWaitingToVote ? 'text-amber-200/80' : 'text-cyan-200/75'
+            "
+          >
             {{
               isLoadingAnonymousStatus
                 ? $t("polls.detail.checkingAnonymousVote")
-                : $t("polls.detail.anonymousIpNotice")
+                : isAnonymousWaitingToVote
+                  ? $t("polls.detail.anonymousCooldownHint")
+                  : $t("polls.detail.anonymousIpNotice")
             }}
           </span>
         </div>
+
+        <p
+          v-if="anonymousCooldownNotice"
+          class="rounded-3xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
+        >
+          {{ anonymousCooldownNotice }}
+        </p>
 
         <template v-if="isLoadingSelectedRound">
           <article
@@ -3643,12 +3781,13 @@ onUnmounted(() => {
               <button
                 v-if="shouldShowVoteButtons"
                 type="button"
-                class="col-span-3 min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:col-span-1"
-                :disabled="
-                  !isVotingOpen ||
-                  !hasEnoughPointsToVoteFor(contestant) ||
-                  isVoting === getContestantArtistId(contestant)
+                class="col-span-3 min-h-12 rounded-2xl px-6 text-sm font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:col-span-1"
+                :class="
+                  isAnonymousOnCooldownFor(contestant)
+                    ? 'border border-amber-300/35 bg-amber-400/15 text-amber-100 shadow-lg shadow-amber-950/20 hover:bg-amber-400/20'
+                    : 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/30'
                 "
+                :disabled="isVoteButtonDisabled(contestant)"
                 @click="openVoteModal(contestant)"
               >
                 {{ voteButtonLabel(contestant) }}
@@ -3896,7 +4035,11 @@ onUnmounted(() => {
                           Verificación anti-bots
                         </span>
                         <span class="mt-1 block text-sm font-bold leading-5 text-slate-200">
-                          Marca el check de Cloudflare antes de votar.
+                          {{
+                            isTurnstileMocked()
+                              ? "Marca el check de prueba (solo local)."
+                              : "Marca el check de Cloudflare antes de votar."
+                          }}
                         </span>
                       </span>
                     </div>
@@ -3909,23 +4052,6 @@ onUnmounted(() => {
                     >
                       {{ turnstileError }}
                     </p>
-                  </div>
-                  <div v-else class="flex items-center gap-3">
-                    <span
-                      class="grid size-11 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-300/15 text-emerald-100"
-                    >
-                      <i class="fa-solid fa-check" aria-hidden="true"></i>
-                    </span>
-                    <span class="min-w-0">
-                      <span
-                        class="block text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200"
-                      >
-                        Verificación anti-bots
-                      </span>
-                      <span class="mt-1 block text-sm font-bold leading-5 text-slate-200">
-                        Protección Cloudflare Turnstile activa antes de confirmar el voto.
-                      </span>
-                    </span>
                   </div>
                 </div>
 

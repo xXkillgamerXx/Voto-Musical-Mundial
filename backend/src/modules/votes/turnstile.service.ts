@@ -33,6 +33,14 @@ export class TurnstileService {
       return;
     }
 
+    if (
+      String(this.config.get('NODE_ENV') || '').toLowerCase() === 'development' &&
+      token === 'dev-turnstile-mock-token'
+    ) {
+      this.logger.warn('Accepted dev Turnstile mock token.');
+      return;
+    }
+
     if (!token) {
       throw new BadRequestException('Completa la verificacion de seguridad para votar.');
     }

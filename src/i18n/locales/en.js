@@ -304,6 +304,8 @@ export default {
       voteCountdown: 'Wait {time}',
       anonymousReady: 'You have 1 free vote. You can vote again in {minutes} min.',
       anonymousWait: 'Your next free vote will be ready in {time}.',
+      anonymousWaitTitle: 'Next free vote in',
+      anonymousCooldownHint: 'Tap the button to see the remaining time',
       anonymousDisabled: 'Anonymous voting is not active for this poll.',
       anonymousIpNotice: 'Protected by anonymous account and IP',
       checkingAnonymousVote: 'Checking timer...',

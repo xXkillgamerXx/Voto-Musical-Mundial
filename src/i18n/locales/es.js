@@ -304,6 +304,8 @@ export default {
       voteCountdown: 'Espera {time}',
       anonymousReady: 'Tienes 1 voto gratis. Luego podrás votar otra vez en {minutes} min.',
       anonymousWait: 'Tu próximo voto gratis estará listo en {time}.',
+      anonymousWaitTitle: 'Próximo voto gratis en',
+      anonymousCooldownHint: 'Toca el botón para ver el tiempo restante',
       anonymousDisabled: 'El voto anónimo no está activo en esta votación.',
       anonymousIpNotice: 'Protegido por cuenta anónima e IP',
       checkingAnonymousVote: 'Revisando contador...',
