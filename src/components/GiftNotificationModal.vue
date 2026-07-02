@@ -5,19 +5,65 @@ import { getStoredAuth, onStoredAuthChange, setStoredAuth } from '../services/ap
 import { getNotifications, markNotificationRead } from '../services/api/notificationsApi'
 import { subscribeUserRealtime } from '../services/api/realtimeApi'
 
-const REFRESH_MS = 60 * 1000
+const SEEN_GIFTS_KEY = 'vmm-seen-gift-notifications'
+const MAX_GIFT_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
 const giftNotification = ref(null)
 const isOpen = ref(false)
 const isLoading = ref(false)
 const giftRevealed = ref(false)
 const displayPointsAfter = ref(0)
 
-let refreshTimer = null
 let autoCloseTimer = null
 let pointsAnimationFrame = null
 let unsubscribeAuth = null
 let unsubscribeUserRealtime = null
 let subscribedUserId = null
+let loadedGiftThisSession = false
+
+const readSeenGiftIds = () => {
+  try {
+    return new Set(JSON.parse(window.sessionStorage.getItem(SEEN_GIFTS_KEY) || '[]'))
+  } catch {
+    return new Set()
+  }
+}
+
+const rememberSeenGift = (notificationId) => {
+  if (!notificationId) {
+    return
+  }
+
+  const seen = readSeenGiftIds()
+  seen.add(String(notificationId))
+  window.sessionStorage.setItem(SEEN_GIFTS_KEY, JSON.stringify([...seen].slice(-40)))
+}
+
+const isRecentGiftNotification = (notification) => {
+  const createdAt = notification?.createdAt ? new Date(notification.createdAt) : null
+
+  if (!createdAt || Number.isNaN(createdAt.getTime())) {
+    return false
+  }
+
+  return Date.now() - createdAt.getTime() <= MAX_GIFT_AGE_MS
+}
+
+const shouldShowGiftNotification = (notification) => {
+  if (!notification?.id || notification.readAt) {
+    return false
+  }
+
+  if (!isRecentGiftNotification(notification)) {
+    return false
+  }
+
+  if (readSeenGiftIds().has(String(notification.id))) {
+    return false
+  }
+
+  return notification.type === 'admin_points_gift' || notification.type === 'mission_completed'
+}
 
 const applyGiftPoints = (points) => {
   const nextPoints = Number(points)
@@ -55,7 +101,7 @@ const subscribeRealtime = (userId) => {
       }
 
       applyGiftPoints(event.points)
-      loadGiftNotification()
+      loadGiftNotification({ force: true })
     },
   })
 }
@@ -126,19 +172,15 @@ const scheduleAutoClose = () => {
   window.clearTimeout(autoCloseTimer)
 }
 
-const loadGiftNotification = async () => {
-  if (!getCurrentApiAuth()?.accessToken || isLoading.value || isOpen.value) {
+const loadGiftNotification = async ({ force = false } = {}) => {
+  if (!getCurrentApiAuth()?.accessToken || isLoading.value || (isOpen.value && !force)) {
     return
   }
 
   isLoading.value = true
   try {
-    const notifications = await getNotifications(10)
-    const nextGift = (notifications || []).find(
-      (notification) =>
-        !notification.readAt &&
-        (notification.type === 'admin_points_gift' || notification.type === 'mission_completed'),
-    )
+    const notifications = await getNotifications(20)
+    const nextGift = (notifications || []).find(shouldShowGiftNotification)
 
     if (nextGift) {
       giftNotification.value = nextGift
@@ -165,6 +207,7 @@ const closeGift = async () => {
   giftNotification.value = null
 
   if (notificationId) {
+    rememberSeenGift(notificationId)
     await markNotificationRead(notificationId).catch(() => {})
   }
 }
@@ -191,24 +234,27 @@ const syncAuth = () => {
   if (!auth?.accessToken) {
     isOpen.value = false
     giftNotification.value = null
+    loadedGiftThisSession = false
     subscribeRealtime(null)
     return
   }
 
   subscribeRealtime(auth.user?.id ? String(auth.user.id) : null)
-  loadGiftNotification()
+
+  if (!loadedGiftThisSession) {
+    loadedGiftThisSession = true
+    loadGiftNotification()
+  }
 }
 
 onMounted(() => {
   syncAuth()
   unsubscribeAuth = onStoredAuthChange(syncAuth)
-  refreshTimer = window.setInterval(loadGiftNotification, REFRESH_MS)
 })
 
 onUnmounted(() => {
   unsubscribeAuth?.()
   unsubscribeUserRealtime?.()
-  window.clearInterval(refreshTimer)
   window.clearTimeout(autoCloseTimer)
   if (pointsAnimationFrame) {
     window.cancelAnimationFrame(pointsAnimationFrame)

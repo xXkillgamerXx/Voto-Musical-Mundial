@@ -53,7 +53,7 @@ export const subscribePollRealtime = (pollId, { onVoteDelta, onResultsDirty, onP
   }
 }
 
-export const subscribeLivePollsRealtime = ({ onPollStateChanged } = {}) => {
+export const subscribeLivePollsRealtime = ({ onPollStateChanged, onVoteDelta } = {}) => {
   const client = getRealtimeSocket()
   const join = () => client.emit('join_live_polls')
 
@@ -61,10 +61,12 @@ export const subscribeLivePollsRealtime = ({ onPollStateChanged } = {}) => {
   client.on('connect', join)
 
   if (onPollStateChanged) client.on('poll_state_changed', onPollStateChanged)
+  if (onVoteDelta) client.on('vote_delta', onVoteDelta)
 
   return () => {
     client.off('connect', join)
     if (onPollStateChanged) client.off('poll_state_changed', onPollStateChanged)
+    if (onVoteDelta) client.off('vote_delta', onVoteDelta)
     client.emit('leave_live_polls')
   }
 }

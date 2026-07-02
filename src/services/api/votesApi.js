@@ -19,3 +19,6 @@ export const getAnonymousVoteStatus = async (payload) => {
     token: auth?.accessToken,
   })
 }
+
+export const getRecentVoteActivity = (limit = 24, hours = 168) =>
+  apiRequest(`/votes/recent-activity?limit=${limit}&hours=${hours}`)

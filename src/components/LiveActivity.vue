@@ -2,14 +2,16 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { getStoredAuth } from '../services/api/client'
-import { subscribePollRealtime } from '../services/api/realtimeApi'
+import { subscribeLivePollsRealtime } from '../services/api/realtimeApi'
+import { getRecentVoteActivity } from '../services/api/votesApi'
 
 const artists = ref([])
+const pollTitleById = ref({})
+const pollMetaById = ref({})
 const recentVotes = ref([])
-const publicPollActivities = ref([])
 let unsubscribeArtists = null
 let unsubscribeLivePolls = null
-let unsubscribePollRealtime = []
+let unsubscribeLiveActivity = null
 
 const colorOptions = [
   'from-fuchsia-500 to-violet-500',
@@ -28,14 +30,17 @@ const visualOptions = [
   'from-slate-950 via-orange-950 to-black',
 ]
 
-const getArtist = (artistId) => artists.value.find((artist) => artist.id === artistId)
+const getArtist = (artistId) => artists.value.find((artist) => String(artist.id) === String(artistId))
 const getArtistImage = (artist) =>
-  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
+  artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || artist?.photoUrl || ''
+
+const isRegisteredVote = (vote) => Boolean(vote?.userId) && !vote?.isAnonymous && vote?.isAnonymous !== '1'
 
 const localUserForVote = (vote) => {
   const authUser = getStoredAuth()?.user
   return authUser?.id && String(authUser.id) === String(vote?.userId || '') ? authUser : null
 }
+
 const userDisplayName = (vote) => {
   const localUser = localUserForVote(vote)
   return (
@@ -43,32 +48,37 @@ const userDisplayName = (vote) => {
     vote?.username ||
     localUser?.displayName ||
     localUser?.username ||
-    userLabel(vote?.userId || vote?.anonymousId)
+    userLabel(vote?.userId)
   )
 }
+
 const userPhoto = (vote) => {
   const localUser = localUserForVote(vote)
-  return (
-    vote?.userPhotoUrl ||
-    vote?.userPhotoURL ||
-    vote?.photoUrl ||
-    vote?.photoURL ||
-    localUser?.photoUrl ||
-    localUser?.photoURL ||
-    ''
-  )
+  return vote?.userPhotoUrl || vote?.userPhotoURL || localUser?.photoUrl || localUser?.photoURL || ''
 }
-const formatTime = (createdAt) => {
-  const date = createdAt?.toDate?.()
 
-  if (!date) {
+const pollTitleFor = (vote) =>
+  vote?.pollTitle || pollTitleById.value[String(vote?.pollId || '')] || 'Votación'
+
+const pollUrlFor = (vote) => {
+  const meta = pollMetaById.value[String(vote?.pollId || '')] || {}
+  const year = vote?.pollYear || meta.year || new Date().getFullYear()
+  const slug = vote?.pollSlug || meta.slug || vote?.pollId
+
+  return slug ? `/votacion/${year}/${slug}` : '/votaciones'
+}
+
+const formatTime = (createdAt) => {
+  const date = createdAt?.toDate?.() || (createdAt ? new Date(createdAt) : null)
+
+  if (!date || Number.isNaN(date.getTime())) {
     return 'ahora'
   }
 
   const seconds = Math.max(Math.floor((Date.now() - date.getTime()) / 1000), 0)
 
   if (seconds < 60) {
-    return `hace ${seconds || 1} segundos`
+    return `hace ${seconds || 1} s`
   }
 
   const minutes = Math.floor(seconds / 60)
@@ -77,133 +87,142 @@ const formatTime = (createdAt) => {
     return `hace ${minutes} min`
   }
 
-  return `hace ${Math.floor(minutes / 60)} h`
+  const hours = Math.floor(minutes / 60)
+
+  if (hours < 24) {
+    return `hace ${hours} h`
+  }
+
+  return `hace ${Math.floor(hours / 24)} d`
 }
 
 const userLabel = (userId) => `Fan ${String(userId || '').slice(-4).toUpperCase() || 'VMM'}`
-const dateLikeNow = () => ({
-  toDate: () => new Date(),
-  toMillis: () => Date.now(),
-})
 
-const syncPollRealtimeSubscriptions = (pollRows) => {
-  unsubscribePollRealtime.forEach((unsubscribe) => unsubscribe?.())
-  unsubscribePollRealtime = []
+const dateLike = (value) => {
+  const date = value ? new Date(value) : new Date()
 
-  pollRows
-    .filter((poll) => poll?.id)
-    .forEach((poll) => {
-      const unsubscribe = subscribePollRealtime(poll.id, {
-        onVoteDelta: (vote) => {
-          recentVotes.value = [
-            {
-              id: `${vote.pollId || poll.id}-${vote.roundId || 'round'}-${vote.contestantId || vote.artistId}-${Date.now()}`,
-              pollId: String(vote.pollId || poll.id),
-              roundId: vote.roundId ? String(vote.roundId) : null,
-              contestantId: vote.contestantId ? String(vote.contestantId) : null,
-              artistId: String(vote.artistId || ''),
-              userId: vote.userId || vote.anonymousId || `live-${Date.now()}`,
-              username: vote.username || '',
-              userDisplayName: vote.userDisplayName || '',
-              userPhotoUrl: vote.userPhotoUrl || vote.userPhotoURL || '',
-              amount: Number(vote.amount || 1),
-              createdAt: dateLikeNow(),
-            },
-            ...recentVotes.value,
-          ].slice(0, 12)
-        },
-      })
-      unsubscribePollRealtime.push(unsubscribe)
-    })
+  return {
+    toDate: () => date,
+    toMillis: () => date.getTime(),
+  }
 }
 
-const realActivities = computed(() =>
+const normalizeVoteRow = (vote) => ({
+  id: String(vote.id || `${vote.pollId}-${vote.userId}-${vote.createdAt}`),
+  pollId: String(vote.pollId || ''),
+  pollTitle: vote.pollTitle || '',
+  pollSlug: vote.pollSlug || '',
+  pollYear: Number(vote.pollYear || pollMetaById.value[String(vote.pollId || '')]?.year || new Date().getFullYear()),
+  artistId: String(vote.artistId || ''),
+  artistName: vote.artistName || '',
+  artistPhotoUrl: vote.artistPhotoUrl || '',
+  userId: String(vote.userId || ''),
+  username: vote.username || '',
+  userDisplayName: vote.userDisplayName || '',
+  userPhotoUrl: vote.userPhotoUrl || '',
+  amount: Number(vote.amount || 1),
+  createdAt: dateLike(vote.createdAt),
+})
+
+const pushVote = (vote) => {
+  if (!isRegisteredVote(vote)) {
+    return
+  }
+
+  const normalized = normalizeVoteRow(vote)
+  recentVotes.value = [
+    normalized,
+    ...recentVotes.value.filter((entry) => entry.id !== normalized.id),
+  ].slice(0, 24)
+}
+
+const syncPollTitles = (pollRows) => {
+  pollTitleById.value = Object.fromEntries(
+    (pollRows || [])
+      .filter((poll) => poll?.id)
+      .map((poll) => [String(poll.id), poll.title || poll.name || 'Votación']),
+  )
+  pollMetaById.value = Object.fromEntries(
+    (pollRows || [])
+      .filter((poll) => poll?.id)
+      .map((poll) => [
+        String(poll.id),
+        {
+          slug: poll.slug || poll.id,
+          year: poll.year || new Date().getFullYear(),
+        },
+      ]),
+  )
+}
+
+const activities = computed(() =>
   recentVotes.value.map((vote, index) => {
     const artist = getArtist(vote.artistId)
-    const artistName = artist?.name || 'Artista'
+    const artistName = vote.artistName || artist?.name || 'Artista'
 
     return {
+      id: vote.id,
       user: userDisplayName(vote),
       userPhoto: userPhoto(vote),
       artist: artistName,
-      artistImage: getArtistImage(artist),
+      artistImage: vote.artistPhotoUrl || getArtistImage(artist),
+      pollTitle: pollTitleFor(vote),
+      pollUrl: pollUrlFor(vote),
       time: formatTime(vote.createdAt),
       votes: Number(vote.amount || 1),
-      streak: '+1',
       color: colorOptions[index % colorOptions.length],
       visual: visualOptions[index % visualOptions.length],
     }
   }),
 )
-const activities = computed(() => {
-  if (realActivities.value.length) {
-    return realActivities.value
-  }
 
-  if (publicPollActivities.value.length) {
-    return publicPollActivities.value
-  }
-  return []
-})
+const activeUsers = computed(() => new Set(recentVotes.value.map((vote) => vote.userId).filter(Boolean)).size)
 
-const activeUsers = computed(() =>
-  realActivities.value.length
-    ? recentVotes.value.length
-    : publicPollActivities.value.length,
-)
 const votesPerMinute = computed(() =>
-  realActivities.value.length
-    ? recentVotes.value
-      .filter((vote) => {
-        const voteTime = vote.createdAt?.toMillis?.()
-        return voteTime && Date.now() - voteTime <= 60000
-      })
-      .reduce((total, vote) => total + Number(vote.amount || 1), 0)
-    : publicPollActivities.value.reduce((total, activity) => total + Number(activity.votes || 0), 0),
+  recentVotes.value
+    .filter((vote) => {
+      const voteTime = vote.createdAt?.toMillis?.()
+      return voteTime && Date.now() - voteTime <= 60000
+    })
+    .reduce((total, vote) => total + Number(vote.amount || 1), 0),
 )
-const onlineFandoms = computed(() =>
-  realActivities.value.length
-    ? new Set(recentVotes.value.map((vote) => vote.artistId).filter(Boolean)).size
-    : new Set(publicPollActivities.value.map((activity) => activity.artist).filter(Boolean)).size,
+
+const activePollsCount = computed(() =>
+  new Set(recentVotes.value.map((vote) => vote.pollId).filter(Boolean)).size,
 )
 
 const liveStats = computed(() => [
   {
-    label: 'Usuarios activos',
+    labelKey: 'widgets.activity.activeFans',
     value: activeUsers.value.toLocaleString('es'),
     icon: 'fa-solid fa-users',
   },
   {
-    label: 'Votos por minuto',
+    labelKey: 'widgets.activity.votesPerMinute',
     value: votesPerMinute.value.toLocaleString('es'),
     icon: 'fa-solid fa-bolt',
   },
   {
-    label: 'Fandoms online',
-    value: onlineFandoms.value.toLocaleString('es'),
-    icon: 'fa-solid fa-fire',
+    labelKey: 'widgets.activity.activePolls',
+    value: activePollsCount.value.toLocaleString('es'),
+    icon: 'fa-solid fa-check-to-slot',
   },
 ])
 
-const buildPublicPollActivities = (pollRows) => {
-  publicPollActivities.value = pollRows
-    .flatMap((poll) => poll.publicActivity || [])
-    .filter((entry) => entry.artistId && Number(entry.amount || entry.votes || 0) > 0)
-    .slice(0, 8)
-    .map((entry, index) => ({
-      user: entry.userDisplayName || entry.username || userLabel(entry.userId),
-      userPhoto: entry.userPhotoUrl || entry.userPhotoURL || entry.photoUrl || entry.photoURL || '',
-      artist: getArtist(entry.artistId)?.name || 'Artista',
-      artistImage: getArtistImage(getArtist(entry.artistId)),
-      time: 'en vivo',
-      votes: Number(entry.amount || entry.votes || 0),
-      streak: index < 3 ? 'Top' : '+1',
-      color: colorOptions[index % colorOptions.length],
-      visual: visualOptions[index % visualOptions.length],
-    }))
+const loadRecentActivity = async () => {
+  try {
+    const rows = await getRecentVoteActivity(24, 168)
+    recentVotes.value = (Array.isArray(rows) ? rows : [])
+      .filter(isRegisteredVote)
+      .map(normalizeVoteRow)
+  } catch {
+    recentVotes.value = []
+  }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadRecentActivity()
+
   unsubscribeArtists = subscribeArtistsCached(null, (artistRows) => {
     artists.value = artistRows
   })
@@ -211,21 +230,29 @@ onMounted(() => {
   unsubscribeLivePolls = subscribeLivePollsCached(
     null,
     (pollRows) => {
-      buildPublicPollActivities(pollRows)
-      syncPollRealtimeSubscriptions(pollRows)
+      syncPollTitles(pollRows)
     },
     () => {
-      publicPollActivities.value = []
-      syncPollRealtimeSubscriptions([])
+      pollTitleById.value = {}
+      pollMetaById.value = {}
     },
   )
+
+  unsubscribeLiveActivity = subscribeLivePollsRealtime({
+    onVoteDelta: (vote) => {
+      pushVote({
+        ...vote,
+        pollTitle: vote.pollTitle || pollTitleById.value[String(vote.pollId || '')] || '',
+        createdAt: vote.createdAt || new Date().toISOString(),
+      })
+    },
+  })
 })
 
 onUnmounted(() => {
   unsubscribeArtists?.()
   unsubscribeLivePolls?.()
-  unsubscribePollRealtime.forEach((unsubscribe) => unsubscribe?.())
-  unsubscribePollRealtime = []
+  unsubscribeLiveActivity?.()
 })
 </script>
 
@@ -243,7 +270,7 @@ onUnmounted(() => {
           <div>
             <div class="flex flex-wrap items-center gap-2">
               <h2 class="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
-                En tiempo real
+                {{ $t('widgets.activity.title') }}
               </h2>
               <span class="inline-flex items-center gap-2 rounded-full border border-red-300/30 bg-red-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red-100">
                 <span class="size-2 rounded-full bg-red-300 shadow-[0_0_12px_rgba(252,165,165,0.9)]"></span>
@@ -251,7 +278,7 @@ onUnmounted(() => {
               </span>
             </div>
             <p class="mt-1 text-sm text-slate-400">
-              Usuarios votando ahora. Cada voto empuja a tu artista en el ranking.
+              {{ $t('widgets.activity.registeredDescription') }}
             </p>
           </div>
         </div>
@@ -259,12 +286,12 @@ onUnmounted(() => {
         <div class="grid grid-cols-3 gap-2">
           <div
             v-for="stat in liveStats"
-            :key="stat.label"
+            :key="stat.labelKey"
             class="rounded-2xl border border-white/10 bg-white/6 px-3 py-3 text-center shadow-inner shadow-black/20"
           >
             <i class="text-sm text-fuchsia-200" :class="stat.icon" aria-hidden="true"></i>
             <p class="mt-1 text-lg font-black text-white">{{ stat.value }}</p>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">{{ stat.label }}</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">{{ $t(stat.labelKey) }}</p>
           </div>
         </div>
       </div>
@@ -274,8 +301,8 @@ onUnmounted(() => {
         class="live-scroll relative max-h-[520px] space-y-2 overflow-y-auto sm:max-h-[650px] sm:space-y-3 sm:pr-2"
       >
         <article
-          v-for="(activity, index) in activities"
-          :key="`${activity.user}-${activity.time}`"
+          v-for="activity in activities"
+          :key="activity.id"
           class="group relative min-h-24 overflow-hidden rounded-3xl border border-white/8 bg-[#070b1a]/90 p-3 shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:border-fuchsia-300/25 hover:bg-[#101429] sm:min-h-32 sm:p-4"
         >
           <div class="absolute inset-y-0 right-0 w-32 bg-linear-to-l opacity-95 sm:w-72" :class="activity.visual">
@@ -291,7 +318,7 @@ onUnmounted(() => {
                 class="size-full object-cover"
               />
               <span v-else>
-              {{ activity.artist.charAt(0) }}
+                {{ activity.artist.charAt(0) }}
               </span>
             </div>
           </div>
@@ -310,18 +337,25 @@ onUnmounted(() => {
               <div class="flex flex-wrap items-center gap-2">
                 <h3 class="text-sm font-black leading-tight text-white sm:text-base">{{ activity.user }}</h3>
                 <span class="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-200">
-                  {{ $t('widgets.activity.online') }}
+                  {{ $t('widgets.activity.registered') }}
                 </span>
               </div>
-              <p class="mt-0.5 text-xs leading-tight text-slate-300 sm:text-sm">{{ $t('widgets.activity.justVotedFor') }}</p>
+
+              <a
+                :href="activity.pollUrl"
+                class="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-violet-300/20 bg-violet-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-violet-100 transition hover:bg-violet-400/20"
+              >
+                <i class="fa-solid fa-check-to-slot" aria-hidden="true"></i>
+                <span class="truncate">{{ activity.pollTitle }}</span>
+              </a>
+
+              <p class="mt-1 text-xs leading-tight text-slate-300 sm:text-sm">{{ $t('widgets.activity.justVotedFor') }}</p>
               <p class="mt-0.5 text-sm font-black uppercase leading-tight text-white sm:text-base">{{ activity.artist }}</p>
+
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-black text-fuchsia-100">
                   <i class="fa-solid fa-heart mr-1" aria-hidden="true"></i>
                   {{ $t('widgets.activity.votes', { count: activity.votes }) }}
-                </span>
-                <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-black text-cyan-100">
-                  {{ $t('widgets.activity.streak', { count: activity.streak }) }}
                 </span>
                 <span class="text-[11px] text-slate-500 sm:text-xs">{{ activity.time }}</span>
               </div>
@@ -339,10 +373,10 @@ onUnmounted(() => {
           <i class="fa-solid fa-user-clock" aria-hidden="true"></i>
         </div>
         <h3 class="relative mt-4 text-lg font-black uppercase text-white">
-          No hay usuarios activos ahora
+          {{ $t('widgets.activity.emptyTitle') }}
         </h3>
         <p class="relative mx-auto mt-2 max-w-lg text-sm font-bold leading-6 text-slate-400">
-          Cuando alguien vote en una votacion activa, la actividad aparecera aqui en tiempo real.
+          {{ $t('widgets.activity.emptyRegistered') }}
         </p>
       </div>
     </div>

@@ -78,3 +78,15 @@ export const getAdminMissions = () => adminRequest('/missions')
 export const createAdminMission = (body) => adminRequest('/missions', { method: 'POST', body })
 export const updateAdminMission = (id, body) => adminRequest(`/missions/${encodeURIComponent(id)}`, { method: 'PATCH', body })
 export const deleteAdminMission = (id) => adminRequest(`/missions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export const getAdminDailyRewards = () => adminRequest('/settings/daily-rewards')
+export const updateAdminDailyRewards = (body) =>
+  adminRequest('/settings/daily-rewards', { method: 'PATCH', body })
+
+export const getAdminContentReports = (status = '', limit = 50) => {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (status) params.set('status', status)
+  return adminRequest(`/content-reports?${params.toString()}`)
+}
+export const updateAdminContentReport = (id, body) =>
+  adminRequest(`/content-reports/${encodeURIComponent(id)}`, { method: 'PATCH', body })

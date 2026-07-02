@@ -8,6 +8,7 @@ import {
   getPollComments,
 } from "../services/api/commentsApi";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
+import ReportModal from "./ReportModal.vue";
 
 const props = defineProps({
   pollId: {
@@ -41,6 +42,8 @@ const commentsRoot = ref(null);
 const isCommentsVisible = ref(false);
 const isLoadingComments = ref(false);
 const hasLoadedComments = ref(false);
+const isReportModalOpen = ref(false);
+const reportTarget = ref(null);
 
 let unsubscribeAuth = null;
 let cooldownTimer = null;
@@ -242,6 +245,27 @@ const normalizeComment = (comment) => ({
 const canDeleteComment = (comment) =>
   isAdminUser.value ||
   (currentUser.value && comment.userId && comment.userId === String(currentUser.value.id));
+
+const canReportComment = (comment) =>
+  isSignedInUser.value &&
+  comment.userId &&
+  comment.userId !== String(currentUser.value.id);
+
+const openReportComment = (comment) => {
+  reportTarget.value = {
+    targetType: "comment",
+    targetId: comment.id,
+    reportedUserId: comment.userId || "",
+    pollId: props.pollId,
+    contextLabel: comment.displayName || "",
+  };
+  isReportModalOpen.value = true;
+};
+
+const closeReportModal = () => {
+  isReportModalOpen.value = false;
+  reportTarget.value = null;
+};
 
 const subscribeCommentsRealtime = (pollId) => {
   if (!pollId || subscribedCommentsPollId === pollId) {
@@ -614,14 +638,25 @@ onUnmounted(() => {
                 {{ formatTime(comment.createdAt) }}
               </span>
             </p>
-            <button
-              v-if="canDeleteComment(comment)"
-              class="rounded-full bg-red-500/10 px-3 py-1 text-xs font-black text-red-200 transition hover:bg-red-500/20"
-              type="button"
-              @click="removeComment(comment)"
-            >
-              × Eliminar
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="canReportComment(comment)"
+                class="rounded-full border border-red-300/20 bg-red-500/10 px-3 py-1 text-xs font-black text-red-200 transition hover:bg-red-500/20"
+                type="button"
+                @click="openReportComment(comment)"
+              >
+                <i class="fa-solid fa-flag mr-1" aria-hidden="true"></i>
+                {{ $t('report.button') }}
+              </button>
+              <button
+                v-if="canDeleteComment(comment)"
+                class="rounded-full bg-red-500/10 px-3 py-1 text-xs font-black text-red-200 transition hover:bg-red-500/20"
+                type="button"
+                @click="removeComment(comment)"
+              >
+                × Eliminar
+              </button>
+            </div>
           </div>
           <p v-if="comment.text" class="mt-4 text-sm font-bold text-slate-200">
             {{ comment.text }}
@@ -802,6 +837,17 @@ onUnmounted(() => {
       </div>
     </Transition>
   </Teleport>
+
+  <ReportModal
+    v-if="reportTarget"
+    :open="isReportModalOpen"
+    :target-type="reportTarget.targetType"
+    :target-id="reportTarget.targetId"
+    :reported-user-id="reportTarget.reportedUserId"
+    :poll-id="reportTarget.pollId"
+    :context-label="reportTarget.contextLabel"
+    @close="closeReportModal"
+  />
 </template>
 
 <style scoped>

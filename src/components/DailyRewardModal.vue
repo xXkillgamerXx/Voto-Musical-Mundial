@@ -1,21 +1,23 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getMe, getCurrentApiAuth } from '../services/api/authApi'
-import { claimDailyReward } from '../services/api/rewardsApi'
+import { claimDailyReward, getDailyRewardSchedule } from '../services/api/rewardsApi'
 import { translate } from '../i18n'
 
 const DAILY_REWARD_STATE_KEY = 'vmm-daily-reward-state'
 const MS_PER_DAY = 24 * 60 * 60 * 1000
-
-const rewardSchedule = [
-  { day: 1, points: 10 },
-  { day: 2, points: 15 },
-  { day: 3, points: 20 },
-  { day: 4, points: 25 },
-  { day: 5, points: 30 },
-  { day: 6, points: 40 },
+const DEFAULT_REWARD_SCHEDULE = [
+  { day: 1, points: 5 },
+  { day: 2, points: 10 },
+  { day: 3, points: 15 },
+  { day: 4, points: 20 },
+  { day: 5, points: 25 },
+  { day: 6, points: 30 },
   { day: 7, points: 50, crown: true },
 ]
+
+const rewardSchedule = ref(DEFAULT_REWARD_SCHEDULE.map((entry) => ({ ...entry })))
+const weeklyTotal = ref(155)
 
 const isOpen = ref(false)
 const claimed = ref(false)
@@ -60,7 +62,7 @@ const nextStreakForClaim = computed(() => {
 
 const activeRewardDay = computed(() => getRewardDayFromStreak(nextStreakForClaim.value))
 const rewards = computed(() =>
-  rewardSchedule.map((reward) => ({
+  rewardSchedule.value.map((reward) => ({
     ...reward,
     status: reward.day < activeRewardDay.value
       ? 'claimed'
@@ -73,8 +75,28 @@ const todaysReward = computed(() => rewards.value.find((reward) => reward.status
 const rewardPoints = computed(() => Number(todaysReward.value?.points || 0))
 const tomorrowReward = computed(() => {
   const nextDay = getRewardDayFromStreak(nextStreakForClaim.value + 1)
-  return rewardSchedule.find((reward) => reward.day === nextDay) || rewardSchedule.at(-1)
+  return rewardSchedule.value.find((reward) => reward.day === nextDay) || rewardSchedule.value.at(-1)
 })
+
+const loadRewardSchedule = async () => {
+  try {
+    const payload = await getDailyRewardSchedule()
+    const days = Array.isArray(payload?.days) ? payload.days : DEFAULT_REWARD_SCHEDULE
+
+    rewardSchedule.value = days.map((entry, index) => ({
+      day: Number(entry.day || index + 1),
+      points: Number(entry.points || 0),
+      crown: Number(entry.day || index + 1) === 7,
+    }))
+    weeklyTotal.value = Number(payload?.weeklyTotal || rewardSchedule.value.reduce(
+      (total, entry) => total + Number(entry.points || 0),
+      0,
+    ))
+  } catch {
+    rewardSchedule.value = DEFAULT_REWARD_SCHEDULE.map((entry) => ({ ...entry }))
+    weeklyTotal.value = 155
+  }
+}
 
 const getStoredDailyRewardState = () => {
   try {
@@ -125,6 +147,7 @@ const syncClaimedState = async () => {
 }
 
 const openModal = async () => {
+  await loadRewardSchedule()
   await syncClaimedState()
   showClaimSuccess.value = false
   claimError.value = ''
@@ -200,8 +223,8 @@ const claimReward = async () => {
 }
 
 onMounted(async () => {
+  await loadRewardSchedule()
   await syncClaimedState()
-  isOpen.value = Boolean(currentUser() && shouldShowDailyReward())
 
   window.addEventListener('keydown', handleEscape)
   window.addEventListener('open-daily-reward-modal', openModal)
@@ -288,6 +311,12 @@ onUnmounted(() => {
               </h2>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
                 {{ $t('rewards.dailyDescription') }}
+              </p>
+              <p class="mt-2 max-w-2xl text-sm font-bold leading-6 text-emerald-200/90">
+                {{ $t('rewards.weeklyTotal', { points: weeklyTotal.toLocaleString() }) }}
+              </p>
+              <p class="mt-1 max-w-2xl text-xs leading-5 text-slate-400">
+                {{ $t('rewards.weeklyResetNote') }}
               </p>
             </div>
 

@@ -1,20 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
-
-const DAILY_REWARD_POINTS: Record<number, number> = {
-  1: 10,
-  2: 15,
-  3: 20,
-  4: 25,
-  5: 30,
-  6: 40,
-  7: 50,
-};
+import { dailyRewardPointsMap } from './daily-rewards.config';
+import { DailyRewardsConfigService } from './daily-rewards-config.service';
 
 @Injectable()
 export class RewardsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly dailyRewardsConfig: DailyRewardsConfigService,
+  ) {}
 
   async claimDaily(userId: bigint) {
     const today = new Date().toISOString().slice(0, 10);
@@ -31,7 +26,12 @@ export class RewardsService {
 
     const nextStreak = user.lastDailyRewardClaimDate === yesterday ? user.dailyRewardStreak + 1 : 1;
     const streakDay = ((nextStreak - 1) % 7) + 1;
-    const points = DAILY_REWARD_POINTS[streakDay];
+    const rewardPoints = dailyRewardPointsMap(await this.dailyRewardsConfig.getSchedule());
+    const points = rewardPoints[streakDay];
+
+    if (!points) {
+      throw new BadRequestException('La recompensa diaria no esta configurada.');
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const reward = await tx.dailyReward.create({

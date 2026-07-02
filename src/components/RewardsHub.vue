@@ -32,7 +32,7 @@ const pointPacks = [
         </p>
 
         <div class="mt-6 rounded-3xl border border-amber-300/20 bg-amber-300/10 p-5 text-center">
-          <p class="text-4xl font-black text-amber-200">+150</p>
+          <p class="text-4xl font-black text-amber-200">+155</p>
           <p class="text-xs font-bold uppercase tracking-widest text-amber-100/70">{{ $t('rewards.dailyPoints') }}</p>
         </div>
 

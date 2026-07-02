@@ -91,6 +91,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         pollId: id,
         roundId: payload.roundId || null,
       });
+
+      const isRegisteredVote = Boolean(payload.userId) && payload.isAnonymous !== true && payload.isAnonymous !== '1';
+      if (isRegisteredVote) {
+        this.server.to('polls:live').emit('vote_delta', payload);
+      }
     });
     this.logger.log('Realtime gateway subscribed to Redis vote/state/user channels');
   }

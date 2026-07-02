@@ -12,6 +12,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { DailyRewardsConfigService } from '../rewards/daily-rewards-config.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 const toDate = (value: unknown) => {
@@ -49,6 +50,7 @@ export class AdminController {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly metrics: MetricsService,
+    private readonly dailyRewardsConfig: DailyRewardsConfigService,
   ) {}
 
   @Get('metrics')
@@ -705,5 +707,15 @@ export class AdminController {
   async deleteMission(@Param('id') id: string) {
     await this.prisma.mission.delete({ where: { id: toBigInt(id) } });
     return { ok: true };
+  }
+
+  @Get('settings/daily-rewards')
+  dailyRewardsSettings() {
+    return this.dailyRewardsConfig.getSchedulePayload();
+  }
+
+  @Patch('settings/daily-rewards')
+  updateDailyRewardsSettings(@Body() body: { days?: Array<{ day: number; points: number }> }) {
+    return this.dailyRewardsConfig.updateSchedule(body?.days || []);
   }
 }

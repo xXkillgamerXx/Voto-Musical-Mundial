@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
+import AdminContentReportsView from '../components/AdminContentReportsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
 import AdminMissionsView from '../components/AdminMissionsView.vue'
 import AdminModerationView from '../components/AdminModerationView.vue'
@@ -13,6 +14,7 @@ import AdminPollsView from '../components/AdminPollsView.vue'
 import AdminPushNotificationsView from '../components/AdminPushNotificationsView.vue'
 import AdminPollRoundView from '../components/AdminPollRoundView.vue'
 import AdminPollWinnersView from '../components/AdminPollWinnersView.vue'
+import AdminSettingsView from '../components/AdminSettingsView.vue'
 import AdminUsersView from '../components/AdminUsersView.vue'
 import { getCurrentApiAuth, getMe, logout } from '../../services/api/authApi'
 
@@ -36,6 +38,8 @@ const isUsersView = computed(() => currentPath === '/admin/usuarios')
 const isMissionsView = computed(() => currentPath === '/admin/misiones')
 const isPushNotificationsView = computed(() => currentPath === '/admin/notificaciones')
 const isModerationView = computed(() => currentPath === '/admin/reportes')
+const isContentReportsView = computed(() => currentPath === '/admin/denuncias')
+const isSettingsView = computed(() => currentPath === '/admin/ajustes')
 const isCategoriesView = computed(() => currentPath === '/admin/categorias')
 const isCategoryCreateView = computed(() => currentPath === '/admin/categorias/crear')
 const pageTitle = computed(() => {
@@ -99,6 +103,14 @@ const pageTitle = computed(() => {
     return 'Reportes / Moderación'
   }
 
+  if (isContentReportsView.value) {
+    return 'Denuncias de contenido'
+  }
+
+  if (isSettingsView.value) {
+    return 'Ajustes'
+  }
+
   if (isCategoriesView.value) {
     return 'Categorías'
   }
@@ -132,7 +144,8 @@ const navItems = [
   { label: 'Misiones', href: '/admin/misiones', icon: 'fa-solid fa-bullseye' },
   { label: 'Notificaciones', href: '/admin/notificaciones', icon: 'fa-solid fa-bell' },
   { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
-  { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-flag' },
+  { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved' },
+  { label: 'Denuncias', href: '/admin/denuncias', icon: 'fa-solid fa-flag' },
   { label: 'Ajustes', href: '/admin/ajustes', icon: 'fa-solid fa-gear' },
 ]
 
@@ -353,7 +366,9 @@ onMounted(() => {
           <AdminMissionsView v-else-if="isMissionsView" />
           <AdminPushNotificationsView v-else-if="isPushNotificationsView" />
           <AdminModerationView v-else-if="isModerationView" />
+          <AdminContentReportsView v-else-if="isContentReportsView" />
           <AdminUsersView v-else-if="isUsersView" />
+          <AdminSettingsView v-else-if="isSettingsView" />
           <AdminPollCategoriesView
             v-else-if="isCategoriesView || isCategoryCreateView"
             :show-form="isCategoryCreateView"

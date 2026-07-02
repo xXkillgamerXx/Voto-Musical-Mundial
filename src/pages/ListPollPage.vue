@@ -619,6 +619,13 @@ const shouldShowVoteButtons = computed(
       ? isActiveRoundOpen.value
       : selectedRoundStep.value?.status !== "closed"),
 );
+const hideVoteCounts = computed(() =>
+  Boolean(
+    activeRound.value?.hideVoteCounts ??
+      poll.value?.hideVoteCounts ??
+      false,
+  ),
+);
 const anonymousVotingConfig = computed(() => ({
   enabled:
     activeRound.value?.anonymousVoting?.enabled ??
@@ -2250,7 +2257,10 @@ const voteFor = async (contestant, amount = 1) => {
     });
     // Registered votes are queued/batched. We wait for onBatchCommitted before moving
     // the visible counters, so numbers never jump up and then down during reconciliation.
-    showVoteFeedback(artistId, votesToAdd, { pending: true, duration: 2600 });
+    showVoteFeedback(artistId, votesToAdd, {
+      pending: true,
+      duration: Math.min(15000, 2600 + Math.ceil(votesToAdd / 1000) * 1200),
+    });
     closeVoteModal();
   } catch (error) {
     errorMessage.value =
@@ -2352,7 +2362,7 @@ onMounted(() => {
         (item) => getContestantArtistId(item) === artistId,
       );
       const currentVotes = displayVoteCountFor(currentContestant || { artistId });
-      const amount = Number(batch.amount || 1);
+      const amount = Number(result?.amount || batch.amount || 1);
 
       setOptimisticVoteTotal(artistId, currentVotes + amount);
       showVoteFeedback(artistId, amount);
@@ -2891,7 +2901,7 @@ onUnmounted(() => {
                 <span
                   class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
                 >
-                  <span>
+                  <span v-if="!hideVoteCounts">
                     <span
                       class="block text-xs font-black uppercase tracking-[0.24em] text-amber-200"
                     >
@@ -3033,6 +3043,7 @@ onUnmounted(() => {
 
               <div class="sm:min-w-64 sm:text-right">
                 <p
+                  v-if="!hideVoteCounts"
                   class="text-xs font-black uppercase tracking-widest text-slate-400"
                 >
                   {{
@@ -3041,7 +3052,10 @@ onUnmounted(() => {
                     })
                   }}
                 </p>
-                <p class="mt-1 text-2xl font-black text-fuchsia-100">
+                <p
+                  class="text-2xl font-black text-fuchsia-100"
+                  :class="!hideVoteCounts && 'mt-1'"
+                >
                   {{ entry.percentLabel }}
                 </p>
               </div>
@@ -3404,6 +3418,7 @@ onUnmounted(() => {
                     ></div>
                   </div>
                   <p
+                    v-if="!hideVoteCounts"
                     class="relative mt-2 text-sm font-bold text-slate-300"
                     :class="
                       voteFeedbacks[contestant.artistId || contestant.id] &&
@@ -3725,6 +3740,7 @@ onUnmounted(() => {
                   </span>
                   <span class="shrink-0 text-right">
                     <span
+                      v-if="!hideVoteCounts"
                       class="relative block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
                       :class="
                         voteFeedbacks[contestant.artistId || contestant.id] &&

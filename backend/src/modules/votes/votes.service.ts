@@ -11,6 +11,7 @@ import { PollStatus, RoundType } from '@prisma/client';
 import { Request } from 'express';
 import { BLOCKED_IPS_KEY, BLOCKED_USERS_KEY } from '../../common/moderation-keys';
 import { getClientIp, hashIp } from '../../common/request';
+import { serialize } from '../../common/serialize';
 import { AuthService } from '../auth/auth.service';
 import { VoteIdentity } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,10 +22,10 @@ import { TurnstileService } from './turnstile.service';
 
 const DEFAULT_COOLDOWN_MINUTES = 60;
 // Server-side hard cap on how many votes a single registered request may add.
-// Anonymous requests are always forced to 1 (see castVote).
-const MAX_BATCH_VOTES = 100;
+// Must stay aligned with CastVoteDto @Max(amount) and the frontend vote queue chunk size.
+const MAX_BATCH_VOTES = 1000;
 const DEFAULT_POINTS_PER_VOTE = 1;
-const DEFAULT_USER_VOTES_PER_MINUTE_LIMIT = 3000;
+const DEFAULT_USER_VOTES_PER_MINUTE_LIMIT = 20000;
 const DEFAULT_IP_VOTES_PER_MINUTE_LIMIT = 30000;
 
 @Injectable()
@@ -90,6 +91,11 @@ export class VotesService {
     const userDisplayName = voteUser?.displayName || voteUser?.username || '';
     const userPhotoUrl = voteUser?.photoUrl || '';
 
+    const artistName = context.contestant.artist?.name || '';
+    const pollTitle = context.poll.title || '';
+    const pollConfig = (context.poll.config || {}) as Record<string, unknown>;
+    const pollYear = Number(pollConfig.year || new Date(context.poll.createdAt).getFullYear());
+
     const streamPayload = {
       pollId: context.poll.id.toString(),
       roundId: context.round?.id?.toString() || '',
@@ -118,14 +124,19 @@ export class VotesService {
         JSON.stringify({
           type: 'vote_delta',
           pollId: context.poll.id.toString(),
+          pollTitle,
+          pollSlug: context.poll.slug || '',
+          pollYear,
           roundId: context.round?.id?.toString() || null,
           contestantId: context.contestant.id.toString(),
           artistId: context.contestant.artistId.toString(),
+          artistName,
           userId: identity.userId?.toString() || '',
           username: voteUser?.username || null,
           userDisplayName: userDisplayName || null,
           userPhotoUrl: userPhotoUrl || null,
           amount,
+          isAnonymous: identity.type === 'anonymous',
         }),
       )
       .exec();
@@ -393,5 +404,74 @@ export class VotesService {
       nextVoteAt: nextVoteAtMs ? new Date(nextVoteAtMs).toISOString() : null,
       remainingMs: Math.max(0, nextVoteAtMs - Date.now()),
     };
+  }
+
+  async recentRegisteredActivity(limitValue?: string, hoursValue?: string) {
+    const limit = Math.min(Math.max(Number(limitValue || 24), 1), 50);
+    const hours = Math.min(Math.max(Number(hoursValue || 168), 1), 720);
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    const rows = await this.prisma.voteLedger.findMany({
+      where: {
+        isAnonymous: false,
+        userId: { not: null },
+        createdAt: { gte: since },
+      },
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            photoUrl: true,
+          },
+        },
+        contestant: {
+          include: {
+            artist: {
+              select: {
+                id: true,
+                name: true,
+                photoUrl: true,
+              },
+            },
+          },
+        },
+        poll: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            config: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    return serialize(
+      rows.map((row) => {
+        const pollConfig = (row.poll?.config || {}) as Record<string, unknown>;
+
+        return {
+          id: row.id.toString(),
+          createdAt: row.createdAt,
+          amount: Number(row.amount || 0),
+          pollId: row.pollId.toString(),
+          pollTitle: row.poll?.title || '',
+          pollSlug: row.poll?.slug || '',
+          pollYear: Number(pollConfig.year || new Date(row.poll?.createdAt || Date.now()).getFullYear()),
+          artistId: row.contestant?.artistId?.toString() || '',
+          artistName: row.contestant?.artist?.name || '',
+          artistPhotoUrl: row.contestant?.artist?.photoUrl || '',
+          userId: row.userId?.toString() || '',
+          username: row.user?.username || '',
+          userDisplayName: row.user?.displayName || row.user?.username || '',
+          userPhotoUrl: row.user?.photoUrl || '',
+        };
+      }),
+    );
   }
 }

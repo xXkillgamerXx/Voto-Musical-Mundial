@@ -27,6 +27,7 @@ const emptyPoll = {
   anonymousVotingEnabled: true,
   anonymousVotingCooldownMinutes: 60,
   anonymousVotingBlockByIp: true,
+  hideVoteCounts: false,
 }
 
 const pollForm = ref({ ...emptyPoll })
@@ -170,6 +171,7 @@ const loadPoll = async () => {
       anonymousVotingEnabled: poll.anonymousVoting?.enabled !== false,
       anonymousVotingCooldownMinutes: Number(poll.anonymousVoting?.cooldownMinutes || 60),
       anonymousVotingBlockByIp: poll.anonymousVoting?.blockByIp !== false,
+      hideVoteCounts: Boolean(poll.hideVoteCounts),
     }
   } catch {
     errorMessage.value = translate('admin.pollForm.errors.load')
@@ -209,6 +211,7 @@ const savePoll = async () => {
       ),
       blockByIp: Boolean(pollForm.value.anonymousVotingBlockByIp),
     },
+    hideVoteCounts: Boolean(pollForm.value.hideVoteCounts),
     isLive: pollForm.value.status === 'live',
     winnersStatus: pollForm.value.status === 'closed' ? 'selected' : 'pending',
   }
@@ -405,6 +408,25 @@ onMounted(async () => {
               <option value="closed">{{ $t('common.status.closed') }}</option>
             </select>
           </label>
+
+          <div class="rounded-3xl border border-violet-300/20 bg-violet-400/10 p-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-widest text-violet-200">{{ $t('admin.pollForm.hideVoteCounts') }}</span>
+                <p class="mt-1 text-sm leading-6 text-slate-300">
+                  {{ $t('admin.pollForm.hideVoteCountsHelp') }}
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-3 text-sm font-black text-violet-100">
+                <input
+                  v-model="pollForm.hideVoteCounts"
+                  type="checkbox"
+                  class="size-5 accent-violet-400"
+                />
+                {{ $t('admin.pollForm.hideVoteCountsEnabled') }}
+              </label>
+            </div>
+          </div>
 
           <div class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

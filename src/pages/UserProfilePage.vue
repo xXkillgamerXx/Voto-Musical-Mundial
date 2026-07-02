@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { translate } from '../i18n'
 import { checkUsername, getCurrentApiAuth, getMe, getPublicProfile, updateMe, uploadProfileImage as uploadProfileImageFile } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
+import ReportModal from '../components/ReportModal.vue'
 
 const pathParts = window.location.pathname.split('/').filter(Boolean)
 const routeUsername = pathParts[0] === 'user' ? (pathParts[1] || '').toLowerCase() : ''
@@ -28,11 +29,21 @@ const isCheckingUsername = ref(false)
 const usernameStatus = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
+const isReportModalOpen = ref(false)
 let unsubscribeAuth = null
 let usernameCheckTimer = null
 
 const isPublicProfile = computed(() => Boolean(routeUsername))
 const isOwnProfile = computed(() => currentUser.value?.id && String(currentUser.value.id) === String(profileUserId.value))
+const canReportProfile = computed(() => isPublicProfile.value && userProfile.value && !isOwnProfile.value)
+const openReportProfile = () => {
+  isReportModalOpen.value = true
+}
+
+const closeReportProfile = () => {
+  isReportModalOpen.value = false
+}
+
 const todayKey = computed(() => new Date().toISOString().slice(0, 10))
 const hasClaimedDailyReward = computed(() => userProfile.value?.lastDailyRewardClaimDate === todayKey.value)
 
@@ -398,6 +409,15 @@ onUnmounted(() => {
               >
                 {{ $t('profile.edit.open') }}
               </button>
+              <button
+                v-else-if="canReportProfile"
+                type="button"
+                class="rounded-full border border-red-300/25 bg-red-500/10 px-7 py-3 text-sm font-black uppercase text-red-100 transition hover:bg-red-500/20"
+                @click="openReportProfile"
+              >
+                <i class="fa-solid fa-flag mr-2" aria-hidden="true"></i>
+                {{ $t('report.button') }}
+              </button>
             </div>
           </div>
         </div>
@@ -434,7 +454,7 @@ onUnmounted(() => {
             <h2 class="mt-2 text-2xl font-black text-white">{{ $t('profile.followedArtists') }}</h2>
           </div>
           <a
-            href="/artistas"
+            href="/ranking-popularity"
             class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10"
           >
             {{ $t('profile.viewPopular') }}
@@ -480,7 +500,7 @@ onUnmounted(() => {
                 </p>
               </div>
               <a
-                href="/artistas"
+                href="/ranking-popularity"
                 class="inline-flex min-h-11 items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
               >
                 {{ $t('profile.viewPopular') }}
@@ -697,6 +717,16 @@ onUnmounted(() => {
           </article>
         </div>
       </Teleport>
+
+      <ReportModal
+        v-if="canReportProfile"
+        :open="isReportModalOpen"
+        target-type="user_profile"
+        :target-id="profileUserId || routeUsername"
+        :reported-user-id="profileUserId"
+        :context-label="`@${userProfile?.username || routeUsername}`"
+        @close="closeReportProfile"
+      />
     </template>
   </section>
 </template>

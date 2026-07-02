@@ -15,6 +15,7 @@ import { RankingsModule } from './modules/rankings/rankings.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
 import { UsersModule } from './modules/users/users.module';
 import { VotesModule } from './modules/votes/votes.module';
@@ -34,6 +35,7 @@ import { WorkersModule } from './workers/workers.module';
     PollsModule,
     VotesModule,
     CommentsModule,
+    ReportsModule,
     RankingsModule,
     RealtimeModule,
     MissionsModule,

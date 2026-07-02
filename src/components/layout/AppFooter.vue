@@ -106,21 +106,11 @@ const socialLinks = [
               {{ $t(link.titleKey) }}
             </a>
           </div>
-
-          <div class="mt-5 rounded-3xl border border-fuchsia-300/15 bg-fuchsia-400/10 p-4">
-            <p class="text-xs font-black uppercase tracking-widest text-fuchsia-100">
-              {{ $t('footer.fanPowered') }}
-            </p>
-            <p class="mt-2 text-xs leading-5 text-slate-400">
-              {{ $t('footer.platformDescription') }}
-            </p>
-          </div>
         </div>
       </div>
 
-      <div class="relative mt-8 flex flex-col gap-3 border-t border-white/10 pt-5 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div class="relative mt-8 border-t border-white/10 pt-5 text-xs text-slate-500">
         <p>{{ $t('footer.copyright') }}</p>
-        <p>{{ $t('footer.madeForFans') }}</p>
       </div>
     </div>
   </footer>
