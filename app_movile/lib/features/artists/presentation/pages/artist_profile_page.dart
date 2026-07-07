@@ -1,14 +1,19 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
+import '../../data/artists_api.dart';
 import '../widgets/artist_avatar.dart';
 
 class ArtistProfilePage extends StatefulWidget {
-  const ArtistProfilePage({required this.artist, super.key});
+  const ArtistProfilePage({
+    required this.artist,
+    required this.authService,
+    super.key,
+  });
 
   final Artist artist;
+  final AuthService authService;
 
   @override
   State<ArtistProfilePage> createState() => _ArtistProfilePageState();
@@ -16,24 +21,50 @@ class ArtistProfilePage extends StatefulWidget {
 
 class _ArtistProfilePageState extends State<ArtistProfilePage> {
   late int _followersCount;
+  bool _isFollowing = false;
   bool _isTogglingFollow = false;
+  bool _isLoadingFollowStatus = true;
   String _errorMessage = '';
+  late final ArtistsApi _artistsApi;
 
-  User? get _user => FirebaseAuth.instance.currentUser;
+  bool get _isSignedIn => widget.authService.session.isSignedIn;
 
   @override
   void initState() {
     super.initState();
     _followersCount = widget.artist.followersCount;
+    _artistsApi = ArtistsApi(widget.authService.client);
+    _loadFollowStatus();
+  }
+
+  Future<void> _loadFollowStatus() async {
+    if (!_isSignedIn) {
+      setState(() => _isLoadingFollowStatus = false);
+      return;
+    }
+
+    try {
+      final status = await _artistsApi.getFollowStatus(widget.artist.id);
+      if (!mounted) return;
+      setState(() {
+        _isFollowing = status.following;
+        _followersCount = status.followersCount;
+        _isLoadingFollowStatus = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingFollowStatus = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final accumulatedVotes =
-        (widget.artist.popularityScore - _followersCount * 10).clamp(
-          0,
-          1 << 31,
-        );
+    final accumulatedVotes = widget.artist.totalVotes > 0
+        ? widget.artist.totalVotes
+        : (widget.artist.popularityScore - _followersCount * 10).clamp(
+            0,
+            1 << 31,
+          );
     final popularity = _followersCount * 10 + accumulatedVotes;
 
     return Scaffold(
@@ -61,66 +92,89 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
         child: SafeArea(
           top: false,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 32),
+            padding: const EdgeInsets.only(bottom: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ProfileHero(
-                  artist: widget.artist,
-                  isTogglingFollow: _isTogglingFollow,
-                  onFollowTap: _toggleFollow,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                if (_errorMessage.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: _ProfileMessage(message: _errorMessage),
+                  ),
+                ],
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF090B19).withValues(alpha: 0.9),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                      ),
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (_errorMessage.isNotEmpty) ...[
-                        _ProfileMessage(message: _errorMessage),
-                        const SizedBox(height: 14),
-                      ],
-                      Text(
-                        widget.artist.bio.isEmpty
-                            ? 'Perfil público con popularidad, fans y actividad en votaciones.'
-                            : widget.artist.bio,
-                        style: const TextStyle(
-                          color: Color(0xFFD8D3F7),
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
+                      _ProfileHero(
+                        artist: widget.artist,
+                        isSignedIn: _isSignedIn,
+                        isFollowing: _isFollowing,
+                        isLoadingFollowStatus: _isLoadingFollowStatus,
+                        isTogglingFollow: _isTogglingFollow,
+                        onFollowTap: _toggleFollow,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              widget.artist.bio.isEmpty
+                                  ? 'Perfil público con popularidad, fans y actividad en votaciones.'
+                                  : widget.artist.bio,
+                              style: const TextStyle(
+                                color: Color(0xFFCBD5E1),
+                                height: 1.6,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _StatsGrid(
+                              stats: [
+                                _ProfileStatData(
+                                  label: 'Seguidores',
+                                  value: _formatProfileCount(_followersCount),
+                                ),
+                                _ProfileStatData(
+                                  label: 'Votos acumulados',
+                                  value: _formatProfileCount(accumulatedVotes),
+                                ),
+                                const _ProfileStatData(
+                                  label: 'Apoyo promedio',
+                                  value: '0.00%',
+                                ),
+                                _ProfileStatData(
+                                  label: 'Popularidad',
+                                  value: _formatProfileCount(popularity),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _InfoPanel(artist: widget.artist),
+                            const SizedBox(height: 12),
+                            _AchievementsPanel(artist: widget.artist),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      _StatsGrid(
-                        stats: [
-                          _ProfileStatData(
-                            label: 'Seguidores',
-                            value: _formatProfileCount(_followersCount),
-                          ),
-                          _ProfileStatData(
-                            label: 'Votos acumulados',
-                            value: _formatProfileCount(accumulatedVotes),
-                          ),
-                          const _ProfileStatData(
-                            label: 'Apoyo promedio',
-                            value: '0.00%',
-                          ),
-                          _ProfileStatData(
-                            label: 'Popularidad',
-                            value: _formatProfileCount(popularity),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      _InfoPanel(artist: widget.artist),
-                      const SizedBox(height: 14),
-                      _AchievementsPanel(artist: widget.artist),
-                      const SizedBox(height: 16),
-                      _ActivityPanel(
-                        artist: widget.artist,
-                        accumulatedVotes: accumulatedVotes,
-                        popularity: popularity,
-                      ),
                     ],
+                  ),
+                ),
+                ColoredBox(
+                  color: const Color(0xFF090B19).withValues(alpha: 0.9),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                    child: _EmptyVotesPanel(artistName: widget.artist.name),
                   ),
                 ),
               ],
@@ -132,9 +186,7 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
   }
 
   Future<void> _toggleFollow() async {
-    final user = _user;
-
-    if (user == null || _isTogglingFollow) {
+    if (!_isSignedIn || _isTogglingFollow) {
       return;
     }
 
@@ -143,64 +195,25 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
       _isTogglingFollow = true;
     });
 
-    final artistFollowRef = FirebaseFirestore.instance
-        .collection('artists')
-        .doc(widget.artist.id)
-        .collection('followers')
-        .doc(user.uid);
-    final artistRef = FirebaseFirestore.instance
-        .collection('artists')
-        .doc(widget.artist.id);
-    final userFollowRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('followingArtists')
-        .doc(widget.artist.id);
-
     try {
-      final followSnap = await artistFollowRef.get();
-
-      if (followSnap.exists) {
+      if (_isFollowing) {
         final shouldUnfollow = await _confirmUnfollow();
 
         if (shouldUnfollow != true) {
           return;
         }
 
-        final batch = FirebaseFirestore.instance.batch()
-          ..delete(artistFollowRef)
-          ..delete(userFollowRef)
-          ..update(artistRef, {
-            'followersCount': FieldValue.increment(-1),
-            'popularityScore': FieldValue.increment(-10),
-          });
-
-        await batch.commit();
+        final result = await _artistsApi.unfollow(widget.artist.id);
         setState(() {
-          _followersCount = _followersCount > 0 ? _followersCount - 1 : 0;
+          _isFollowing = result.following;
+          _followersCount = result.followersCount;
         });
       } else {
-        final followData = {
-          'artistId': widget.artist.id,
-          'artistSlug': widget.artist.slug.isEmpty
-              ? widget.artist.id
-              : widget.artist.slug,
-          'userId': user.uid,
-          'artistName': widget.artist.name,
-          'artistImage': widget.artist.image,
-          'createdAt': FieldValue.serverTimestamp(),
-        };
-
-        final batch = FirebaseFirestore.instance.batch()
-          ..set(artistFollowRef, followData)
-          ..set(userFollowRef, followData)
-          ..update(artistRef, {
-            'followersCount': FieldValue.increment(1),
-            'popularityScore': FieldValue.increment(10),
-          });
-
-        await batch.commit();
-        setState(() => _followersCount += 1);
+        final result = await _artistsApi.follow(widget.artist.id);
+        setState(() {
+          _isFollowing = result.following;
+          _followersCount = result.followersCount;
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -254,146 +267,208 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
 class _ProfileHero extends StatelessWidget {
   const _ProfileHero({
     required this.artist,
+    required this.isSignedIn,
+    required this.isFollowing,
+    required this.isLoadingFollowStatus,
     required this.isTogglingFollow,
     required this.onFollowTap,
   });
 
   final Artist artist;
+  final bool isSignedIn;
+  final bool isFollowing;
+  final bool isLoadingFollowStatus;
   final bool isTogglingFollow;
   final VoidCallback onFollowTap;
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final followDoc = user == null
-        ? null
-        : FirebaseFirestore.instance
-              .collection('artists')
-              .doc(artist.id)
-              .collection('followers')
-              .doc(user.uid)
-              .snapshots();
+    final bannerUrl = resolveArtistBanner(artist);
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(10, 0, 10, 0),
-      height: 248,
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(28)),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          DecoratedBox(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF1E1B4B), Color(0xFF701A75)],
-              ),
-            ),
-            child: artist.banner.isEmpty
-                ? const SizedBox.shrink()
-                : Image.network(
-                    artist.banner,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const SizedBox.shrink(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 520;
+
+        return SizedBox(
+          height: wide ? 288 : 332,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              DecoratedBox(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF172554),
+                      Color(0xFF4C1D95),
+                      Color(0xFF701A75),
+                    ],
                   ),
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0x33080416),
-                  Color(0xBB080416),
-                  Color(0xFF080416),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    ArtistAvatar(artist: artist, size: 72, radius: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'PERFIL DE ARTISTA',
-                            style: TextStyle(
-                              color: Color(0xFF67E8F9),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            artist.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            artist.group.isEmpty ? 'Sin grupo' : artist.group,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFFFBBF24),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ),
-                const SizedBox(height: 14),
-                followDoc == null
-                    ? _FollowButton(
-                        label: 'Inicia sesión para seguir',
-                        isLoading: false,
-                        isFollowing: false,
-                        onTap: null,
-                      )
-                    : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                        stream: followDoc,
-                        builder: (context, snapshot) {
-                          final isFollowing = snapshot.data?.exists ?? false;
-
-                          return _FollowButton(
-                            label: isFollowing ? 'Siguiendo' : 'Seguir artista',
-                            isLoading: isTogglingFollow,
-                            isFollowing: isFollowing,
-                            onTap: onFollowTap,
-                          );
-                        },
-                      ),
-              ],
-            ),
+                child: Image.network(
+                  bannerUrl,
+                  fit: BoxFit.cover,
+                  opacity: const AlwaysStoppedAnimation(0.55),
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      const Color(0xFF090B19),
+                      const Color(0xFF090B19).withValues(alpha: 0.3),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: _HeroIdentity(
+                    artist: artist,
+                    wide: wide,
+                    isSignedIn: isSignedIn,
+                    isFollowing: isFollowing,
+                    isLoadingFollowStatus: isLoadingFollowStatus,
+                    isTogglingFollow: isTogglingFollow,
+                    onFollowTap: onFollowTap,
+                  ),
+                ),
+              ),
+            ],
           ),
+        );
+      },
+    );
+  }
+}
+
+class _HeroIdentity extends StatelessWidget {
+  const _HeroIdentity({
+    required this.artist,
+    required this.wide,
+    required this.isSignedIn,
+    required this.isFollowing,
+    required this.isLoadingFollowStatus,
+    required this.isTogglingFollow,
+    required this.onFollowTap,
+  });
+
+  final Artist artist;
+  final bool wide;
+  final bool isSignedIn;
+  final bool isFollowing;
+  final bool isLoadingFollowStatus;
+  final bool isTogglingFollow;
+  final VoidCallback onFollowTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarSize = wide ? 112.0 : 96.0;
+    final groupLabel = artist.group.isEmpty ? 'Sin grupo' : artist.group;
+
+    final textColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'PERFIL DE ARTISTA',
+          style: TextStyle(
+            color: Color(0xFF67E8F9),
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2.8,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          artist.name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: wide ? 34 : 28,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          groupLabel.toUpperCase(),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFFFCD34D),
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 10),
+      ],
+    );
+
+    final followButton = !isSignedIn
+        ? _FollowButton(
+            label: 'Inicia sesión para seguir',
+            isLoading: false,
+            isFollowing: false,
+            onTap: null,
+            compact: wide,
+          )
+        : _FollowButton(
+            label: isFollowing ? 'SIGUIENDO' : 'SEGUIR',
+            isLoading: isTogglingFollow || isLoadingFollowStatus,
+            isFollowing: isFollowing,
+            onTap: onFollowTap,
+            compact: wide,
+          );
+
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ArtistAvatar(
+            artist: artist,
+            size: avatarSize,
+            radius: 28,
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: textColumn),
+          const SizedBox(width: 12),
+          followButton,
         ],
-      ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            ArtistAvatar(
+              artist: artist,
+              size: avatarSize,
+              radius: 28,
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: textColumn),
+          ],
+        ),
+        const SizedBox(height: 14),
+        followButton,
+      ],
     );
   }
 }
@@ -404,57 +479,84 @@ class _FollowButton extends StatelessWidget {
     required this.isLoading,
     required this.isFollowing,
     required this.onTap,
+    this.compact = false,
   });
 
   final String label;
   final bool isLoading;
   final bool isFollowing;
   final VoidCallback? onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 50,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: isFollowing
-              ? null
-              : const LinearGradient(
-                  colors: [Color(0xFF7C3AED), Color(0xFFFF21C8)],
+    final button = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: isFollowing
+            ? null
+            : const LinearGradient(
+                colors: [Color(0xFFEC4899), Color(0xFFD946EF)],
+              ),
+        color: isFollowing ? Colors.black.withValues(alpha: 0.2) : null,
+        borderRadius: BorderRadius.circular(99),
+        border: isFollowing
+            ? Border.all(color: const Color(0xFFF0ABFC).withValues(alpha: 0.45))
+            : null,
+        boxShadow: isFollowing
+            ? null
+            : [
+                BoxShadow(
+                  color: const Color(0xFFD946EF).withValues(alpha: 0.28),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
                 ),
-          color: isFollowing ? Colors.white.withValues(alpha: 0.10) : null,
-          borderRadius: BorderRadius.circular(16),
-          border: isFollowing
-              ? Border.all(color: Colors.white.withValues(alpha: 0.14))
-              : null,
+              ],
+      ),
+      child: FilledButton.icon(
+        onPressed: isLoading ? null : onTap,
+        icon: isLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(
+                isFollowing ? Icons.check_rounded : Icons.favorite_rounded,
+                size: 18,
+              ),
+        label: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: compact ? 12 : 13,
+            letterSpacing: compact ? 1 : 1.1,
+          ),
         ),
-        child: FilledButton.icon(
-          onPressed: isLoading ? null : onTap,
-          icon: isLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : Icon(
-                  isFollowing ? Icons.check_rounded : Icons.favorite_rounded,
-                ),
-          label: Text(label),
-          style: FilledButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            foregroundColor: Colors.white,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(fontWeight: FontWeight.w900),
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          shadowColor: Colors.transparent,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 22 : 18,
+            vertical: compact ? 12 : 14,
+          ),
+          minimumSize: compact ? null : const Size(double.infinity, 48),
+          alignment: Alignment.center,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(99),
           ),
         ),
       ),
     );
+
+    if (compact) {
+      return button;
+    }
+
+    return SizedBox(width: double.infinity, child: button);
   }
 }
 
@@ -472,54 +574,72 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: stats.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 1.95,
-      ),
-      itemBuilder: (context, index) {
-        final stat = stats[index];
-
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.20),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var row = 0; row < stats.length; row += 2) ...[
+          if (row > 0) const SizedBox(height: 10),
+          Row(
             children: [
-              Text(
-                stat.label.toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF8E86B9),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                stat.value,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
+              Expanded(child: _StatCard(stat: stats[row])),
+              const SizedBox(width: 10),
+              Expanded(
+                child: row + 1 < stats.length
+                    ? _StatCard(stat: stats[row + 1])
+                    : const SizedBox.shrink(),
               ),
             ],
           ),
-        );
-      },
+        ],
+      ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({required this.stat});
+
+  final _ProfileStatData stat;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            stat.label.toUpperCase(),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.6,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            stat.value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -532,11 +652,14 @@ class _InfoPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -561,7 +684,7 @@ class _InfoPanel extends StatelessWidget {
                 value: artist.country.ifEmpty('No definido'),
               ),
               _InfoChip(
-                label: 'Grupo',
+                label: 'Fandom',
                 value: artist.group.ifEmpty('Sin grupo'),
               ),
             ],
@@ -606,19 +729,14 @@ class _AchievementsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final achievements = <String>[
-      if (artist.role.isNotEmpty) artist.role,
-      if (artist.group.isNotEmpty) artist.group,
-      if (artist.country.isNotEmpty) artist.country,
-    ];
-
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF59E0B).withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFFBBF24).withValues(alpha: 0.14),
+          color: const Color(0xFFFBBF24).withValues(alpha: 0.15),
         ),
       ),
       child: Column(
@@ -627,167 +745,194 @@ class _AchievementsPanel extends StatelessWidget {
           const Text(
             'LOGROS',
             style: TextStyle(
-              color: Color(0xFFFBBF24),
+              color: Color(0xFFFCD34D),
               fontSize: 12,
               fontWeight: FontWeight.w900,
               letterSpacing: 2.2,
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children:
-                (achievements.isEmpty ? ['Sin logros todavía'] : achievements)
-                    .take(3)
-                    .map(
-                      (item) => Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: const Text(
+              'Sin logros todavía',
+              style: TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyVotesPanel extends StatelessWidget {
+  const _EmptyVotesPanel({required this.artistName});
+
+  final String artistName;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF090B19).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: const Color(0xFFF0ABFC).withValues(alpha: 0.15),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4A044E).withValues(alpha: 0.2),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(-0.64, -1),
+                    radius: 1,
+                    colors: [
+                      const Color(0xFFD946EF).withValues(alpha: 0.18),
+                      Colors.transparent,
+                    ],
+                    stops: const [0, 0.34],
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.76, -0.64),
+                    radius: 1,
+                    colors: [
+                      const Color(0xFF22D3EE).withValues(alpha: 0.12),
+                      Colors.transparent,
+                    ],
+                    stops: const [0, 0.3],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD946EF).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(32),
+                    border: Border.all(
+                      color: const Color(0xFFF0ABFC).withValues(alpha: 0.25),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF4A044E).withValues(alpha: 0.2),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.music_note_rounded,
+                    color: Color(0xFFF5D0FE),
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'SIN RONDAS REGISTRADAS',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFF0ABFC),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 2.8,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Aún no hay votos de $artistName',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Este artista todavía no aparece con votos registrados en rondas cerradas o activas. Cuando participe en una votación, aquí verás su apoyo, porcentaje y resultados.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFCBD5E1),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    height: 1.55,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFD946EF), Color(0xFF22D3EE)],
+                      ),
+                      borderRadius: BorderRadius.circular(99),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF4A044E).withValues(alpha: 0.3),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
                         ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFFFBBF24,
-                          ).withValues(alpha: 0.12),
+                      ],
+                    ),
+                    child: TextButton(
+                      onPressed: () {},
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(99),
-                          border: Border.all(
-                            color: const Color(
-                              0xFFFBBF24,
-                            ).withValues(alpha: 0.18),
-                          ),
-                        ),
-                        child: Text(
-                          item.toUpperCase(),
-                          style: const TextStyle(
-                            color: Color(0xFFFFF7CC),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                          ),
                         ),
                       ),
-                    )
-                    .toList(),
+                      child: const Text(
+                        'VER VOTACIONES',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ActivityPanel extends StatelessWidget {
-  const _ActivityPanel({
-    required this.artist,
-    required this.accumulatedVotes,
-    required this.popularity,
-  });
-
-  final Artist artist;
-  final int accumulatedVotes;
-  final int popularity;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ActivityCard(
-          status: 'LIVE',
-          title: artist.group.isEmpty ? 'Actividad del artista' : artist.group,
-          percent: popularity <= 0 ? 0 : (accumulatedVotes / popularity) * 100,
-          votes: accumulatedVotes,
         ),
-      ],
-    );
-  }
-}
-
-class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({
-    required this.status,
-    required this.title,
-    required this.percent,
-    required this.votes,
-  });
-
-  final String status;
-  final String title;
-  final double percent;
-  final int votes;
-
-  @override
-  Widget build(BuildContext context) {
-    final safePercent = percent.clamp(0, 100);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF090B19).withValues(alpha: 0.90),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            status,
-            style: const TextStyle(
-              color: Color(0xFFFF4FD8),
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Apoyo actual',
-                style: TextStyle(
-                  color: Color(0xFFB9B2D8),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                '${safePercent.toStringAsFixed(2)}%',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: safePercent / 100,
-              minHeight: 6,
-              backgroundColor: Colors.white.withValues(alpha: 0.10),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFFFF4FD8)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${_formatProfileCount(votes)} votos',
-            style: const TextStyle(
-              color: Color(0xFF8E86B9),
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
       ),
     );
   }
