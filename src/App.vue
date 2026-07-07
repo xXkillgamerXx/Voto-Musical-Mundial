@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import ActivePolls from './components/ActivePolls.vue'
 import AppFooter from './components/layout/AppFooter.vue'
 import AppNavbar from './components/layout/AppNavbar.vue'
@@ -9,6 +9,7 @@ import HomeAd from './components/HomeAd.vue'
 import MainCategories from './components/MainCategories.vue'
 import ThemeToggle from './components/theme/ThemeToggle.vue'
 import { preloadRouteData } from './services/firebaseCache'
+import { activeTheme, applyTheme } from './theme'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
 const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
@@ -63,7 +64,29 @@ const isEmbeddedPage = computed(() => {
   return params.get('embed') === '1' || params.get('embed') === 'true'
 })
 const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
+const shouldForceEmbedDarkTheme = computed(() => isEmbeddedPage.value || isVersusEmbedPage.value)
 const shouldShowDailyRewardModal = computed(() => !isPlainPage.value && !isTermsPage.value)
+
+let savedThemeBeforeEmbed = null
+
+watch(
+  shouldForceEmbedDarkTheme,
+  (forceDark) => {
+    if (forceDark) {
+      if (savedThemeBeforeEmbed === null) {
+        savedThemeBeforeEmbed = activeTheme.value
+      }
+      applyTheme('dark')
+      return
+    }
+
+    if (savedThemeBeforeEmbed !== null) {
+      applyTheme(savedThemeBeforeEmbed)
+      savedThemeBeforeEmbed = null
+    }
+  },
+  { immediate: true },
+)
 
 const trackPageView = () => {}
 
@@ -158,13 +181,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell relative min-h-screen overflow-hidden">
+  <div
+    class="app-shell relative min-h-screen overflow-hidden"
+    :class="{ 'embed-surface dark-surface': shouldForceEmbedDarkTheme }"
+  >
     <div class="app-background pointer-events-none absolute inset-0"></div>
     <div class="app-top-divider pointer-events-none absolute left-1/2 top-0 h-px w-full max-w-352 -translate-x-1/2"></div>
 
     <AppNavbar v-if="!isPlainPage" />
     <ThemeToggle
-      v-if="isPlainPage && !isVersusEmbedPage"
+      v-if="isPlainPage && !isVersusEmbedPage && !isEmbeddedPage"
       compact
       class="fixed right-4 top-4 z-60"
     />

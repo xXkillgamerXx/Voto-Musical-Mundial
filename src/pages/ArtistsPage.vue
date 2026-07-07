@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getArtistsWithFollowersCached } from '../services/firebaseCache'
+import { resolveArtistBanner } from '../utils/artistMedia'
 
 const { locale } = useI18n()
 const artists = ref([])
@@ -13,8 +14,7 @@ const errorMessage = ref('')
 const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
 
-const getArtistBanner = (artist) =>
-  artist?.banner || artist?.bannerUrl || artist?.cover || artist?.coverImage || artist?.portada || getArtistImage(artist)
+const getArtistBanner = (artist) => resolveArtistBanner(artist)
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 
@@ -146,7 +146,6 @@ onMounted(loadArtists)
         <a :href="artistUrl(artist)" class="block">
           <div class="relative h-72 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
             <img
-              v-if="getArtistBanner(artist)"
               :src="getArtistBanner(artist)"
               :alt="artist.name"
               loading="lazy"

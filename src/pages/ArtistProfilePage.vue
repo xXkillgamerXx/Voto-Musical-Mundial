@@ -11,6 +11,7 @@ import {
 import { onStoredAuthChange } from "../services/api/client";
 import { getPoll, getPolls } from "../services/api/pollsApi";
 import { getArtistsCached } from "../services/firebaseCache";
+import { resolveArtistBanner } from "../utils/artistMedia";
 
 const { locale } = useI18n();
 const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -37,13 +38,7 @@ const getArtistImage = (artistData) =>
   artistData?.foto ||
   "";
 
-const getArtistBanner = (artistData) =>
-  artistData?.banner ||
-  artistData?.bannerUrl ||
-  artistData?.cover ||
-  artistData?.coverImage ||
-  artistData?.portada ||
-  getArtistImage(artistData);
+const getArtistBanner = (artistData) => resolveArtistBanner(artistData);
 
 const getArtistGroup = (artistData) =>
   artistData?.group || artistData?.fandom || "";
@@ -347,7 +342,6 @@ onUnmounted(() => {
         class="relative min-h-72 bg-linear-to-br from-blue-950 via-violet-950 to-fuchsia-950"
       >
         <img
-          v-if="getArtistBanner(artist)"
           :src="getArtistBanner(artist)"
           :alt="artist.name"
           class="absolute inset-0 size-full object-cover opacity-55"

@@ -1,0 +1,39 @@
+---
+description: Local dev must use SSH tunnel + API + frontend on port 5173 with production DB
+alwaysApply: true
+---
+
+When the user asks to run the web locally (for example: "ejecuta local", "run local", "levanta local", "localhost"), **always** start the full stack against **production data** via SSH tunnel. Never start only `npm run dev`.
+
+## Required stack
+
+1. SSH tunnel to production PostgreSQL (`5432`) and Redis (`6379`)
+2. Backend API on `http://localhost:4000`
+3. Frontend on **`http://localhost:5173`** (not 5174)
+
+## Command
+
+From repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\dev-local.ps1
+```
+
+## SSH
+
+- Key: `~/.ssh/vmm_server`
+- Host: `213.136.69.57`
+- Port: `2981`
+- User: `root`
+
+## Verify before telling the user it is ready
+
+- `localhost:5432` and `6379` listening (tunnel)
+- `curl http://localhost:4000/api/health` returns `"ok": true`
+- Frontend responds on `http://localhost:5173`
+
+## Notes
+
+- Docker is not used locally; backend `.env` must exist in `backend/`.
+- Vite proxies `/api` to `localhost:4000` and `/uploads` to production.
+- This uses the **real production database**. Do not run destructive migrations locally without explicit user approval.

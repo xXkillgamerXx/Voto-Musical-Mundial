@@ -1,5 +1,6 @@
 import { getArtists, getPopularityRanking } from "./api/artistsApi";
 import { getLivePolls, getPolls } from "./api/pollsApi";
+import { pickCustomArtistBanner } from "../utils/artistMedia";
 
 const ARTISTS_CACHE_MS = 5 * 60 * 1000;
 const POLLS_CACHE_MS = 90 * 1000;
@@ -69,7 +70,7 @@ const normalizeArtist = (artist) => {
     imageUrl: image,
     photo: image,
     photoURL: image,
-    banner: metadata.banner || metadata.bannerUrl || metadata.cover || metadata.coverImage || image,
+    banner: pickCustomArtistBanner({ ...metadata, ...artist }),
     followersCount: Number(artist.followersCount || metadata.followersCount || 0),
     totalVotes: Number(artist.totalVotes || metadata.totalVotes || 0),
     popularityScore: Number(artist.popularityScore || metadata.popularityScore || 0),

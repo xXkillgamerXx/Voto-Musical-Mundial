@@ -6,6 +6,8 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
+    port: 5173,
+    strictPort: true,
     proxy: {
       // En desarrollo, las imagenes subidas viven en el servidor de produccion.
       // Reenviamos /uploads alli para poder verlas en local.

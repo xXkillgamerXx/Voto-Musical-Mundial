@@ -7,6 +7,7 @@ import {
 } from '../../services/api/adminApi'
 import { getArtist } from '../../services/api/artistsApi'
 import { translate } from '../../i18n'
+import { resolveArtistBanner } from '../../utils/artistMedia'
 
 const props = defineProps({
   artistId: {
@@ -34,6 +35,7 @@ const isUploadingProfile = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
+const previewBanner = computed(() => resolveArtistBanner(artistForm.value))
 const isEditing = computed(() => Boolean(props.artistId))
 const formTitle = computed(() => (isEditing.value ? 'Editar artista' : 'Crear artista'))
 
@@ -232,19 +234,10 @@ onMounted(loadArtist)
         <div class="self-start overflow-hidden rounded-3xl border border-white/10 bg-slate-950/60">
           <div class="relative h-52 bg-linear-to-br from-violet-950 to-fuchsia-950">
             <img
-              v-if="artistForm.banner"
-              :src="artistForm.banner"
+              :src="previewBanner"
               :alt="artistForm.name || 'Banner del artista'"
               class="size-full object-cover"
             />
-            <div v-else class="grid size-full place-items-center px-6 text-center">
-              <div>
-                <i class="fa-solid fa-image text-5xl text-white/30" aria-hidden="true"></i>
-                <p class="mt-4 text-sm font-bold text-slate-400">
-                  El banner aparece aqui cuando agregas una URL.
-                </p>
-              </div>
-            </div>
             <div class="absolute inset-0 bg-linear-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
           </div>
           <div class="-mt-12 p-5">

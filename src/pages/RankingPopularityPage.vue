@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { getRankingPopularityCached } from "../services/firebaseCache";
+import { resolveArtistBanner } from "../utils/artistMedia";
 
 const { locale } = useI18n();
 const artists = ref([]);
@@ -37,13 +38,7 @@ const getArtistImage = (artist) =>
   artist?.banner ||
   "";
 
-const getArtistBanner = (artist) =>
-  artist?.banner ||
-  artist?.bannerUrl ||
-  artist?.cover ||
-  artist?.coverImage ||
-  artist?.portada ||
-  getArtistImage(artist);
+const getArtistBanner = (artist) => resolveArtistBanner(artist);
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
 
@@ -324,7 +319,6 @@ onMounted(loadArtists);
               class="relative h-86 overflow-hidden bg-linear-to-br from-slate-950 via-violet-950 to-fuchsia-950"
             >
               <img
-                v-if="getArtistBanner(artist)"
                 :src="getArtistBanner(artist)"
                 :alt="artist.name"
                 loading="lazy"

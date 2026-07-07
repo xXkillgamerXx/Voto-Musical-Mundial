@@ -242,6 +242,23 @@ html[data-theme='light'] .dark-surface [class*='text-slate-500'] {
   color: #cbd5e1 !important;
 }
 
+html[data-theme='light'] .dark-surface [class*='text-cyan-50'],
+html[data-theme='light'] .dark-surface [class*='text-cyan-100'],
+html[data-theme='light'] .dark-surface [class*='text-cyan-200'],
+html[data-theme='light'] .dark-surface .embed-percent,
+html[data-theme='light'] .embed-surface [class*='text-cyan-50'],
+html[data-theme='light'] .embed-surface [class*='text-cyan-100'],
+html[data-theme='light'] .embed-surface [class*='text-cyan-200'],
+html[data-theme='light'] .embed-surface .embed-percent {
+  color: #a5f3fc !important;
+}
+
+html[data-theme='light'] .embed-surface,
+html[data-theme='light'] .embed-surface.dark-surface {
+  background: #03040d !important;
+  color: #f8fafc !important;
+}
+
 html[data-theme='light'] .dark-surface [class*='bg-white/5'],
 html[data-theme='light'] .dark-surface [class*='bg-white/7'],
 html[data-theme='light'] .dark-surface [class*='bg-white/10'],

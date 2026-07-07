@@ -2529,7 +2529,7 @@ onUnmounted(() => {
     class="mx-auto"
     :class="
       isEmbeddedPage
-        ? 'max-w-5xl px-3 py-3 sm:px-4'
+        ? 'embed-surface dark-surface max-w-5xl px-2 py-2 text-white sm:px-4 sm:py-3'
         : 'max-w-352 px-4 pb-16 sm:px-6'
     "
   >
@@ -2728,7 +2728,7 @@ onUnmounted(() => {
       </article>
 
       <div
-        v-if="hasPollBody"
+        v-if="!isEmbeddedPage && hasPollBody"
         class="mt-6 rounded-4xl border border-white/10 bg-white/5 p-5 sm:p-6"
       >
         <div
@@ -3384,19 +3384,19 @@ onUnmounted(() => {
             :class="
               match.contestants.length === 2
                 ? isEmbeddedPage
-                  ? 'grid grid-cols-2 gap-2 sm:gap-4'
+                  ? 'embed-duel-grid grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4'
                   : 'grid gap-4 md:grid-cols-2'
                 : 'space-y-3'
             "
           >
             <div
               v-if="match.contestants.length === 2"
-              class="pointer-events-none absolute inset-0 z-50 place-items-center"
-              :class="isEmbeddedPage ? 'grid' : 'hidden md:grid'"
+              class="pointer-events-none absolute inset-0 z-50"
+              :class="isEmbeddedPage ? 'embed-duel-vs-layer' : 'hidden md:grid md:place-items-center'"
             >
               <span
                 class="embed-vs-badge grid place-items-center rounded-full border-4 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 font-black text-white shadow-2xl shadow-fuchsia-500/60 ring-4 ring-fuchsia-500/20"
-                :class="isEmbeddedPage ? 'size-13 text-base sm:size-20 sm:text-2xl' : 'size-20 text-2xl'"
+                :class="isEmbeddedPage ? 'size-14 text-base sm:size-20 sm:text-2xl' : 'size-20 text-2xl'"
               >
                 VS
               </span>
@@ -3432,7 +3432,7 @@ onUnmounted(() => {
                   :class="
                     match.contestants.length === 2
                       ? isEmbeddedPage
-                        ? 'aspect-4/5 min-h-0 sm:aspect-square sm:min-h-80'
+                        ? 'aspect-4/5 min-h-0 sm:aspect-square sm:min-h-72 md:min-h-80'
                         : 'min-h-52 md:min-h-78'
                       : 'min-h-52 md:min-h-56'
                   "
@@ -3470,13 +3470,13 @@ onUnmounted(() => {
                   <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
                       <h3
-                        class="truncate font-black text-white"
+                        class="font-black text-white"
                         :class="
                           match.contestants.length === 2
                             ? isEmbeddedPage
-                              ? 'text-lg sm:text-3xl'
-                              : 'text-2xl'
-                            : 'text-3xl'
+                              ? 'text-base leading-tight sm:text-2xl md:text-3xl'
+                              : 'truncate text-2xl'
+                            : 'truncate text-3xl'
                         "
                       >
                         {{
@@ -3485,7 +3485,7 @@ onUnmounted(() => {
                         }}
                       </h3>
                       <p
-                        class="mt-1 text-sm font-black uppercase text-fuchsia-200"
+                        class="mt-1 text-[10px] font-black uppercase text-fuchsia-200 sm:text-sm"
                       >
                         {{
                           getArtistGroup(contestant.artist) ||
@@ -3494,7 +3494,7 @@ onUnmounted(() => {
                       </p>
                     </div>
                     <p
-                      class="shrink-0 font-black text-cyan-100"
+                      class="embed-percent shrink-0 font-black text-cyan-100"
                       :class="
                         match.contestants.length === 2
                           ? isEmbeddedPage
@@ -3938,7 +3938,7 @@ onUnmounted(() => {
 
     <section
       v-if="isEmbeddedPage"
-      class="mt-4 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 text-white shadow-2xl shadow-fuchsia-950/20 sm:p-4"
+      class="mt-3 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 text-white shadow-2xl shadow-fuchsia-950/20 sm:mt-4 sm:p-4"
     >
       <div
         v-if="isLoggedFan"
@@ -4804,7 +4804,25 @@ onUnmounted(() => {
   }
 }
 
+.embed-duel-grid {
+  position: relative;
+}
+
+.embed-duel-vs-layer {
+  display: grid;
+  place-items: center;
+}
+
+@media (max-width: 639px) {
+  .embed-duel-vs-layer {
+    align-items: center;
+    justify-items: center;
+    padding-block: 0;
+  }
+}
+
 .embed-vs-badge {
+  position: relative;
   animation: embed-vs-pulse 2.2s ease-in-out infinite;
 }
 
