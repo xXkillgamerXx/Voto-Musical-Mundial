@@ -1,19 +1,35 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/auth/auth_models.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
+import '../../../artists/presentation/pages/ranking_popularity_page.dart';
+import '../../data/auth_service.dart';
 import 'login_page.dart';
 
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
+class AuthGate extends StatefulWidget {
+  const AuthGate({required this.authService, super.key});
+
+  final AuthService authService;
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  @override
+  void initState() {
+    super.initState();
+    widget.authService.getMe();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return ListenableBuilder(
+      listenable: widget.authService.session,
+      builder: (context, _) {
+        final session = widget.authService.session;
+
+        if (!session.isReady) {
           return const Scaffold(
             body: _HomeBackground(
               child: Center(child: CircularProgressIndicator()),
@@ -21,22 +37,26 @@ class AuthGate extends StatelessWidget {
           );
         }
 
-        final user = snapshot.data;
+        final user = session.user;
 
         if (user == null) {
-          return const LoginPage();
+          return LoginPage(authService: widget.authService);
         }
 
-        return _SignedInPage(user: user);
+        return _SignedInPage(
+          user: user,
+          authService: widget.authService,
+        );
       },
     );
   }
 }
 
 class _SignedInPage extends StatefulWidget {
-  const _SignedInPage({required this.user});
+  const _SignedInPage({required this.user, required this.authService});
 
-  final User user;
+  final ApiUser user;
+  final AuthService authService;
 
   @override
   State<_SignedInPage> createState() => _SignedInPageState();
@@ -69,7 +89,7 @@ class _SignedInPageState extends State<_SignedInPage> {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = widget.user.displayName?.trim();
+    final displayName = widget.user.name;
 
     return _HomeBackground(
       child: Scaffold(
@@ -103,6 +123,7 @@ class _SignedInPageState extends State<_SignedInPage> {
         ),
         drawer: _HomeMenuDrawer(
           user: widget.user,
+          authService: widget.authService,
           selectedSection: _selectedSection,
           onSectionSelected: (section) {
             _selectSection(section);
@@ -132,7 +153,7 @@ class _SignedInPageState extends State<_SignedInPage> {
     }
   }
 
-  Widget _buildSectionContent(String? displayName) {
+  Widget _buildSectionContent(String displayName) {
     final tabIndex = _selectedTabIndex;
 
     if (tabIndex == -1) {
@@ -149,7 +170,7 @@ class _SignedInPageState extends State<_SignedInPage> {
       },
       children: [
         KeepAlivePanel(
-          child: _HomePanel(displayName: displayName ?? widget.user.email),
+          child: _HomePanel(displayName: displayName),
         ),
         const KeepAlivePanel(
           child: _PlaceholderPanel(
@@ -157,12 +178,11 @@ class _SignedInPageState extends State<_SignedInPage> {
             subtitle: 'Aquí irán las votaciones disponibles.',
           ),
         ),
-        const KeepAlivePanel(child: ArtistsPage()),
-        const KeepAlivePanel(
-          child: _PlaceholderPanel(
-            title: 'Ranking Popularity',
-            subtitle: 'Aquí irá el ranking de popularidad.',
-          ),
+        KeepAlivePanel(
+          child: ArtistsPage(authService: widget.authService),
+        ),
+        KeepAlivePanel(
+          child: RankingPopularityPage(authService: widget.authService),
         ),
       ],
     );
@@ -193,7 +213,7 @@ class _KeepAlivePanelState extends State<KeepAlivePanel>
 class _HomePanel extends StatelessWidget {
   const _HomePanel({required this.displayName});
 
-  final String? displayName;
+  final String displayName;
 
   @override
   Widget build(BuildContext context) {
@@ -212,9 +232,7 @@ class _HomePanel extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                displayName?.isNotEmpty == true
-                    ? displayName!
-                    : 'Usuario conectado',
+                displayName.isNotEmpty ? displayName : 'Usuario conectado',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Color(0xFFD8D3F7)),
               ),
@@ -388,11 +406,13 @@ class _BottomNavButton extends StatelessWidget {
 class _HomeMenuDrawer extends StatelessWidget {
   const _HomeMenuDrawer({
     required this.user,
+    required this.authService,
     required this.selectedSection,
     required this.onSectionSelected,
   });
 
-  final User user;
+  final ApiUser user;
+  final AuthService authService;
   final String selectedSection;
   final ValueChanged<String> onSectionSelected;
 
@@ -437,7 +457,7 @@ class _HomeMenuDrawer extends StatelessWidget {
                 ),
                 const Spacer(),
                 OutlinedButton.icon(
-                  onPressed: () => _confirmSignOut(context),
+                  onPressed: () => _confirmSignOut(context, authService),
                   icon: const Icon(Icons.logout_rounded),
                   label: const Text('Cerrar sesión'),
                   style: OutlinedButton.styleFrom(
@@ -463,29 +483,16 @@ class _HomeMenuDrawer extends StatelessWidget {
 class _DrawerHeader extends StatelessWidget {
   const _DrawerHeader({required this.user});
 
-  final User user;
+  final ApiUser user;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final data = snapshot.data?.data();
-        final name = (data?['name'] as String?)?.trim();
-        final username = (data?['username'] as String?)?.trim();
-        final displayName = name?.isNotEmpty == true
-            ? name!
-            : user.displayName?.trim().isNotEmpty == true
-            ? user.displayName!.trim()
-            : 'Usuario fan';
-        final subtitle = username?.isNotEmpty == true
-            ? '@$username'
-            : user.email ?? 'Cuenta fan';
+    final displayName = user.name;
+    final subtitle = user.username.isNotEmpty
+        ? '@${user.username}'
+        : user.email;
 
-        return Column(
+    return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
@@ -562,20 +569,18 @@ class _DrawerHeader extends StatelessWidget {
             ),
           ],
         );
-      },
-    );
   }
 }
 
 class _UserAvatar extends StatelessWidget {
   const _UserAvatar({required this.user, required this.name});
 
-  final User user;
+  final ApiUser user;
   final String name;
 
   @override
   Widget build(BuildContext context) {
-    final photoUrl = user.photoURL;
+    final photoUrl = user.photoUrl;
     final initial = name.trim().isEmpty ? 'U' : name.trim()[0].toUpperCase();
 
     return Container(
@@ -676,7 +681,7 @@ class _HomeMenuItem {
   final IconData icon;
 }
 
-Future<void> _confirmSignOut(BuildContext context) async {
+Future<void> _confirmSignOut(BuildContext context, AuthService authService) async {
   final shouldSignOut = await showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.72),
@@ -828,7 +833,7 @@ Future<void> _confirmSignOut(BuildContext context) async {
   );
 
   if (shouldSignOut == true) {
-    await FirebaseAuth.instance.signOut();
+    await authService.signOut();
   }
 }
 

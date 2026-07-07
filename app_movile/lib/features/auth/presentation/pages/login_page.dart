@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/auth_service.dart';
@@ -8,7 +7,9 @@ import 'forgot_password_page.dart';
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({required this.authService, super.key});
+
+  final AuthService authService;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -41,8 +42,8 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim().toLowerCase(),
+      await widget.authService.login(
+        identifier: _emailController.text.trim().toLowerCase(),
         password: _passwordController.text,
       );
     } catch (error) {
@@ -62,7 +63,7 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await AuthService.signInWithGoogle();
+      await widget.authService.signInWithGoogle();
     } catch (error) {
       if (!mounted) return;
       setState(() => _errorMessage = AuthService.friendlyError(error));
@@ -91,7 +92,11 @@ class _LoginPageState extends State<LoginPage> {
                 ? null
                 : () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RegisterPage()),
+                      MaterialPageRoute(
+                        builder: (_) => RegisterPage(
+                          authService: widget.authService,
+                        ),
+                      ),
                     );
                   },
             child: const Text('Crear cuenta'),
@@ -108,7 +113,7 @@ class _LoginPageState extends State<LoginPage> {
           const SizedBox(height: 10),
           const AuthDivider(),
           const SizedBox(height: 10),
-          const AuthFieldLabel('Correo'),
+          const AuthFieldLabel('Correo o usuario'),
           const SizedBox(height: 10),
           TextField(
             controller: _emailController,
@@ -116,7 +121,7 @@ class _LoginPageState extends State<LoginPage> {
             textInputAction: TextInputAction.next,
             enabled: !_isLoading,
             decoration: const InputDecoration(
-              labelText: 'Correo electronico',
+              labelText: 'Correo o nombre de usuario',
               prefixIcon: Icon(Icons.mail_outline),
             ),
           ),

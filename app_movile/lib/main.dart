@@ -1,11 +1,20 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'app/voto_music_app.dart';
-import 'firebase_options.dart';
+import 'core/auth/auth_session.dart';
+import 'features/auth/data/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const VotoMusicApp());
+
+  final authSession = AuthSession();
+  await authSession.load();
+
+  final authService = AuthService(authSession);
+
+  runApp(
+    VotoMusicApp(
+      authService: authService,
+    ),
+  );
 }

@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../features/auth/data/auth_service.dart';
 import '../features/auth/presentation/pages/auth_gate.dart';
 import 'app_theme.dart';
 
 class VotoMusicApp extends StatelessWidget {
-  const VotoMusicApp({super.key});
+  const VotoMusicApp({
+    required this.authService,
+    super.key,
+  });
+
+  final AuthService authService;
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +20,7 @@ class VotoMusicApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: const AuthGate(),
+      home: AuthGate(authService: authService),
     );
   }
 }

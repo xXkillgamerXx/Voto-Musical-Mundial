@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/auth_service.dart';
@@ -8,7 +6,9 @@ import '../widgets/auth_scaffold.dart';
 import 'terms_conditions_page.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  const RegisterPage({required this.authService, super.key});
+
+  final AuthService authService;
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -115,28 +115,7 @@ class _RegisterPageState extends State<RegisterPage> {
       return false;
     }
 
-    setState(() => _isLoading = true);
-
-    try {
-      final usernameSnap = await AuthService.db
-          .collection('usernames')
-          .doc(_normalizedUsername)
-          .get();
-
-      if (usernameSnap.exists) {
-        setState(() => _errorMessage = 'Ese username ya está en uso.');
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      setState(() => _errorMessage = 'No se pudo validar el username.');
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    return true;
   }
 
   bool _validateContactStep() {
@@ -160,9 +139,9 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    if (_passwordController.text.length < 6) {
+    if (_passwordController.text.length < 8) {
       setState(
-        () => _errorMessage = 'La contraseña debe tener al menos 6 caracteres.',
+        () => _errorMessage = 'La contraseña debe tener al menos 8 caracteres.',
       );
       return;
     }
@@ -182,50 +161,24 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
 
     try {
-      final credential = await AuthService.auth.createUserWithEmailAndPassword(
+      final selectedCountry = _selectedCountry;
+      final phone = _phoneController.text.trim();
+      final selectedPhoneCountry = phone.isEmpty
+          ? _selectedPhoneCountry
+          : (_selectedPhoneCountry ?? _countries.first);
+      final phoneInternational =
+          selectedPhoneCountry?.dialCode.isNotEmpty == true && phone.isNotEmpty
+          ? '${selectedPhoneCountry!.dialCode} $phone'
+          : phone;
+
+      await widget.authService.register(
         email: _emailController.text.trim().toLowerCase(),
         password: _passwordController.text,
-      );
-      final user = credential.user;
-
-      if (user == null) {
-        throw FirebaseAuthException(code: 'unknown');
-      }
-
-      await user.updateDisplayName(_fullName);
-
-      await AuthService.db.runTransaction((transaction) async {
-        final usernameRef = AuthService.db
-            .collection('usernames')
-            .doc(_normalizedUsername);
-        final usernameSnap = await transaction.get(usernameRef);
-
-        if (usernameSnap.exists) {
-          throw StateError('username-unavailable');
-        }
-
-        final selectedCountry = _selectedCountry;
-        final phone = _phoneController.text.trim();
-        final selectedPhoneCountry = phone.isEmpty
-            ? _selectedPhoneCountry
-            : (_selectedPhoneCountry ?? _countries.first);
-        final phoneInternational =
-            selectedPhoneCountry?.dialCode.isNotEmpty == true &&
-                phone.isNotEmpty
-            ? '${selectedPhoneCountry!.dialCode} $phone'
-            : phone;
-
-        transaction.set(usernameRef, {
-          'uid': user.uid,
-          'username': _normalizedUsername,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        transaction.set(AuthService.db.collection('users').doc(user.uid), {
+        username: _normalizedUsername,
+        displayName: _fullName,
+        metadata: {
           'firstName': _firstNameController.text.trim(),
           'lastName': _lastNameController.text.trim(),
-          'name': _fullName,
-          'username': _normalizedUsername,
           'country': selectedCountry?.name ?? '',
           'countryCode': selectedCountry?.code ?? '',
           'phoneCountry': selectedPhoneCountry?.name ?? '',
@@ -233,23 +186,14 @@ class _RegisterPageState extends State<RegisterPage> {
           'phoneDialCode': selectedPhoneCountry?.dialCode ?? '',
           'phone': phone,
           'phoneInternational': phoneInternational,
-          'email': _emailController.text.trim().toLowerCase(),
-          'points': 25,
-          'spentPoints': 0,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      });
+        },
+      );
 
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {
       if (!mounted) return;
-      setState(
-        () => _errorMessage =
-            error is StateError && error.message == 'username-unavailable'
-            ? 'Ese username ya está en uso.'
-            : AuthService.friendlyError(error),
-      );
+      setState(() => _errorMessage = AuthService.friendlyError(error));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -924,7 +868,7 @@ class _SecurityStep extends StatelessWidget {
           enabled: enabled,
           obscureText: obscurePassword,
           decoration: InputDecoration(
-            labelText: 'Mínimo 6 caracteres',
+            labelText: 'Mínimo 8 caracteres',
             prefixIcon: const Icon(Icons.lock_outline),
             suffixIcon: IconButton(
               onPressed: enabled ? onTogglePassword : null,

@@ -1,12 +1,15 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
+import '../../data/artists_api.dart';
 import 'artist_profile_page.dart';
-import '../widgets/artist_avatar.dart';
+import '../widgets/artist_card.dart';
 
 class ArtistsPage extends StatefulWidget {
-  const ArtistsPage({super.key});
+  const ArtistsPage({required this.authService, super.key});
+
+  final AuthService authService;
 
   @override
   State<ArtistsPage> createState() => _ArtistsPageState();
@@ -15,6 +18,15 @@ class ArtistsPage extends StatefulWidget {
 class _ArtistsPageState extends State<ArtistsPage> {
   final _searchController = TextEditingController();
   String _query = '';
+  late final ArtistsApi _artistsApi;
+  late Future<List<Artist>> _artistsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _artistsApi = ArtistsApi(widget.authService.client);
+    _artistsFuture = _artistsApi.getPopularityRanking(limit: 50);
+  }
 
   @override
   void dispose() {
@@ -24,12 +36,8 @@ class _ArtistsPageState extends State<ArtistsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('artists')
-          .orderBy('popularityScore', descending: true)
-          .limit(50)
-          .snapshots(),
+    return FutureBuilder<List<Artist>>(
+      future: _artistsFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const _ArtistsStateMessage(
@@ -42,22 +50,20 @@ class _ArtistsPageState extends State<ArtistsPage> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final artists =
-            snapshot.data!.docs
-                .map(Artist.fromDoc)
-                .where(_matchesQuery)
-                .toList()
-              ..sort((current, next) {
-                final popularity = next.followersCount.compareTo(
-                  current.followersCount,
-                );
+        final artists = snapshot.data!
+            .where(_matchesQuery)
+            .toList()
+          ..sort((current, next) {
+            final popularity = next.followersCount.compareTo(
+              current.followersCount,
+            );
 
-                if (popularity != 0) {
-                  return popularity;
-                }
+            if (popularity != 0) {
+              return popularity;
+            }
 
-                return current.name.compareTo(next.name);
-              });
+            return current.name.compareTo(next.name);
+          });
 
         return Container(
           margin: const EdgeInsets.fromLTRB(18, 0, 18, 0),
@@ -119,12 +125,15 @@ class _ArtistsPageState extends State<ArtistsPage> {
                   itemBuilder: (context, index) {
                     final artist = artists[index];
 
-                    return _ArtistCard(
+                    return ArtistCard(
                       artist: artist,
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => ArtistProfilePage(artist: artist),
+                            builder: (_) => ArtistProfilePage(
+                              artist: artist,
+                              authService: widget.authService,
+                            ),
                           ),
                         );
                       },
@@ -216,7 +225,6 @@ class _ArtistsSearchHeader extends SliverPersistentHeaderDelegate {
   ) {
     return Container(
       padding: const EdgeInsets.only(top: 2, bottom: 2),
-
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
@@ -263,274 +271,6 @@ class _ArtistsSearchHeader extends SliverPersistentHeaderDelegate {
   }
 }
 
-class _ArtistCard extends StatelessWidget {
-  const _ArtistCard({required this.artist, required this.onTap});
-
-  final Artist artist;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final followersCount = artist.followersCount;
-    final popularityScore = artist.popularityScore > 0
-        ? artist.popularityScore
-        : followersCount * 10;
-
-    return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(28),
-            child: Ink(
-              height: 390,
-              decoration: BoxDecoration(
-                color: const Color(0xFF090B19).withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF7C3AED).withValues(alpha: 0.14),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    DecoratedBox(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF1E1B4B), Color(0xFF701A75)],
-                        ),
-                      ),
-                      child: artist.banner.isEmpty
-                          ? const SizedBox.shrink()
-                          : Image.network(
-                              artist.banner,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const SizedBox.shrink(),
-                            ),
-                    ),
-                    const Positioned.fill(
-                      bottom: 132,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Color(0x22080416)],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Positioned.fill(
-                      top: 150,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0xFF080416), Color(0xFF080416)],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: 18,
-                      top: 18,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.38),
-                          borderRadius: BorderRadius.circular(99),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.14),
-                          ),
-                        ),
-                        child: const Text(
-                          'POPULAR',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 22,
-                      right: 22,
-                      bottom: 20,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              ArtistAvatar(
-                                artist: artist,
-                                size: 74,
-                                radius: 22,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      artist.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.w900,
-                                        height: 1,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 5),
-                                    Text(
-                                      artist.group.isEmpty
-                                          ? 'Sin grupo'
-                                          : artist.group,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFFF0ABFC),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 1.2,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            artist.bio.isEmpty
-                                ? 'Perfil público con actividad, fans y popularidad.'
-                                : artist.bio,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.76),
-                              height: 1.55,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 22),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _ArtistStat(
-                                  label: 'Seguidores',
-                                  value: _formatCount(followersCount),
-                                  color: const Color(0xFF22D3EE),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _ArtistStat(
-                                  label: 'Popularidad',
-                                  value: _formatCount(popularityScore),
-                                  color: const Color(0xFFFBBF24),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Container(
-                            height: 38,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF7C3AED), Color(0xFFFF21C8)],
-                              ),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Text(
-                              'VER PERFIL',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.6,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-    );
-  }
-}
-
-class _ArtistStat extends StatelessWidget {
-  const _ArtistStat({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              color: color.withValues(alpha: 0.88),
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ArtistsStateMessage extends StatelessWidget {
   const _ArtistsStateMessage({required this.icon, required this.title});
 
@@ -560,16 +300,4 @@ class _ArtistsStateMessage extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatCount(int value) {
-  if (value >= 1000000) {
-    return '${(value / 1000000).toStringAsFixed(1)}M';
-  }
-
-  if (value >= 1000) {
-    return '${(value / 1000).toStringAsFixed(1)}K';
-  }
-
-  return value.toString();
 }

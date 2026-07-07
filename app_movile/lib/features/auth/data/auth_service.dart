@@ -1,85 +1,142 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-class AuthService {
-  AuthService._();
+import '../../../core/api/api_client.dart';
+import '../../../core/api/api_config.dart';
+import '../../../core/api/api_exception.dart';
+import '../../../core/auth/auth_models.dart';
+import '../../../core/auth/auth_session.dart';
 
-  static final auth = FirebaseAuth.instance;
-  static final db = FirebaseFirestore.instance;
-  static bool _isGoogleInitialized = false;
+class AuthService {
+  AuthService(this._session) : _client = ApiClient(_session);
+
+  final AuthSession _session;
+  final ApiClient _client;
+  bool _isGoogleInitialized = false;
+
+  AuthSession get session => _session;
+  ApiClient get client => _client;
 
   static String friendlyError(Object error) {
-    if (error is FirebaseAuthException) {
-      return switch (error.code) {
-        'invalid-email' => 'Escribe un correo válido.',
-        'invalid-credential' => 'Correo o contraseña incorrectos.',
-        'user-not-found' => 'No existe una cuenta con ese correo.',
-        'wrong-password' => 'Contraseña incorrecta.',
-        'too-many-requests' => 'Demasiados intentos. Intenta más tarde.',
-        'email-already-in-use' => 'Ese correo ya está registrado.',
-        'weak-password' => 'La contraseña debe tener al menos 6 caracteres.',
-        'network-request-failed' => 'Revisa tu conexión a internet.',
-        'operation-not-allowed' => 'Este método de acceso no está habilitado.',
-        _ => 'No se pudo completar la acción. Intenta otra vez.',
-      };
+    if (error is ApiException) {
+      return error.message;
     }
 
     return 'No se pudo completar la acción. Intenta otra vez.';
   }
 
-  static Future<UserCredential> signInWithGoogle() async {
+  Future<ApiAuth> login({
+    required String identifier,
+    required String password,
+  }) async {
+    final payload = await _client.request(
+      '/auth/login',
+      method: 'POST',
+      body: {
+        'identifier': identifier.trim().toLowerCase(),
+        'password': password,
+      },
+      retryOnUnauthorized: false,
+    );
+
+    final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
+    await _session.setAuth(auth);
+    return auth;
+  }
+
+  Future<ApiAuth> register({
+    required String email,
+    required String password,
+    required String username,
+    required String displayName,
+    String? referralCode,
+    Map<String, dynamic>? metadata,
+  }) async {
+    final payload = await _client.request(
+      '/auth/register',
+      method: 'POST',
+      body: {
+        'email': email.trim().toLowerCase(),
+        'password': password,
+        'username': username.trim().toLowerCase(),
+        'displayName': displayName.trim(),
+        if (referralCode != null && referralCode.trim().isNotEmpty)
+          'referralCode': referralCode.trim().toLowerCase(),
+        if (metadata != null) 'metadata': metadata,
+      },
+      retryOnUnauthorized: false,
+    );
+
+    final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
+    await _session.setAuth(auth);
+    return auth;
+  }
+
+  Future<ApiAuth> signInWithGoogle({String? referralCode}) async {
     final googleSignIn = GoogleSignIn.instance;
 
     if (!_isGoogleInitialized) {
-      await googleSignIn.initialize();
+      await googleSignIn.initialize(
+        serverClientId: ApiConfig.googleServerClientId,
+      );
       _isGoogleInitialized = true;
     }
 
     final googleUser = await googleSignIn.authenticate();
     final googleAuth = googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      idToken: googleAuth.idToken,
+    final idToken = googleAuth.idToken;
+
+    if (idToken == null || idToken.isEmpty) {
+      throw const ApiException('No se pudo obtener el token de Google.');
+    }
+
+    final payload = await _client.request(
+      '/auth/google',
+      method: 'POST',
+      body: {
+        'credential': idToken,
+        if (referralCode != null && referralCode.trim().isNotEmpty)
+          'referralCode': referralCode.trim().toLowerCase(),
+      },
+      retryOnUnauthorized: false,
     );
 
-    final userCredential = await auth.signInWithCredential(credential);
-    final user = userCredential.user;
-
-    if (user != null) {
-      await _ensureGoogleUserDocument(user);
-    }
-
-    return userCredential;
+    final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
+    await _session.setAuth(auth);
+    return auth;
   }
 
-  static Future<void> _ensureGoogleUserDocument(User user) async {
-    final userRef = db.collection('users').doc(user.uid);
-    final userSnap = await userRef.get();
-    final displayName = user.displayName?.trim() ?? '';
-    final firstName = displayName.isEmpty
-        ? ''
-        : displayName.split(RegExp(r'\s+')).first;
-
-    if (userSnap.exists) {
-      return;
+  Future<ApiUser?> getMe() async {
+    final token = _session.auth?.accessToken;
+    if (token == null || token.isEmpty) {
+      return null;
     }
 
-    await userRef.set({
-      'firstName': firstName,
-      'lastName': '',
-      'name': displayName,
-      'username': '',
-      'country': '',
-      'countryCode': '',
-      'phoneCountry': '',
-      'phoneCountryCode': '',
-      'phoneDialCode': '',
-      'phone': '',
-      'phoneInternational': '',
-      'email': user.email ?? '',
-      'points': 25,
-      'spentPoints': 0,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      final payload = await _client.request('/users/me', token: token);
+      final userJson = payload is Map<String, dynamic>
+          ? (payload['user'] as Map<String, dynamic>? ?? payload)
+          : <String, dynamic>{};
+      final user = ApiUser.fromJson(userJson);
+      await _session.updateUser(user);
+      return user;
+    } on ApiException catch (error) {
+      if (error.statusCode == 401) {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> signOut() async {
+    try {
+      final googleSignIn = GoogleSignIn.instance;
+      if (_isGoogleInitialized) {
+        await googleSignIn.signOut();
+      }
+    } catch (_) {
+      // Ignore Google sign-out errors.
+    }
+
+    await _session.signOut();
   }
 }

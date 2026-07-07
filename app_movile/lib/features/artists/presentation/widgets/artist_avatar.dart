@@ -1,6 +1,32 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/api/api_config.dart';
 import '../../data/artist.dart';
+
+const defaultArtistBanner =
+    'https://vote.musicmundial.com/uploads/admin/artist-banner/1782781525589-ceb83658-97de-42f4-9471-f0902c29c1c5.png';
+
+String resolveArtistBanner(Artist artist) {
+  final banner = resolveArtistMediaUrl(artist.banner);
+  return banner.isNotEmpty ? banner : defaultArtistBanner;
+}
+
+String resolveArtistMediaUrl(String url) {
+  if (url.isEmpty) {
+    return '';
+  }
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  final origin = ApiConfig.baseUrl.replaceAll(RegExp(r'/api$'), '');
+  if (url.startsWith('/')) {
+    return '$origin$url';
+  }
+
+  return '$origin/$url';
+}
 
 class ArtistAvatar extends StatelessWidget {
   const ArtistAvatar({
@@ -16,6 +42,8 @@ class ArtistAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final imageUrl = resolveArtistMediaUrl(artist.image);
+
     return Container(
       width: size,
       height: size,
@@ -36,10 +64,10 @@ class ArtistAvatar extends StatelessWidget {
         padding: const EdgeInsets.all(2),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(radius - 2),
-          child: artist.image.isEmpty
+          child: imageUrl.isEmpty
               ? _ArtistInitial(name: artist.name)
               : Image.network(
-                  artist.image,
+                  imageUrl,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) =>
                       _ArtistInitial(name: artist.name),

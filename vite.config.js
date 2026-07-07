@@ -8,6 +8,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      // Flutter/Android build locks files under app_movile; ignore to avoid EBUSY on Windows.
+      ignored: ['**/app_movile/**'],
+    },
     proxy: {
       // En desarrollo, las imagenes subidas viven en el servidor de produccion.
       // Reenviamos /uploads alli para poder verlas en local.

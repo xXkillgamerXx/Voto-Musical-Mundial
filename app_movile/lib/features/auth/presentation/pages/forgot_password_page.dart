@@ -1,7 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
 
@@ -48,15 +46,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     setState(() => _isLoading = true);
 
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
       if (!mounted) return;
       setState(
-        () =>
-            _successMessage = 'Te enviamos un enlace para recuperar tu cuenta.',
+        () => _successMessage = 'Reset de password pendiente de API propia.',
       );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _errorMessage = AuthService.friendlyError(error));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
