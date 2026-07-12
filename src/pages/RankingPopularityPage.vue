@@ -3,7 +3,10 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { getRankingPopularityCached } from "../services/firebaseCache";
-import { resolveArtistBanner } from "../utils/artistMedia";
+import {
+  pickArtistImage,
+  resolveArtistCardImage,
+} from "../utils/artistMedia";
 
 const { locale } = useI18n();
 const artists = ref([]);
@@ -29,16 +32,9 @@ const chartAccents = [
   },
 ];
 
-const getArtistImage = (artist) =>
-  artist?.image ||
-  artist?.imageUrl ||
-  artist?.photo ||
-  artist?.photoURL ||
-  artist?.foto ||
-  artist?.banner ||
-  "";
+const getArtistImage = (artist) => pickArtistImage(artist);
 
-const getArtistBanner = (artist) => resolveArtistBanner(artist);
+const getArtistCardImage = (artist) => resolveArtistCardImage(artist);
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
 
@@ -307,7 +303,7 @@ onMounted(loadArtists);
     </template>
 
     <template v-else-if="rankedArtists.length">
-      <div class="mt-8 grid gap-5 lg:grid-cols-3">
+      <div class="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         <article
           v-for="artist in featuredArtists"
           :key="artist.id"
@@ -316,57 +312,74 @@ onMounted(loadArtists);
         >
           <a :href="artistUrl(artist)" class="block">
             <div
-              class="relative h-86 overflow-hidden bg-linear-to-br from-slate-950 via-violet-950 to-fuchsia-950"
+              class="relative h-64 overflow-hidden bg-linear-to-br from-slate-950 via-violet-950 to-fuchsia-950 sm:h-72 lg:h-80"
             >
               <img
-                :src="getArtistBanner(artist)"
+                :src="getArtistCardImage(artist)"
                 :alt="artist.name"
                 loading="lazy"
                 decoding="async"
-                class="absolute inset-0 size-full object-cover opacity-70 transition duration-500 group-hover:scale-105"
+                class="absolute inset-0 size-full object-cover object-top transition duration-500 group-hover:scale-105"
               />
               <div
-                class="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,13,0.08)_0%,rgba(3,4,13,0.22)_42%,#060713_100%)]"
+                class="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.12),transparent_28%),linear-gradient(180deg,rgba(3,4,13,0.05)_0%,rgba(3,4,13,0.35)_55%,#060713_100%)]"
               ></div>
               <div
-                class="absolute left-5 top-5 rounded-full border border-white/20 bg-black/40 px-4 py-2 text-sm font-black uppercase tracking-widest text-white backdrop-blur"
+                class="absolute left-4 top-4 rounded-full border border-white/20 bg-black/40 px-3 py-1.5 text-xs font-black uppercase tracking-widest text-white backdrop-blur sm:left-5 sm:top-5 sm:px-4 sm:py-2 sm:text-sm"
               >
                 #{{ artist.rank }}
               </div>
-              <div class="absolute bottom-0 left-0 right-0 p-5">
-                <p
-                  class="text-xs font-black uppercase tracking-[0.22em]"
-                  :class="artist.accent.text"
-                >
-                  {{ $t("ranking.hotArtist") }}
-                </p>
-                <h2
-                  class="mt-2 text-3xl font-black uppercase leading-none text-white"
-                >
-                  {{ artist.name }}
-                </h2>
-                <p
-                  class="mt-2 text-xs font-black uppercase tracking-widest text-fuchsia-100"
-                >
-                  {{ getArtistGroup(artist) || $t("ranking.noGroup") }}
-                </p>
+              <div class="absolute inset-x-0 bottom-0 p-4 sm:p-5">
+                <div class="flex items-end gap-3">
+                  <span
+                    class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-white/25 bg-linear-to-br from-violet-500 to-fuchsia-500 text-xl font-black text-white shadow-xl shadow-black/40 sm:size-20 sm:rounded-3xl sm:text-2xl"
+                  >
+                    <img
+                      v-if="getArtistImage(artist)"
+                      :src="getArtistImage(artist)"
+                      :alt="artist.name"
+                      loading="lazy"
+                      decoding="async"
+                      class="size-full object-cover"
+                    />
+                    <span v-else>{{ artist.name?.charAt(0) || "A" }}</span>
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <p
+                      class="text-[10px] font-black uppercase tracking-[0.22em] sm:text-xs"
+                      :class="artist.accent.text"
+                    >
+                      {{ $t("ranking.hotArtist") }}
+                    </p>
+                    <h2
+                      class="mt-1 truncate text-2xl font-black uppercase leading-none text-white sm:mt-2 sm:text-3xl"
+                    >
+                      {{ artist.name }}
+                    </h2>
+                    <p
+                      class="mt-1 truncate text-[10px] font-black uppercase tracking-widest text-fuchsia-100 sm:mt-2 sm:text-xs"
+                    >
+                      {{ getArtistGroup(artist) || $t("ranking.noGroup") }}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="p-5">
-              <div class="flex items-end justify-between gap-4">
-                <div>
+            <div class="p-4 sm:p-5">
+              <div class="flex items-end justify-between gap-3 sm:gap-4">
+                <div class="min-w-0">
                   <p
                     class="text-[10px] font-black uppercase tracking-widest text-slate-500"
                   >
                     {{ $t("ranking.popularityScore") }}
                   </p>
-                  <p class="mt-1 text-4xl font-black text-white">
+                  <p class="mt-1 text-3xl font-black text-white sm:text-4xl">
                     {{ formatNumber(artist.popularityScore) }}
                   </p>
                 </div>
                 <span
-                  class="rounded-full bg-white/8 px-3 py-2 text-xs font-black text-slate-200"
+                  class="shrink-0 rounded-full bg-white/8 px-2.5 py-1.5 text-[10px] font-black text-slate-200 sm:px-3 sm:py-2 sm:text-xs"
                 >
                   {{ formatNumber(artist.totalVotes) }} {{ $t("ranking.votes").toLowerCase() }}
                 </span>
@@ -442,15 +455,106 @@ onMounted(loadArtists);
           v-for="artist in rankedArtists"
           :key="artist.id"
           :href="artistUrl(artist)"
-          class="grid gap-4 border-b border-white/10 px-5 py-4 transition last:border-b-0 hover:bg-white/5 lg:grid-cols-[4.5rem_1fr_5rem_5rem_5rem_12rem] lg:items-center sm:px-6"
+          class="block border-b border-white/10 px-4 py-4 transition last:border-b-0 hover:bg-white/5 sm:px-6 lg:grid lg:grid-cols-[4.5rem_1fr_5rem_5rem_5rem_12rem] lg:items-center lg:gap-4"
         >
-          <div class="flex items-center gap-3">
-            <span class="text-3xl font-black text-white"
-              >#{{ artist.rank }}</span
-            >
+          <div class="lg:hidden">
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="text-2xl font-black text-white sm:text-3xl"
+                >#{{ artist.rank }}</span
+              >
+
+              <div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+                <span
+                  class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-fuchsia-300/30 bg-linear-to-br from-violet-500 to-fuchsia-500 text-lg font-black text-white sm:size-16 sm:text-xl"
+                >
+                  <img
+                    v-if="getArtistImage(artist)"
+                    :src="getArtistImage(artist)"
+                    :alt="artist.name"
+                    loading="lazy"
+                    decoding="async"
+                    class="size-full object-cover"
+                  />
+                  <span v-else>{{ artist.name?.charAt(0) || "A" }}</span>
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-base font-black text-white sm:text-lg">{{
+                    artist.name
+                  }}</span>
+                  <span
+                    class="mt-1 block truncate text-[10px] font-black uppercase tracking-widest text-slate-500 sm:text-xs"
+                  >
+                    {{ $t("ranking.rowSummary", {
+                      group: getArtistGroup(artist) || $t("ranking.noGroup"),
+                      followers: formatNumber(artist.followersCount),
+                      votes: formatNumber(artist.totalVotes),
+                    }) }}
+                  </span>
+                  <span
+                    class="mt-2 block h-2 overflow-hidden rounded-full bg-white/10 sm:mt-3"
+                  >
+                    <span
+                      class="block h-full rounded-full bg-linear-to-r"
+                      :class="artist.accent.bar"
+                      :style="{ width: barWidth(artist.popularityScore) }"
+                    ></span>
+                  </span>
+                </span>
+              </div>
+
+              <div class="shrink-0 text-right">
+                <p
+                  class="text-[10px] font-black uppercase tracking-widest text-slate-500"
+                >
+                  {{ $t("common.labels.score") }}
+                </p>
+                <p class="mt-0.5 text-xl font-black text-white sm:text-2xl">
+                  {{ formatNumber(artist.popularityScore) }}
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
+              <div class="rounded-xl bg-white/5 p-2.5">
+                <p
+                  class="text-[10px] font-black uppercase tracking-widest text-slate-500"
+                >
+                  {{ $t("ranking.last") }}
+                </p>
+                <p class="mt-1 text-base font-black text-white sm:text-lg">
+                  {{ artist.lastWeekRank }}
+                </p>
+              </div>
+
+              <div class="rounded-xl bg-white/5 p-2.5">
+                <p
+                  class="text-[10px] font-black uppercase tracking-widest text-slate-500"
+                >
+                  {{ $t("ranking.peak") }}
+                </p>
+                <p class="mt-1 text-base font-black text-white sm:text-lg">
+                  #{{ artist.peakPosition }}
+                </p>
+              </div>
+
+              <div class="rounded-xl bg-white/5 p-2.5">
+                <p
+                  class="text-[10px] font-black uppercase tracking-widest text-slate-500"
+                >
+                  {{ $t("ranking.weeks") }}
+                </p>
+                <p class="mt-1 text-base font-black text-white sm:text-lg">
+                  {{ artist.weeksOnChart }}
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div class="flex min-w-0 items-center gap-4">
+          <div class="hidden items-center gap-3 lg:flex">
+            <span class="text-3xl font-black text-white">#{{ artist.rank }}</span>
+          </div>
+
+          <div class="hidden min-w-0 items-center gap-4 lg:flex">
             <span
               class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl border border-fuchsia-300/30 bg-linear-to-br from-violet-500 to-fuchsia-500 text-xl font-black text-white"
             >
@@ -489,7 +593,7 @@ onMounted(loadArtists);
             </span>
           </div>
 
-          <div>
+          <div class="hidden lg:block">
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
@@ -500,7 +604,7 @@ onMounted(loadArtists);
             </p>
           </div>
 
-          <div>
+          <div class="hidden lg:block">
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
@@ -511,7 +615,7 @@ onMounted(loadArtists);
             </p>
           </div>
 
-          <div>
+          <div class="hidden lg:block">
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >
@@ -522,7 +626,7 @@ onMounted(loadArtists);
             </p>
           </div>
 
-          <div class="lg:text-right">
+          <div class="hidden lg:block lg:text-right">
             <p
               class="text-[10px] font-black uppercase tracking-widest text-slate-500"
             >

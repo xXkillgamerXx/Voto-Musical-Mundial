@@ -169,13 +169,15 @@ const listenUserProfile = (user) => {
 
   getMe()
     .then((userData) => {
-      if (currentUser.value) {
-        currentUser.value = { ...currentUser.value, ...userData };
-        userRole.value = String(userData?.role || "").trim().toLowerCase();
-        userUsername.value = userData?.username || "";
-        if (userData?.points !== undefined && userData?.points !== null) {
-          userPoints.value = Number(userData.points || 0);
-        }
+      if (!userData || !currentUser.value) {
+        return;
+      }
+
+      currentUser.value = { ...currentUser.value, ...userData };
+      userRole.value = String(userData?.role || "").trim().toLowerCase();
+      userUsername.value = userData?.username || "";
+      if (userData?.points !== undefined && userData?.points !== null) {
+        userPoints.value = Number(userData.points || 0);
       }
     })
     .catch(() => {
@@ -190,7 +192,8 @@ onMounted(() => {
   document.addEventListener("keydown", handleEscape);
 
   const syncAuth = (authState = getCurrentApiAuth()) => {
-    currentUser.value = authState?.user || null;
+    currentUser.value =
+      authState?.user && !authState.user.isAnonymous ? authState.user : null;
     avatarImageFailed.value = false;
     isAccountMenuOpen.value = false;
     isSettingsMenuOpen.value = false;

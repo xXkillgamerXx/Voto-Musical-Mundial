@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/api/api_config.dart';
@@ -20,7 +21,7 @@ String resolveArtistMediaUrl(String url) {
     return url;
   }
 
-  final origin = ApiConfig.baseUrl.replaceAll(RegExp(r'/api$'), '');
+  final origin = ApiConfig.uploadsOrigin;
   if (url.startsWith('/')) {
     return '$origin$url';
   }
@@ -66,11 +67,11 @@ class ArtistAvatar extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius - 2),
           child: imageUrl.isEmpty
               ? _ArtistInitial(name: artist.name)
-              : Image.network(
-                  imageUrl,
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      _ArtistInitial(name: artist.name),
+                  placeholder: (_, _) => _ArtistInitial(name: artist.name),
+                  errorWidget: (_, _, _) => _ArtistInitial(name: artist.name),
                 ),
         ),
       ),

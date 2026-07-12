@@ -18,7 +18,9 @@ let artistsCache = {
 };
 
 let livePollsCache = {
+  loadedAt: 0,
   rows: [],
+  promise: null,
   subscribers: new Set(),
 };
 
@@ -215,6 +217,28 @@ export const subscribePollsCached = (db, callback, onError = () => {}) => {
   };
 };
 
+export const getLivePollsCached = async (_db, maxAgeMs = POLLS_CACHE_MS) => {
+  const now = Date.now();
+
+  if (livePollsCache.rows.length && now - livePollsCache.loadedAt < maxAgeMs) {
+    return livePollsCache.rows;
+  }
+
+  if (!livePollsCache.promise) {
+    livePollsCache.promise = getLivePolls(LIVE_POLLS_LIMIT)
+      .then((pollRows) => {
+        livePollsCache.rows = pollRows.map(normalizePoll);
+        livePollsCache.loadedAt = Date.now();
+        return livePollsCache.rows;
+      })
+      .finally(() => {
+        livePollsCache.promise = null;
+      });
+  }
+
+  return livePollsCache.promise;
+};
+
 export const subscribeLivePollsCached = (_db, callback, onError = () => {}) => {
   livePollsCache.subscribers.add(callback);
 
@@ -222,11 +246,8 @@ export const subscribeLivePollsCached = (_db, callback, onError = () => {}) => {
     callback(livePollsCache.rows);
   }
 
-  getLivePolls(LIVE_POLLS_LIMIT)
-    .then((pollRows) => {
-      livePollsCache.rows = pollRows.map(normalizePoll);
-      notify(livePollsCache.subscribers, livePollsCache.rows);
-    })
+  getLivePollsCached(_db)
+    .then((rows) => notify(livePollsCache.subscribers, rows))
     .catch(onError);
 
   return () => {
@@ -235,10 +256,11 @@ export const subscribeLivePollsCached = (_db, callback, onError = () => {}) => {
 };
 
 export const refreshLivePollsCached = async () => {
-  const pollRows = await getLivePolls(LIVE_POLLS_LIMIT);
-  livePollsCache.rows = pollRows.map(normalizePoll);
-  notify(livePollsCache.subscribers, livePollsCache.rows);
-  return livePollsCache.rows;
+  livePollsCache.loadedAt = 0;
+  livePollsCache.promise = null;
+  const rows = await getLivePollsCached(null, 0);
+  notify(livePollsCache.subscribers, rows);
+  return rows;
 };
 
 const buildRankingArtistRows = (artistRows) =>

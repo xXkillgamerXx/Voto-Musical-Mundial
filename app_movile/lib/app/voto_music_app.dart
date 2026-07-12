@@ -15,7 +15,7 @@ class VotoMusicApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Voto Musical Mundial',
+      title: 'Music Mundial VOTE',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

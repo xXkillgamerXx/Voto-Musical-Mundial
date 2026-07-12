@@ -6,16 +6,28 @@ class ArtistsApi {
 
   final ApiClient _client;
 
-  Future<List<Artist>> getPopularityRanking({int limit = 50}) async {
-    final payload = await _client.request(
+  static const _rankingTtl = Duration(minutes: 5);
+  static const _artistTtl = Duration(minutes: 10);
+
+  Future<List<Artist>> getPopularityRanking({
+    int limit = 50,
+    bool forceRefresh = false,
+  }) async {
+    final payload = await _client.cachedRequest(
       '/artists/ranking/popularity?limit=$limit',
+      ttl: _rankingTtl,
+      forceRefresh: forceRefresh,
     );
 
     return _mapArtists(payload);
   }
 
-  Future<Artist> getArtist(String id) async {
-    final payload = await _client.request('/artists/${Uri.encodeComponent(id)}');
+  Future<Artist> getArtist(String id, {bool forceRefresh = false}) async {
+    final payload = await _client.cachedRequest(
+      '/artists/${Uri.encodeComponent(id)}',
+      ttl: _artistTtl,
+      forceRefresh: forceRefresh,
+    );
     return Artist.fromJson(payload as Map<String, dynamic>);
   }
 

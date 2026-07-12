@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getMessaging } from 'firebase-admin/messaging';
+import { getMessaging, MulticastMessage } from 'firebase-admin/messaging';
 import { readFileSync } from 'fs';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +16,8 @@ type SendPushPayload = {
 
 @Injectable()
 export class AdminPushService {
+  private readonly logger = new Logger(AdminPushService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private firebaseReady = false;
@@ -52,6 +54,113 @@ export class AdminPushService {
 
   private cleanTokens(tokens: unknown[]) {
     return [...new Set(tokens.map((token) => String(token || '').trim()).filter(Boolean))];
+  }
+
+  private buildMulticastMessage(
+    tokens: string[],
+    payload: {
+      title: string;
+      body: string;
+      url: string;
+      type: string;
+      extraData?: Record<string, string>;
+    },
+  ): MulticastMessage {
+    return {
+      tokens,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+      },
+      data: {
+        title: payload.title,
+        body: payload.body,
+        url: payload.url,
+        type: payload.type,
+        ...(payload.extraData || {}),
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'vmm_default',
+          sound: 'default',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
+      webpush: {
+        fcmOptions: { link: payload.url },
+        notification: {
+          title: payload.title,
+          body: payload.body,
+          data: { url: payload.url },
+        },
+      },
+    };
+  }
+
+  private logPushFailures(tokens: string[], response: Awaited<ReturnType<ReturnType<typeof getMessaging>['sendEachForMulticast']>>) {
+    response.responses.forEach((item, index) => {
+      if (item.success) {
+        return;
+      }
+
+      const token = tokens[index] || '';
+      this.logger.warn(
+        `Push fallido (${token.slice(0, 18)}...): ${item.error?.code || 'unknown'} ${item.error?.message || ''}`,
+      );
+    });
+  }
+
+  async sendGiftToUser(
+    userId: bigint | string,
+    payload: { title: string; body: string; amount?: string },
+  ) {
+    try {
+      const tokenRows = await this.prisma.pushToken.findMany({
+        where: { userId: BigInt(userId) },
+        select: { token: true, platform: true },
+      });
+      const tokens = this.cleanTokens(tokenRows.map((row) => row.token));
+
+      if (!tokens.length) {
+        this.logger.warn(`Regalo sin push: usuario ${userId} no tiene tokens FCM`);
+        return { ok: false, reason: 'no_tokens' as const };
+      }
+
+      this.initFirebaseAdmin();
+      const response = await getMessaging().sendEachForMulticast(
+        this.buildMulticastMessage(tokens, {
+          title: payload.title,
+          body: payload.body,
+          url: '/',
+          type: 'admin_points_gift',
+          extraData: {
+            amount: String(payload.amount || ''),
+          },
+        }),
+      );
+
+      this.logPushFailures(tokens, response);
+      this.logger.log(
+        `Push regalo usuario ${userId}: ${response.successCount}/${tokens.length} enviados (${tokenRows.map((row) => row.platform).join(', ')})`,
+      );
+
+      return {
+        ok: response.successCount > 0,
+        sent: response.successCount,
+        failed: response.failureCount,
+      };
+    } catch (error) {
+      this.logger.error(`Push regalo falló para usuario ${userId}: ${(error as Error).message}`);
+      return { ok: false, reason: 'send_failed' as const };
+    }
   }
 
   async users(search = '', limitValue = '50') {
@@ -91,6 +200,7 @@ export class AdminPushService {
       username: user.username,
       email: user.email,
       tokenCount: user.pushTokens.length,
+      platforms: [...new Set(user.pushTokens.map((row) => row.platform))],
       latestTokenAt: user.pushTokens[0]?.updatedAt || null,
       sampleToken: user.pushTokens[0]?.token || '',
       sampleTokenShort: user.pushTokens[0]?.token ? `${user.pushTokens[0].token.slice(0, 18)}...` : '',
@@ -153,24 +263,17 @@ export class AdminPushService {
 
     try {
       this.initFirebaseAdmin();
-      const response = await getMessaging().sendEachForMulticast({
-        tokens,
-        notification: { title, body },
-        data: {
+      const response = await getMessaging().sendEachForMulticast(
+        this.buildMulticastMessage(tokens, {
           title,
           body,
           url,
           type: 'admin_push',
-        },
-        webpush: {
-          fcmOptions: { link: url },
-          notification: {
-            title,
-            body,
-            data: { url },
-          },
-        },
-      });
+        }),
+      );
+
+      this.logPushFailures(tokens, response);
+      this.logger.log(`Push admin: ${response.successCount}/${tokens.length} enviados`);
 
       const notifiedUserIds = [
         ...new Set(tokenRows.map((row) => row.userId?.toString()).filter((value): value is string => Boolean(value))),
@@ -248,25 +351,19 @@ export class AdminPushService {
 
     try {
       this.initFirebaseAdmin();
-      const response = await getMessaging().sendEachForMulticast({
-        tokens,
-        notification: { title, body },
-        data: {
+      const response = await getMessaging().sendEachForMulticast(
+        this.buildMulticastMessage(tokens, {
           title,
           body,
           url,
           type: 'artist_push',
-          artistId: artist.id.toString(),
-        },
-        webpush: {
-          fcmOptions: { link: url },
-          notification: {
-            title,
-            body,
-            data: { url },
+          extraData: {
+            artistId: artist.id.toString(),
           },
-        },
-      });
+        }),
+      );
+
+      this.logPushFailures(tokens, response);
 
       const followerUserIds = [...new Set(followers.map((follower) => follower.userId.toString()))];
       await this.prisma.notification.createMany({

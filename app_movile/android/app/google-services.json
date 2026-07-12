@@ -30,6 +30,13 @@
             {
               "client_id": "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "927668152816-dpamk5updrpms0hltel8nuf378qqsqku.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.votomusicamundial.app"
+              }
             }
           ]
         }

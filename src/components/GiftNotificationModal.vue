@@ -173,7 +173,14 @@ const scheduleAutoClose = () => {
 }
 
 const loadGiftNotification = async ({ force = false } = {}) => {
-  if (!getCurrentApiAuth()?.accessToken || isLoading.value || (isOpen.value && !force)) {
+  const auth = getCurrentApiAuth()
+  if (
+    !auth?.accessToken
+    || !auth?.user
+    || auth.user.isAnonymous
+    || isLoading.value
+    || (isOpen.value && !force)
+  ) {
     return
   }
 
@@ -231,7 +238,7 @@ const revealGift = () => {
 const syncAuth = () => {
   const auth = getCurrentApiAuth()
 
-  if (!auth?.accessToken) {
+  if (!auth?.accessToken || !auth?.user || auth.user.isAnonymous) {
     isOpen.value = false
     giftNotification.value = null
     loadedGiftThisSession = false

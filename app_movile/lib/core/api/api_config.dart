@@ -1,10 +1,22 @@
 class ApiConfig {
   ApiConfig._();
 
+  /// API de producción (vote.musicmundial.com).
+  static const productionApiUrl = 'https://vote.musicmundial.com/api';
+
+  /// URL activa. Por defecto = producción.
+  /// Solo para desarrollo local:
+  /// `--dart-define=API_BASE_URL=http://localhost:4000/api`
   static const baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://vote.musicmundial.com/api',
+    defaultValue: productionApiUrl,
   );
+
+  static String get uploadsOrigin =>
+      baseUrl.replaceAll(RegExp(r'/api$'), '');
+
+  static bool get isProduction =>
+      baseUrl.contains('vote.musicmundial.com');
 
   static const googleServerClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',

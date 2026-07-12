@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import '../auth/auth_models.dart';
 import '../auth/auth_session.dart';
+import '../cache/response_cache.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
 
@@ -55,6 +57,68 @@ class ApiClient {
     }
 
     return payload;
+  }
+
+  Future<dynamic> cachedRequest(
+    String path, {
+    Duration ttl = const Duration(minutes: 5),
+    bool forceRefresh = false,
+    String? token,
+    bool retryOnUnauthorized = true,
+  }) async {
+    final cacheKey = _cacheKey(path, token);
+    final cache = ResponseCache.instanceOrNull;
+
+    if (!forceRefresh && cache != null) {
+      final fresh = cache.readFresh(cacheKey, ttl);
+      if (fresh != null) {
+        return fresh;
+      }
+
+      final stale = cache.readAny(cacheKey);
+      if (stale != null) {
+        unawaited(
+          _fetchAndCache(
+            path,
+            cacheKey: cacheKey,
+            token: token,
+            retryOnUnauthorized: retryOnUnauthorized,
+          ),
+        );
+        return stale;
+      }
+    }
+
+    return _fetchAndCache(
+      path,
+      cacheKey: cacheKey,
+      token: token,
+      retryOnUnauthorized: retryOnUnauthorized,
+    );
+  }
+
+  Future<dynamic> _fetchAndCache(
+    String path, {
+    required String cacheKey,
+    String? token,
+    bool retryOnUnauthorized = true,
+  }) async {
+    final payload = await request(
+      path,
+      token: token,
+      retryOnUnauthorized: retryOnUnauthorized,
+    );
+
+    await ResponseCache.instanceOrNull?.write(cacheKey, payload);
+    return payload;
+  }
+
+  String _cacheKey(String path, String? token) {
+    if (token == null || token.isEmpty) {
+      return path;
+    }
+
+    return '$path::auth';
   }
 
   Future<http.Response> _send(

@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.votomusicamundial.app" "\0"
-            VALUE "FileDescription", "app_movile" "\0"
+            VALUE "FileDescription", "Music Mundial VOTE" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "app_movile" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.votomusicamundial.app. All rights reserved." "\0"
             VALUE "OriginalFilename", "app_movile.exe" "\0"
-            VALUE "ProductName", "app_movile" "\0"
+            VALUE "ProductName", "Music Mundial VOTE" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

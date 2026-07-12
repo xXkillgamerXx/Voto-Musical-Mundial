@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/artist.dart';
@@ -57,11 +58,12 @@ class ArtistCard extends StatelessWidget {
                             colors: [Color(0xFF1E1B4B), Color(0xFF701A75)],
                           ),
                         ),
-                        child: Image.network(
-                          bannerUrl,
+                        child: CachedNetworkImage(
+                          imageUrl: bannerUrl,
                           fit: BoxFit.cover,
-                          opacity: const AlwaysStoppedAnimation(0.75),
-                          errorBuilder: (context, error, stackTrace) =>
+                          color: Colors.white.withValues(alpha: 0.75),
+                          colorBlendMode: BlendMode.modulate,
+                          errorWidget: (context, error, stackTrace) =>
                               const SizedBox.shrink(),
                         ),
                       ),

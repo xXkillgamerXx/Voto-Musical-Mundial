@@ -279,7 +279,7 @@ const syncReferralCode = (authState = getCurrentApiAuth()) => {
   userProfile.value = null
 
   const user = authState?.user
-  if (!user) {
+  if (!user || user.isAnonymous) {
     return
   }
 

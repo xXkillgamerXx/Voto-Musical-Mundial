@@ -1,8 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/auth_models.dart';
+import '../../../../core/auth/auth_session.dart';
+import '../../../../core/storage/daily_reward_storage.dart';
+import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
 import '../../../artists/presentation/pages/ranking_popularity_page.dart';
+import '../../../home/presentation/pages/home_page.dart';
+import '../../../home/presentation/pages/news_page.dart';
+import '../../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
+import '../../../notifications/application/notification_controller.dart';
+import '../../../notifications/presentation/pages/notifications_page.dart';
+import '../../../notifications/presentation/widgets/gift_notification_modal.dart';
+import '../../../notifications/presentation/widgets/notifications_bell.dart';
+import '../../../rewards/presentation/widgets/daily_reward_modal.dart';
 import '../../data/auth_service.dart';
 import 'login_page.dart';
 
@@ -43,10 +56,7 @@ class _AuthGateState extends State<AuthGate> {
           return LoginPage(authService: widget.authService);
         }
 
-        return _SignedInPage(
-          user: user,
-          authService: widget.authService,
-        );
+        return _SignedInPage(user: user, authService: widget.authService);
       },
     );
   }
@@ -64,7 +74,9 @@ class _SignedInPage extends StatefulWidget {
 
 class _SignedInPageState extends State<_SignedInPage> {
   late final PageController _pageController;
-  String _selectedSection = 'Artistas';
+  late final NotificationController _notifications;
+  String _selectedSection = 'Inicio';
+  bool _dailyRewardPromptChecked = false;
 
   static const _tabSections = [
     'Inicio',
@@ -79,63 +91,143 @@ class _SignedInPageState extends State<_SignedInPage> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _selectedTabIndex);
+    _notifications = NotificationController(widget.authService);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_notifications.initialize());
+      unawaited(_maybeShowDailyReward());
+      unawaited(_notifications.enablePush());
+    });
+  }
+
+  Future<void> _maybeShowDailyReward() async {
+    if (_dailyRewardPromptChecked || !mounted) {
+      return;
+    }
+
+    _dailyRewardPromptChecked = true;
+
+    final user = await widget.authService.getMe();
+    if (!mounted || user == null) {
+      return;
+    }
+
+    if (user.hasClaimedDailyRewardToday) {
+      return;
+    }
+
+    if (await DailyRewardStorage.wasDismissedToday()) {
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    await DailyRewardModal.show(context, authService: widget.authService);
   }
 
   @override
   void dispose() {
+    _notifications.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final displayName = widget.user.name;
-
-    return _HomeBackground(
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          surfaceTintColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          leading: Builder(
-            builder: (context) {
-              return IconButton(
-                tooltip: 'Abrir menú',
-                onPressed: () => Scaffold.of(context).openDrawer(),
-                icon: const Icon(Icons.menu_rounded),
-              );
-            },
+    return Stack(
+      children: [
+        _HomeBackground(
+          child: Scaffold(
+            extendBody: true,
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              surfaceTintColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              leading: Builder(
+                builder: (context) {
+                  return IconButton(
+                    tooltip: 'Abrir menú',
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                    icon: const Icon(Icons.menu_rounded),
+                  );
+                },
+              ),
+              centerTitle: true,
+              title:
+                  (_selectedSection == 'Inicio' ||
+                      _selectedSection == 'Artistas')
+                  ? Image.asset(
+                      'assets/icons/logo-votos.png',
+                      width: 54,
+                      height: 42,
+                      fit: BoxFit.contain,
+                    )
+                  : (_selectedTabIndex == -1 ? Text(_selectedSection) : null),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 2),
+                  child: Center(
+                    child: PointsChip(
+                      session: widget.authService.session,
+                      compact: true,
+                    ),
+                  ),
+                ),
+                NotificationsBell(controller: _notifications),
+                const SizedBox(width: 4),
+              ],
+            ),
+            drawer: _HomeMenuDrawer(
+              user: widget.user,
+              authService: widget.authService,
+              selectedSection: _selectedSection,
+              onSectionSelected: (section) {
+                Navigator.of(context).pop();
+                if (section == 'Noticias') {
+                  NewsScreen.open(context);
+                  return;
+                }
+                if (section == 'Notificaciones') {
+                  NotificationsScreen.open(context, controller: _notifications);
+                  return;
+                }
+                if (section == 'Salón de la fama') {
+                  HallOfFameScreen.open(
+                    context,
+                    authService: widget.authService,
+                  );
+                  return;
+                }
+                _selectSection(section);
+              },
+            ),
+            body: _buildSectionContent(),
+            bottomNavigationBar: _HomeBottomNav(
+              selectedSection: _selectedSection,
+              onSectionSelected: _selectSection,
+            ),
           ),
-          centerTitle: true,
-          title:
-              (_selectedSection == 'Inicio' || _selectedSection == 'Artistas')
-              ? Image.asset(
-                  'assets/icons/logo-votos.png',
-                  width: 54,
-                  height: 42,
-                  fit: BoxFit.contain,
-                )
-              : (_selectedTabIndex == -1 ? Text(_selectedSection) : null),
         ),
-        drawer: _HomeMenuDrawer(
-          user: widget.user,
-          authService: widget.authService,
-          selectedSection: _selectedSection,
-          onSectionSelected: (section) {
-            _selectSection(section);
-            Navigator.of(context).pop();
+        ListenableBuilder(
+          listenable: _notifications,
+          builder: (context, _) {
+            final gift = _notifications.giftNotification;
+            if (gift == null) {
+              return const SizedBox.shrink();
+            }
+
+            return GiftNotificationModal(
+              notification: gift,
+              authService: widget.authService,
+              onClose: _notifications.closeGift,
+            );
           },
         ),
-        body: _buildSectionContent(displayName),
-        bottomNavigationBar: _HomeBottomNav(
-          selectedSection: _selectedSection,
-          onSectionSelected: _selectSection,
-        ),
-      ),
+      ],
     );
   }
 
@@ -153,7 +245,7 @@ class _SignedInPageState extends State<_SignedInPage> {
     }
   }
 
-  Widget _buildSectionContent(String displayName) {
+  Widget _buildSectionContent() {
     final tabIndex = _selectedTabIndex;
 
     if (tabIndex == -1) {
@@ -170,7 +262,11 @@ class _SignedInPageState extends State<_SignedInPage> {
       },
       children: [
         KeepAlivePanel(
-          child: _HomePanel(displayName: displayName),
+          child: HomePage(
+            authService: widget.authService,
+            onNavigateToSection: _selectSection,
+            onOpenNews: () => NewsScreen.open(context),
+          ),
         ),
         const KeepAlivePanel(
           child: _PlaceholderPanel(
@@ -178,9 +274,7 @@ class _SignedInPageState extends State<_SignedInPage> {
             subtitle: 'Aquí irán las votaciones disponibles.',
           ),
         ),
-        KeepAlivePanel(
-          child: ArtistsPage(authService: widget.authService),
-        ),
+        KeepAlivePanel(child: ArtistsPage(authService: widget.authService)),
         KeepAlivePanel(
           child: RankingPopularityPage(authService: widget.authService),
         ),
@@ -207,40 +301,6 @@ class _KeepAlivePanelState extends State<KeepAlivePanel>
   Widget build(BuildContext context) {
     super.build(context);
     return widget.child;
-  }
-}
-
-class _HomePanel extends StatelessWidget {
-  const _HomePanel({required this.displayName});
-
-  final String displayName;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/icons/logo-votos.png',
-                width: 132,
-                height: 132,
-                fit: BoxFit.contain,
-              ),
-              const SizedBox(height: 18),
-              Text(
-                displayName.isNotEmpty ? displayName : 'Usuario conectado',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFFD8D3F7)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -418,11 +478,12 @@ class _HomeMenuDrawer extends StatelessWidget {
 
   static const _items = [
     _HomeMenuItem('Inicio', Icons.home_rounded),
+    _HomeMenuItem('Noticias', Icons.article_rounded),
+    _HomeMenuItem('Notificaciones', Icons.notifications_rounded),
     _HomeMenuItem('Votaciones', Icons.how_to_vote_rounded),
     _HomeMenuItem('Artistas', Icons.star_rounded),
     _HomeMenuItem('Ranking Popularity', Icons.leaderboard_rounded),
     _HomeMenuItem('Salón de la fama', Icons.workspace_premium_rounded),
-    _HomeMenuItem('Noticias', Icons.article_rounded),
   ];
 
   @override
@@ -446,7 +507,7 @@ class _HomeMenuDrawer extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _DrawerHeader(user: user),
+                _DrawerHeader(user: user, session: authService.session),
                 const SizedBox(height: 18),
                 ..._items.map(
                   (item) => _DrawerMenuTile(
@@ -481,9 +542,10 @@ class _HomeMenuDrawer extends StatelessWidget {
 }
 
 class _DrawerHeader extends StatelessWidget {
-  const _DrawerHeader({required this.user});
+  const _DrawerHeader({required this.user, required this.session});
 
   final ApiUser user;
+  final AuthSession session;
 
   @override
   Widget build(BuildContext context) {
@@ -493,82 +555,85 @@ class _DrawerHeader extends StatelessWidget {
         : user.email;
 
     return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(18, 18, 16, 18),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(26),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 18, 16, 18),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(26)),
+          child: Row(
+            children: [
+              Image.asset(
+                'assets/icons/logo-votos.png',
+                width: 78,
+                height: 56,
+                fit: BoxFit.contain,
               ),
-              child: Row(
-                children: [
-                  Image.asset(
-                    'assets/icons/logo-votos.png',
-                    width: 78,
-                    height: 56,
-                    fit: BoxFit.contain,
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'VOTOS MUSICA\nMUNDIAL',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    height: 1.02,
+                    letterSpacing: 0.2,
                   ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Text(
-                      'VOTOS MUSICA\nMUNDIAL',
-                      style: TextStyle(
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            children: [
+              _UserAvatar(user: user, name: displayName),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 18,
+                        fontSize: 15,
                         fontWeight: FontWeight.w900,
-                        height: 1.02,
-                        letterSpacing: 0.2,
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              ),
-              child: Row(
-                children: [
-                  _UserAvatar(user: user, name: displayName),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFFD8D3F7),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFFD8D3F7),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: PointsChip(session: session),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        );
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -681,7 +746,10 @@ class _HomeMenuItem {
   final IconData icon;
 }
 
-Future<void> _confirmSignOut(BuildContext context, AuthService authService) async {
+Future<void> _confirmSignOut(
+  BuildContext context,
+  AuthService authService,
+) async {
   final shouldSignOut = await showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.72),

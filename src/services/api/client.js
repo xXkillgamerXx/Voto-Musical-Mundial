@@ -1,9 +1,26 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 const storageKey = 'vmm_api_auth'
 const anonymousStorageKey = 'vmm_api_anonymous'
 const authChangeEvent = 'vmm-api-auth-change'
 let refreshPromise = null
+
+const decodeJwtPayload = (token) => {
+  try {
+    const payloadPart = token.split('.')[1]
+    if (!payloadPart) return null
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(window.atob(normalized))
+  } catch {
+    return null
+  }
+}
+
+const isAccessTokenExpired = (token, skewMs = 10_000) => {
+  const payload = decodeJwtPayload(token)
+  if (!payload?.exp) return false
+  return payload.exp * 1000 <= Date.now() + skewMs
+}
 
 export const getStoredAuth = () => {
   try {
@@ -71,6 +88,20 @@ const refreshStoredAuth = async () => {
   }
 
   return refreshPromise
+}
+
+export const ensureAccessToken = async () => {
+  const current = getStoredAuth()
+  if (!current?.accessToken) {
+    return null
+  }
+
+  if (!isAccessTokenExpired(current.accessToken)) {
+    return current.accessToken
+  }
+
+  const refreshed = await refreshStoredAuth()
+  return refreshed?.accessToken || null
 }
 
 export const apiRequest = async (path, {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
 import '../../data/artists_api.dart';
@@ -47,7 +48,7 @@ class _ArtistsPageState extends State<ArtistsPage> {
         }
 
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const ArtistsLoadingView();
         }
 
         final artists = snapshot.data!

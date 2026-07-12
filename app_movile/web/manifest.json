@@ -1,6 +1,6 @@
 {
-    "name": "app_movile",
-    "short_name": "app_movile",
+    "name": "Music Mundial VOTE",
+    "short_name": "Music Mundial VOTE",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -1,6 +1,7 @@
 import {
   apiFormRequest,
   apiRequest,
+  ensureAccessToken,
   getStoredAnonymousAuth,
   getStoredAuth,
   setStoredAnonymousAuth,
@@ -50,18 +51,27 @@ export const logout = () => {
   setStoredAuth(null);
 };
 
-export const getMe = async () => {
-  const auth = getStoredAuth();
-  if (!auth?.accessToken) return null;
+let meRequestPromise = null;
 
-  try {
-    return await apiRequest("/users/me", {
-      token: auth.accessToken,
-    });
-  } catch (error) {
-    if (error.status === 401) return null;
-    throw error;
+export const getMe = async () => {
+  const token = await ensureAccessToken();
+  if (!token) return null;
+
+  if (!meRequestPromise) {
+    meRequestPromise = apiRequest("/users/me", { token })
+      .catch((error) => {
+        if (error.status === 401) {
+          setStoredAuth(null);
+          return null;
+        }
+        throw error;
+      })
+      .finally(() => {
+        meRequestPromise = null;
+      });
   }
+
+  return meRequestPromise;
 };
 
 export const updateMe = async (payload) => {

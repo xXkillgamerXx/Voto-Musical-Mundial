@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { DailyRewardsConfigService } from '../rewards/daily-rewards-config.service';
+import { AdminPushService } from './admin-push.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 const toDate = (value: unknown) => {
@@ -51,6 +52,7 @@ export class AdminController {
     private readonly redis: RedisService,
     private readonly metrics: MetricsService,
     private readonly dailyRewardsConfig: DailyRewardsConfigService,
+    private readonly adminPush: AdminPushService,
   ) {}
 
   @Get('metrics')
@@ -207,12 +209,21 @@ export class AdminController {
     });
 
     if (result.pointsDelta > BigInt(0)) {
+      const giftTitle = 'Te enviaron un regalo';
+      const giftMessage = `Recibiste ${result.pointsDelta.toString()} puntos de regalo.`;
+
       await this.publishUserEvent(userId, {
         type: 'points_gift',
         amount: result.pointsDelta.toString(),
         points: Number(result.updatedUser.points),
-        title: 'Te enviaron un regalo',
-        message: `Recibiste ${result.pointsDelta.toString()} puntos de regalo.`,
+        title: giftTitle,
+        message: giftMessage,
+      });
+
+      await this.adminPush.sendGiftToUser(userId, {
+        title: giftTitle,
+        body: giftMessage,
+        amount: result.pointsDelta.toString(),
       });
     }
 

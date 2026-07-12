@@ -46,12 +46,17 @@ const loadNotifications = async () => {
   errorMessage.value = ''
 
   try {
-    if (!getCurrentApiAuth()?.accessToken) {
+    const auth = getCurrentApiAuth()
+    if (!auth?.accessToken || !auth?.user || auth.user.isAnonymous) {
       notifications.value = []
       return
     }
     notifications.value = await getNotifications(100)
   } catch (error) {
+    if (error?.status === 401) {
+      notifications.value = []
+      return
+    }
     errorMessage.value = error?.message || 'No se pudieron cargar tus notificaciones.'
   } finally {
     isLoading.value = false

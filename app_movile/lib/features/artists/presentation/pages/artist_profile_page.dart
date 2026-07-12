@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../auth/data/auth_service.dart';
@@ -306,11 +307,12 @@ class _ProfileHero extends StatelessWidget {
                     ],
                   ),
                 ),
-                child: Image.network(
-                  bannerUrl,
+                child: CachedNetworkImage(
+                  imageUrl: bannerUrl,
                   fit: BoxFit.cover,
-                  opacity: const AlwaysStoppedAnimation(0.55),
-                  errorBuilder: (context, error, stackTrace) =>
+                  color: Colors.white.withValues(alpha: 0.55),
+                  colorBlendMode: BlendMode.modulate,
+                  errorWidget: (context, error, stackTrace) =>
                       const SizedBox.shrink(),
                 ),
               ),

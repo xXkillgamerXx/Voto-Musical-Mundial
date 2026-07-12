@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../auth/data/auth_service.dart';
@@ -1062,11 +1063,12 @@ class _FeaturedRankingCard extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(
-                        bannerUrl,
+                      CachedNetworkImage(
+                        imageUrl: bannerUrl,
                         fit: BoxFit.cover,
-                        opacity: const AlwaysStoppedAnimation(0.7),
-                        errorBuilder: (context, error, stackTrace) =>
+                        color: Colors.white.withValues(alpha: 0.7),
+                        colorBlendMode: BlendMode.modulate,
+                        errorWidget: (context, error, stackTrace) =>
                             const ColoredBox(color: Color(0xFF4C1D95)),
                       ),
                       DecoratedBox(

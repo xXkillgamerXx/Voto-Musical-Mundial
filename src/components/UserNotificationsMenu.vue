@@ -44,14 +44,17 @@ const formatDate = (value) => {
 }
 
 const loadNotifications = async () => {
-  if (!getCurrentApiAuth()?.accessToken || isLoading.value) return
+  const auth = getCurrentApiAuth()
+  if (!auth?.accessToken || !auth?.user || auth.user.isAnonymous || isLoading.value) return
   isLoading.value = true
   errorMessage.value = ''
 
   try {
     notifications.value = await getNotifications(40)
   } catch (error) {
-    errorMessage.value = error?.message || 'No se pudieron cargar notificaciones.'
+    if (error?.status !== 401) {
+      errorMessage.value = error?.message || 'No se pudieron cargar notificaciones.'
+    }
   } finally {
     isLoading.value = false
   }
@@ -124,7 +127,7 @@ const enablePush = async () => {
 
 const syncAuth = async () => {
   const auth = getCurrentApiAuth()
-  currentUser.value = auth?.user || null
+  currentUser.value = auth?.user && !auth.user.isAnonymous ? auth.user : null
   if (!currentUser.value) {
     notifications.value = []
     isOpen.value = false
@@ -138,7 +141,11 @@ onMounted(async () => {
   pushPermission.value = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
   await syncAuth()
   unsubscribeAuth = onStoredAuthChange(syncAuth)
-  refreshTimer = window.setInterval(loadNotifications, 5 * 60 * 1000)
+  refreshTimer = window.setInterval(() => {
+    if (currentUser.value) {
+      loadNotifications()
+    }
+  }, 5 * 60 * 1000)
   document.addEventListener('click', handleDocumentClick)
   document.addEventListener('keydown', handleEscape)
 })
