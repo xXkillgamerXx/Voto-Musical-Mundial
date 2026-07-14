@@ -164,8 +164,65 @@ export class AdminController {
   }
 
   @Get('users')
-  async users(@Query('limit') limit = '100') {
-    return serialize(await this.prisma.user.findMany({ take: Math.min(Number(limit) || 100, 500), orderBy: { createdAt: 'desc' } }));
+  async users(
+    @Query('limit') limit = '20',
+    @Query('page') page = '1',
+    @Query('search') search = '',
+    @Query('role') role = '',
+    @Query('sort') sort = 'newest',
+  ) {
+    const query = String(search || '').trim();
+    const roleFilter = String(role || '').trim().toLowerCase();
+    const sortKey = String(sort || 'newest').trim().toLowerCase();
+    const pageSize = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const currentPage = Math.max(Number(page) || 1, 1);
+    const skip = (currentPage - 1) * pageSize;
+    const validRoles = new Set(Object.values(UserRole));
+
+    const where = {
+      ...(validRoles.has(roleFilter as UserRole) ? { role: roleFilter as UserRole } : {}),
+      ...(query
+        ? {
+            OR: [
+              { displayName: { contains: query, mode: 'insensitive' as const } },
+              { username: { contains: query, mode: 'insensitive' as const } },
+              { email: { contains: query, mode: 'insensitive' as const } },
+              ...(/^\d+$/.test(query) ? [{ id: BigInt(query) }] : []),
+            ],
+          }
+        : {}),
+    };
+
+    const orderBy =
+      sortKey === 'oldest'
+        ? { createdAt: 'asc' as const }
+        : sortKey === 'points_desc'
+          ? { points: 'desc' as const }
+          : sortKey === 'points_asc'
+            ? { points: 'asc' as const }
+            : sortKey === 'name'
+              ? { displayName: 'asc' as const }
+              : { createdAt: 'desc' as const };
+
+    const [total, items] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        take: pageSize,
+        skip,
+        orderBy,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return serialize({
+      items,
+      total,
+      page: currentPage,
+      pageSize,
+      totalPages,
+    });
   }
 
   @Patch('users/:id')

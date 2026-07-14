@@ -9,6 +9,7 @@ import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
 import '../../../artists/presentation/pages/ranking_popularity_page.dart';
 import '../../../home/presentation/pages/home_page.dart';
+import '../../../home/presentation/pages/missions_page.dart';
 import '../../../home/presentation/pages/news_page.dart';
 import '../../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../../notifications/application/notification_controller.dart';
@@ -82,7 +83,7 @@ class _SignedInPageState extends State<_SignedInPage> {
     'Inicio',
     'Votaciones',
     'Artistas',
-    'Ranking Popularity',
+    'Misiones',
   ];
 
   int get _selectedTabIndex => _tabSections.indexOf(_selectedSection);
@@ -202,6 +203,10 @@ class _SignedInPageState extends State<_SignedInPage> {
                   );
                   return;
                 }
+                if (section == 'Ranking Popularity') {
+                  _openRankingPopularity();
+                  return;
+                }
                 _selectSection(section);
               },
             ),
@@ -232,6 +237,11 @@ class _SignedInPageState extends State<_SignedInPage> {
   }
 
   void _selectSection(String section) {
+    if (section == 'Ranking Popularity') {
+      _openRankingPopularity();
+      return;
+    }
+
     final tabIndex = _tabSections.indexOf(section);
 
     setState(() => _selectedSection = section);
@@ -243,6 +253,25 @@ class _SignedInPageState extends State<_SignedInPage> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  void _openRankingPopularity() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => _HomeBackground(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              foregroundColor: Colors.white,
+              title: const Text('Ranking Popularity'),
+            ),
+            body: RankingPopularityPage(authService: widget.authService),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSectionContent() {
@@ -276,7 +305,7 @@ class _SignedInPageState extends State<_SignedInPage> {
         ),
         KeepAlivePanel(child: ArtistsPage(authService: widget.authService)),
         KeepAlivePanel(
-          child: RankingPopularityPage(authService: widget.authService),
+          child: MissionsPage(authService: widget.authService),
         ),
       ],
     );
@@ -360,7 +389,7 @@ class _HomeBottomNav extends StatelessWidget {
     _HomeMenuItem('Inicio', Icons.home_rounded),
     _HomeMenuItem('Votaciones', Icons.how_to_vote_rounded),
     _HomeMenuItem('Artistas', Icons.star_rounded),
-    _HomeMenuItem('Ranking', Icons.leaderboard_rounded),
+    _HomeMenuItem('Misiones', Icons.flag_rounded),
   ];
 
   @override
@@ -385,18 +414,13 @@ class _HomeBottomNav extends StatelessWidget {
           ),
           child: Row(
             children: _items.map((item) {
-              final isSelected =
-                  selectedSection == item.label ||
-                  (item.label == 'Ranking' &&
-                      selectedSection == 'Ranking Popularity');
+              final isSelected = selectedSection == item.label;
 
               return Expanded(
                 child: _BottomNavButton(
                   item: item,
                   isSelected: isSelected,
-                  onTap: () => onSectionSelected(
-                    item.label == 'Ranking' ? 'Ranking Popularity' : item.label,
-                  ),
+                  onTap: () => onSectionSelected(item.label),
                 ),
               );
             }).toList(),

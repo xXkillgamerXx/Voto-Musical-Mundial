@@ -204,7 +204,7 @@ onUnmounted(() => {
           <div class="page-loader-equalizer relative mx-auto flex h-28 w-44 items-end justify-center gap-2 rounded-4xl border border-white/10 bg-white/8 px-6 py-5 shadow-2xl shadow-fuchsia-950/45 backdrop-blur-xl">
             <img
               src="/logo-votos.png"
-              alt="World Music Votes"
+              :alt="$t('common.appName')"
               class="absolute -right-10 -top-8 w-22 rotate-12 drop-shadow-[0_0_30px_rgba(251,191,36,0.62)]"
             />
             <span
@@ -215,10 +215,10 @@ onUnmounted(() => {
             ></span>
           </div>
           <p class="mt-5 text-2xl font-black tracking-tight text-white">
-            World Music Votes
+            {{ $t('common.appNamePlain') }}
           </p>
           <p class="mt-1 text-xs font-black uppercase tracking-[0.32em] text-fuchsia-200">
-            Global awards
+            {{ $t('common.tagline') }}
           </p>
           <div class="mx-auto mt-4 h-1.5 w-36 overflow-hidden rounded-full bg-white/10">
             <span class="page-loader-bar block h-full rounded-full bg-linear-to-r from-violet-400 to-fuchsia-400"></span>

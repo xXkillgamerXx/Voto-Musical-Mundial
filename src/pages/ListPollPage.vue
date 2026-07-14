@@ -2695,15 +2695,18 @@ onUnmounted(() => {
         v-if="!isEmbeddedPage"
         class="overflow-hidden rounded-4xl border border-violet-300/20 bg-[#080a18] shadow-2xl shadow-fuchsia-950/25"
       >
-        <div
-          class="relative min-h-80 bg-linear-to-br from-violet-950 to-fuchsia-950"
-        >
+        <div class="relative bg-linear-to-br from-violet-950 to-fuchsia-950">
           <img
             v-if="poll?.banner"
             :src="poll.banner"
             :alt="poll.title"
-            class="absolute inset-0 size-full object-cover"
+            class="block h-auto w-full"
           />
+          <div
+            v-else
+            class="min-h-80"
+            aria-hidden="true"
+          ></div>
           <div
             class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/45 to-black/20"
           ></div>
@@ -3371,7 +3374,7 @@ onUnmounted(() => {
             "
             :style="{ animationDelay: `${Math.min(matchIndex, 6) * 80}ms` }"
           >
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="mb-4 text-center">
             <p
               class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300"
             >
@@ -3384,19 +3387,23 @@ onUnmounted(() => {
             :class="
               match.contestants.length === 2
                 ? isEmbeddedPage
-                  ? 'embed-duel-grid grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4'
-                  : 'grid gap-4 md:grid-cols-2'
+                  ? 'embed-duel-grid grid grid-cols-2 gap-2 sm:gap-4'
+                  : 'grid grid-cols-2 gap-2 sm:gap-4'
                 : 'space-y-3'
             "
           >
             <div
               v-if="match.contestants.length === 2"
-              class="pointer-events-none absolute inset-0 z-50"
-              :class="isEmbeddedPage ? 'embed-duel-vs-layer' : 'hidden md:grid md:place-items-center'"
+              class="pointer-events-none absolute inset-0 z-50 grid place-items-center"
+              :class="isEmbeddedPage && 'embed-duel-vs-layer'"
             >
               <span
                 class="embed-vs-badge grid place-items-center rounded-full border-4 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 font-black text-white shadow-2xl shadow-fuchsia-500/60 ring-4 ring-fuchsia-500/20"
-                :class="isEmbeddedPage ? 'size-14 text-base sm:size-20 sm:text-2xl' : 'size-20 text-2xl'"
+                :class="
+                  isEmbeddedPage
+                    ? 'size-12 text-sm sm:size-20 sm:text-2xl'
+                    : 'size-12 text-sm sm:size-20 sm:text-2xl'
+                "
               >
                 VS
               </span>
@@ -3432,8 +3439,8 @@ onUnmounted(() => {
                   :class="
                     match.contestants.length === 2
                       ? isEmbeddedPage
-                        ? 'aspect-4/5 min-h-0 sm:aspect-square sm:min-h-72 md:min-h-80'
-                        : 'min-h-52 md:min-h-78'
+                        ? 'aspect-[5/4] min-h-0 sm:aspect-square sm:min-h-72 md:min-h-80'
+                        : 'aspect-[5/4] min-h-0 sm:aspect-auto sm:min-h-52 md:min-h-78'
                       : 'min-h-52 md:min-h-56'
                   "
                 >
@@ -3463,11 +3470,16 @@ onUnmounted(() => {
                     match.contestants.length === 2
                       ? isEmbeddedPage
                         ? 'p-2 sm:p-5'
-                        : 'sm:p-3'
+                        : 'p-2 sm:p-3'
                       : 'sm:p-5'
                   "
                 >
-                  <div class="flex items-start justify-between gap-4">
+                  <div
+                    class="flex items-start justify-between"
+                    :class="
+                      match.contestants.length === 2 ? 'gap-2 sm:gap-4' : 'gap-4'
+                    "
+                  >
                     <div class="min-w-0">
                       <h3
                         class="font-black text-white"
@@ -3475,7 +3487,7 @@ onUnmounted(() => {
                           match.contestants.length === 2
                             ? isEmbeddedPage
                               ? 'text-base leading-tight sm:text-2xl md:text-3xl'
-                              : 'truncate text-2xl'
+                              : 'truncate text-sm leading-tight sm:text-2xl'
                             : 'truncate text-3xl'
                         "
                       >
@@ -3499,7 +3511,7 @@ onUnmounted(() => {
                         match.contestants.length === 2
                           ? isEmbeddedPage
                             ? 'text-base sm:text-2xl'
-                            : 'text-xl'
+                            : 'text-sm sm:text-xl'
                           : 'text-2xl'
                       "
                     >
@@ -3561,13 +3573,13 @@ onUnmounted(() => {
 
                 <button
                   type="button"
-                  class="flex items-center justify-center rounded-2xl px-6 text-sm font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  class="flex items-center justify-center rounded-2xl font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   :class="[
                     match.contestants.length === 2
                       ? isEmbeddedPage
-                        ? 'm-2 min-h-11 sm:m-4 sm:min-h-12'
-                        : 'm-3 min-h-10'
-                      : 'm-4 min-h-12',
+                        ? 'm-2 min-h-11 px-3 text-xs sm:m-4 sm:min-h-12 sm:px-6 sm:text-sm'
+                        : 'm-2 min-h-10 px-2 text-[11px] sm:m-3 sm:min-h-10 sm:px-6 sm:text-sm'
+                      : 'm-4 min-h-12 px-6 text-sm',
                     match.contestants.length !== 2 && 'md:min-w-32',
                     isAnonymousOnCooldownFor(contestant)
                       ? 'border border-amber-300/35 bg-amber-400/15 text-amber-100 shadow-lg shadow-amber-950/20 hover:bg-amber-400/20'
@@ -3591,7 +3603,7 @@ onUnmounted(() => {
             class="mx-auto max-w-5xl rounded-4xl border border-white/10 bg-white/5 p-3 sm:p-4"
           >
             <div class="mb-4 h-4 w-24 animate-pulse rounded-full bg-fuchsia-300/20"></div>
-            <div class="grid gap-4 md:grid-cols-2">
+            <div class="grid grid-cols-2 gap-2 sm:gap-4">
               <div
                 v-for="side in 2"
                 :key="`versus-skeleton-${index}-${side}`"

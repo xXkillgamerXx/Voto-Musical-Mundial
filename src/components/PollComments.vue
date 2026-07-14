@@ -32,7 +32,6 @@ const isPublishing = ref(false);
 const isGifPickerOpen = ref(false);
 const isLoadingGifs = ref(false);
 const errorMessage = ref("");
-const successMessage = ref("");
 const cooldownRemaining = ref(0);
 const gifSearchTerm = ref("");
 const gifResults = ref([]);
@@ -356,7 +355,6 @@ const publishComment = async () => {
 
   isPublishing.value = true;
   errorMessage.value = "";
-  successMessage.value = "";
 
   try {
     const created = await createPollComment(props.pollId, {
@@ -370,7 +368,6 @@ const publishComment = async () => {
     commentText.value = "";
     selectedGif.value = null;
     currentCommentsPage.value = 1;
-    successMessage.value = "Comentario publicado.";
 
     if (!isAdminUser.value) {
       startCooldown();
@@ -385,6 +382,14 @@ const publishComment = async () => {
       errorMessage.value = "Espera antes de comentar otra vez.";
     } else if (error.status === 401) {
       errorMessage.value = "Inicia sesión para comentar.";
+    } else if (error.status === 400) {
+      const payloadMessage = Array.isArray(error.payload?.message)
+        ? error.payload.message[0]
+        : error.payload?.message;
+      errorMessage.value =
+        payloadMessage ||
+        error.message ||
+        "No se pudo publicar el comentario.";
     } else {
       errorMessage.value = error.message || "No se pudo publicar el comentario.";
     }
@@ -601,12 +606,6 @@ onUnmounted(() => {
         class="mt-3 rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-200"
       >
         {{ errorMessage }}
-      </p>
-      <p
-        v-if="successMessage"
-        class="mt-3 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-xs font-bold text-emerald-200"
-      >
-        {{ successMessage }}
       </p>
     </div>
 

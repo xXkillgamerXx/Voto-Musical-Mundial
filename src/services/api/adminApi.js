@@ -16,7 +16,28 @@ export const adminFormRequest = (path, options = {}) =>
 
 export const getAdminDashboard = () => adminRequest('/dashboard')
 export const getAdminMetrics = () => adminRequest('/metrics')
-export const getAdminUsers = (limit = 100) => adminRequest(`/users?limit=${limit}`)
+export const getAdminUsers = ({
+  page = 1,
+  limit = 20,
+  search = '',
+  role = '',
+  sort = 'newest',
+} = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+    sort: String(sort || 'newest'),
+  })
+  const query = String(search || '').trim()
+  const roleFilter = String(role || '').trim()
+  if (query) {
+    params.set('search', query)
+  }
+  if (roleFilter) {
+    params.set('role', roleFilter)
+  }
+  return adminRequest(`/users?${params.toString()}`)
+}
 export const updateAdminUser = (id, body) => adminRequest(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body })
 export const uploadAdminImage = (type, file) => {
   const formData = new FormData()

@@ -7,6 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import {
+  BLOCKED_LANGUAGE_MESSAGE,
+  isCommentLanguageBlocked,
+} from '../../common/comment-profanity';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -69,6 +73,10 @@ export class CommentsService {
 
     if (text.length > MAX_LENGTH) {
       throw new BadRequestException('El comentario es demasiado largo.');
+    }
+
+    if (text && (await isCommentLanguageBlocked(text))) {
+      throw new BadRequestException(BLOCKED_LANGUAGE_MESSAGE);
     }
 
     const user = await this.prisma.user.findUnique({
