@@ -104,6 +104,14 @@ export const getAdminDailyRewards = () => adminRequest('/settings/daily-rewards'
 export const updateAdminDailyRewards = (body) =>
   adminRequest('/settings/daily-rewards', { method: 'PATCH', body })
 
+export const getAdminTerms = () => adminRequest('/settings/terms')
+export const updateAdminTerms = (body) =>
+  adminRequest('/settings/terms', { method: 'PATCH', body })
+
+export const getAdminPrivacy = () => adminRequest('/settings/privacy')
+export const updateAdminPrivacy = (body) =>
+  adminRequest('/settings/privacy', { method: 'PATCH', body })
+
 export const getAdminContentReports = (status = '', limit = 50) => {
   const params = new URLSearchParams({ limit: String(limit) })
   if (status) params.set('status', status)

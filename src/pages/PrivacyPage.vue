@@ -1,49 +1,49 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getPublicTerms } from '../services/api/termsApi'
+import { getPublicPrivacy } from '../services/api/privacyApi'
 import { hasRichTextContent, richTextToHtml } from '../utils/richText'
 
 const { t, locale } = useI18n()
 
 const isLoading = ref(true)
 const loadError = ref(false)
-const terms = ref(null)
+const privacy = ref(null)
 
 const resolvedLang = computed(() =>
   String(locale.value || 'es').toLowerCase().startsWith('en') ? 'en' : 'es',
 )
 
-const title = computed(() => terms.value?.title || t('terms.title'))
-const intro = computed(() => terms.value?.intro || t('terms.intro'))
-const bodyHtml = computed(() => richTextToHtml(terms.value?.bodyHtml || ''))
-const hasBody = computed(() => hasRichTextContent(terms.value?.bodyHtml))
+const title = computed(() => privacy.value?.title || t('privacy.title'))
+const intro = computed(() => privacy.value?.intro || t('privacy.intro'))
+const bodyHtml = computed(() => richTextToHtml(privacy.value?.bodyHtml || ''))
+const hasBody = computed(() => hasRichTextContent(privacy.value?.bodyHtml))
 const useFallbackSections = computed(() => !isLoading.value && (!hasBody.value || loadError.value))
 
-const loadTerms = async () => {
+const loadPrivacy = async () => {
   isLoading.value = true
   loadError.value = false
 
   try {
-    const payload = await getPublicTerms(resolvedLang.value)
-    terms.value = {
+    const payload = await getPublicPrivacy(resolvedLang.value)
+    privacy.value = {
       title: payload?.title || '',
       intro: payload?.intro || '',
       bodyHtml: payload?.bodyHtml || '',
     }
   } catch {
     loadError.value = true
-    terms.value = null
+    privacy.value = null
   } finally {
     isLoading.value = false
   }
 }
 
 watch(resolvedLang, () => {
-  loadTerms()
+  loadPrivacy()
 })
 
-onMounted(loadTerms)
+onMounted(loadPrivacy)
 </script>
 
 <template>
@@ -51,16 +51,16 @@ onMounted(loadTerms)
     <div class="overflow-hidden rounded-4xl border border-violet-300/20 bg-white/5 p-1 text-white shadow-2xl shadow-fuchsia-950/30">
       <div class="rounded-[calc(2rem-4px)] bg-[#080a18]/95 p-6 sm:p-8">
         <a href="/" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
-          {{ $t('terms.backHome') }}
+          {{ $t('privacy.backHome') }}
         </a>
 
-        <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">{{ $t('terms.eyebrow') }}</p>
+        <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">{{ $t('privacy.eyebrow') }}</p>
 
         <div
           v-if="isLoading"
           class="mt-6 text-sm font-bold text-slate-400"
         >
-          {{ resolvedLang === 'en' ? 'Loading terms...' : 'Cargando términos...' }}
+          {{ resolvedLang === 'en' ? 'Loading privacy policy...' : 'Cargando política de privacidad...' }}
         </div>
 
         <template v-else>
@@ -80,37 +80,37 @@ onMounted(loadTerms)
             class="mt-8 space-y-6 text-sm leading-7 text-slate-300"
           >
             <div>
-              <h2 class="text-lg font-black text-white">{{ $t('terms.platformUseTitle') }}</h2>
+              <h2 class="text-lg font-black text-white">{{ $t('privacy.dataTitle') }}</h2>
               <p class="mt-2">
-                {{ $t('terms.platformUseText') }}
+                {{ $t('privacy.dataText') }}
               </p>
             </div>
 
             <div>
-              <h2 class="text-lg font-black text-white">{{ $t('terms.accountsTitle') }}</h2>
+              <h2 class="text-lg font-black text-white">{{ $t('privacy.useTitle') }}</h2>
               <p class="mt-2">
-                {{ $t('terms.accountsText') }}
+                {{ $t('privacy.useText') }}
               </p>
             </div>
 
             <div>
-              <h2 class="text-lg font-black text-white">{{ $t('terms.rewardsTitle') }}</h2>
+              <h2 class="text-lg font-black text-white">{{ $t('privacy.securityTitle') }}</h2>
               <p class="mt-2">
-                {{ $t('terms.rewardsText') }}
+                {{ $t('privacy.securityText') }}
               </p>
             </div>
 
             <div>
-              <h2 class="text-lg font-black text-white">{{ $t('terms.dataTitle') }}</h2>
+              <h2 class="text-lg font-black text-white">{{ $t('privacy.sharingTitle') }}</h2>
               <p class="mt-2">
-                {{ $t('terms.dataText') }}
+                {{ $t('privacy.sharingText') }}
               </p>
             </div>
 
             <div>
-              <h2 class="text-lg font-black text-white">{{ $t('terms.changesTitle') }}</h2>
+              <h2 class="text-lg font-black text-white">{{ $t('privacy.rightsTitle') }}</h2>
               <p class="mt-2">
-                {{ $t('terms.changesText') }}
+                {{ $t('privacy.rightsText') }}
               </p>
             </div>
           </div>

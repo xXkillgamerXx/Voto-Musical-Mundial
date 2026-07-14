@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import '../../artists/data/artist.dart';
 import '../../artists/presentation/widgets/artist_avatar.dart';
 
@@ -257,11 +259,20 @@ class Poll {
     return Poll(
       id: '${json['id'] ?? ''}',
       slug: _stringValue([json['slug'], metadata['slug']]),
-      title: _stringValue([
-        json['title'],
-        metadata['title'],
-      ]).ifEmpty('Votación'),
-      description: _stringValue([json['description'], metadata['description']]),
+      title: _localizedPollText(
+        json,
+        metadata,
+        'title',
+        'titleEn',
+        'Votación',
+      ),
+      description: _localizedPollText(
+        json,
+        metadata,
+        'description',
+        'descriptionEn',
+        '',
+      ),
       status: _stringValue([json['status']]),
       banner: banner,
       categoryName: categoryName,
@@ -375,6 +386,25 @@ class PollResults {
 
 String resolvePollBanner(Poll poll) {
   return resolveArtistMediaUrl(poll.banner);
+}
+
+String _localizedPollText(
+  Map<String, dynamic> json,
+  Map<String, dynamic> metadata,
+  String esKey,
+  String enKey,
+  String fallback,
+) {
+  final esValue = _stringValue([json[esKey], metadata[esKey]]);
+  final enValue = _stringValue([json[enKey], metadata[enKey]]);
+  final useEn =
+      PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
+
+  if (useEn && enValue.isNotEmpty) {
+    return enValue;
+  }
+
+  return esValue.isEmpty ? fallback : esValue;
 }
 
 String _stringValue(List<Object?> values) {

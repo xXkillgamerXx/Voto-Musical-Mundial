@@ -1,9 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getMe, getCurrentApiAuth } from '../services/api/authApi'
 import { getStoredAuth, onStoredAuthChange, setStoredAuth } from '../services/api/client'
 import { completeMission, getMissions } from '../services/api/missionsApi'
 
+const { locale } = useI18n()
 const dbMissions = ref([])
 const selectedMission = ref(null)
 const referralCode = ref('')
@@ -18,6 +20,15 @@ let missionActionTimer = null
 
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
 
+const loadMissions = () => {
+  getMissions()
+    .then((missionRows) => {
+      dbMissions.value = Array.isArray(missionRows) ? missionRows : []
+    })
+    .catch(() => {
+      dbMissions.value = []
+    })
+}
 const missions = computed(() => {
   return dbMissions.value
     .filter((mission) => mission.active !== false)
@@ -300,16 +311,14 @@ const syncReferralCode = (authState = getCurrentApiAuth()) => {
 }
 
 onMounted(() => {
-  getMissions()
-    .then((missionRows) => {
-      dbMissions.value = missionRows
-    })
-    .catch(() => {
-      dbMissions.value = []
-    })
+  loadMissions()
 
   syncReferralCode()
   unsubscribeAuth = onStoredAuthChange(syncReferralCode)
+})
+
+watch(locale, () => {
+  loadMissions()
 })
 
 onUnmounted(() => {

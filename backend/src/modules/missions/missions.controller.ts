@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MissionsService } from './missions.service';
@@ -8,14 +8,14 @@ export class MissionsController {
   constructor(private readonly missions: MissionsService) {}
 
   @Get()
-  findAll() {
-    return this.missions.findAll();
+  findAll(@Query('lang') lang?: string) {
+    return this.missions.findAll(lang);
   }
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  findForMe(@CurrentUser() user: { id: bigint }) {
-    return this.missions.findForUser(user.id);
+  findForMe(@CurrentUser() user: { id: bigint }, @Query('lang') lang?: string) {
+    return this.missions.findForUser(user.id, lang);
   }
 
   @Post(':id/complete')

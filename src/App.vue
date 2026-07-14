@@ -31,6 +31,7 @@ const PushNotificationPrompt = defineAsyncComponent(() => import('./components/P
 const RankingPopularityPage = defineAsyncComponent(() => import('./pages/RankingPopularityPage.vue'))
 const RegisterPage = defineAsyncComponent(() => import('./pages/RegisterPage.vue'))
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
+const PrivacyPage = defineAsyncComponent(() => import('./pages/PrivacyPage.vue'))
 const UserProfilePage = defineAsyncComponent(() => import('./pages/UserProfilePage.vue'))
 const VersusEmbed = defineAsyncComponent(() => import('./pages/VersusEmbed.vue'))
 const VersusPollPage = defineAsyncComponent(() => import('./pages/VersusPollPage.vue'))
@@ -44,6 +45,7 @@ let loadingToken = 0
 const prefetchedRoutes = new Set()
 const isRegisterPage = computed(() => currentPath.value === '/registro')
 const isTermsPage = computed(() => currentPath.value === '/terminos-y-condiciones')
+const isPrivacyPage = computed(() => currentPath.value === '/politica-de-privacidad')
 const isPollsPage = computed(() => currentPath.value === '/votaciones')
 const isHallOfFamePage = computed(() => currentPath.value === '/salon-de-la-fama')
 const isArtistsPage = computed(() => currentPath.value === '/artistas')
@@ -65,7 +67,9 @@ const isEmbeddedPage = computed(() => {
 })
 const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldForceEmbedDarkTheme = computed(() => isEmbeddedPage.value || isVersusEmbedPage.value)
-const shouldShowDailyRewardModal = computed(() => !isPlainPage.value && !isTermsPage.value)
+const shouldShowDailyRewardModal = computed(
+  () => !isPlainPage.value && !isTermsPage.value && !isPrivacyPage.value,
+)
 
 let savedThemeBeforeEmbed = null
 
@@ -234,6 +238,7 @@ onUnmounted(() => {
     >
       <RegisterPage v-if="isRegisterPage" />
       <TermsPage v-else-if="isTermsPage" />
+      <PrivacyPage v-else-if="isPrivacyPage" />
       <PollsPage v-else-if="isPollsPage" />
       <HallOfFamePage v-else-if="isHallOfFamePage" />
       <ArtistsPage v-else-if="isArtistsPage" />

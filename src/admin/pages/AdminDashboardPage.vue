@@ -15,6 +15,8 @@ import AdminPushNotificationsView from '../components/AdminPushNotificationsView
 import AdminPollRoundView from '../components/AdminPollRoundView.vue'
 import AdminPollWinnersView from '../components/AdminPollWinnersView.vue'
 import AdminSettingsView from '../components/AdminSettingsView.vue'
+import AdminPrivacyView from '../components/AdminPrivacyView.vue'
+import AdminTermsView from '../components/AdminTermsView.vue'
 import AdminUsersView from '../components/AdminUsersView.vue'
 import { getCurrentApiAuth, getMe, logout } from '../../services/api/authApi'
 
@@ -40,6 +42,8 @@ const isPushNotificationsView = computed(() => currentPath === '/admin/notificac
 const isModerationView = computed(() => currentPath === '/admin/reportes')
 const isContentReportsView = computed(() => currentPath === '/admin/denuncias')
 const isSettingsView = computed(() => currentPath === '/admin/ajustes')
+const isTermsView = computed(() => currentPath === '/admin/terminos')
+const isPrivacyView = computed(() => currentPath === '/admin/privacidad')
 const isCategoriesView = computed(() => currentPath === '/admin/categorias')
 const isCategoryCreateView = computed(() => currentPath === '/admin/categorias/crear')
 const pageTitle = computed(() => {
@@ -111,6 +115,14 @@ const pageTitle = computed(() => {
     return 'Ajustes'
   }
 
+  if (isTermsView.value) {
+    return 'Términos y condiciones'
+  }
+
+  if (isPrivacyView.value) {
+    return 'Política de privacidad'
+  }
+
   if (isCategoriesView.value) {
     return 'Categorías'
   }
@@ -147,6 +159,8 @@ const navItems = [
   { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved' },
   { label: 'Denuncias', href: '/admin/denuncias', icon: 'fa-solid fa-flag' },
   { label: 'Ajustes', href: '/admin/ajustes', icon: 'fa-solid fa-gear' },
+  { label: 'Términos y condiciones', href: '/admin/terminos', icon: 'fa-solid fa-file-contract' },
+  { label: 'Política de privacidad', href: '/admin/privacidad', icon: 'fa-solid fa-user-shield' },
 ]
 
 const isActiveItem = (item) =>
@@ -369,6 +383,8 @@ onMounted(() => {
           <AdminContentReportsView v-else-if="isContentReportsView" />
           <AdminUsersView v-else-if="isUsersView" />
           <AdminSettingsView v-else-if="isSettingsView" />
+          <AdminTermsView v-else-if="isTermsView" />
+          <AdminPrivacyView v-else-if="isPrivacyView" />
           <AdminPollCategoriesView
             v-else-if="isCategoriesView || isCategoryCreateView"
             :show-form="isCategoryCreateView"

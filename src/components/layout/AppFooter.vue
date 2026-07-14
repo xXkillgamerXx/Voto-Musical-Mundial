@@ -10,8 +10,8 @@ const footerLinks = [
 
 const legalLinks = [
   { titleKey: 'footer.terms', href: '/terminos-y-condiciones' },
-  { titleKey: 'footer.voteRules', href: '/votaciones' },
-  { titleKey: 'nav.adminPanel', href: '/admin' },
+  { titleKey: 'footer.privacy', href: '/politica-de-privacidad' },
+  { titleKey: 'footer.contact', href: 'https://www.musicmundial.com/en/contact-us/', external: true },
 ]
 
 const socialLinks = [
@@ -101,6 +101,8 @@ const socialLinks = [
               :key="link.titleKey"
               :href="link.href"
               class="text-sm font-bold text-slate-400 transition hover:text-white"
+              :target="link.external ? '_blank' : undefined"
+              :rel="link.external ? 'noreferrer' : undefined"
             >
               {{ $t(link.titleKey) }}
             </a>

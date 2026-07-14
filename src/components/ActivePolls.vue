@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
+import { applyPollLocale } from "../utils/pollLocale";
 import {
   refreshLivePollsCached,
   subscribeLivePollsCached,
@@ -136,27 +137,31 @@ const activePolls = computed(() => {
 
   return polls.value
     .filter((poll) => poll.id !== props.excludePollId)
-    .map((poll, index) => ({
-      ...poll,
+    .map((poll, index) => {
+      const localized = applyPollLocale(poll, locale.value)
+
+      return {
+      ...localized,
       question:
-        poll.status === "selecting_winners"
+        localized.status === "selecting_winners"
           ? translate("home.activePolls.countingQuestion")
-          : poll.description || translate("home.activePolls.defaultQuestion"),
+          : localized.description || translate("home.activePolls.defaultQuestion"),
       statusLabel:
-        poll.status === "selecting_winners"
+        localized.status === "selecting_winners"
           ? translate("polls.status.selectingWinners")
           : translate("polls.status.live"),
       actionLabel:
-        poll.status === "selecting_winners"
+        localized.status === "selecting_winners"
           ? translate("home.activePolls.processAction")
           : translate("common.actions.vote"),
-      time: countdownFor(poll),
+      time: countdownFor(localized),
       visual: [
         "from-violet-950 via-fuchsia-700 to-indigo-950",
         "from-slate-800 via-violet-700 to-slate-950",
         "from-fuchsia-900 via-pink-700 to-slate-950",
       ][index % 3],
-    }));
+    }
+    });
 });
 
 const refreshLivePolls = () => {

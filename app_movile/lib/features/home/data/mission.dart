@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 class Mission {
   const Mission({
     required this.id,
@@ -44,10 +46,24 @@ class Mission {
   String get rewardLabel => '+$rewardPoints pts';
 
   factory Mission.fromJson(Map<String, dynamic> json) {
+    final metadata = json['metadata'];
+    final metaMap = metadata is Map
+        ? Map<String, dynamic>.from(metadata)
+        : <String, dynamic>{};
+    final titleEs = '${json['title'] ?? json['titleEs'] ?? 'Misión'}'.trim();
+    final descriptionEs =
+        '${json['description'] ?? json['descriptionEs'] ?? ''}'.trim();
+    final titleEn = '${json['titleEn'] ?? metaMap['titleEn'] ?? ''}'.trim();
+    final descriptionEn =
+        '${json['descriptionEn'] ?? metaMap['descriptionEn'] ?? ''}'.trim();
+    final useEn =
+        PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
+
     return Mission(
       id: '${json['id'] ?? ''}',
-      title: '${json['title'] ?? 'Misión'}'.trim(),
-      description: '${json['description'] ?? ''}'.trim(),
+      title: useEn && titleEn.isNotEmpty ? titleEn : titleEs,
+      description:
+          useEn && descriptionEn.isNotEmpty ? descriptionEn : descriptionEs,
       type: '${json['type'] ?? 'manual'}',
       icon: '${json['icon'] ?? 'fa-solid fa-bolt'}',
       actionUrl: _nullableString(json['actionUrl'] ?? json['action_url']),

@@ -228,7 +228,9 @@ const missionTemplates = [
 
 const emptyForm = {
   title: "",
+  titleEn: "",
   description: "",
+  descriptionEn: "",
   category: "social",
   type: "vote_count",
   actionUrl: "",
@@ -244,6 +246,7 @@ const emptyForm = {
 
 const missions = ref([]);
 const form = ref({ ...emptyForm });
+const activeLocale = ref("es");
 const editingMissionId = ref("");
 const isLoading = ref(true);
 const isSaving = ref(false);
@@ -253,6 +256,11 @@ const isTemplatesModalOpen = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 const selectedMissionTypeKey = ref("");
+
+const localeTabs = [
+  { value: "es", label: "Español" },
+  { value: "en", label: "English" },
+];
 
 const formTitle = computed(() =>
   editingMissionId.value ? "Editar mision" : "Crear mision",
@@ -309,6 +317,7 @@ const missionErrorMessage = (error, fallbackMessage) => {
 const resetForm = () => {
   editingMissionId.value = "";
   selectedMissionTypeKey.value = "";
+  activeLocale.value = "es";
   form.value = {
     ...emptyForm,
     order: missions.value.length + 1,
@@ -327,10 +336,13 @@ const closeTypeSelector = () => {
 const createMissionFromType = (missionType) => {
   editingMissionId.value = "";
   selectedMissionTypeKey.value = missionType.key;
+  activeLocale.value = "es";
   form.value = {
     ...emptyForm,
     title: missionType.title,
+    titleEn: missionType.titleEn || "",
     description: missionType.description,
+    descriptionEn: missionType.descriptionEn || "",
     category: missionType.category,
     type: missionType.type,
     actionUrl: missionType.actionUrl || "",
@@ -362,10 +374,13 @@ const closeTemplatesModal = () => {
 
 const editMission = (mission) => {
   editingMissionId.value = mission.id;
+  activeLocale.value = "es";
   form.value = {
     title: mission.title || "",
+    titleEn: mission.titleEn || mission.metadata?.titleEn || "",
     description: mission.description || "",
-    category: mission.category || "general",
+    descriptionEn: mission.descriptionEn || mission.metadata?.descriptionEn || "",
+    category: mission.category || mission.metadata?.category || "general",
     type: mission.type || "manual",
     actionUrl: mission.actionUrl || mission.url || "",
     target: Number(mission.target || 1),
@@ -385,7 +400,9 @@ const editMission = (mission) => {
 
 const missionPayload = () => ({
   title: form.value.title.trim(),
+  titleEn: form.value.titleEn.trim(),
   description: form.value.description.trim(),
+  descriptionEn: form.value.descriptionEn.trim(),
   category: form.value.category || "general",
   type: form.value.type,
   actionUrl: form.value.actionUrl.trim(),
@@ -415,9 +432,12 @@ const templatePayload = (template, index) => ({
 
 const useTemplate = (template) => {
   editingMissionId.value = "";
+  activeLocale.value = "es";
   form.value = {
     ...emptyForm,
     ...template,
+    titleEn: template.titleEn || "",
+    descriptionEn: template.descriptionEn || "",
     order: missions.value.length + 1,
     active: true,
     featured: false,
@@ -693,23 +713,60 @@ onMounted(async () => {
           </p>
         </div>
 
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="tab in localeTabs"
+            :key="tab.value"
+            type="button"
+            class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+            :class="
+              activeLocale === tab.value
+                ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+            "
+            @click="activeLocale = tab.value"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Titulo</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+            {{ activeLocale === 'es' ? 'Titulo (español)' : 'Title (English)' }}
+          </span>
           <input
+            v-if="activeLocale === 'es'"
             v-model="form.title"
             type="text"
             class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50"
             placeholder="Vota 10 veces"
           />
+          <input
+            v-else
+            v-model="form.titleEn"
+            type="text"
+            class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50"
+            placeholder="Vote 10 times"
+          />
         </label>
 
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Descripcion</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+            {{ activeLocale === 'es' ? 'Descripcion (español)' : 'Description (English)' }}
+          </span>
           <textarea
+            v-if="activeLocale === 'es'"
             v-model="form.description"
             rows="3"
             class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50"
             placeholder="Apoya a tu artista favorito en cualquier votacion activa."
+          ></textarea>
+          <textarea
+            v-else
+            v-model="form.descriptionEn"
+            rows="3"
+            class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50"
+            placeholder="Support your favorite artist in any active poll."
           ></textarea>
         </label>
 

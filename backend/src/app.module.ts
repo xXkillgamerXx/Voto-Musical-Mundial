@@ -17,6 +17,7 @@ import { RedisModule } from './modules/redis/redis.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
 import { VotesModule } from './modules/votes/votes.module';
 import { WorkersModule } from './workers/workers.module';
@@ -40,6 +41,7 @@ import { WorkersModule } from './workers/workers.module';
     RealtimeModule,
     MissionsModule,
     RewardsModule,
+    SettingsModule,
     NotificationsModule,
     WorkersModule,
   ],

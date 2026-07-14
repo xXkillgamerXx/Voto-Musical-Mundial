@@ -13,6 +13,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { DailyRewardsConfigService } from '../rewards/daily-rewards-config.service';
+import { PrivacyConfigService } from '../settings/privacy-config.service';
+import { TermsConfigService } from '../settings/terms-config.service';
 import { AdminPushService } from './admin-push.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
@@ -52,6 +54,8 @@ export class AdminController {
     private readonly redis: RedisService,
     private readonly metrics: MetricsService,
     private readonly dailyRewardsConfig: DailyRewardsConfigService,
+    private readonly termsConfig: TermsConfigService,
+    private readonly privacyConfig: PrivacyConfigService,
     private readonly adminPush: AdminPushService,
   ) {}
 
@@ -371,6 +375,12 @@ export class AdminController {
   @Post('polls')
   async createPoll(@Body() body: any) {
     try {
+      const config = {
+        ...(body && typeof body === 'object' ? body : {}),
+        titleEn: String(body?.titleEn || '').trim(),
+        descriptionEn: String(body?.descriptionEn || '').trim(),
+        bodyEn: String(body?.bodyEn || '').trim(),
+      };
       return serialize(await this.prisma.poll.create({
         data: {
           categoryId: body.categoryId ? toBigInt(body.categoryId) : null,
@@ -379,7 +389,7 @@ export class AdminController {
           description: body.description || null,
           status: statusFor(body.status),
           type: roundTypeFor(body.type),
-          config: body,
+          config,
           startsAt: toDate(body.startsAt || body.startAt),
           endsAt: toDate(body.endsAt || body.endAt),
           activeEndAt: toDate(body.activeEndAt),
@@ -395,6 +405,23 @@ export class AdminController {
 
   @Patch('polls/:id')
   async updatePoll(@Param('id') id: string, @Body() body: any) {
+    const current = await this.prisma.poll.findUnique({ where: { id: toBigInt(id) } });
+    if (!current) {
+      throw new NotFoundException('La votacion no existe.');
+    }
+
+    const currentConfig =
+      current.config && typeof current.config === 'object' && !Array.isArray(current.config)
+        ? (current.config as Record<string, unknown>)
+        : {};
+    const nextConfig = {
+      ...currentConfig,
+      ...(body && typeof body === 'object' ? body : {}),
+      titleEn: String(body?.titleEn ?? currentConfig.titleEn ?? '').trim(),
+      descriptionEn: String(body?.descriptionEn ?? currentConfig.descriptionEn ?? '').trim(),
+      bodyEn: String(body?.bodyEn ?? currentConfig.bodyEn ?? '').trim(),
+    };
+
     const poll = await this.prisma.poll.update({
       where: { id: toBigInt(id) },
       data: {
@@ -404,7 +431,7 @@ export class AdminController {
         description: body.description,
         status: body.status ? statusFor(body.status) : undefined,
         type: body.type ? roundTypeFor(body.type) : undefined,
-        config: body,
+        config: nextConfig,
         startsAt: body.startsAt || body.startAt ? toDate(body.startsAt || body.startAt) : undefined,
         endsAt: body.endsAt || body.endAt ? toDate(body.endsAt || body.endAt) : undefined,
         activeEndAt: body.activeEndAt ? toDate(body.activeEndAt) : undefined,
@@ -753,21 +780,78 @@ export class AdminController {
 
   @Get('missions')
   async missions() {
-    return serialize(await this.prisma.mission.findMany({ orderBy: [{ order: 'asc' }, { createdAt: 'desc' }] }));
+    const rows = await this.prisma.mission.findMany({ orderBy: [{ order: 'asc' }, { createdAt: 'desc' }] });
+    return serialize(
+      rows.map((mission) => {
+        const metadata =
+          mission.metadata && typeof mission.metadata === 'object' && !Array.isArray(mission.metadata)
+            ? (mission.metadata as Record<string, unknown>)
+            : {};
+        return {
+          ...mission,
+          titleEn: String(metadata.titleEn || '').trim(),
+          descriptionEn: String(metadata.descriptionEn || '').trim(),
+          category: String(metadata.category || 'general'),
+        };
+      }),
+    );
   }
 
   @Post('missions')
   async createMission(@Body() body: any) {
+    const metadata = {
+      ...(body && typeof body === 'object' ? body : {}),
+      titleEn: String(body?.titleEn || '').trim(),
+      descriptionEn: String(body?.descriptionEn || '').trim(),
+    };
     return serialize(await this.prisma.mission.create({
-      data: { title: body.title, description: body.description || null, type: body.type || 'manual', icon: body.icon || null, actionUrl: body.actionUrl || null, rewardPoints: Number(body.rewardPoints || 0), target: Number(body.target || 1), active: body.active !== false, featured: Boolean(body.featured), order: Number(body.order || 0), metadata: body },
+      data: {
+        title: body.title,
+        description: body.description || null,
+        type: body.type || 'manual',
+        icon: body.icon || null,
+        actionUrl: body.actionUrl || null,
+        rewardPoints: Number(body.rewardPoints || 0),
+        target: Number(body.target || 1),
+        active: body.active !== false,
+        featured: Boolean(body.featured),
+        order: Number(body.order || 0),
+        metadata,
+      },
     }));
   }
 
   @Patch('missions/:id')
   async updateMission(@Param('id') id: string, @Body() body: any) {
+    const current = await this.prisma.mission.findUnique({ where: { id: toBigInt(id) } });
+    if (!current) {
+      throw new NotFoundException('La mision no existe.');
+    }
+    const currentMeta =
+      current.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+        ? (current.metadata as Record<string, unknown>)
+        : {};
+    const metadata = {
+      ...currentMeta,
+      ...(body && typeof body === 'object' ? body : {}),
+      titleEn: String(body?.titleEn ?? currentMeta.titleEn ?? '').trim(),
+      descriptionEn: String(body?.descriptionEn ?? currentMeta.descriptionEn ?? '').trim(),
+    };
     return serialize(await this.prisma.mission.update({
       where: { id: toBigInt(id) },
-      data: { title: body.title, description: body.description, type: body.type, icon: body.icon, actionUrl: body.actionUrl, rewardPoints: body.rewardPoints === undefined ? undefined : Number(body.rewardPoints), target: body.target === undefined ? undefined : Number(body.target), active: body.active, featured: body.featured, order: body.order === undefined ? undefined : Number(body.order), metadata: body },
+      data: {
+        title: body.title,
+        description: body.description,
+        type: body.type,
+        icon: body.icon,
+        actionUrl: body.actionUrl,
+        rewardPoints: body.rewardPoints === undefined ? undefined : Number(body.rewardPoints),
+        target: body.target === undefined ? undefined : Number(body.target),
+        active: body.active,
+        featured: body.featured,
+        order: body.order === undefined ? undefined : Number(body.order),
+        metadata,
+      },
     }));
   }
 
@@ -785,5 +869,25 @@ export class AdminController {
   @Patch('settings/daily-rewards')
   updateDailyRewardsSettings(@Body() body: { days?: Array<{ day: number; points: number }> }) {
     return this.dailyRewardsConfig.updateSchedule(body?.days || []);
+  }
+
+  @Get('settings/terms')
+  termsSettings() {
+    return this.termsConfig.getSettings();
+  }
+
+  @Patch('settings/terms')
+  updateTermsSettings(@Body() body: any) {
+    return this.termsConfig.updateSettings(body || {});
+  }
+
+  @Get('settings/privacy')
+  privacySettings() {
+    return this.privacyConfig.getSettings();
+  }
+
+  @Patch('settings/privacy')
+  updatePrivacySettings(@Body() body: any) {
+    return this.privacyConfig.updateSettings(body || {});
   }
 }

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { translate } from "../i18n";
+import { i18n, translate } from "../i18n";
+import { applyPollLocale } from "../utils/pollLocale";
 import { getArtistsCached } from "../services/firebaseCache";
 import { getCurrentApiAuth, getMe } from "../services/api/authApi";
 import {
@@ -33,6 +34,7 @@ import {
 } from "../services/turnstile";
 
 const ActivePolls = defineAsyncComponent(() => import("../components/ActivePolls.vue"));
+const EmbedAd = defineAsyncComponent(() => import("../components/EmbedAd.vue"));
 const PollComments = defineAsyncComponent(() => import("../components/PollComments.vue"));
 
 const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -244,7 +246,7 @@ const normalizeApiPoll = (apiPoll) => {
   const normalizedRounds = (apiPoll.rounds || []).map(normalizeApiRound);
   const liveRound = normalizedRounds.find((round) => round.status === "live");
 
-  return {
+  const base = {
     ...metadata,
     ...apiPoll,
     id: String(apiPoll.id),
@@ -264,7 +266,20 @@ const normalizeApiPoll = (apiPoll) => {
     rounds: normalizedRounds,
     contestants: (apiPoll.contestants || []).map(normalizeApiContestant),
   };
+
+  return applyPollLocale(base, i18n.global.locale.value);
 };
+
+watch(
+  () => i18n.global.locale.value,
+  () => {
+    if (!poll.value) {
+      return;
+    }
+
+    poll.value = applyPollLocale(poll.value, i18n.global.locale.value);
+  },
+);
 
 const isEmbeddedPage = computed(() => {
   const embedParam = new URLSearchParams(window.location.search).get(
@@ -4014,6 +4029,8 @@ onUnmounted(() => {
         </a>
       </div>
     </section>
+
+    <EmbedAd v-if="isEmbeddedPage" />
 
     <Teleport to="body">
       <div

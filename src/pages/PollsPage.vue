@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
+import { applyPollLocale } from "../utils/pollLocale";
 import { subscribePollsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
@@ -38,16 +39,19 @@ const formatDate = (value) => {
 
   return new Intl.DateTimeFormat(locale.value, {
     dateStyle: "medium",
-    timeStyle: "short",
   }).format(date);
 };
 
-const visiblePolls = computed(() =>
-  polls.value.filter((poll) =>
-    ["live", "selecting_winners", "closed"].includes(poll.status) &&
-    (!selectedCategoryId.value || poll.categoryId === selectedCategoryId.value),
-  ),
-);
+const visiblePolls = computed(() => {
+  locale.value
+
+  return polls.value
+    .filter((poll) =>
+      ["live", "selecting_winners", "closed"].includes(poll.status) &&
+      (!selectedCategoryId.value || poll.categoryId === selectedCategoryId.value),
+    )
+    .map((poll) => applyPollLocale(poll, locale.value))
+});
 
 const selectedCategoryName = computed(() => {
   if (!selectedCategoryId.value) {

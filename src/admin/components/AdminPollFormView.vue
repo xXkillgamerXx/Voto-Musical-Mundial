@@ -20,8 +20,11 @@ const props = defineProps({
 
 const emptyPoll = {
   title: '',
+  titleEn: '',
   description: '',
+  descriptionEn: '',
   body: '',
+  bodyEn: '',
   banner: '',
   status: 'draft',
   categoryId: '',
@@ -34,6 +37,7 @@ const emptyPoll = {
 }
 
 const pollForm = ref({ ...emptyPoll })
+const activeLocale = ref('es')
 const categories = ref([])
 const isLoading = ref(false)
 const isSaving = ref(false)
@@ -41,15 +45,49 @@ const isUploadingBanner = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
+const localeTabs = [
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'English' },
+]
+
 const isEditing = computed(() => Boolean(props.pollId))
 const formTitle = computed(() => (isEditing.value ? translate('admin.pollForm.editTitle') : translate('admin.pollForm.createTitle')))
 const selectedCategory = computed(() =>
   categories.value.find((category) => String(category.id) === String(pollForm.value.categoryId)) || null,
 )
-const previewDescriptionHtml = computed(() => richTextToHtml(pollForm.value.description))
-const previewBodyHtml = computed(() => richTextToHtml(pollForm.value.body))
-const hasPreviewDescription = computed(() => hasRichTextContent(pollForm.value.description))
-const hasPreviewBody = computed(() => hasRichTextContent(pollForm.value.body))
+const previewTitle = computed(() =>
+  activeLocale.value === 'en'
+    ? (pollForm.value.titleEn || pollForm.value.title)
+    : pollForm.value.title,
+)
+const previewDescriptionHtml = computed(() =>
+  richTextToHtml(
+    activeLocale.value === 'en'
+      ? (pollForm.value.descriptionEn || pollForm.value.description)
+      : pollForm.value.description,
+  ),
+)
+const previewBodyHtml = computed(() =>
+  richTextToHtml(
+    activeLocale.value === 'en'
+      ? (pollForm.value.bodyEn || pollForm.value.body)
+      : pollForm.value.body,
+  ),
+)
+const hasPreviewDescription = computed(() =>
+  hasRichTextContent(
+    activeLocale.value === 'en'
+      ? (pollForm.value.descriptionEn || pollForm.value.description)
+      : pollForm.value.description,
+  ),
+)
+const hasPreviewBody = computed(() =>
+  hasRichTextContent(
+    activeLocale.value === 'en'
+      ? (pollForm.value.bodyEn || pollForm.value.body)
+      : pollForm.value.body,
+  ),
+)
 
 const normalizeRichText = (value) => (hasRichTextContent(value) ? String(value).trim() : '')
 
@@ -166,13 +204,17 @@ const loadPoll = async () => {
 
   isLoading.value = true
   errorMessage.value = ''
+  activeLocale.value = 'es'
 
   try {
     const poll = normalizePoll(await getPoll(props.pollId))
     pollForm.value = {
       title: poll.title || '',
+      titleEn: poll.titleEn || '',
       description: poll.description || '',
+      descriptionEn: poll.descriptionEn || '',
       body: poll.body || '',
+      bodyEn: poll.bodyEn || '',
       banner: poll.banner || '',
       status: poll.status || 'draft',
       categoryId: poll.categoryId || '',
@@ -203,8 +245,11 @@ const savePoll = async () => {
 
   const pollData = {
     title: pollForm.value.title.trim(),
+    titleEn: pollForm.value.titleEn.trim(),
     description: normalizeRichText(pollForm.value.description),
+    descriptionEn: normalizeRichText(pollForm.value.descriptionEn),
     body: normalizeRichText(pollForm.value.body),
+    bodyEn: normalizeRichText(pollForm.value.bodyEn),
     banner: pollForm.value.banner.trim(),
     status: pollForm.value.status,
     categoryId: pollForm.value.categoryId || '',
@@ -309,7 +354,7 @@ onMounted(async () => {
               {{ $t('polls.detail.liveEyebrow') }}
             </p>
             <h3 class="mt-2 text-2xl font-black text-white">
-              {{ pollForm.title || $t('admin.pollForm.previewTitle') }}
+              {{ previewTitle || $t('admin.pollForm.previewTitle') }}
             </h3>
             <div
               v-if="hasPreviewDescription"
@@ -346,6 +391,23 @@ onMounted(async () => {
         </div>
 
         <div class="space-y-4">
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="tab in localeTabs"
+              :key="tab.value"
+              type="button"
+              class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+              :class="
+                activeLocale === tab.value
+                  ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+              "
+              @click="activeLocale = tab.value"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+
           <div class="grid gap-4 sm:grid-cols-[1fr_0.4fr]">
             <label class="block">
               <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.category') }}</span>
@@ -380,13 +442,23 @@ onMounted(async () => {
           </div>
 
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.title') }}</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? $t('admin.pollForm.title') + ' (ES)' : 'Title (EN)' }}
+            </span>
             <input
+              v-if="activeLocale === 'es'"
               v-model="pollForm.title"
               type="text"
               required
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
               :placeholder="$t('admin.pollForm.titlePlaceholder')"
+            />
+            <input
+              v-else
+              v-model="pollForm.titleEn"
+              type="text"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              placeholder="Poll title in English"
             />
           </label>
 
@@ -401,11 +473,19 @@ onMounted(async () => {
           </label>
 
           <div class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.description') }}</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? $t('admin.pollForm.description') + ' (ES)' : 'Description (EN)' }}
+            </span>
             <div class="mt-2">
               <RichTextEditor
+                v-if="activeLocale === 'es'"
                 v-model="pollForm.description"
                 :placeholder="$t('admin.pollForm.descriptionPlaceholder')"
+              />
+              <RichTextEditor
+                v-else
+                v-model="pollForm.descriptionEn"
+                placeholder="Short English description"
               />
             </div>
             <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
@@ -414,11 +494,19 @@ onMounted(async () => {
           </div>
 
           <div class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.pollForm.body') }}</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? $t('admin.pollForm.body') + ' (ES)' : 'Body (EN)' }}
+            </span>
             <div class="mt-2">
               <RichTextEditor
+                v-if="activeLocale === 'es'"
                 v-model="pollForm.body"
                 :placeholder="$t('admin.pollForm.bodyPlaceholder')"
+              />
+              <RichTextEditor
+                v-else
+                v-model="pollForm.bodyEn"
+                placeholder="Full English content"
               />
             </div>
             <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">

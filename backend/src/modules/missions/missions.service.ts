@@ -11,20 +11,57 @@ const SERVER_MANAGED_MISSION_TYPES = new Set([
   'daily_streak',
 ]);
 
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const withMissionLocales = <T extends { title: string; description: string | null; metadata?: unknown }>(
+  mission: T,
+) => {
+  const metadata = asRecord(mission.metadata);
+  const titleEn = String(metadata.titleEn || metadata.title_en || '').trim();
+  const descriptionEn = String(metadata.descriptionEn || metadata.description_en || '').trim();
+
+  return {
+    ...mission,
+    titleEs: mission.title,
+    descriptionEs: mission.description || '',
+    titleEn,
+    descriptionEn,
+  };
+};
+
+const localizeMission = <T extends { title: string; description: string | null; titleEn?: string; descriptionEn?: string }>(
+  mission: T,
+  lang?: string,
+) => {
+  const useEn = String(lang || '').trim().toLowerCase().startsWith('en');
+  if (!useEn) {
+    return mission;
+  }
+
+  return {
+    ...mission,
+    title: mission.titleEn?.trim() || mission.title,
+    description: mission.descriptionEn?.trim() || mission.description,
+  };
+};
+
 @Injectable()
 export class MissionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(lang?: string) {
     const missions = await this.prisma.mission.findMany({
       where: { active: true },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
 
-    return serialize(missions);
+    return serialize(missions.map((mission) => localizeMission(withMissionLocales(mission), lang)));
   }
 
-  async findForUser(userId: bigint) {
+  async findForUser(userId: bigint, lang?: string) {
     const missions = await this.prisma.mission.findMany({
       where: { active: true },
       include: {
@@ -40,9 +77,10 @@ export class MissionsService {
       missions.map((mission) => {
         const completion = mission.completions[0] || null;
         const { completions, ...missionData } = mission;
+        const localized = localizeMission(withMissionLocales(missionData), lang);
 
         return {
-          ...missionData,
+          ...localized,
           progress: completion?.progress || 0,
           completedAt: completion?.completedAt || null,
           rewardedAt: completion?.rewardedAt || null,
