@@ -7,7 +7,9 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type SendPushPayload = {
   title?: string;
+  titleEn?: string;
   body?: string;
+  bodyEn?: string;
   url?: string;
   userIds?: string[];
   tokens?: string[];
@@ -232,6 +234,8 @@ export class AdminPushService {
   async send(payload: SendPushPayload) {
     const title = String(payload.title || '').trim();
     const body = String(payload.body || '').trim();
+    const titleEn = String(payload.titleEn || '').trim();
+    const bodyEn = String(payload.bodyEn || '').trim();
     const url = String(payload.url || '/').trim() || '/';
 
     if (!title || !body) {
@@ -269,6 +273,10 @@ export class AdminPushService {
           body,
           url,
           type: 'admin_push',
+          extraData: {
+            ...(titleEn ? { titleEn } : {}),
+            ...(bodyEn ? { bodyEn } : {}),
+          },
         }),
       );
 
@@ -283,7 +291,7 @@ export class AdminPushService {
           data: notifiedUserIds.map((userId) => ({
             userId: BigInt(userId),
             type: 'admin_push',
-            payload: { title, message: body, url },
+            payload: { title, titleEn, message: body, messageEn: bodyEn, body, bodyEn, url },
           })),
         });
       }

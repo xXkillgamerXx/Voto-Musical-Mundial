@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 import { resolveArtistBanner } from '../utils/artistMedia'
+import { applyArtistLocale } from '../utils/pollLocale'
 
 const { locale } = useI18n()
 const artists = ref([])
@@ -39,9 +40,11 @@ const rotateWeekly = (items) => {
 }
 
 const popularArtists = computed(() => {
+  locale.value
+  const localizedArtists = artists.value.map((artist) => applyArtistLocale(artist, locale.value))
   const normalizedQuery = searchQuery.value.trim().toLowerCase()
   const sourceArtists = normalizedQuery
-    ? artists.value.filter((artist) => {
+    ? localizedArtists.filter((artist) => {
       const searchableText = [
         artist.name,
         artist.fandom,
@@ -49,11 +52,12 @@ const popularArtists = computed(() => {
         artist.country,
         artist.role,
         artist.bio,
+        artist.bioEn,
       ].filter(Boolean).join(' ').toLowerCase()
 
       return searchableText.includes(normalizedQuery)
     })
-    : artists.value
+    : localizedArtists
 
   const sortedArtists = sourceArtists
     .slice()

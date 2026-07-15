@@ -15,6 +15,65 @@ const pickText = (...candidates) => {
 export const resolvePollLocale = (locale = 'es') =>
   String(locale || 'es').toLowerCase().startsWith('en') ? 'en' : 'es'
 
+export const applyCategoryLocale = (category, locale = 'es') => {
+  if (!category) {
+    return category
+  }
+
+  if (typeof category === 'string') {
+    return category
+  }
+
+  const metadata = asRecord(category.metadata)
+  const nameEs = pickText(category.nameEs, category.name)
+  const nameEn = pickText(category.nameEn, metadata.nameEn)
+  const useEn = resolvePollLocale(locale) === 'en'
+
+  return {
+    ...category,
+    nameEs,
+    nameEn,
+    name: useEn ? pickText(nameEn, nameEs) : nameEs,
+  }
+}
+
+export const applyRoundLocale = (round, locale = 'es') => {
+  if (!round) {
+    return round
+  }
+
+  const config = asRecord(round.config)
+  const metadata = asRecord(round.metadata)
+  const titleEs = pickText(round.titleEs, round.title, config.title, metadata.title)
+  const titleEn = pickText(round.titleEn, config.titleEn, metadata.titleEn)
+  const useEn = resolvePollLocale(locale) === 'en'
+
+  return {
+    ...round,
+    titleEs,
+    titleEn,
+    title: useEn ? pickText(titleEn, titleEs) : titleEs,
+  }
+}
+
+export const applyArtistLocale = (artist, locale = 'es') => {
+  if (!artist) {
+    return artist
+  }
+
+  const metadata = asRecord(artist.metadata)
+  const bioEs = pickText(artist.bioEs, artist.bio, metadata.bio)
+  const bioEn = pickText(artist.bioEn, metadata.bioEn)
+  const useEn = resolvePollLocale(locale) === 'en'
+
+  return {
+    ...artist,
+    bioEs,
+    bioEn,
+    bio: useEn ? pickText(bioEn, bioEs) : bioEs,
+  }
+}
+
 export const withPollLocaleFields = (poll) => {
   if (!poll) {
     return poll
@@ -22,6 +81,10 @@ export const withPollLocaleFields = (poll) => {
 
   const config = asRecord(poll.config)
   const metadata = asRecord(poll.metadata)
+  const category = typeof poll.category === 'object' && poll.category
+    ? poll.category
+    : null
+  const categoryMeta = asRecord(category?.metadata)
 
   return {
     ...poll,
@@ -31,6 +94,20 @@ export const withPollLocaleFields = (poll) => {
     titleEn: pickText(poll.titleEn, config.titleEn, metadata.titleEn),
     descriptionEn: pickText(poll.descriptionEn, config.descriptionEn, metadata.descriptionEn),
     bodyEn: pickText(poll.bodyEn, config.bodyEn, metadata.bodyEn),
+    categoryNameEs: pickText(
+      poll.categoryNameEs,
+      category?.name,
+      poll.categoryName,
+      typeof poll.category === 'string' ? poll.category : '',
+      metadata.categoryName,
+      metadata.category,
+    ),
+    categoryNameEn: pickText(
+      poll.categoryNameEn,
+      category?.nameEn,
+      categoryMeta.nameEn,
+      metadata.categoryNameEn,
+    ),
   }
 }
 
@@ -41,6 +118,12 @@ export const applyPollLocale = (poll, locale = 'es') => {
 
   const localized = withPollLocaleFields(poll)
   const useEn = resolvePollLocale(locale) === 'en'
+  const categoryName = useEn
+    ? pickText(localized.categoryNameEn, localized.categoryNameEs)
+    : pickText(localized.categoryNameEs, localized.categoryName)
+  const localizedCategory = typeof localized.category === 'object' && localized.category
+    ? applyCategoryLocale(localized.category, locale)
+    : localized.category
 
   return {
     ...localized,
@@ -53,5 +136,12 @@ export const applyPollLocale = (poll, locale = 'es') => {
     body: useEn
       ? pickText(localized.bodyEn, localized.bodyEs)
       : pickText(localized.bodyEs, localized.body),
+    categoryName,
+    category: typeof localizedCategory === 'object' && localizedCategory
+      ? localizedCategory
+      : (categoryName || localized.category),
+    rounds: Array.isArray(localized.rounds)
+      ? localized.rounds.map((round) => applyRoundLocale(round, locale))
+      : localized.rounds,
   }
 }

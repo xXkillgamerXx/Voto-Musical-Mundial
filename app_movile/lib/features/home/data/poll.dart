@@ -36,9 +36,14 @@ class PollRound {
   factory PollRound.fromJson(Map<String, dynamic> json) {
     final config = _mapValue(json['config']);
     final metadata = _mapValue(json['metadata']);
+    final titleEs = _stringValue([json['title'], metadata['title'], config['title']]);
+    final titleEn = _stringValue([json['titleEn'], config['titleEn'], metadata['titleEn']]);
+    final useEn =
+        PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
+
     return PollRound(
       id: '${json['id'] ?? ''}',
-      title: _stringValue([json['title'], metadata['title']]),
+      title: useEn && titleEn.isNotEmpty ? titleEn : titleEs,
       type: _stringValue([json['type'], metadata['type']]).ifEmpty('standard'),
       status: _stringValue([json['status']]),
       config: config,
@@ -199,13 +204,24 @@ class Poll {
     final parsedMetadata = _mapValue(json['metadata']);
     final metadata = parsedMetadata.isNotEmpty ? parsedMetadata : config;
     final category = json['category'];
-    final categoryName = category is Map<String, dynamic>
+    final categoryMeta = category is Map<String, dynamic>
+        ? _mapValue(category['metadata'])
+        : const <String, dynamic>{};
+    final categoryNameEs = category is Map<String, dynamic>
         ? _stringValue([category['name']])
         : _stringValue([
             json['categoryName'],
             metadata['categoryName'],
             metadata['category'],
           ]);
+    final categoryNameEn = category is Map<String, dynamic>
+        ? _stringValue([category['nameEn'], categoryMeta['nameEn']])
+        : _stringValue([json['categoryNameEn'], metadata['categoryNameEn']]);
+    final useEnCategory =
+        PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
+    final categoryName = useEnCategory && categoryNameEn.isNotEmpty
+        ? categoryNameEn
+        : categoryNameEs;
     final categoryId = category is Map<String, dynamic>
         ? _stringValue([category['id']])
         : _stringValue([

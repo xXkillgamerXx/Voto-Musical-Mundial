@@ -379,7 +379,12 @@ onMounted(async () => {
             </p>
             <div class="mt-3 grid grid-cols-4 gap-2">
               <div
-                v-for="label in ['Días', 'Horas', 'Min', 'Seg']"
+                v-for="label in [
+                  $t('polls.detail.time.days'),
+                  $t('polls.detail.time.hours'),
+                  $t('polls.detail.time.minutes'),
+                  $t('polls.detail.time.seconds'),
+                ]"
                 :key="label"
                 class="rounded-2xl bg-slate-950/60 p-3 text-center"
               >

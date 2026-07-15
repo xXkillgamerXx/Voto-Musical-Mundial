@@ -278,6 +278,7 @@ watch(
     }
 
     poll.value = applyPollLocale(poll.value, i18n.global.locale.value);
+    rounds.value = (poll.value?.rounds || []).map(normalizeApiRound);
   },
 );
 
@@ -562,7 +563,7 @@ const versusMatches = computed(() => {
       .map(([groupNumber, contestants]) => ({
         id: `${activeRound.value?.id || "round"}-${groupNumber}`,
         groupNumber,
-        title: `Duelo ${groupNumber}`,
+        title: translate("polls.detail.duelTitle", { number: groupNumber }),
         contestants: contestants.sort(
           (current, next) => current.matchOrder - next.matchOrder,
         ),
@@ -577,7 +578,7 @@ const versusMatches = computed(() => {
     matches.push({
       id: `${activeRound.value?.id || "round"}-${index}`,
       groupNumber,
-      title: `Duelo ${groupNumber}`,
+      title: translate("polls.detail.duelTitle", { number: groupNumber }),
       contestants: activeContestants.value.slice(index, index + 2),
     });
   }
@@ -1360,10 +1361,10 @@ const shouldShowUpcomingRound = computed(() =>
 const countdown = computed(() => {
   if (!pollEndDate.value) {
     return [
-      { label: "Días", value: "00" },
-      { label: "Horas", value: "00" },
-      { label: "Min", value: "00" },
-      { label: "Seg", value: "00" },
+      { label: translate("polls.detail.time.days"), value: "00" },
+      { label: translate("polls.detail.time.hours"), value: "00" },
+      { label: translate("polls.detail.time.minutes"), value: "00" },
+      { label: translate("polls.detail.time.seconds"), value: "00" },
     ];
   }
 
@@ -1378,10 +1379,10 @@ const countdown = computed(() => {
   const formatValue = (value) => String(value).padStart(2, "0");
 
   return [
-    { label: "Días", value: formatValue(days) },
-    { label: "Horas", value: formatValue(hours) },
-    { label: "Min", value: formatValue(minutes) },
-    { label: "Seg", value: formatValue(seconds) },
+    { label: translate("polls.detail.time.days"), value: formatValue(days) },
+    { label: translate("polls.detail.time.hours"), value: formatValue(hours) },
+    { label: translate("polls.detail.time.minutes"), value: formatValue(minutes) },
+    { label: translate("polls.detail.time.seconds"), value: formatValue(seconds) },
   ];
 });
 
@@ -2787,10 +2788,10 @@ onUnmounted(() => {
           <p
             class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300"
           >
-            Proceso de rondas
+            {{ $t("polls.detail.roundsProcess") }}
           </p>
           <p class="text-xs font-bold text-slate-500">
-            Ganadores y ronda actual
+            {{ $t("polls.detail.roundsProcessSubtitle") }}
           </p>
         </div>
 
@@ -2851,7 +2852,7 @@ onUnmounted(() => {
               </p>
 
               <p class="mt-3 text-xs font-bold text-slate-500">
-                Toca para ver detalle
+                {{ $t("polls.detail.tapToSeeDetail") }}
               </p>
               <p
                 v-if="round.winners.length"
@@ -2859,12 +2860,16 @@ onUnmounted(() => {
               >
                 {{
                   round.winners.length === 1
-                    ? `Ganó ${round.winners[0]?.name || "ganador"}`
-                    : `Ganadores: ${round.winners
-                        .slice(0, 2)
-                        .map((winner) => winner?.name)
-                        .filter(Boolean)
-                        .join(", ")}`
+                    ? $t("polls.detail.wonBy", {
+                        name: round.winners[0]?.name || $t("polls.detail.voteFallback"),
+                      })
+                    : $t("polls.detail.winnersPrefix", {
+                        names: round.winners
+                          .slice(0, 2)
+                          .map((winner) => winner?.name)
+                          .filter(Boolean)
+                          .join(", "),
+                      })
                 }}
               </p>
             </button>
@@ -2887,18 +2892,22 @@ onUnmounted(() => {
                 <i class="fa-solid fa-trophy" aria-hidden="true"></i>
               </div>
               <p class="mt-2 max-w-36 truncate text-sm font-black text-white">
-                Final
+                {{ $t("polls.detail.finalTab") }}
               </p>
               <p
                 class="mt-1 rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-amber-200"
               >
-                Ganador
+                {{ $t("polls.detail.winnerTab") }}
               </p>
               <p class="mt-3 text-xs font-bold text-slate-500">
-                Ver resultado final
+                {{ $t("polls.detail.viewFinalResult") }}
               </p>
               <p class="mt-2 line-clamp-2 max-w-36 text-xs font-black leading-4 text-amber-100">
-                Ganó {{ finalWinnerEntries[0]?.artist?.name || "ganador" }}
+                {{
+                  $t("polls.detail.wonBy", {
+                    name: finalWinnerEntries[0]?.artist?.name || $t("polls.detail.voteFallback"),
+                  })
+                }}
               </p>
             </button>
 
@@ -2914,7 +2923,7 @@ onUnmounted(() => {
               <p
                 class="mt-3 text-xs font-black uppercase tracking-widest text-slate-500"
               >
-                Siguiente
+                {{ $t("polls.detail.nextRound") }}
               </p>
               <p class="mt-1 text-sm font-black text-white">
                 {{ $t("polls.detail.comingSoon") }}

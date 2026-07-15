@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 class Artist {
   const Artist({
     required this.id,
@@ -73,7 +75,14 @@ class Artist {
       role: _stringValue([json['role'], json['genre'], metadata['role'], metadata['genre']]),
       image: image,
       banner: banner.isEmpty ? image : banner,
-      bio: _stringValue([json['bio'], metadata['bio']]),
+      bio: () {
+        final bioEs = _stringValue([json['bio'], metadata['bio']]);
+        final bioEn = _stringValue([json['bioEn'], metadata['bioEn']]);
+        final useEn =
+            PlatformDispatcher.instance.locale.languageCode.toLowerCase() ==
+            'en';
+        return useEn && bioEn.isNotEmpty ? bioEn : bioEs;
+      }(),
       slug: _stringValue([json['slug'], metadata['slug']]),
       followersCount: followersCount,
       popularityScore: popularityScore,

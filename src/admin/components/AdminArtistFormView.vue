@@ -24,6 +24,7 @@ const emptyArtist = {
   image: '',
   banner: '',
   bio: '',
+  bioEn: '',
   status: 'active',
 }
 
@@ -34,6 +35,11 @@ const isUploadingBanner = ref(false)
 const isUploadingProfile = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const activeLocale = ref('es')
+const localeTabs = [
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'English' },
+]
 
 const previewBanner = computed(() => resolveArtistBanner(artistForm.value))
 const isEditing = computed(() => Boolean(props.artistId))
@@ -57,6 +63,7 @@ const normalizeArtist = (artist) => {
     image: getArtistImage({ ...metadata, ...artist }),
     banner: getArtistBanner({ ...metadata, ...artist }),
     bio: metadata.bio || artist.bio || '',
+    bioEn: metadata.bioEn || artist.bioEn || '',
     status: metadata.status || artist.status || 'active',
   }
 }
@@ -144,8 +151,10 @@ const loadArtist = async () => {
       image: getArtistImage(artist),
       banner: getArtistBanner(artist),
       bio: artist.bio || '',
+      bioEn: artist.bioEn || '',
       status: artist.status || 'active',
     }
+    activeLocale.value = 'es'
   } catch {
     errorMessage.value = translate('admin.artistForm.errors.load')
   } finally {
@@ -174,6 +183,7 @@ const saveArtist = async () => {
     image: artistForm.value.image.trim(),
     banner: artistForm.value.banner.trim(),
     bio: artistForm.value.bio.trim(),
+    bioEn: artistForm.value.bioEn.trim(),
     slug: createSlug(artistForm.value.name),
     imageUrl: artistForm.value.image.trim(),
     photoUrl: artistForm.value.image.trim(),
@@ -363,13 +373,40 @@ onMounted(loadArtist)
             </div>
           </div>
 
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="tab in localeTabs"
+              :key="tab.value"
+              type="button"
+              class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+              :class="
+                activeLocale === tab.value
+                  ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+              "
+              @click="activeLocale = tab.value"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+
           <label class="block">
-            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.artistForm.bio') }}</span>
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? $t('admin.artistForm.bio') + ' (ES)' : 'Bio (EN)' }}
+            </span>
             <textarea
+              v-if="activeLocale === 'es'"
               v-model="artistForm.bio"
               rows="4"
               class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
               :placeholder="$t('admin.artistForm.bioPlaceholder')"
+            ></textarea>
+            <textarea
+              v-else
+              v-model="artistForm.bioEn"
+              rows="4"
+              class="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              placeholder="Artist biography in English"
             ></textarea>
           </label>
 

@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getPollResults, getPolls } from '../services/api/pollsApi'
+import { applyPollLocale } from '../utils/pollLocale'
 
+const { locale } = useI18n()
 const polls = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
@@ -13,9 +16,12 @@ const getArtistImage = (artist) =>
 const pollYearForUrl = (poll) => poll.year || poll.categoryYear || poll.category?.year || 'historial'
 const pollUrl = (poll) => `/votacion/${pollYearForUrl(poll)}/${poll.slug || poll.id}`
 
-const categoryTitleFor = (poll) => poll.categoryName || poll.category?.name || poll.title || translate('hallOfFame.fallbackCategory')
+const categoryTitleFor = (poll) => {
+  const localized = applyPollLocale(poll, locale.value)
+  return localized.categoryName || localized.title || translate('hallOfFame.fallbackCategory')
+}
 const yearFor = (poll) => {
-  const year = Number(poll.year || poll.categoryYear || poll.category?.year || 0)
+  const year = Number(poll.year || poll.categoryYear || poll.category?.year || poll.category?.metadata?.year || 0)
   return Number.isFinite(year) && year > 0 ? year : null
 }
 
@@ -180,10 +186,10 @@ onMounted(loadPolls)
         <i class="fa-solid fa-crown" aria-hidden="true"></i>
       </div>
       <h3 class="relative mt-5 text-xl font-black uppercase text-white">
-        Salon de la fama en preparacion
+        {{ $t('hallOfFame.emptyPreparingTitle') }}
       </h3>
       <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
-        Cuando una votacion cerrada tenga ganador, aparecera aqui como parte del historial oficial.
+        {{ $t('hallOfFame.emptyPreparingDescription') }}
       </p>
     </div>
   </section>

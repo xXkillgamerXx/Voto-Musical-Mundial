@@ -1,9 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { subscribePublicResults } from '../services/pollResults'
+import { applyPollLocale } from '../utils/pollLocale'
 
+const { locale } = useI18n()
 const activeSlide = ref(0)
 const animatedLeaderVotes = ref(0)
 const animatedPercent = ref(0)
@@ -38,9 +41,10 @@ const emptyBannerSlide = {
   isEmpty: true,
 }
 
-const liveSlides = computed(() =>
-  livePolls.value.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index)),
-)
+const liveSlides = computed(() => {
+  locale.value
+  return livePolls.value.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index))
+})
 const bannerSlides = computed(() => liveSlides.value.length ? liveSlides.value : [emptyBannerSlide])
 const currentSlide = computed(() => bannerSlides.value[activeSlide.value] || bannerSlides.value[0])
 
@@ -243,6 +247,7 @@ const animateBannerStats = () => {
 }
 
 const buildLiveSlide = (poll, index) => {
+  const localized = applyPollLocale(poll, locale.value)
   const liveResult = livePollResults.value[poll.id] || {}
   const totalVotes = Number(liveResult.totalVotes ?? poll.totalVotes ?? 0)
   const leaderVotes = Number(liveResult.leaderVotes ?? poll.leaderVotes ?? 0)
@@ -255,10 +260,10 @@ const buildLiveSlide = (poll, index) => {
   return {
     badge: index === 0 ? '#1 en vivo' : 'Votacion en vivo',
     status: poll.status === 'selecting_winners' ? 'En proceso' : 'En vivo',
-    eyebrow: poll.title || 'Votacion activa',
-    title: leaderArtistId ? `${leaderName} lidera la votacion` : poll.title || 'Vota por tu artista favorito',
-    description: poll.description || 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
-    category: poll.categoryName || poll.category || '',
+    eyebrow: localized.title || 'Votacion activa',
+    title: leaderArtistId ? `${leaderName} lidera la votacion` : localized.title || 'Vota por tu artista favorito',
+    description: localized.description || 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
+    category: localized.categoryName || '',
     leader: leaderName,
     leaderVotes,
     totalVotes,

@@ -12,10 +12,17 @@ const search = ref('')
 const manualToken = ref('')
 const sendToAll = ref(false)
 const result = ref(null)
+const activeLocale = ref('es')
+const localeTabs = [
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'English' },
+]
 
 const form = ref({
   title: 'Votos Mundial',
+  titleEn: 'Worldwide Votes',
   body: 'Tienes una nueva notificacion.',
+  bodyEn: 'You have a new notification.',
   url: '/',
 })
 
@@ -60,7 +67,7 @@ const sendPush = async () => {
     .filter(Boolean)
 
   if (!form.value.title.trim() || !form.value.body.trim()) {
-    errorMessage.value = 'Titulo y mensaje son obligatorios.'
+    errorMessage.value = 'Titulo y mensaje en español son obligatorios.'
     return
   }
 
@@ -74,7 +81,9 @@ const sendPush = async () => {
   try {
     result.value = await sendAdminPush({
       title: form.value.title,
+      titleEn: form.value.titleEn,
       body: form.value.body,
+      bodyEn: form.value.bodyEn,
       url: form.value.url || '/',
       userIds: selectedUserIds.value,
       tokens,
@@ -134,22 +143,58 @@ onMounted(loadUsers)
         <h3 class="text-lg font-black text-white">Mensaje</h3>
 
         <div class="mt-4 grid gap-3">
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="tab in localeTabs"
+              :key="tab.value"
+              type="button"
+              class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+              :class="
+                activeLocale === tab.value
+                  ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+              "
+              @click="activeLocale = tab.value"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+
           <label class="grid gap-2">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-400">Titulo</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? 'Titulo (ES)' : 'Title (EN)' }}
+            </span>
             <input
+              v-if="activeLocale === 'es'"
               v-model="form.title"
               class="min-h-12 rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
               placeholder="Titulo de la notificacion"
             />
+            <input
+              v-else
+              v-model="form.titleEn"
+              class="min-h-12 rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+              placeholder="Notification title"
+            />
           </label>
 
           <label class="grid gap-2">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-400">Mensaje</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? 'Mensaje (ES)' : 'Message (EN)' }}
+            </span>
             <textarea
+              v-if="activeLocale === 'es'"
               v-model="form.body"
               rows="4"
               class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
               placeholder="Texto que vera el usuario"
+            ></textarea>
+            <textarea
+              v-else
+              v-model="form.bodyEn"
+              rows="4"
+              class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+              placeholder="Text the user will see"
             ></textarea>
           </label>
 

@@ -31,10 +31,16 @@ const artists = ref([])
 const roundContestants = ref([])
 const roundForm = ref({
   title: '',
+  titleEn: '',
   type: 'list',
   status: 'draft',
   endAt: '',
 })
+const activeLocale = ref('es')
+const localeTabs = [
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'English' },
+]
 const isDeleteModalOpen = ref(false)
 const isGroupModalOpen = ref(false)
 const isRemoveContestantModalOpen = ref(false)
@@ -317,6 +323,7 @@ const listenBaseData = async () => {
   if (round.value) {
     roundForm.value = {
       title: round.value.title || '',
+      titleEn: round.value.titleEn || round.value.config?.titleEn || '',
       type: round.value.type || 'list',
       status: round.value.status || 'draft',
       endAt: toDatetimeLocal(round.value.endAt || round.value.endsAt),
@@ -544,6 +551,7 @@ const saveRoundSettings = async () => {
     await updateAdminRound(props.pollId, props.roundId, {
       ...roundRest,
       title: roundForm.value.title.trim(),
+      titleEn: roundForm.value.titleEn.trim(),
       type: roundForm.value.type === 'versus' ? 'versus' : 'standard',
       status: roundForm.value.status,
       endAt,
@@ -670,13 +678,40 @@ onMounted(async () => {
         </div>
 
         <form class="mt-4 grid gap-3 xl:grid-cols-12" @submit.prevent="saveRoundSettings">
+          <div class="flex flex-wrap gap-2 xl:col-span-12">
+            <button
+              v-for="tab in localeTabs"
+              :key="tab.value"
+              type="button"
+              class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+              :class="
+                activeLocale === tab.value
+                  ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+              "
+              @click="activeLocale = tab.value"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+
           <label class="space-y-2 xl:col-span-6">
-            <span class="text-xs font-black uppercase tracking-widest text-slate-300">{{ $t('admin.round.roundName') }}</span>
+            <span class="text-xs font-black uppercase tracking-widest text-slate-300">
+              {{ activeLocale === 'es' ? $t('admin.round.roundName') + ' (ES)' : 'Round name (EN)' }}
+            </span>
             <input
+              v-if="activeLocale === 'es'"
               v-model="roundForm.title"
               type="text"
               class="w-full rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-2.5 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
               :placeholder="$t('admin.round.roundNamePlaceholder')"
+            />
+            <input
+              v-else
+              v-model="roundForm.titleEn"
+              type="text"
+              class="w-full rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-2.5 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+              placeholder="Semifinals"
             />
           </label>
 

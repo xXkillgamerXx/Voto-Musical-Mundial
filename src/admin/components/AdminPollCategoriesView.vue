@@ -56,6 +56,7 @@ const visualOptions = [
 const categories = ref([])
 const categoryForm = ref({
   name: '',
+  nameEn: '',
   year: currentYear,
   icon: iconOptions[0].value,
   visual: visualOptions[0].value,
@@ -65,20 +66,44 @@ const isFormOpen = ref(false)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const activeLocale = ref('es')
+const localeTabs = [
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'English' },
+]
 
 const formTitle = computed(() => editingCategoryId.value ? translate('admin.categories.editTitle') : translate('admin.categories.createTitle'))
 const shouldShowForm = computed(() => props.showForm || isFormOpen.value || Boolean(editingCategoryId.value))
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
 
+const flattenCategory = (category) => {
+  const metadata = category?.metadata && typeof category.metadata === 'object' && !Array.isArray(category.metadata)
+    ? category.metadata
+    : {}
+
+  return {
+    ...metadata,
+    ...category,
+    id: String(category.id),
+    name: category.name || metadata.name || '',
+    nameEn: metadata.nameEn || category.nameEn || '',
+    year: Number(category.year || metadata.year || currentYear),
+    icon: category.icon || metadata.icon || iconOptions[0].value,
+    visual: category.visual || metadata.visual || visualOptions[0].value,
+  }
+}
+
 const resetForm = () => {
   categoryForm.value = {
     name: '',
+    nameEn: '',
     year: currentYear,
     icon: iconOptions[0].value,
     visual: visualOptions[0].value,
   }
   editingCategoryId.value = ''
   isFormOpen.value = false
+  activeLocale.value = 'es'
 }
 
 const openCreateForm = () => {
@@ -89,14 +114,17 @@ const openCreateForm = () => {
 }
 
 const editCategory = (category) => {
+  const flat = flattenCategory(category)
   categoryForm.value = {
-    name: category.name || '',
-    year: Number(category.year || currentYear),
-    icon: category.icon || iconOptions[0].value,
-    visual: category.visual || visualOptions[0].value,
+    name: flat.name || '',
+    nameEn: flat.nameEn || '',
+    year: Number(flat.year || currentYear),
+    icon: flat.icon || iconOptions[0].value,
+    visual: flat.visual || visualOptions[0].value,
   }
   editingCategoryId.value = category.id
   isFormOpen.value = true
+  activeLocale.value = 'es'
   errorMessage.value = ''
   successMessage.value = ''
 }
@@ -122,6 +150,7 @@ const saveCategory = async () => {
   try {
     const categoryData = {
       name: categoryForm.value.name.trim(),
+      nameEn: categoryForm.value.nameEn.trim(),
       year,
       icon: categoryForm.value.icon || iconOptions[0].value,
       visual: categoryForm.value.visual || visualOptions[0].value,
@@ -136,6 +165,13 @@ const saveCategory = async () => {
     }
 
     resetForm()
+
+    categories.value = (await getAdminPollCategories())
+      .map(flattenCategory)
+      .sort((current, next) =>
+        Number(next.year || 0) - Number(current.year || 0)
+          || String(current.name || '').localeCompare(String(next.name || '')),
+      )
 
     if (props.showForm) {
       window.location.href = '/admin/categorias'
@@ -171,7 +207,9 @@ const removeCategory = async (category) => {
 
 onMounted(async () => {
   try {
-    categories.value = (await getAdminPollCategories()).sort((current, next) =>
+    categories.value = (await getAdminPollCategories())
+      .map(flattenCategory)
+      .sort((current, next) =>
         Number(next.year || 0) - Number(current.year || 0)
           || String(current.name || '').localeCompare(String(next.name || '')),
       )
@@ -223,10 +261,37 @@ onMounted(async () => {
         </a>
 
         <form class="mt-5 space-y-4" @submit.stop.prevent="saveCategory">
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="tab in localeTabs"
+            :key="tab.value"
+            type="button"
+            class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+            :class="
+              activeLocale === tab.value
+                ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+            "
+            @click="activeLocale = tab.value"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
         <label class="block">
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.categories.name') }}</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+            {{ activeLocale === 'es' ? $t('admin.categories.name') + ' (ES)' : 'Name (EN)' }}
+          </span>
           <input
+            v-if="activeLocale === 'es'"
             v-model="categoryForm.name"
+            type="text"
+            class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+            placeholder="VOCALISTA DEL AÑO"
+          />
+          <input
+            v-else
+            v-model="categoryForm.nameEn"
             type="text"
             class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
             placeholder="VOCALIST OF THE YEAR"

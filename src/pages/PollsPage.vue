@@ -58,7 +58,8 @@ const selectedCategoryName = computed(() => {
     return "";
   }
 
-  return polls.value.find((poll) => poll.categoryId === selectedCategoryId.value)?.categoryName || "";
+  const match = polls.value.find((poll) => poll.categoryId === selectedCategoryId.value);
+  return applyPollLocale(match, locale.value)?.categoryName || "";
 });
 
 const openPolls = computed(() =>

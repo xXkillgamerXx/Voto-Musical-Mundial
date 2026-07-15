@@ -73,6 +73,8 @@ const normalizeArtist = (artist) => {
     photo: image,
     photoURL: image,
     banner: pickCustomArtistBanner({ ...metadata, ...artist }),
+    bio: metadata.bio || artist.bio || "",
+    bioEn: metadata.bioEn || artist.bioEn || "",
     followersCount: Number(artist.followersCount || metadata.followersCount || 0),
     totalVotes: Number(artist.totalVotes || metadata.totalVotes || 0),
     popularityScore: Number(artist.popularityScore || metadata.popularityScore || 0),
@@ -99,8 +101,14 @@ const normalizeRound = (round) => {
 const normalizePoll = (poll) => {
   const metadata = poll?.metadata || poll?.config || {};
   const category = poll?.category || null;
+  const categoryMeta =
+    category?.metadata && typeof category.metadata === "object" && !Array.isArray(category.metadata)
+      ? category.metadata
+      : {};
   const rounds = (poll.rounds || []).map(normalizeRound);
   const liveRound = rounds.find((round) => round.status === "live") || rounds[0] || null;
+  const categoryName = category?.name || metadata.categoryName || metadata.category || "";
+  const categoryNameEn = categoryMeta.nameEn || metadata.categoryNameEn || "";
 
   return {
     ...metadata,
@@ -108,9 +116,23 @@ const normalizePoll = (poll) => {
     id: String(poll.id),
     firebaseId: poll.firebaseId || metadata.id || null,
     categoryId: poll.categoryId ? String(poll.categoryId) : metadata.categoryId || category?.id || "",
-    categoryName: category?.name || metadata.categoryName || metadata.category || "",
-    category: category?.name || metadata.category || "",
-    year: Number(metadata.year || poll.year || new Date().getFullYear()),
+    categoryName,
+    categoryNameEn,
+    category: category
+      ? {
+          ...category,
+          id: category.id ? String(category.id) : "",
+          name: categoryName,
+          nameEn: categoryNameEn,
+          metadata: {
+            ...categoryMeta,
+            ...(category.icon ? { icon: category.icon } : {}),
+            ...(category.visual ? { visual: category.visual } : {}),
+            ...(category.year !== undefined ? { year: category.year } : {}),
+          },
+        }
+      : categoryName || metadata.category || "",
+    year: Number(metadata.year || poll.year || categoryMeta.year || new Date().getFullYear()),
     activeRoundId: poll.activeRoundId || metadata.activeRoundId || liveRound?.id || "",
     totalVotes: Number(poll.totalVotes || 0),
     leaderArtistId: poll.leaderArtistId ? String(poll.leaderArtistId) : metadata.leaderArtistId || null,

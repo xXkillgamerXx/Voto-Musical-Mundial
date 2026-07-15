@@ -562,23 +562,19 @@ onUnmounted(() => {
         >
           <span v-if="!isSignedInUser" class="flex items-center gap-2">
             <i class="fa-solid fa-user-lock text-cyan-300" aria-hidden="true"></i>
-            <span>Inicia sesión para participar.</span>
+            <span>{{ $t('widgets.comments.loginToParticipate') }}</span>
           </span>
           <span v-else-if="!isAdminUser && cooldownRemaining > 0" class="flex items-center gap-2">
             <i class="fa-solid fa-clock text-amber-300" aria-hidden="true"></i>
             <span>
-              Espera
-              <strong class="text-base font-black text-amber-200">
-                {{ formatCooldown(cooldownRemaining) }}
-              </strong>
-              para comentar otra vez.
+              {{ $t('widgets.comments.waitToComment', { time: formatCooldown(cooldownRemaining) }) }}
             </span>
           </span>
           <span v-else-if="isAdminUser" class="text-cyan-200">
-            Admin: sin bloqueo anti-spam. Mínimo {{ MIN_COMMENT_LENGTH }} letras.
+            {{ $t('widgets.comments.adminNoSpam', { count: MIN_COMMENT_LENGTH }) }}
           </span>
           <span v-else-if="!hasEnoughCommentText">
-            Mínimo {{ MIN_COMMENT_LENGTH }} letras para comentar.
+            {{ $t('widgets.comments.minChars', { count: MIN_COMMENT_LENGTH }) }}
           </span>
           <span v-else>{{ remainingCharacters }}/500</span>
         </p>
@@ -681,7 +677,7 @@ onUnmounted(() => {
         class="flex items-center justify-center gap-2 rounded-3xl border border-white/8 bg-white/5 p-6 text-center text-sm font-bold text-slate-400"
       >
         <i class="fa-solid fa-spinner fa-spin text-fuchsia-300" aria-hidden="true"></i>
-        Cargando comentarios...
+        {{ $t('common.loading') }}
       </p>
       <div
         v-else-if="!comments.length && hasLoadedComments"
@@ -695,24 +691,24 @@ onUnmounted(() => {
             <i class="fa-solid fa-comments" aria-hidden="true"></i>
           </div>
           <h3 class="mt-4 text-lg font-black text-white">
-            Aún no hay comentarios
+            {{ $t('widgets.comments.emptyTitle') }}
           </h3>
           <p class="mx-auto mt-2 max-w-md text-sm font-bold leading-6 text-slate-400">
-            Sé el primero en comentar lo que está pasando en esta votación.
+            {{ $t('widgets.comments.emptyDescription') }}
           </p>
           <span
             v-if="isSignedInUser"
             class="mt-4 inline-flex items-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-fuchsia-100"
           >
             <i class="fa-solid fa-pen-nib" aria-hidden="true"></i>
-            Escribe arriba para empezar
+            {{ $t('widgets.comments.writeAbove') }}
           </span>
           <span
             v-else
             class="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-cyan-100"
           >
             <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
-            Inicia sesión para comentar
+            {{ $t('widgets.comments.loginToComment') }}
           </span>
         </div>
       </div>
@@ -723,7 +719,7 @@ onUnmounted(() => {
       class="mt-5 flex flex-col items-center justify-between gap-3 rounded-3xl border border-white/8 bg-white/5 p-3 sm:flex-row"
     >
       <p class="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
-        Página {{ currentCommentsPage }} de {{ totalCommentPages }}
+        {{ $t('widgets.comments.pageOf', { page: currentCommentsPage, total: totalCommentPages }) }}
       </p>
       <div class="flex items-center gap-2">
         <button
@@ -732,7 +728,7 @@ onUnmounted(() => {
           :disabled="currentCommentsPage <= 1"
           @click="goToCommentsPage(currentCommentsPage - 1)"
         >
-          Anterior
+          {{ $t('widgets.comments.previous') }}
         </button>
         <button
           v-for="page in totalCommentPages"
@@ -754,7 +750,7 @@ onUnmounted(() => {
           :disabled="currentCommentsPage >= totalCommentPages"
           @click="goToCommentsPage(currentCommentsPage + 1)"
         >
-          Siguiente
+          {{ $t('widgets.comments.next') }}
         </button>
       </div>
     </div>

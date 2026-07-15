@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { getPolls } from "../services/api/pollsApi";
+import { applyCategoryLocale } from "../utils/pollLocale";
 
+const { t, locale } = useI18n();
 const dbCategories = ref([]);
 const isLoadingCategories = ref(true);
 const dragState = ref({
@@ -98,8 +101,8 @@ const categories = computed(() => {
 
   return dbCategories.value.slice(0, 10).map((category, index) => ({
     id: category.id,
-    title: category.name || "Categoria",
-    action: "Ver categoria",
+    title: applyCategoryLocale(category, locale.value).name || t("homeCategories.fallbackName"),
+    action: t("homeCategories.viewCategory"),
     href: categoryHref(category.id),
     icon: category.icon || fallbackIcons[index % fallbackIcons.length],
     visual: category.visual || fallbackVisuals[index % fallbackVisuals.length],
@@ -122,10 +125,12 @@ onMounted(() => {
 
         categoriesById.set(String(categoryId), {
           id: String(categoryId),
-          name: categoryName || "Categoria",
-          year: poll.year,
-          icon: poll.category?.icon || poll.config?.categoryIcon || "",
-          visual: poll.category?.visual || poll.config?.categoryVisual || "",
+          name: categoryName || t("homeCategories.fallbackName"),
+          nameEn: poll.category?.nameEn || poll.category?.metadata?.nameEn || poll.categoryNameEn || "",
+          year: poll.year || poll.category?.year || poll.category?.metadata?.year,
+          icon: poll.category?.icon || poll.category?.metadata?.icon || poll.config?.categoryIcon || "",
+          visual: poll.category?.visual || poll.category?.metadata?.visual || poll.config?.categoryVisual || "",
+          metadata: poll.category?.metadata || {},
         });
       });
 
@@ -154,17 +159,17 @@ onMounted(() => {
     <div class="mb-5 flex items-end justify-between gap-4">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
-          Explora
+          {{ $t("homeCategories.eyebrow") }}
         </p>
         <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
-          Categorias principales
+          {{ $t("homeCategories.title") }}
         </h2>
       </div>
       <a
         href="/votaciones"
         class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white"
       >
-        Ver todas
+        {{ $t("homeCategories.viewAll") }}
       </a>
     </div>
 
@@ -421,10 +426,10 @@ onMounted(() => {
         <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
       </div>
       <h3 class="relative mt-5 text-xl font-black uppercase text-white">
-        Categorias en preparacion
+        {{ $t("homeCategories.emptyTitle") }}
       </h3>
       <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
-        Cuando existan votaciones con categorias en la base de datos, aqui apareceran para explorar la comunidad.
+        {{ $t("homeCategories.emptyDescription") }}
       </p>
     </div>
   </section>

@@ -1,10 +1,42 @@
 const hiddenNotificationTypes = new Set(['daily_reward_claimed'])
 
+const resolveUiLocale = () => {
+  try {
+    const stored = localStorage.getItem('vmm-locale') || localStorage.getItem('vmm_locale') || localStorage.getItem('locale')
+    if (stored) {
+      return String(stored).toLowerCase().startsWith('en') ? 'en' : 'es'
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  return String(document?.documentElement?.lang || navigator?.language || 'es')
+    .toLowerCase()
+    .startsWith('en')
+    ? 'en'
+    : 'es'
+}
+
+const pickLocalized = (payload, esKeys, enKeys) => {
+  const useEn = resolveUiLocale() === 'en'
+  const keys = useEn ? [...enKeys, ...esKeys] : [...esKeys, ...enKeys]
+
+  for (const key of keys) {
+    const value = payload?.[key]
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value)
+    }
+  }
+
+  return ''
+}
+
 export const getNotificationTitle = (notification) => {
   const payload = notification?.payload || {}
+  const localized = pickLocalized(payload, ['title'], ['titleEn'])
 
-  if (payload.title) {
-    return String(payload.title)
+  if (localized) {
+    return localized
   }
 
   switch (notification?.type) {
@@ -23,10 +55,14 @@ export const getNotificationTitle = (notification) => {
 
 export const getNotificationBody = (notification) => {
   const payload = notification?.payload || {}
-  const explicitBody = payload.message || payload.body || payload.description
+  const localized = pickLocalized(
+    payload,
+    ['message', 'body', 'description'],
+    ['messageEn', 'bodyEn'],
+  )
 
-  if (explicitBody) {
-    return String(explicitBody)
+  if (localized) {
+    return localized
   }
 
   switch (notification?.type) {

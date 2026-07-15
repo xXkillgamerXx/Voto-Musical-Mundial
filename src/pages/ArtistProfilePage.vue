@@ -12,6 +12,7 @@ import { onStoredAuthChange } from "../services/api/client";
 import { getPoll, getPolls } from "../services/api/pollsApi";
 import { getArtistsCached } from "../services/firebaseCache";
 import { resolveArtistBanner } from "../utils/artistMedia";
+import { applyArtistLocale } from "../utils/pollLocale";
 
 const { locale } = useI18n();
 const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -28,6 +29,7 @@ const isUnfollowModalOpen = ref(false);
 const isFollowSuccessModalOpen = ref(false);
 const errorMessage = ref("");
 
+const displayArtist = computed(() => applyArtistLocale(artist.value, locale.value));
 let unsubscribeAuth = null;
 
 const getArtistImage = (artistData) =>
@@ -409,7 +411,7 @@ onUnmounted(() => {
       <div class="p-5 lg:p-8">
         <div>
           <p class="text-sm font-bold leading-7 text-slate-300">
-            {{ artist.bio }}
+            {{ displayArtist?.bio }}
           </p>
 
           <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">

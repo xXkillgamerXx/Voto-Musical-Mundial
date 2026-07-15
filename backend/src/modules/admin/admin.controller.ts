@@ -298,6 +298,10 @@ export class AdminController {
 
   @Post('artists')
   async createArtist(@Body() body: any) {
+    const metadata = {
+      ...(body && typeof body === 'object' ? body : {}),
+      bioEn: String(body?.bioEn || '').trim(),
+    };
     return serialize(await this.prisma.artist.create({
       data: {
         name: body.name,
@@ -308,13 +312,26 @@ export class AdminController {
         followersCount: toBigInt(body.followersCount || 0),
         totalVotes: toBigInt(body.totalVotes || 0),
         popularityScore: toBigInt(body.popularityScore || 0),
-        metadata: body,
+        metadata,
       },
     }));
   }
 
   @Patch('artists/:id')
   async updateArtist(@Param('id') id: string, @Body() body: any) {
+    const current = await this.prisma.artist.findUnique({ where: { id: toBigInt(id) } });
+    if (!current) {
+      throw new NotFoundException('El artista no existe.');
+    }
+    const currentMeta =
+      current.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+        ? (current.metadata as Record<string, unknown>)
+        : {};
+    const metadata = {
+      ...currentMeta,
+      ...(body && typeof body === 'object' ? body : {}),
+      bioEn: String(body?.bioEn ?? currentMeta.bioEn ?? '').trim(),
+    };
     return serialize(await this.prisma.artist.update({
       where: { id: toBigInt(id) },
       data: {
@@ -326,7 +343,7 @@ export class AdminController {
         followersCount: body.followersCount === undefined ? undefined : toBigInt(body.followersCount),
         totalVotes: body.totalVotes === undefined ? undefined : toBigInt(body.totalVotes),
         popularityScore: body.popularityScore === undefined ? undefined : toBigInt(body.popularityScore),
-        metadata: body,
+        metadata,
       },
     }));
   }
@@ -339,21 +356,54 @@ export class AdminController {
 
   @Get('poll-categories')
   async categories() {
-    return serialize(await this.prisma.pollCategory.findMany({ orderBy: [{ order: 'asc' }, { createdAt: 'desc' }] }));
+    const rows = await this.prisma.pollCategory.findMany({ orderBy: [{ order: 'asc' }, { createdAt: 'desc' }] });
+    return serialize(
+      rows.map((category) => {
+        const metadata =
+          category.metadata && typeof category.metadata === 'object' && !Array.isArray(category.metadata)
+            ? (category.metadata as Record<string, unknown>)
+            : {};
+        return {
+          ...metadata,
+          ...category,
+          nameEn: String(metadata.nameEn || '').trim(),
+        };
+      }),
+    );
   }
 
   @Post('poll-categories')
   async createCategory(@Body() body: any) {
+    const metadata = {
+      ...(body && typeof body === 'object' ? body : {}),
+      nameEn: String(body?.nameEn || '').trim(),
+      year: body?.year,
+      icon: body?.icon,
+      visual: body?.visual,
+    };
     return serialize(await this.prisma.pollCategory.create({
-      data: { slug: body.slug || null, name: body.name, description: body.description || null, active: body.active !== false, order: Number(body.order || 0), metadata: body },
+      data: { slug: body.slug || null, name: body.name, description: body.description || null, active: body.active !== false, order: Number(body.order || 0), metadata },
     }));
   }
 
   @Patch('poll-categories/:id')
   async updateCategory(@Param('id') id: string, @Body() body: any) {
+    const current = await this.prisma.pollCategory.findUnique({ where: { id: toBigInt(id) } });
+    if (!current) {
+      throw new NotFoundException('La categoria no existe.');
+    }
+    const currentMeta =
+      current.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+        ? (current.metadata as Record<string, unknown>)
+        : {};
+    const metadata = {
+      ...currentMeta,
+      ...(body && typeof body === 'object' ? body : {}),
+      nameEn: String(body?.nameEn ?? currentMeta.nameEn ?? '').trim(),
+    };
     return serialize(await this.prisma.pollCategory.update({
       where: { id: toBigInt(id) },
-      data: { slug: body.slug, name: body.name, description: body.description, active: body.active, order: body.order === undefined ? undefined : Number(body.order), metadata: body },
+      data: { slug: body.slug, name: body.name, description: body.description, active: body.active, order: body.order === undefined ? undefined : Number(body.order), metadata },
     }));
   }
 
@@ -502,18 +552,35 @@ export class AdminController {
 
   @Post('polls/:pollId/rounds')
   async createRound(@Param('pollId') pollId: string, @Body() body: any) {
+    const config = {
+      ...(body && typeof body === 'object' ? body : {}),
+      titleEn: String(body?.titleEn || '').trim(),
+    };
     return serialize(await this.prisma.round.create({
-      data: { pollId: toBigInt(pollId), title: body.title || body.name || null, type: roundTypeFor(body.type), status: statusFor(body.status), config: body, startsAt: toDate(body.startsAt || body.startAt), endsAt: endDateFor(body) ?? null },
+      data: { pollId: toBigInt(pollId), title: body.title || body.name || null, type: roundTypeFor(body.type), status: statusFor(body.status), config, startsAt: toDate(body.startsAt || body.startAt), endsAt: endDateFor(body) ?? null },
     }));
   }
 
   @Patch('polls/:pollId/rounds/:id')
   async updateRound(@Param('pollId') pollId: string, @Param('id') id: string, @Body() body: any) {
     const endsAt = endDateFor(body);
+    const current = await this.prisma.round.findUnique({ where: { id: toBigInt(id) } });
+    if (!current) {
+      throw new NotFoundException('La fase no existe.');
+    }
+    const currentConfig =
+      current.config && typeof current.config === 'object' && !Array.isArray(current.config)
+        ? (current.config as Record<string, unknown>)
+        : {};
+    const config = {
+      ...currentConfig,
+      ...(body && typeof body === 'object' ? body : {}),
+      titleEn: String(body?.titleEn ?? currentConfig.titleEn ?? '').trim(),
+    };
 
     const round = await this.prisma.round.update({
       where: { id: toBigInt(id) },
-      data: { title: body.title || body.name, type: body.type ? roundTypeFor(body.type) : undefined, status: body.status ? statusFor(body.status) : undefined, config: body, startsAt: body.startsAt || body.startAt ? toDate(body.startsAt || body.startAt) : undefined, endsAt },
+      data: { title: body.title || body.name, type: body.type ? roundTypeFor(body.type) : undefined, status: body.status ? statusFor(body.status) : undefined, config, startsAt: body.startsAt || body.startAt ? toDate(body.startsAt || body.startAt) : undefined, endsAt },
     });
 
     if (body.status) {
