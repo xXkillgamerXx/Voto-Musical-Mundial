@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { translate } from '../i18n'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { getStoredAuth } from '../services/api/client'
 import { onRealtimeConnectionChange, subscribeLivePollsRealtime } from '../services/api/realtimeApi'
@@ -88,7 +89,7 @@ const userPhoto = (vote) => {
 }
 
 const pollTitleFor = (vote) =>
-  vote?.pollTitle || pollTitleById.value[String(vote?.pollId || '')] || 'Votación'
+  vote?.pollTitle || pollTitleById.value[String(vote?.pollId || '')] || translate('common.fallback.poll')
 
 const pollUrlFor = (vote) => {
   const meta = pollMetaById.value[String(vote?.pollId || '')] || {}
@@ -231,7 +232,7 @@ const syncPollTitles = (pollRows) => {
   pollTitleById.value = Object.fromEntries(
     (pollRows || [])
       .filter((poll) => poll?.id)
-      .map((poll) => [String(poll.id), poll.title || poll.name || 'Votación']),
+      .map((poll) => [String(poll.id), poll.title || poll.name || translate('common.fallback.poll')]),
   )
   pollMetaById.value = Object.fromEntries(
     (pollRows || [])
@@ -255,7 +256,7 @@ const activities = computed(() => {
 
   return recentVotes.value.map((vote, index) => {
     const artist = getArtist(vote.artistId)
-    const artistName = vote.artistName || artist?.name || 'Artista'
+    const artistName = vote.artistName || artist?.name || translate('common.fallback.artist')
 
     return {
       id: vote.id,

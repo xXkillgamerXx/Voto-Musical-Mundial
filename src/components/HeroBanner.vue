@@ -20,32 +20,34 @@ let unsubscribePolls = null
 const roundListeners = new Map()
 const pollResultListeners = new Map()
 
-const emptyBannerSlide = {
-  badge: 'Proximamente',
-  status: 'Sin votaciones',
-  eyebrow: 'Votos Musica Mundial',
-  title: 'Prepara tu fandom para la proxima votacion',
-  description:
-    'Cuando haya una votacion activa, aqui veras el lider, los votos y el avance real del ranking.',
-  category: '',
-  leader: '',
-  leaderVotes: 0,
-  totalVotes: 0,
-  percent: '0.00%',
-  progress: 0,
-  hideVoteCounts: false,
-  contestantCount: 0,
-  stats: [],
-  time: '',
-  href: '/votaciones',
-  isEmpty: true,
-}
+const emptyBannerSlide = computed(() => {
+  locale.value
+  return {
+    badge: translate('widgets.hero.emptyBadge'),
+    status: translate('widgets.hero.emptyStatus'),
+    eyebrow: translate('widgets.hero.emptyEyebrow'),
+    title: translate('widgets.hero.emptyTitle'),
+    description: translate('widgets.hero.emptyDescription'),
+    category: '',
+    leader: '',
+    leaderVotes: 0,
+    totalVotes: 0,
+    percent: '0.00%',
+    progress: 0,
+    hideVoteCounts: false,
+    contestantCount: 0,
+    stats: [],
+    time: '',
+    href: '/votaciones',
+    isEmpty: true,
+  }
+})
 
 const liveSlides = computed(() => {
   locale.value
   return livePolls.value.slice(0, 3).map((poll, index) => buildLiveSlide(poll, index))
 })
-const bannerSlides = computed(() => liveSlides.value.length ? liveSlides.value : [emptyBannerSlide])
+const bannerSlides = computed(() => liveSlides.value.length ? liveSlides.value : [emptyBannerSlide.value])
 const currentSlide = computed(() => bannerSlides.value[activeSlide.value] || bannerSlides.value[0])
 
 const goToPreviousSlide = () => {
@@ -65,7 +67,7 @@ const formatVotes = (value) => Math.round(Number(value || 0)).toLocaleString('es
 const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`
 const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
 const getArtistName = (artistId) =>
-  artists.value.find((artist) => artist.id === artistId)?.name || 'Tu artista favorito'
+  artists.value.find((artist) => artist.id === artistId)?.name || translate('common.fallback.favoriteArtist')
 const getEffectiveRoundId = (poll) => poll.activeRoundId || activeRoundIds.value[poll.id] || ''
 
 const buildStats = ({ hideVoteCounts, leaderVotes, totalVotes, percent, contestantCount }) => {
@@ -258,11 +260,17 @@ const buildLiveSlide = (poll, index) => {
   const hideVoteCounts = Boolean(poll.hideVoteCounts)
 
   return {
-    badge: index === 0 ? '#1 en vivo' : 'Votacion en vivo',
-    status: poll.status === 'selecting_winners' ? 'En proceso' : 'En vivo',
-    eyebrow: localized.title || 'Votacion activa',
-    title: leaderArtistId ? `${leaderName} lidera la votacion` : localized.title || 'Vota por tu artista favorito',
-    description: localized.description || 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
+    badge: index === 0
+      ? translate('widgets.hero.badgeTopLive')
+      : translate('widgets.hero.badgeLive'),
+    status: poll.status === 'selecting_winners'
+      ? translate('widgets.hero.statusWaiting')
+      : translate('widgets.hero.statusLive'),
+    eyebrow: localized.title || translate('widgets.hero.fallbackEyebrow'),
+    title: leaderArtistId
+      ? translate('widgets.hero.leadingTitle', { name: leaderName })
+      : (localized.title || translate('widgets.hero.fallbackTitle')),
+    description: localized.description || translate('widgets.hero.fallbackDescription'),
     category: localized.categoryName || '',
     leader: leaderName,
     leaderVotes,
@@ -278,7 +286,7 @@ const buildLiveSlide = (poll, index) => {
       percent,
       contestantCount,
     }),
-    time: 'Live',
+    time: translate('widgets.hero.statusLive'),
     href: pollUrl(poll),
     isEmpty: false,
   }
@@ -452,7 +460,7 @@ onUnmounted(() => {
             :href="currentSlide.href"
             class="flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-center text-sm font-black uppercase tracking-wide shadow-xl shadow-fuchsia-500/25 transition hover:scale-[1.02]"
           >
-            <span>{{ currentSlide.isEmpty ? 'Ver votaciones' : $t('common.actions.voteNow') }}</span>
+            <span>{{ currentSlide.isEmpty ? $t('widgets.hero.viewPolls') : $t('common.actions.voteNow') }}</span>
             <span aria-hidden="true">→</span>
           </a>
           <a

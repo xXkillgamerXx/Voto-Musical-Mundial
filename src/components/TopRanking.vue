@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { translate } from '../i18n'
 import { getPollResults, getPolls } from '../services/api/pollsApi'
 
 const artists = ref([])
@@ -86,7 +87,7 @@ const buildArtistEntry = (resultRow, currentEntry) => {
     ...artist,
     id: artist.id || artistId,
     slug: artist.slug || artistId,
-    name: artist.name || 'Artista',
+    name: artist.name || translate('common.fallback.artist'),
     followersCount: Number(
       currentEntry?.followersCount || artist.followersCount || 0,
     ),

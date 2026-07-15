@@ -215,10 +215,10 @@ onMounted(loadArtists)
         <i :class="searchQuery ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-music'" aria-hidden="true"></i>
       </div>
       <h3 class="relative mt-5 text-xl font-black uppercase text-white">
-        {{ searchQuery ? 'Sin resultados' : 'Artistas en preparacion' }}
+        {{ searchQuery ? $t('artists.list.emptyResultsTitle') : $t('artists.list.emptyPreparingTitle') }}
       </h3>
       <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
-        {{ searchQuery ? 'No encontramos artistas con esa busqueda. Prueba con otro nombre, pais o fandom.' : 'Cuando agregues artistas desde el panel admin, apareceran aqui listos para explorar y seguir.' }}
+        {{ searchQuery ? $t('artists.list.emptyResultsDescription') : $t('artists.list.emptyPreparingDescription') }}
       </p>
       <button
         v-if="searchQuery"

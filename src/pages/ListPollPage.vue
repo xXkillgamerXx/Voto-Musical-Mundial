@@ -2668,7 +2668,7 @@ onUnmounted(() => {
             <p
               class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
             >
-              Contador en vivo
+              {{ $t("polls.detail.liveCountdown") }}
             </p>
             <h2 class="mt-2 truncate text-2xl font-black sm:text-3xl">
               {{ activeRound?.title || poll?.title || "Votación" }}
@@ -2716,30 +2716,30 @@ onUnmounted(() => {
             v-if="poll?.banner"
             :src="poll.banner"
             :alt="poll.title"
-            class="block h-auto w-full"
+            class="block max-h-[60vh] w-full object-cover sm:max-h-none sm:h-auto"
           />
           <div
             v-else
-            class="min-h-80"
+            class="min-h-64 sm:min-h-80"
             aria-hidden="true"
           ></div>
           <div
-            class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/45 to-black/20"
+            class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/80 to-[#080a18]/35 sm:via-[#080a18]/50 sm:to-black/20"
           ></div>
-          <div class="absolute inset-x-0 bottom-0 p-5 sm:p-8">
+          <div class="absolute inset-x-0 bottom-0 p-4 sm:p-8">
             <p
-              class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300"
+              class="text-[10px] font-black uppercase tracking-[0.28em] text-fuchsia-300 sm:text-xs sm:tracking-[0.3em]"
             >
               {{ $t("polls.detail.liveEyebrow") }}
             </p>
             <h1
-              class="mt-3 text-4xl font-black leading-none text-white sm:text-6xl"
+              class="mt-2 text-2xl font-black leading-tight text-white sm:mt-3 sm:text-6xl sm:leading-none"
             >
               {{ poll?.title }}
             </h1>
             <div
               v-if="hasPollDescription"
-              class="poll-rich-text mt-4 max-w-3xl text-sm font-medium leading-7 text-slate-200/95 sm:text-base"
+              class="poll-rich-text mt-3 max-w-3xl text-xs font-medium leading-6 text-slate-200/95 sm:mt-4 sm:text-base sm:leading-7"
               v-html="pollDescriptionHtml"
             ></div>
           </div>
@@ -3690,13 +3690,13 @@ onUnmounted(() => {
           class="flex flex-col gap-2 rounded-3xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100 sm:flex-row sm:items-center sm:justify-between"
         >
           <span>
-            Tus puntos:
+            {{ $t("polls.detail.yourPoints") }}
             <strong class="text-lg text-amber-200"
               >{{ formattedUserPoints }} pts</strong
             >
           </span>
           <span class="text-xs uppercase tracking-widest text-amber-200/75">
-            Cada voto cuesta {{ pointsPerVote }} {{ pointsPerVote === 1 ? 'punto' : 'puntos' }}
+            {{ $t("polls.detail.costPerVote", { count: pointsPerVote, unit: pointsPerVote === 1 ? $t("polls.detail.pointSingular") : $t("polls.detail.pointPlural") }) }}
           </span>
         </div>
 

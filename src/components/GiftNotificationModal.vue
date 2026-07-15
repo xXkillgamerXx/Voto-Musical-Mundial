@@ -297,13 +297,13 @@ onUnmounted(() => {
             <i class="fa-solid fa-gift text-slate-950" aria-hidden="true"></i>
           </div>
           <p class="mt-6 text-xs font-black uppercase tracking-[0.32em] text-amber-200">
-            {{ giftRevealed ? (isMissionGift ? 'Premio recibido' : 'Regalo abierto') : (isMissionGift ? 'Misión completada' : 'Tienes un regalo') }}
+            {{ giftRevealed ? (isMissionGift ? $t('gift.prizeReceived') : $t('gift.giftOpened')) : (isMissionGift ? $t('gift.missionCompleted') : $t('gift.youHaveGift')) }}
           </p>
           <h2 class="mt-3 text-5xl font-black leading-none text-white sm:text-7xl">
-            {{ giftRevealed ? `+${giftAmount} pts` : (isMissionGift ? 'Premio' : 'Sorpresa') }}
+            {{ giftRevealed ? `+${giftAmount} pts` : (isMissionGift ? $t('gift.prize') : $t('gift.surprise')) }}
           </h2>
           <p class="mx-auto mt-4 max-w-md text-base font-bold leading-7 text-slate-300">
-            {{ giftRevealed ? giftMessage : (isMissionGift ? 'Completaste una misión. Abre tu premio para recibir los puntos.' : 'Alguien del equipo te envió un regalo. Ábrelo para descubrir cuántos puntos recibiste.') }}
+            {{ giftRevealed ? giftMessage : (isMissionGift ? $t('gift.missionText') : $t('gift.teamGiftText')) }}
           </p>
 
           <div
@@ -312,7 +312,7 @@ onUnmounted(() => {
           >
             <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
               <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                Enviado por
+                {{ $t('gift.sentBy') }}
               </p>
               <p class="mt-2 text-lg font-black text-white">
                 {{ giftSender }}
@@ -323,7 +323,7 @@ onUnmounted(() => {
               class="rounded-3xl border border-amber-200/25 bg-amber-300/10 p-4"
             >
               <span class="block text-[10px] font-black uppercase tracking-widest text-amber-200">
-                Nuevo saldo
+                {{ $t('gift.newBalance') }}
               </span>
               <span class="mt-2 block text-lg font-black text-white">
                 {{ pointsAfter }} pts
@@ -336,7 +336,7 @@ onUnmounted(() => {
             class="mt-7 min-h-12 w-full max-w-sm rounded-2xl bg-linear-to-r from-amber-300 via-fuchsia-400 to-violet-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/35 transition hover:scale-[1.01]"
             @click="giftRevealed ? closeGift() : revealGift()"
           >
-            {{ giftRevealed ? 'Listo' : 'Abrir regalo' }}
+            {{ giftRevealed ? $t('gift.done') : $t('gift.openGift') }}
           </button>
         </div>
       </article>

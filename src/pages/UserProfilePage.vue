@@ -664,7 +664,7 @@ onUnmounted(() => {
                     class="mt-2 text-xs font-black"
                     :class="usernameStatus?.available ? 'text-emerald-300' : 'text-amber-200'"
                   >
-                    {{ isCheckingUsername ? 'Verificando username...' : usernameStatus.message }}
+                    {{ isCheckingUsername ? $t('profile.edit.checkingUsername') : usernameStatus.message }}
                   </p>
                 </label>
               </div>

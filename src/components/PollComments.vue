@@ -593,7 +593,7 @@ onUnmounted(() => {
             :disabled="!canPublish"
             @click="publishComment"
           >
-            {{ isPublishing ? 'Publicando...' : $t('widgets.comments.publish') }}
+            {{ isPublishing ? $t('widgets.comments.publishing') : $t('widgets.comments.publish') }}
           </button>
         </div>
       </div>

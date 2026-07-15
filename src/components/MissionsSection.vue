@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { translate } from '../i18n'
 import { getMe, getCurrentApiAuth } from '../services/api/authApi'
 import { getStoredAuth, onStoredAuthChange, setStoredAuth } from '../services/api/client'
 import { completeMission, getMissions } from '../services/api/missionsApi'
@@ -132,23 +133,23 @@ const missionValidationText = (mission) => {
 
   if (isReferralMission(mission)) {
     return referralCode.value
-      ? 'Comparte tu enlace. Cuando alguien se registre con ese codigo quedara afiliado a tu cuenta y se sumaran los puntos.'
-      : 'Inicia sesion para generar y compartir tu codigo afiliado.'
+      ? translate('home.missions.validation.referralReady')
+      : translate('home.missions.validation.referralLogin')
   }
 
   if (mission.type?.startsWith('share_')) {
-    return 'Se abrira la app para compartir. Las misiones de amigos usan el enlace de referido.'
+    return translate('home.missions.validation.share')
   }
 
   if (mission.type === 'follow_social') {
-    return 'Abre la red social configurada. Al tocar el boton se registrara esta accion y se entregaran los puntos si aun no la completaste.'
+    return translate('home.missions.validation.followSocial')
   }
 
   if (mission.actionUrl) {
-    return 'Se abrira el enlace configurado. Para confirmar esta mision puede requerirse revision manual o conexion con la red social.'
+    return translate('home.missions.validation.actionUrl')
   }
 
-  return 'Esta mision necesita validacion manual o una automatizacion adicional para confirmar que fue completada.'
+  return translate('home.missions.validation.manual')
 }
 const markMissionCompletedLocally = (mission) => {
   if (!mission) {
@@ -228,7 +229,7 @@ const performMissionAction = async (mission) => {
       try {
         missionActionInProgress.value = true
         missionActionCountdown.value = 10
-        actionMessage.value = 'Se abrio la red social. Estamos verificando la mision para registrar tus puntos.'
+        actionMessage.value = translate('home.missions.socialOpened')
 
         await new Promise((resolve) => {
           missionActionTimer = window.setInterval(() => {
@@ -251,7 +252,7 @@ const performMissionAction = async (mission) => {
           openMissionReward(mission)
         }
       } catch {
-        actionMessage.value = 'No se pudo registrar la mision. Inicia sesion e intenta otra vez.'
+        actionMessage.value = translate('home.missions.registerError')
       } finally {
         missionActionInProgress.value = false
         missionActionCountdown.value = 0

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { translate } from '../i18n'
 import { getCurrentApiAuth } from '../services/api/authApi'
 import { getNotifications, markNotificationRead } from '../services/api/notificationsApi'
 import { isPushSupported, requestAndRegisterPushToken } from '../services/firebasePush'
@@ -57,7 +58,7 @@ const loadNotifications = async () => {
       notifications.value = []
       return
     }
-    errorMessage.value = error?.message || 'No se pudieron cargar tus notificaciones.'
+    errorMessage.value = error?.message || translate('notifications.loadError')
   } finally {
     isLoading.value = false
   }
@@ -94,11 +95,11 @@ const enablePush = async () => {
     pushPermission.value = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
     if (!result.ok) {
       errorMessage.value = result.code
-        ? `No se pudo activar push (${result.code}).`
-        : 'No se pudo activar push en este navegador.'
+        ? translate('notifications.enableErrorCode', { code: result.code })
+        : translate('notifications.enableErrorBrowser')
     }
   } catch (error) {
-    errorMessage.value = error?.message || 'No se pudo activar push.'
+    errorMessage.value = error?.message || translate('notifications.enableError')
   } finally {
     isEnablingPush.value = false
   }
@@ -117,13 +118,13 @@ onMounted(async () => {
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-            Centro de notificaciones
+            {{ $t('notifications.center') }}
           </p>
           <h1 class="mt-2 text-3xl font-black text-white sm:text-4xl">
-            Tus notificaciones
+            {{ $t('notifications.yourNotifications') }}
           </h1>
           <p class="mt-2 text-sm font-bold text-slate-400">
-            {{ unreadCount }} sin leer · regalos, artistas, misiones y avisos importantes.
+            {{ $t('notifications.unreadSummary', { count: unreadCount }) }}
           </p>
         </div>
 
@@ -134,14 +135,14 @@ onMounted(async () => {
             class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
             @click="markAllRead"
           >
-            Marcar leídas
+            {{ $t('notifications.markAllRead') }}
           </button>
           <button
             type="button"
             class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
             @click="loadNotifications"
           >
-            Actualizar
+            {{ $t('notifications.refresh') }}
           </button>
         </div>
       </div>
@@ -150,9 +151,9 @@ onMounted(async () => {
         v-if="pushSupported && pushPermission !== 'granted'"
         class="mt-6 rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4"
       >
-        <p class="text-lg font-black text-cyan-100">Activa push notifications</p>
+        <p class="text-lg font-black text-cyan-100">{{ $t('notifications.enablePush') }}</p>
         <p class="mt-1 text-sm leading-6 text-slate-300">
-          Recibe regalos, avances de artistas y avisos urgentes aunque no tengas la web abierta.
+          {{ $t('notifications.enablePushDescription') }}
         </p>
         <button
           type="button"
@@ -160,7 +161,7 @@ onMounted(async () => {
           :disabled="isEnablingPush"
           @click="enablePush"
         >
-          {{ isEnablingPush ? 'Activando...' : 'Activar push' }}
+          {{ isEnablingPush ? $t('notifications.enabling') : $t('notifications.enablePushButton') }}
         </button>
       </div>
 
@@ -177,7 +178,7 @@ onMounted(async () => {
         v-if="isLoading"
         class="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm font-bold text-slate-300"
       >
-        Cargando notificaciones...
+        {{ $t('notifications.loading') }}
       </div>
 
       <button
@@ -198,7 +199,7 @@ onMounted(async () => {
               v-if="!notification.readAt"
               class="mt-1 rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
             >
-              Nuevo
+              {{ $t('notifications.new') }}
             </span>
           </span>
           <span class="mt-1 block text-sm leading-6 text-slate-300">{{ bodyFor(notification) }}</span>
@@ -210,7 +211,7 @@ onMounted(async () => {
           v-if="notification?.payload?.url"
           class="hidden shrink-0 items-center gap-2 rounded-full border border-fuchsia-300/25 bg-linear-to-r from-fuchsia-500/20 to-cyan-400/20 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/20 transition group-hover:inline-flex group-hover:scale-[1.02]"
         >
-          Abrir
+          {{ $t('notifications.open') }}
           <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
         </span>
       </button>
@@ -222,9 +223,9 @@ onMounted(async () => {
         <div class="mx-auto grid size-16 place-items-center rounded-3xl bg-white/8 text-2xl text-fuchsia-200">
           <i class="fa-regular fa-bell" aria-hidden="true"></i>
         </div>
-        <h2 class="mt-4 text-2xl font-black text-white">No tienes notificaciones</h2>
+        <h2 class="mt-4 text-2xl font-black text-white">{{ $t('notifications.empty') }}</h2>
         <p class="mt-2 text-sm font-bold text-slate-400">
-          Cuando recibas regalos, avisos de artistas o misiones, aparecerán aquí.
+          {{ $t('notifications.emptyDescription') }}
         </p>
       </div>
     </div>

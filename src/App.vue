@@ -234,7 +234,7 @@ onUnmounted(() => {
     <main
       :key="currentRouteKey"
       class="relative z-10"
-      :class="!isPlainPage && 'pt-11 sm:pt-24'"
+      :class="!isPlainPage && 'pt-20 sm:pt-24'"
     >
       <RegisterPage v-if="isRegisterPage" />
       <TermsPage v-else-if="isTermsPage" />

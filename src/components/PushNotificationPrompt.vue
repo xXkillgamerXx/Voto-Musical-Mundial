@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { translate } from '../i18n'
 import { getCurrentApiAuth } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
 import {
@@ -32,8 +33,7 @@ const hasCookieConsentForPush = () => {
 }
 
 const userName = computed(() => currentUser.value?.displayName || currentUser.value?.username || 'fan')
-const friendlyPushError =
-  'No pudimos activar las alertas en este navegador. Puedes seguir usando la web normal y volver a intentarlo mas tarde.'
+const friendlyPushError = translate('pushPrompt.browserError')
 
 const syncVisibility = async () => {
   errorMessage.value = ''
@@ -75,7 +75,7 @@ const enableNotifications = async () => {
     }
 
     if (result.permission === 'denied') {
-      errorMessage.value = 'Las alertas estan bloqueadas en este navegador. Puedes activarlas desde los ajustes del sitio cuando quieras.'
+      errorMessage.value = translate('pushPrompt.blocked')
     } else if (result.reason === 'token_error') {
       errorMessage.value = friendlyPushError
     } else {
@@ -144,30 +144,30 @@ const openForegroundMessage = () => {
             </span>
 
             <p class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200">
-              Notificaciones
+              {{ $t('pushPrompt.eyebrow') }}
             </p>
             <h2 class="mt-2 text-2xl font-black leading-tight text-white sm:text-3xl">
-              Activa alertas importantes
+              {{ $t('pushPrompt.title') }}
             </h2>
             <p class="mt-2 text-sm font-bold text-cyan-100">
-              {{ userName }}, no te pierdas regalos, finales ni avances de tus artistas.
+              {{ $t('pushPrompt.subtitle', { name: userName }) }}
             </p>
             <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-300">
-              Te pediremos permiso del navegador para enviarte avisos solo cuando sea relevante.
+              {{ $t('pushPrompt.permissionNote') }}
             </p>
 
             <div class="mt-5 grid gap-2 text-left text-sm font-bold text-slate-200">
               <div class="flex items-center gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3">
                 <i class="fa-solid fa-gift text-amber-200" aria-hidden="true"></i>
-                <span>Regalos y puntos recibidos</span>
+                <span>{{ $t('pushPrompt.itemGifts') }}</span>
               </div>
               <div class="flex items-center gap-3 rounded-2xl border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-3">
                 <i class="fa-solid fa-star text-fuchsia-200" aria-hidden="true"></i>
-                <span>Artistas seguidos que avanzan o ganan</span>
+                <span>{{ $t('pushPrompt.itemArtists') }}</span>
               </div>
               <div class="flex items-center gap-3 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3">
                 <i class="fa-solid fa-clock text-cyan-200" aria-hidden="true"></i>
-                <span>Votaciones urgentes por terminar</span>
+                <span>{{ $t('pushPrompt.itemPolls') }}</span>
               </div>
             </div>
 
@@ -185,19 +185,19 @@ const openForegroundMessage = () => {
                 :disabled="isEnabling"
                 @click="enableNotifications"
               >
-                {{ isEnabling ? 'Activando...' : 'Permitir alertas' }}
+                {{ isEnabling ? $t('pushPrompt.enabling') : $t('pushPrompt.allow') }}
               </button>
               <button
                 type="button"
                 class="min-h-12 rounded-full border border-white/10 bg-white/5 px-5 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
                 @click="closePrompt"
               >
-                Luego
+                {{ $t('pushPrompt.later') }}
               </button>
             </div>
 
             <p class="mt-4 text-xs font-bold text-slate-500">
-              Puedes cambiar este permiso luego desde los ajustes del navegador.
+              {{ $t('pushPrompt.changeLater') }}
             </p>
           </div>
         </div>
@@ -218,7 +218,7 @@ const openForegroundMessage = () => {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200">
-              Notificación
+              {{ $t('pushPrompt.notification') }}
             </span>
             <span class="mt-1 block truncate text-sm font-black text-white">
               {{ foregroundMessage.title }}
@@ -227,7 +227,7 @@ const openForegroundMessage = () => {
               {{ foregroundMessage.body }}
             </span>
             <span class="mt-3 inline-flex items-center gap-2 rounded-full bg-white/8 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-cyan-100">
-              Ver detalle
+              {{ $t('pushPrompt.viewDetail') }}
               <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
             </span>
           </span>

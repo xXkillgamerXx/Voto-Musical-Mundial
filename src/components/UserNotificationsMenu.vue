@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { translate } from '../i18n'
 import { getCurrentApiAuth } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
 import { getNotifications, markNotificationRead } from '../services/api/notificationsApi'
@@ -53,7 +54,7 @@ const loadNotifications = async () => {
     notifications.value = await getNotifications(40)
   } catch (error) {
     if (error?.status !== 401) {
-      errorMessage.value = error?.message || 'No se pudieron cargar notificaciones.'
+      errorMessage.value = error?.message || translate('notifications.loadError')
     }
   } finally {
     isLoading.value = false
@@ -115,11 +116,11 @@ const enablePush = async () => {
     pushPermission.value = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
     if (!result.ok) {
       errorMessage.value = result.code
-        ? `No se pudo registrar push (${result.code}).`
-        : 'No se pudo activar push en este navegador.'
+        ? translate('notifications.enableErrorCode', { code: result.code })
+        : translate('notifications.enableErrorBrowser')
     }
   } catch (error) {
-    errorMessage.value = error?.message || 'No se pudo activar push.'
+    errorMessage.value = error?.message || translate('notifications.enableError')
   } finally {
     isEnablingPush.value = false
   }
@@ -163,7 +164,7 @@ onUnmounted(() => {
     <button
       type="button"
       class="relative grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 hover:text-white"
-      aria-label="Notificaciones"
+      :aria-label="$t('pushPrompt.eyebrow')"
       :aria-expanded="isOpen"
       @click.stop="toggleOpen"
     >
@@ -184,9 +185,9 @@ onUnmounted(() => {
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
-              Notificaciones
+              {{ $t('pushPrompt.eyebrow') }}
             </p>
-            <h3 class="mt-1 text-lg font-black text-white">Tu actividad</h3>
+            <h3 class="mt-1 text-lg font-black text-white">{{ $t('notifications.activity') }}</h3>
           </div>
           <button
             v-if="unreadCount"
@@ -194,7 +195,7 @@ onUnmounted(() => {
             class="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
             @click="markAllRead"
           >
-            Leer todo
+            {{ $t('notifications.readAll') }}
           </button>
         </div>
         <a
@@ -202,7 +203,7 @@ onUnmounted(() => {
           class="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/15"
           @click="closeMenu"
         >
-          Ver todas las notificaciones
+          {{ $t('notifications.viewAll') }}
           <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
         </a>
 
@@ -210,9 +211,9 @@ onUnmounted(() => {
           v-if="pushSupported && pushPermission !== 'granted'"
           class="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-3"
         >
-          <p class="text-sm font-black text-cyan-100">Activa push notifications</p>
+          <p class="text-sm font-black text-cyan-100">{{ $t('notifications.enablePush') }}</p>
           <p class="mt-1 text-xs leading-5 text-slate-300">
-            Recibe regalos, avances de artistas y avisos importantes aunque no tengas la web abierta.
+            {{ $t('notifications.enablePushDescription') }}
           </p>
           <button
             type="button"
@@ -220,7 +221,7 @@ onUnmounted(() => {
             :disabled="isEnablingPush"
             @click="enablePush"
           >
-            {{ isEnablingPush ? 'Activando...' : 'Activar push' }}
+            {{ isEnablingPush ? $t('notifications.enabling') : $t('notifications.enablePushButton') }}
           </button>
         </div>
 
@@ -234,7 +235,7 @@ onUnmounted(() => {
 
       <div class="max-h-96 overflow-y-auto p-2">
         <div v-if="isLoading" class="p-4 text-sm font-bold text-slate-400">
-          Cargando notificaciones...
+          {{ $t('notifications.loading') }}
         </div>
 
         <button
@@ -269,7 +270,7 @@ onUnmounted(() => {
           v-if="!isLoading && !visibleNotifications.length"
           class="p-5 text-center text-sm font-bold text-slate-400"
         >
-          Todavia no tienes notificaciones.
+          {{ $t('notifications.emptyShort') }}
         </div>
       </div>
     </div>

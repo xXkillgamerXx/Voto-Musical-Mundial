@@ -70,24 +70,24 @@ onMounted(() => {
 
             <div class="min-w-0">
               <p class="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-200">
-                Privacidad
+                {{ $t('cookies.eyebrow') }}
               </p>
               <h2 class="mt-1 text-xl font-black text-white">
-                Cookies y notificaciones
+                {{ $t('cookies.title') }}
               </h2>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                Usamos cookies necesarias para login y seguridad. Con tu permiso tambien recordamos preferencias, medimos visitas, preparamos anuncios de Google y te avisamos de regalos o artistas que sigues.
+                {{ $t('cookies.description') }}
               </p>
 
               <div class="mt-3 flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-wide text-slate-300">
                 <span class="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-emerald-100">
-                  Necesarias siempre activas
+                  {{ $t('cookies.badgeNecessary') }}
                 </span>
                 <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-cyan-100">
-                  Google/analytics opcional
+                  {{ $t('cookies.badgeAnalytics') }}
                 </span>
                 <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1.5 text-fuchsia-100">
-                  Push solo si aceptas
+                  {{ $t('cookies.badgePush') }}
                 </span>
               </div>
             </div>
@@ -99,21 +99,21 @@ onMounted(() => {
               class="min-h-11 rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.02]"
               @click="acceptAll"
             >
-              Aceptar todo
+              {{ $t('cookies.acceptAll') }}
             </button>
             <button
               type="button"
               class="min-h-11 rounded-full border border-white/10 bg-white/5 px-5 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
               @click="rejectOptional"
             >
-              Rechazar opcionales
+              {{ $t('cookies.rejectOptional') }}
             </button>
             <button
               type="button"
               class="min-h-11 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-5 text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/15"
               @click="isCustomizing = !isCustomizing"
             >
-              Configurar
+              {{ $t('cookies.configure') }}
             </button>
           </div>
         </div>
@@ -129,8 +129,8 @@ onMounted(() => {
               class="mt-1 size-4 accent-cyan-400"
             />
             <span>
-              <span class="block text-sm font-black text-white">Preferencias</span>
-              <span class="text-xs leading-5 text-slate-400">Idioma, tema y experiencia personalizada.</span>
+              <span class="block text-sm font-black text-white">{{ $t('cookies.preferencesTitle') }}</span>
+              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.preferencesText') }}</span>
             </span>
           </label>
 
@@ -141,8 +141,8 @@ onMounted(() => {
               class="mt-1 size-4 accent-cyan-400"
             />
             <span>
-              <span class="block text-sm font-black text-white">Analitica</span>
-              <span class="text-xs leading-5 text-slate-400">Medir visitas y mejorar secciones de la web.</span>
+              <span class="block text-sm font-black text-white">{{ $t('cookies.analyticsTitle') }}</span>
+              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.analyticsText') }}</span>
             </span>
           </label>
 
@@ -153,8 +153,8 @@ onMounted(() => {
               class="mt-1 size-4 accent-cyan-400"
             />
             <span>
-              <span class="block text-sm font-black text-white">Anuncios de Google</span>
-              <span class="text-xs leading-5 text-slate-400">Publicidad, medicion y personalizacion si se activa.</span>
+              <span class="block text-sm font-black text-white">{{ $t('cookies.adsTitle') }}</span>
+              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.adsText') }}</span>
             </span>
           </label>
 
@@ -165,8 +165,8 @@ onMounted(() => {
               class="mt-1 size-4 accent-cyan-400"
             />
             <span>
-              <span class="block text-sm font-black text-white">Notificaciones</span>
-              <span class="text-xs leading-5 text-slate-400">Permitir que mostremos el aviso para activar push.</span>
+              <span class="block text-sm font-black text-white">{{ $t('cookies.notificationsTitle') }}</span>
+              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.notificationsText') }}</span>
             </span>
           </label>
 
@@ -176,7 +176,7 @@ onMounted(() => {
               class="min-h-11 rounded-full bg-white px-5 text-xs font-black uppercase tracking-wide text-slate-950 transition hover:scale-[1.02]"
               @click="saveCustom"
             >
-              Guardar preferencias
+              {{ $t('cookies.savePreferences') }}
             </button>
           </div>
         </div>
