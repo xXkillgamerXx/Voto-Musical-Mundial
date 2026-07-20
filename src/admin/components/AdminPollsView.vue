@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { translate } from '../../i18n'
-import { deleteAdminPoll, getAdminPolls } from '../../services/api/adminApi'
+import { deleteAdminPoll, getAdminPolls, updateAdminPoll } from '../../services/api/adminApi'
 
 const polls = ref([])
 const isLoading = ref(true)
@@ -9,6 +9,35 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const pollToDelete = ref(null)
 const isDeleting = ref(false)
+const togglingCountdownId = ref('')
+
+const isCountdownHidden = (poll) =>
+  Boolean(poll?.config?.hideCountdown ?? poll?.hideCountdown ?? false)
+
+const toggleCountdown = async (poll) => {
+  if (!poll || togglingCountdownId.value) {
+    return
+  }
+
+  togglingCountdownId.value = String(poll.id)
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  const nextValue = !isCountdownHidden(poll)
+
+  try {
+    await updateAdminPoll(poll.id, { hideCountdown: nextValue })
+    poll.config = { ...(poll.config || {}), hideCountdown: nextValue }
+    poll.hideCountdown = nextValue
+    successMessage.value = nextValue
+      ? translate('admin.polls.countdownHidden')
+      : translate('admin.polls.countdownVisible')
+  } catch {
+    errorMessage.value = translate('admin.polls.errors.save')
+  } finally {
+    togglingCountdownId.value = ''
+  }
+}
 
 const formatShortDate = (value) => {
   const date = value?.toDate?.() || (typeof value === 'string' ? new Date(value) : null)
@@ -205,6 +234,17 @@ onMounted(loadPolls)
                     >
                       {{ $t('admin.common.edit') }}
                     </a>
+                    <button
+                      type="button"
+                      class="rounded-full border px-4 py-2 text-xs font-black transition disabled:opacity-60"
+                      :class="isCountdownHidden(poll)
+                        ? 'border-amber-300/30 bg-amber-400/15 text-amber-100 hover:bg-amber-400/25'
+                        : 'border-violet-300/25 bg-violet-400/10 text-violet-100 hover:bg-violet-400/20'"
+                      :disabled="togglingCountdownId === String(poll.id)"
+                      @click="toggleCountdown(poll)"
+                    >
+                      {{ isCountdownHidden(poll) ? $t('admin.polls.showCountdown') : $t('admin.polls.hideCountdown') }}
+                    </button>
                     <button
                       type="button"
                       class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"

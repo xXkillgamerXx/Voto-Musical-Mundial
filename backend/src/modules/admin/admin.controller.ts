@@ -494,6 +494,12 @@ export class AdminController {
         status: poll.status,
         activeRoundId: body.activeRoundId ? String(body.activeRoundId) : null,
       });
+    } else {
+      await this.publishPollState(poll.id, {
+        reason: 'poll_config',
+        hideCountdown: Boolean((nextConfig as Record<string, unknown>).hideCountdown),
+        hideVoteCounts: Boolean((nextConfig as Record<string, unknown>).hideVoteCounts),
+      });
     }
 
     return serialize(poll);
@@ -854,11 +860,19 @@ export class AdminController {
           mission.metadata && typeof mission.metadata === 'object' && !Array.isArray(mission.metadata)
             ? (mission.metadata as Record<string, unknown>)
             : {};
+        const visitUrls = Array.isArray(metadata.visitUrls)
+          ? metadata.visitUrls.map((url) => String(url || '').trim()).filter(Boolean)
+          : [];
+        if (mission.actionUrl && !visitUrls.includes(mission.actionUrl)) {
+          visitUrls.unshift(mission.actionUrl);
+        }
         return {
           ...mission,
           titleEn: String(metadata.titleEn || '').trim(),
           descriptionEn: String(metadata.descriptionEn || '').trim(),
           category: String(metadata.category || 'general'),
+          visitMode: String(metadata.visitMode || 'exact') === 'host' ? 'host' : 'exact',
+          visitUrls: visitUrls.slice(0, 10),
         };
       }),
     );

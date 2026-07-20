@@ -36,6 +36,20 @@ const activeRoundEndListeners = new Map();
 const pollUrl = (poll) =>
   `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`;
 
+const stripHtml = (value) =>
+  String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const isCountdownHidden = (poll) =>
+  Boolean(
+    poll?.hideCountdown ??
+      poll?.config?.hideCountdown ??
+      poll?.metadata?.hideCountdown ??
+      false,
+  );
+
 const asDate = (value) => {
   if (!value) return null;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -145,7 +159,8 @@ const activePolls = computed(() => {
       question:
         localized.status === "selecting_winners"
           ? translate("home.activePolls.countingQuestion")
-          : localized.description || translate("home.activePolls.defaultQuestion"),
+          : stripHtml(localized.description) ||
+            translate("home.activePolls.defaultQuestion"),
       statusLabel:
         localized.status === "selecting_winners"
           ? translate("polls.status.selectingWinners")
@@ -154,6 +169,7 @@ const activePolls = computed(() => {
         localized.status === "selecting_winners"
           ? translate("home.activePolls.processAction")
           : translate("common.actions.vote"),
+      hideCountdown: isCountdownHidden(localized),
       time: countdownFor(localized),
       visual: [
         "from-violet-950 via-fuchsia-700 to-indigo-950",
@@ -338,33 +354,35 @@ onUnmounted(() => {
           <h3 class="text-lg font-black uppercase">{{ poll.title }}</h3>
           <p class="mt-1 text-sm text-slate-400">{{ poll.question }}</p>
 
-          <div
-            v-if="poll.time[0] === 'LIVE'"
-            class="mt-5 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30"
-          >
-            <p class="text-lg font-black text-emerald-100">
-              {{ $t("polls.status.live") }}
-            </p>
-            <p class="text-[10px] font-bold uppercase text-emerald-200/70">
-              {{ $t("home.activePolls.noDefinedEnd") }}
-            </p>
-          </div>
-          <div v-else class="mt-5 grid grid-cols-4 gap-2">
+          <template v-if="!poll.hideCountdown">
             <div
-              v-for="(value, index) in poll.time"
-              :key="`${poll.id}-mobile-${index}`"
-              class="rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-center shadow-inner shadow-black/30"
+              v-if="poll.time[0] === 'LIVE'"
+              class="mt-5 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30"
             >
-              <p class="text-lg font-black">{{ value }}</p>
-              <p class="text-[10px] font-bold uppercase text-slate-500">
-                {{
-                  poll.status === "selecting_winners" || value === "LIVE"
-                    ? ""
-                    : timeLabels[index]
-                }}
+              <p class="text-lg font-black text-emerald-100">
+                {{ $t("polls.status.live") }}
+              </p>
+              <p class="text-[10px] font-bold uppercase text-emerald-200/70">
+                {{ $t("home.activePolls.noDefinedEnd") }}
               </p>
             </div>
-          </div>
+            <div v-else class="mt-5 grid grid-cols-4 gap-2">
+              <div
+                v-for="(value, index) in poll.time"
+                :key="`${poll.id}-mobile-${index}`"
+                class="rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-center shadow-inner shadow-black/30"
+              >
+                <p class="text-lg font-black">{{ value }}</p>
+                <p class="text-[10px] font-bold uppercase text-slate-500">
+                  {{
+                    poll.status === "selecting_winners" || value === "LIVE"
+                      ? ""
+                      : timeLabels[index]
+                  }}
+                </p>
+              </div>
+            </div>
+          </template>
 
           <a
             :href="pollUrl(poll)"
@@ -380,7 +398,12 @@ onUnmounted(() => {
       <article
         v-for="poll in activePolls"
         :key="poll.id"
-        class="grid min-h-50 overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:border-fuchsia-300/30 hover:bg-[#101226] md:grid-cols-[20rem_1fr_auto_auto] md:items-center"
+        class="grid min-h-50 overflow-hidden rounded-2xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:border-fuchsia-300/30 hover:bg-[#101226] md:items-center"
+        :class="
+          poll.hideCountdown
+            ? 'md:grid-cols-[20rem_1fr_auto]'
+            : 'md:grid-cols-[20rem_1fr_auto_auto]'
+        "
       >
         <div
           class="relative h-60 overflow-hidden bg-linear-to-br md:h-50"
@@ -405,34 +428,36 @@ onUnmounted(() => {
           <p class="mt-1 text-sm text-slate-400">{{ poll.question }}</p>
         </div>
 
-        <div v-if="poll.time[0] === 'LIVE'" class="px-4 md:px-2">
-          <div
-            class="min-w-40 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30"
-          >
-            <p class="text-xl font-black text-emerald-100">
-              {{ $t("polls.status.live") }}
-            </p>
-            <p class="text-[10px] font-bold uppercase text-emerald-200/70">
-              {{ $t("home.activePolls.noDefinedEnd") }}
-            </p>
+        <template v-if="!poll.hideCountdown">
+          <div v-if="poll.time[0] === 'LIVE'" class="px-4 md:px-2">
+            <div
+              class="min-w-40 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-center shadow-inner shadow-black/30"
+            >
+              <p class="text-xl font-black text-emerald-100">
+                {{ $t("polls.status.live") }}
+              </p>
+              <p class="text-[10px] font-bold uppercase text-emerald-200/70">
+                {{ $t("home.activePolls.noDefinedEnd") }}
+              </p>
+            </div>
           </div>
-        </div>
-        <div v-else class="grid grid-cols-4 gap-2 px-4 md:px-2">
-          <div
-            v-for="(value, index) in poll.time"
-            :key="`${poll.id}-${index}`"
-            class="min-w-17 rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-center shadow-inner shadow-black/30"
-          >
-            <p class="text-xl font-black">{{ value }}</p>
-            <p class="text-[10px] font-bold uppercase text-slate-500">
-              {{
-                poll.status === "selecting_winners" || value === "LIVE"
-                  ? ""
-                  : timeLabels[index]
-              }}
-            </p>
+          <div v-else class="grid grid-cols-4 gap-2 px-4 md:px-2">
+            <div
+              v-for="(value, index) in poll.time"
+              :key="`${poll.id}-${index}`"
+              class="min-w-17 rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-center shadow-inner shadow-black/30"
+            >
+              <p class="text-xl font-black">{{ value }}</p>
+              <p class="text-[10px] font-bold uppercase text-slate-500">
+                {{
+                  poll.status === "selecting_winners" || value === "LIVE"
+                    ? ""
+                    : timeLabels[index]
+                }}
+              </p>
+            </div>
           </div>
-        </div>
+        </template>
 
         <a
           :href="pollUrl(poll)"

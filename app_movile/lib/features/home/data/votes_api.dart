@@ -11,6 +11,7 @@ class VoteActivity {
     required this.artistName,
     required this.artistPhotoUrl,
     required this.userId,
+    required this.username,
     required this.userDisplayName,
     required this.userPhotoUrl,
   });
@@ -24,10 +25,12 @@ class VoteActivity {
   final String artistName;
   final String artistPhotoUrl;
   final String userId;
+  final String username;
   final String userDisplayName;
   final String userPhotoUrl;
 
   factory VoteActivity.fromJson(Map<String, dynamic> json) {
+    final username = _stringValue([json['username']]);
     return VoteActivity(
       id: '${json['id'] ?? ''}',
       createdAt: _parseDate(json['createdAt']),
@@ -38,9 +41,10 @@ class VoteActivity {
       artistName: _stringValue([json['artistName']]).ifEmpty('Artista'),
       artistPhotoUrl: _stringValue([json['artistPhotoUrl']]),
       userId: '${json['userId'] ?? ''}',
+      username: username,
       userDisplayName: _stringValue([
         json['userDisplayName'],
-        json['username'],
+        username,
       ]).ifEmpty('Fan'),
       userPhotoUrl: _stringValue([json['userPhotoUrl']]),
     );
@@ -51,6 +55,7 @@ class VoteActivity {
     final pollId = '${json['pollId'] ?? ''}';
     final userId = '${json['userId'] ?? ''}';
     final artistId = '${json['artistId'] ?? ''}';
+    final username = _stringValue([json['username']]);
     final isAnonymous =
         json['isAnonymous'] == true || json['isAnonymous'] == '1';
     final isStaffVote = json['staffVote'] == true || json['staffVote'] == '1';
@@ -66,6 +71,7 @@ class VoteActivity {
         artistName: _stringValue([json['artistName']]).ifEmpty('Artista'),
         artistPhotoUrl: '',
         userId: '',
+        username: '',
         userDisplayName: '',
         userPhotoUrl: '',
       );
@@ -81,9 +87,10 @@ class VoteActivity {
       artistName: _stringValue([json['artistName']]).ifEmpty('Artista'),
       artistPhotoUrl: _stringValue([json['artistPhotoUrl']]),
       userId: userId,
+      username: username,
       userDisplayName: _stringValue([
         json['userDisplayName'],
-        json['username'],
+        username,
       ]).ifEmpty('Fan'),
       userPhotoUrl: _stringValue([json['userPhotoUrl']]),
     );
@@ -100,6 +107,7 @@ class VoteActivity {
       artistName: artistName,
       artistPhotoUrl: artistPhotoUrl,
       userId: userId,
+      username: username,
       userDisplayName: userDisplayName,
       userPhotoUrl: userPhotoUrl,
     );

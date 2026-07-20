@@ -46,6 +46,7 @@ const matchQueryParam = "duelo";
 const counterQueryParam = "contador";
 const anonymousDefaultScope = "_round";
 const finalRoundTabId = "__final";
+const ANON_COOLDOWN_STORAGE_PREFIX = "vmm-anon-cooldown";
 
 const poll = ref(null);
 const currentPollId = ref("");
@@ -95,6 +96,14 @@ let reloadPublicResults = null;
 let realtimeResultsThrottle = 0;
 let realtimeStateThrottle = 0;
 let clockTimer = null;
+const handleAnonymousVisibilityRefresh = () => {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+
+  now.value = Date.now();
+  refreshAnonymousVoteStatuses();
+};
 let secondarySectionsTimer = null;
 let userPointsAnimationFrame = null;
 let voteQueue = null;
@@ -683,6 +692,13 @@ const hideVoteCounts = computed(() =>
       false,
   ),
 );
+const hideCountdown = computed(() =>
+  Boolean(
+    activeRound.value?.hideCountdown ??
+      poll.value?.hideCountdown ??
+      false,
+  ),
+);
 const pollDescriptionHtml = computed(() => richTextToHtml(poll.value?.description));
 const pollBodyHtml = computed(() => richTextToHtml(poll.value?.body));
 const hasPollDescription = computed(() => hasRichTextContent(poll.value?.description));
@@ -729,14 +745,85 @@ const anonymousVoteScopes = computed(() => {
     return [anonymousDefaultScope];
   }
 
-  return [
+  const matchScopes = [
     ...new Set(
       displayedVersusMatches.value.map(
         (match) => `match_${match.groupNumber}`,
       ),
     ),
   ];
+
+  // While versus matches are still loading, keep the default scope so the
+  // free-vote cooldown can still hydrate and show the wait timer.
+  return matchScopes.length ? matchScopes : [anonymousDefaultScope];
 });
+const anonymousCooldownStorageKey = (scope = anonymousDefaultScope) => {
+  const pollId = String(poll.value?.id || currentPollId.value || "");
+  const roundId = String(activeRound.value?.id || "root");
+  return `${ANON_COOLDOWN_STORAGE_PREFIX}:${pollId}:${roundId}:${scope}`;
+};
+const readStoredAnonymousCooldown = (scope = anonymousDefaultScope) => {
+  if (typeof window === "undefined" || !poll.value?.id) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(anonymousCooldownStorageKey(scope));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    const nextVoteAtMs = new Date(parsed?.nextVoteAt || 0).getTime();
+    if (!Number.isFinite(nextVoteAtMs) || nextVoteAtMs <= Date.now()) {
+      window.localStorage.removeItem(anonymousCooldownStorageKey(scope));
+      return null;
+    }
+
+    return {
+      enabled: true,
+      nextVoteAt: new Date(nextVoteAtMs).toISOString(),
+      remainingMs: Math.max(0, nextVoteAtMs - Date.now()),
+      cooldownMinutes: Number(
+        parsed?.cooldownMinutes || anonymousVotingConfig.value.cooldownMinutes,
+      ),
+    };
+  } catch {
+    return null;
+  }
+};
+const persistAnonymousCooldown = (scope, status) => {
+  if (typeof window === "undefined" || !poll.value?.id || !status) {
+    return;
+  }
+
+  const nextVoteAtMs = status.nextVoteAt
+    ? new Date(status.nextVoteAt).getTime()
+    : Date.now() + Number(status.remainingMs || 0);
+
+  if (!Number.isFinite(nextVoteAtMs) || nextVoteAtMs <= Date.now()) {
+    try {
+      window.localStorage.removeItem(anonymousCooldownStorageKey(scope));
+    } catch {
+      // ignore storage errors
+    }
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      anonymousCooldownStorageKey(scope),
+      JSON.stringify({
+        nextVoteAt: new Date(nextVoteAtMs).toISOString(),
+        cooldownMinutes: Number(
+          status.cooldownMinutes || anonymousVotingConfig.value.cooldownMinutes,
+        ),
+      }),
+    );
+  } catch {
+    // ignore storage errors
+  }
+};
 const anonymousVoteStatusForScope = (scope = anonymousDefaultScope) =>
   anonymousVoteStatuses.value[scope] || null;
 const anonymousNextVoteAtMsForScope = (scope = anonymousDefaultScope) => {
@@ -775,6 +862,65 @@ const normalizeAnonymousStatus = (status) => {
   }
 
   return status;
+};
+const mergeAnonymousStatus = (serverStatus, scope = anonymousDefaultScope) => {
+  const normalizedServer = normalizeAnonymousStatus(serverStatus);
+  const stored = readStoredAnonymousCooldown(scope);
+  const serverNext = normalizedServer?.nextVoteAt
+    ? new Date(normalizedServer.nextVoteAt).getTime()
+    : 0;
+  const storedNext = stored?.nextVoteAt
+    ? new Date(stored.nextVoteAt).getTime()
+    : 0;
+  const nextVoteAtMs = Math.max(serverNext, storedNext);
+
+  if (!nextVoteAtMs) {
+    persistAnonymousCooldown(scope, null);
+    return (
+      normalizedServer || {
+        enabled: true,
+        nextVoteAt: null,
+        remainingMs: 0,
+        cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
+      }
+    );
+  }
+
+  const merged = {
+    ...(normalizedServer || {}),
+    ...(stored || {}),
+    enabled: true,
+    nextVoteAt: new Date(nextVoteAtMs).toISOString(),
+    remainingMs: Math.max(0, nextVoteAtMs - Date.now()),
+    cooldownMinutes: Number(
+      normalizedServer?.cooldownMinutes ||
+        stored?.cooldownMinutes ||
+        anonymousVotingConfig.value.cooldownMinutes,
+    ),
+  };
+
+  persistAnonymousCooldown(scope, merged);
+  return merged;
+};
+const hydrateAnonymousCooldownsFromStorage = () => {
+  if (!poll.value?.id) {
+    return;
+  }
+
+  const hydrated = {};
+  anonymousVoteScopes.value.forEach((scope) => {
+    const stored = readStoredAnonymousCooldown(scope);
+    if (stored) {
+      hydrated[scope] = stored;
+    }
+  });
+
+  if (Object.keys(hydrated).length) {
+    anonymousVoteStatuses.value = {
+      ...anonymousVoteStatuses.value,
+      ...hydrated,
+    };
+  }
 };
 const activeAnonymousStatusScope = computed(() => {
   if (voteModalContestant.value) {
@@ -2022,6 +2168,8 @@ const refreshAnonymousVoteStatuses = async () => {
     return;
   }
 
+  // Show stored wait time immediately when the user comes back to the page.
+  hydrateAnonymousCooldownsFromStorage();
   isLoadingAnonymousStatus.value = true;
 
   try {
@@ -2035,14 +2183,14 @@ const refreshAnonymousVoteStatuses = async () => {
 
         return [
           scope,
-          normalizeAnonymousStatus(result?.status || result || null),
+          mergeAnonymousStatus(result?.status || result || null, scope),
         ];
       }),
     );
 
     anonymousVoteStatuses.value = Object.fromEntries(statuses);
   } catch {
-    anonymousVoteStatuses.value = {};
+    hydrateAnonymousCooldownsFromStorage();
   } finally {
     isLoadingAnonymousStatus.value = false;
   }
@@ -2093,7 +2241,12 @@ const voteButtonLabel = (contestant) => {
 };
 
 const closeVoteModal = () => {
-  resetVisibleTurnstile();
+  if (turnstileWidgetId !== null) {
+    removeTurnstileWidget(turnstileWidgetId);
+    turnstileWidgetId = null;
+  }
+  turnstileToken.value = "";
+  turnstileError.value = "";
   voteModalContestant.value = null;
   voteAmount.value = 1;
 };
@@ -2246,9 +2399,20 @@ const voteAnonymouslyFor = async (contestant) => {
       turnstileToken: turnstileToken.value || undefined,
     });
 
+    const nextStatus = mergeAnonymousStatus(
+      result?.status || {
+        enabled: true,
+        cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
+        remainingMs: anonymousVotingConfig.value.cooldownMinutes * 60 * 1000,
+        nextVoteAt: new Date(
+          Date.now() + anonymousVotingConfig.value.cooldownMinutes * 60 * 1000,
+        ).toISOString(),
+      },
+      voteScope,
+    );
     anonymousVoteStatuses.value = {
       ...anonymousVoteStatuses.value,
-      [voteScope]: normalizeAnonymousStatus(result?.status || result || null),
+      [voteScope]: nextStatus,
     };
     // Anonymous votes are sent immediately, so this visual update only happens after
     // the backend confirms the vote. That keeps the UI from bouncing on rejected votes.
@@ -2271,13 +2435,16 @@ const voteAnonymouslyFor = async (contestant) => {
       const details = error.payload || error.details || {};
       anonymousVoteStatuses.value = {
         ...anonymousVoteStatuses.value,
-        [voteScope]: normalizeAnonymousStatus({
-          ...(anonymousVoteStatuses.value[voteScope] || {}),
-          enabled: true,
-          cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
-          nextVoteAt: details.nextVoteAt || null,
-          remainingMs: Number(details.remainingMs || 0),
-        }),
+        [voteScope]: mergeAnonymousStatus(
+          {
+            ...(anonymousVoteStatuses.value[voteScope] || {}),
+            enabled: true,
+            cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
+            nextVoteAt: details.nextVoteAt || null,
+            remainingMs: Number(details.remainingMs || 0),
+          },
+          voteScope,
+        ),
       };
       showAnonymousCooldownNotice(contestant);
       return;
@@ -2502,6 +2669,8 @@ onMounted(() => {
   clockTimer = window.setInterval(() => {
     now.value = Date.now();
   }, 1000);
+  document.addEventListener("visibilitychange", handleAnonymousVisibilityRefresh);
+  window.addEventListener("focus", handleAnonymousVisibilityRefresh);
   applyEmbeddedNoScroll();
   loadPoll();
   secondarySectionsTimer = window.setTimeout(() => {
@@ -2535,6 +2704,8 @@ onUnmounted(() => {
     turnstileWidgetId = null;
   }
   restoreEmbeddedNoScroll();
+  document.removeEventListener("visibilitychange", handleAnonymousVisibilityRefresh);
+  window.removeEventListener("focus", handleAnonymousVisibilityRefresh);
   window.clearInterval(clockTimer);
   window.clearTimeout(secondarySectionsTimer);
 });
@@ -2756,7 +2927,7 @@ onUnmounted(() => {
         ></div>
       </div>
 
-      <div v-if="!isEmbeddedPage" class="mt-6 flex justify-center">
+      <div v-if="!isEmbeddedPage && !hideCountdown" class="mt-6 flex justify-center">
         <div
           class="grid w-full max-w-2xl grid-cols-4 gap-2 rounded-3xl border border-white/10 bg-white/5 p-4"
         >
@@ -3418,7 +3589,7 @@ onUnmounted(() => {
           >
             <div
               v-if="match.contestants.length === 2"
-              class="pointer-events-none absolute inset-0 z-50 grid place-items-center"
+              class="versus-vs-overlay pointer-events-none absolute inset-x-0 top-0 z-50 flex items-center justify-center"
               :class="isEmbeddedPage && 'embed-duel-vs-layer'"
             >
               <span
@@ -3719,6 +3890,9 @@ onUnmounted(() => {
               </span>
               <span class="mt-1 block text-3xl font-black tabular-nums tracking-tight text-amber-100">
                 {{ anonymousLiveCountdownLabel }}
+              </span>
+              <span class="mt-1 block text-sm font-bold text-amber-100/90">
+                {{ anonymousVoteMessage }}
               </span>
             </template>
             <template v-else>
@@ -4057,7 +4231,7 @@ onUnmounted(() => {
             ></div>
             <button
               type="button"
-              class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-xl font-black text-slate-300 transition hover:bg-white/10 hover:text-white"
+              class="absolute right-3 top-3 z-50 grid size-11 place-items-center rounded-full border border-white/15 bg-[#090b19]/95 text-2xl font-black leading-none text-slate-200 shadow-lg transition hover:bg-white/15 hover:text-white"
               :aria-label="$t('polls.detail.close')"
               @click.stop.prevent="closeVoteModal"
             >
@@ -4066,7 +4240,7 @@ onUnmounted(() => {
 
             <div class="relative z-10">
               <div
-                class="flex items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4"
+                class="flex items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 pr-14"
               >
                 <span
                   class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-3xl border-2 border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-3xl font-black"
@@ -4846,16 +5020,35 @@ onUnmounted(() => {
   position: relative;
 }
 
+.versus-vs-overlay,
 .embed-duel-vs-layer {
-  display: grid;
-  place-items: center;
+  /* Match the image row height (2 side-by-side 5/4 images) so VS sits in the photo center. */
+  aspect-ratio: 5 / 2;
 }
 
-@media (max-width: 639px) {
+@media (min-width: 640px) {
+  .versus-vs-overlay:not(.embed-duel-vs-layer) {
+    aspect-ratio: auto;
+    height: 13rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .versus-vs-overlay:not(.embed-duel-vs-layer) {
+    height: 19.5rem;
+  }
+}
+
+@media (min-width: 640px) {
   .embed-duel-vs-layer {
-    align-items: center;
-    justify-items: center;
-    padding-block: 0;
+    aspect-ratio: auto;
+    height: 18rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .embed-duel-vs-layer {
+    height: 20rem;
   }
 }
 

@@ -27,6 +27,7 @@ const missionTypes = [
   { value: "share_twitter", label: "Compartir en X/Twitter" },
   { value: "share_instagram_story", label: "Compartir en Instagram Stories" },
   { value: "follow_social", label: "Seguir red oficial" },
+  { value: "visit_page", label: "Visitar noticia / pagina" },
   { value: "follow_artist", label: "Seguir artista" },
   { value: "favorite_poll", label: "Dar like/favorito" },
   { value: "like_social_post", label: "Me gusta en publicacion" },
@@ -67,6 +68,22 @@ const missionCreationTypes = [
     inviteeRewardPoints: 0,
     actionUrl: "https://instagram.com/",
     helper: "Se valida por accion/clic al abrir la red social configurada.",
+  },
+  {
+    key: "visit_page",
+    title: "Visitar paginas web",
+    description:
+      "El usuario visita paginas distintas del sitio (ej: 10 paginas en vote.musicmundial.com). Se detecta automaticamente.",
+    category: "social",
+    type: "visit_page",
+    icon: "fa-solid fa-newspaper",
+    target: 10,
+    rewardPoints: 15,
+    inviteeRewardPoints: 0,
+    actionUrl: "https://vote.musicmundial.com/",
+    visitMode: "host",
+    visitUrls: ["https://vote.musicmundial.com/"],
+    helper: "Modo sitio: cualquier pagina del dominio cuenta. Modo exacto: solo las URLs listadas.",
   },
 ];
 
@@ -234,6 +251,8 @@ const emptyForm = {
   category: "social",
   type: "vote_count",
   actionUrl: "",
+  visitMode: "host",
+  visitUrls: [""],
   target: 1,
   rewardPoints: 25,
   inviteeRewardPoints: 0,
@@ -276,13 +295,22 @@ const selectedCreationType = computed(() =>
 const isReferralSignupMission = computed(() => form.value.type === "referral_signup");
 const isShareMission = computed(() => String(form.value.type || "").startsWith("share_"));
 const isFollowSocialMission = computed(() => form.value.type === "follow_social");
+const isVisitPageMission = computed(() => form.value.type === "visit_page");
+const missionVisitScriptSnippet =
+  '<' + 'script src="https://vote.musicmundial.com/mission-visit.js" async><' + '/' + 'script>';
 const shouldShowAdvancedFields = computed(
   () => !selectedCreationType.value || selectedCreationType.value.key === "manual",
 );
-const shouldShowActionUrl = computed(() => shouldShowAdvancedFields.value || isFollowSocialMission.value);
+const shouldShowActionUrl = computed(
+  () => shouldShowAdvancedFields.value || isFollowSocialMission.value || isVisitPageMission.value,
+);
 const targetLabel = computed(() => {
   if (isReferralSignupMission.value) {
     return "Cantidad de amigos";
+  }
+
+  if (isVisitPageMission.value) {
+    return "Paginas a visitar";
   }
 
   if (isFollowSocialMission.value) {
@@ -295,6 +323,28 @@ const targetLabel = computed(() => {
 
   return "Meta";
 });
+const normalizedVisitUrls = computed(() => {
+  const urls = Array.isArray(form.value.visitUrls) ? form.value.visitUrls : [];
+  return [...new Set(urls.map((url) => String(url || "").trim()).filter(Boolean))].slice(0, 10);
+});
+const addVisitUrlField = () => {
+  if (!Array.isArray(form.value.visitUrls)) {
+    form.value.visitUrls = [""];
+  }
+  if (form.value.visitUrls.length >= 10) {
+    return;
+  }
+  form.value.visitUrls.push("");
+};
+const removeVisitUrlField = (index) => {
+  if (!Array.isArray(form.value.visitUrls)) {
+    return;
+  }
+  form.value.visitUrls.splice(index, 1);
+  if (!form.value.visitUrls.length) {
+    form.value.visitUrls = [""];
+  }
+};
 const rewardLabel = computed(() => {
   if (isReferralSignupMission.value) {
     return "Puntos para quien invita";
@@ -346,6 +396,10 @@ const createMissionFromType = (missionType) => {
     category: missionType.category,
     type: missionType.type,
     actionUrl: missionType.actionUrl || "",
+    visitMode: missionType.visitMode || "exact",
+    visitUrls: Array.isArray(missionType.visitUrls) && missionType.visitUrls.length
+      ? [...missionType.visitUrls]
+      : [missionType.actionUrl || ""],
     target: missionType.target,
     rewardPoints: missionType.rewardPoints,
     inviteeRewardPoints: missionType.inviteeRewardPoints || 0,
@@ -375,18 +429,28 @@ const closeTemplatesModal = () => {
 const editMission = (mission) => {
   editingMissionId.value = mission.id;
   activeLocale.value = "es";
+  const meta = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+  const storedUrls = Array.isArray(mission.visitUrls)
+    ? mission.visitUrls
+    : Array.isArray(meta.visitUrls)
+      ? meta.visitUrls
+      : [];
+  const primaryUrl = mission.actionUrl || mission.url || "";
+  const visitUrls = [...new Set([primaryUrl, ...storedUrls].map((url) => String(url || "").trim()).filter(Boolean))];
   form.value = {
     title: mission.title || "",
-    titleEn: mission.titleEn || mission.metadata?.titleEn || "",
+    titleEn: mission.titleEn || meta.titleEn || "",
     description: mission.description || "",
-    descriptionEn: mission.descriptionEn || mission.metadata?.descriptionEn || "",
-    category: mission.category || mission.metadata?.category || "general",
+    descriptionEn: mission.descriptionEn || meta.descriptionEn || "",
+    category: mission.category || meta.category || "general",
     type: mission.type || "manual",
-    actionUrl: mission.actionUrl || mission.url || "",
+    actionUrl: primaryUrl,
+    visitMode: mission.visitMode || meta.visitMode || "exact",
+    visitUrls: visitUrls.length ? visitUrls : [""],
     target: Number(mission.target || 1),
     rewardPoints: Number(mission.rewardPoints || 0),
-    inviteeRewardPoints: Number(mission.metadata?.inviteeRewardPoints || 0),
-    frequency: mission.metadata?.frequency || "once",
+    inviteeRewardPoints: Number(meta.inviteeRewardPoints || 0),
+    frequency: meta.frequency || "once",
     icon: mission.icon || "fa-solid fa-check",
     order: Number(mission.order || 1),
     active: mission.active !== false,
@@ -398,23 +462,28 @@ const editMission = (mission) => {
   isMissionModalOpen.value = true;
 };
 
-const missionPayload = () => ({
-  title: form.value.title.trim(),
-  titleEn: form.value.titleEn.trim(),
-  description: form.value.description.trim(),
-  descriptionEn: form.value.descriptionEn.trim(),
-  category: form.value.category || "general",
-  type: form.value.type,
-  actionUrl: form.value.actionUrl.trim(),
-  target: Math.max(1, Math.floor(Number(form.value.target || 1))),
-  rewardPoints: Math.max(0, Math.floor(Number(form.value.rewardPoints || 0))),
-  inviteeRewardPoints: Math.max(0, Math.floor(Number(form.value.inviteeRewardPoints || 0))),
-  frequency: form.value.frequency || "once",
-  icon: form.value.icon.trim() || "fa-solid fa-check",
-  order: Math.max(1, Math.floor(Number(form.value.order || 1))),
-  active: Boolean(form.value.active),
-  featured: Boolean(form.value.featured),
-});
+const missionPayload = () => {
+  const visitUrls = normalizedVisitUrls.value;
+  return {
+    title: form.value.title.trim(),
+    titleEn: form.value.titleEn.trim(),
+    description: form.value.description.trim(),
+    descriptionEn: form.value.descriptionEn.trim(),
+    category: form.value.category || "general",
+    type: form.value.type,
+    actionUrl: visitUrls[0] || form.value.actionUrl.trim(),
+    visitMode: form.value.type === "visit_page" ? (form.value.visitMode || "exact") : undefined,
+    visitUrls: form.value.type === "visit_page" ? visitUrls : undefined,
+    target: Math.max(1, Math.floor(Number(form.value.target || 1))),
+    rewardPoints: Math.max(0, Math.floor(Number(form.value.rewardPoints || 0))),
+    inviteeRewardPoints: Math.max(0, Math.floor(Number(form.value.inviteeRewardPoints || 0))),
+    frequency: form.value.frequency || "once",
+    icon: form.value.icon.trim() || "fa-solid fa-check",
+    order: Math.max(1, Math.floor(Number(form.value.order || 1))),
+    active: Boolean(form.value.active),
+    featured: Boolean(form.value.featured),
+  };
+};
 
 const templatePayload = (template, index) => ({
   title: template.title,
@@ -486,6 +555,22 @@ const saveMission = async () => {
   if (!form.value.description.trim()) {
     errorMessage.value = "Escribe una descripcion para la mision.";
     return;
+  }
+
+  if (form.value.type === "visit_page") {
+    const visitUrls = normalizedVisitUrls.value;
+    if (!visitUrls.length) {
+      errorMessage.value = "Agrega al menos 1 URL para la mision de visita.";
+      return;
+    }
+    if ((form.value.visitMode || "host") === "exact") {
+      const target = Math.max(1, Math.floor(Number(form.value.target || 1)));
+      if (target > visitUrls.length) {
+        errorMessage.value =
+          `En modo exacto la meta (${target}) no puede ser mayor que las URLs (${visitUrls.length}). Usa "Cualquier pagina del sitio" o agrega mas URLs.`;
+        return;
+      }
+    }
   }
 
   isSaving.value = true;
@@ -814,7 +899,7 @@ onMounted(async () => {
           </label>
         </div>
 
-        <label v-if="shouldShowActionUrl" class="block">
+        <label v-if="shouldShowActionUrl && !isVisitPageMission" class="block">
           <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
             {{ isFollowSocialMission ? "Enlace de la red social" : "URL de accion" }}
           </span>
@@ -825,9 +910,88 @@ onMounted(async () => {
             placeholder="https://instagram.com/tu-cuenta"
           />
           <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
-            {{ isFollowSocialMission ? "Pega aqui el enlace oficial de Instagram, X, Facebook, TikTok u otra red." : "Para seguir redes, likes o comentarios, pega aqui la URL oficial que abrira el boton Hacer mision." }}
+            {{
+              isFollowSocialMission
+                ? "Pega aqui el enlace oficial de Instagram, X, Facebook, TikTok u otra red."
+                : "Para seguir redes, likes o comentarios, pega aqui la URL oficial que abrira el boton Hacer mision."
+            }}
           </span>
         </label>
+
+        <div v-if="isVisitPageMission" class="space-y-4">
+          <label class="block">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Modo de visita</span>
+            <select
+              v-model="form.visitMode"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+            >
+              <option value="host">Cualquier pagina del sitio</option>
+              <option value="exact">Solo estas URLs (exactas)</option>
+            </select>
+            <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
+              {{
+                form.visitMode === 'host'
+                  ? 'Con 1 URL base (ej: https://vote.musicmundial.com/) cuenta CUALQUIER pagina distinta de ese dominio: /votaciones, /artistas, etc. Meta 10 = 10 paginas distintas.'
+                  : 'Solo cuentan las URLs exactas que agregues abajo. Si meta es 10, debes listar hasta 10 URLs distintas.'
+              }}
+            </span>
+          </label>
+
+          <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+                URLs (hasta 10)
+              </span>
+              <button
+                type="button"
+                class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-cyan-100 disabled:opacity-50"
+                :disabled="(form.visitUrls || []).length >= 10"
+                @click="addVisitUrlField"
+              >
+                + Agregar URL
+              </button>
+            </div>
+            <div class="mt-3 space-y-2">
+              <div
+                v-for="(_url, index) in form.visitUrls"
+                :key="`visit-url-${index}`"
+                class="flex gap-2"
+              >
+                <input
+                  v-model="form.visitUrls[index]"
+                  type="url"
+                  class="min-h-11 flex-1 rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50"
+                  :placeholder="index === 0 ? 'https://vote.musicmundial.com/' : 'https://...'"
+                />
+                <button
+                  type="button"
+                  class="rounded-2xl border border-red-300/25 bg-red-500/10 px-3 text-xs font-black text-red-100 disabled:opacity-40"
+                  :disabled="(form.visitUrls || []).length <= 1"
+                  @click="removeVisitUrlField(index)"
+                >
+                  X
+                </button>
+              </div>
+            </div>
+            <p class="mt-3 text-xs font-bold leading-5 text-slate-500">
+              Meta = cuantas paginas distintas debe visitar. Ejemplo: modo sitio + URL
+              https://vote.musicmundial.com/ + meta 10 = visitar 10 paginas del vote.
+            </p>
+          </div>
+
+          <div class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+            <p class="text-xs font-black uppercase tracking-widest text-cyan-200">
+              Script en musicmundial.com
+            </p>
+            <p class="mt-2 text-sm leading-6 text-slate-300">
+              Si usas paginas de musicmundial.com, instala este script una sola vez en header/footer.
+              En vote.musicmundial.com la visita se detecta automaticamente sin script.
+            </p>
+            <code class="mt-3 block overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-xs font-bold text-cyan-100">
+              {{ missionVisitScriptSnippet }}
+            </code>
+          </div>
+        </div>
 
         <div class="grid gap-4 sm:grid-cols-3">
           <label class="block">

@@ -9,6 +9,7 @@ import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
+import '../../../users/presentation/pages/user_profile_page.dart';
 import '../../data/live_activity_feed.dart';
 import '../../data/mission.dart';
 import '../../data/missions_api.dart';
@@ -349,6 +350,20 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openUserProfile(String username) {
+    final normalized = username.trim().toLowerCase();
+    if (normalized.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfilePage(
+          authService: widget.authService,
+          username: normalized,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -427,6 +442,7 @@ class _HomePageState extends State<HomePage> {
                     return _LiveActivitySection(
                       feed: _liveActivityFeed,
                       livePollCount: data.livePollIds.length,
+                      onUserTap: _openUserProfile,
                     );
                   },
                 ),
@@ -1848,10 +1864,15 @@ class _MainCategoriesSection extends StatelessWidget {
 }
 
 class _LiveActivitySection extends StatelessWidget {
-  const _LiveActivitySection({required this.feed, required this.livePollCount});
+  const _LiveActivitySection({
+    required this.feed,
+    required this.livePollCount,
+    required this.onUserTap,
+  });
 
   final LiveActivityFeed feed;
   final int livePollCount;
+  final ValueChanged<String> onUserTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2025,7 +2046,10 @@ class _LiveActivitySection extends StatelessWidget {
                   .map(
                     (activity) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: _LiveActivityCard(activity: activity),
+                      child: _LiveActivityCard(
+                        activity: activity,
+                        onUserTap: onUserTap,
+                      ),
                     ),
                   ),
           ],
@@ -2088,153 +2112,173 @@ class _LiveStatChip extends StatelessWidget {
 }
 
 class _LiveActivityCard extends StatelessWidget {
-  const _LiveActivityCard({required this.activity});
+  const _LiveActivityCard({
+    required this.activity,
+    required this.onUserTap,
+  });
 
   final VoteActivity activity;
+  final ValueChanged<String> onUserTap;
 
   @override
   Widget build(BuildContext context) {
     final userPhoto = resolveArtistMediaUrl(activity.userPhotoUrl);
     final artistPhoto = resolveArtistMediaUrl(activity.artistPhotoUrl);
-    final gradient = const [Color(0xFF020617), Color(0xFF312E81)];
+    final canOpenProfile = activity.username.trim().isNotEmpty;
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF070B1A).withValues(alpha: 0.9),
+    return Material(
+      color: const Color(0xFF070B1A).withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: canOpenProfile
+            ? () => onUserTap(activity.username)
+            : null,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFFEC4899), Color(0xFF8B5CF6)],
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(2),
-              child: CircleAvatar(
-                backgroundColor: const Color(0xFF0B071C),
-                backgroundImage: userPhoto.isNotEmpty
-                    ? NetworkImage(userPhoto)
-                    : null,
-                child: userPhoto.isEmpty
-                    ? Text(
-                        activity.userDisplayName.characters.first.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      )
-                    : null,
-              ),
-            ),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity.userDisplayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFEC4899), Color(0xFF8B5CF6)],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: const Color(0xFFC4B5FD).withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Text(
-                    activity.pollTitle.isNotEmpty
-                        ? activity.pollTitle
-                        : 'Votación',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFFDDD6FE),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: CircleAvatar(
+                    backgroundColor: const Color(0xFF0B071C),
+                    backgroundImage: userPhoto.isNotEmpty
+                        ? NetworkImage(userPhoto)
+                        : null,
+                    child: userPhoto.isEmpty
+                        ? Text(
+                            activity.userDisplayName.characters.first
+                                .toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          )
+                        : null,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'acaba de votar por ${activity.artistName}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.72),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatActivityTime(activity.createdAt),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(colors: gradient),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: artistPhoto.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: artistPhoto,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, _, _) => Center(
-                      child: Text(
-                        activity.artistName.characters.first.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
-                        ),
-                      ),
-                    ),
-                  )
-                : Center(
-                    child: Text(
-                      activity.artistName.characters.first.toUpperCase(),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      activity.userDisplayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
-                        fontSize: 20,
                       ),
                     ),
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(
+                            0xFFC4B5FD,
+                          ).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        activity.pollTitle.isNotEmpty
+                            ? activity.pollTitle
+                            : 'Votación',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFDDD6FE),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'acaba de votar por ${activity.artistName}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatActivityTime(activity.createdAt),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF020617), Color(0xFF312E81)],
                   ),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.15),
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: artistPhoto.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: artistPhoto,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, _, _) => Center(
+                          child: Text(
+                            activity.artistName.characters.first.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 20,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          activity.artistName.characters.first.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -4,7 +4,12 @@ import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getMe, getCurrentApiAuth } from '../services/api/authApi'
 import { getStoredAuth, onStoredAuthChange, setStoredAuth } from '../services/api/client'
-import { completeMission, getMissions } from '../services/api/missionsApi'
+import {
+  completeMission,
+  createMissionVisitToken,
+  getMissions,
+  reportMissionVisitProgress,
+} from '../services/api/missionsApi'
 
 const { locale } = useI18n()
 const dbMissions = ref([])
@@ -49,6 +54,8 @@ const missions = computed(() => {
         text: mission.description || '',
         type: mission.type || 'manual',
         actionUrl: mission.actionUrl || mission.url || '',
+        visitMode: mission.visitMode === 'host' ? 'host' : 'exact',
+        visitUrls: Array.isArray(mission.visitUrls) ? mission.visitUrls : [],
         reward: `+${Number(mission.rewardPoints || 0)} pts`,
         rewardPoints: Number(mission.rewardPoints || 0),
         target,
@@ -102,6 +109,10 @@ const missionActionLabel = (mission) => {
     return 'Ir a la red social'
   }
 
+  if (mission?.type === 'visit_page') {
+    return translate('home.missions.openPage')
+  }
+
   if (mission?.type?.startsWith('share_')) {
     return 'Compartir'
   }
@@ -143,6 +154,16 @@ const missionValidationText = (mission) => {
 
   if (mission.type === 'follow_social') {
     return translate('home.missions.validation.followSocial')
+  }
+
+  if (mission.type === 'visit_page') {
+    if (mission.visitMode === 'host') {
+      return translate('home.missions.validation.visitPageHost')
+    }
+    if (Number(mission.target || 1) > 1 || (mission.visitUrls || []).length > 1) {
+      return translate('home.missions.validation.visitPageExact')
+    }
+    return translate('home.missions.validation.visitPage')
   }
 
   if (mission.actionUrl) {
@@ -217,6 +238,111 @@ const performMissionAction = async (mission) => {
     }
 
     window.open(`https://wa.me/?text=${text}%20${encodedReferralUrl()}`, '_blank', 'noopener,noreferrer')
+    return
+  }
+
+  if (mission.type === 'visit_page') {
+    const wasDone = mission.done
+    const target = Math.max(1, Number(mission.target || 1))
+    const firstUrl = String(mission.actionUrl || mission.visitUrls?.[0] || '').trim()
+
+    try {
+      missionActionInProgress.value = true
+      actionMessage.value = translate('home.missions.visitOpening')
+
+      let isSameOrigin = false
+      try {
+        isSameOrigin = Boolean(firstUrl) && new URL(firstUrl).origin === window.location.origin
+      } catch {
+        isSameOrigin = false
+      }
+
+      if (isSameOrigin) {
+        const targetUrl = new URL(firstUrl)
+        const nextPath = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`
+        const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+        if (nextPath !== currentPath) {
+          window.history.pushState({}, '', nextPath)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        } else {
+          await reportMissionVisitProgress(window.location.href.split('#')[0])
+        }
+
+        actionMessage.value = mission.visitMode === 'host' || target > 1
+          ? translate('home.missions.visitWaitingHost')
+          : translate('home.missions.visitWaiting')
+      } else {
+        const visit = await createMissionVisitToken(mission.id)
+        window.open(visit.url || firstUrl, '_blank', 'noopener,noreferrer')
+        actionMessage.value = mission.visitMode === 'host' || target > 1
+          ? translate('home.missions.visitWaitingHost')
+          : translate('home.missions.visitWaiting')
+      }
+
+      let completed = false
+      for (let attempt = 0; attempt < 24; attempt += 1) {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 1500)
+        })
+
+        if (isSameOrigin) {
+          await reportMissionVisitProgress(window.location.href.split('#')[0]).catch(() => {})
+        }
+
+        const rows = await getMissions()
+        dbMissions.value = Array.isArray(rows) ? rows : []
+        const updated = dbMissions.value.find((item) => String(item.id) === String(mission.id))
+        const current = Math.min(target, Number(updated?.progress || 0))
+        const done = Boolean(
+          updated?.rewardedAt
+          || updated?.completedAt
+          || current >= Number(updated?.target || target),
+        )
+
+        mission.progress = `${current}/${target}`
+        mission.percent = Math.round((current / target) * 100)
+        if (selectedMission.value && String(selectedMission.value.id) === String(mission.id)) {
+          selectedMission.value.progress = mission.progress
+          selectedMission.value.percent = mission.percent
+        }
+
+        if (current > 0 && !done) {
+          actionMessage.value = translate('home.missions.visitProgress', {
+            current,
+            target,
+          })
+        }
+
+        if (done) {
+          markMissionCompletedLocally(mission)
+          try {
+            const me = await getMe()
+            applyUpdatedPoints(me?.points)
+            userProfile.value = me || userProfile.value
+          } catch {
+            // ignore profile refresh errors
+          }
+          selectedMission.value = null
+          completed = true
+
+          if (!wasDone) {
+            openMissionReward(mission)
+          }
+          break
+        }
+      }
+
+      if (!completed) {
+        actionMessage.value = translate('home.missions.visitPending')
+      }
+    } catch {
+      actionMessage.value = translate('home.missions.registerError')
+    } finally {
+      missionActionInProgress.value = false
+      missionActionCountdown.value = 0
+    }
+
     return
   }
 
@@ -311,11 +437,50 @@ const syncReferralCode = (authState = getCurrentApiAuth()) => {
     .catch(() => {})
 }
 
+const applyVisitProgressUpdates = (updates = []) => {
+  if (!Array.isArray(updates) || !updates.length) {
+    return
+  }
+
+  for (const update of updates) {
+    const sourceMission = dbMissions.value.find((item) => String(item.id) === String(update.missionId))
+    if (!sourceMission) {
+      continue
+    }
+
+    const target = Math.max(1, Number(update.target || sourceMission.target || 1))
+    const progress = Math.min(target, Number(update.progress || 0))
+    sourceMission.progress = progress
+
+    if (update.awarded) {
+      sourceMission.completedAt = sourceMission.completedAt || new Date().toISOString()
+      sourceMission.rewardedAt = sourceMission.rewardedAt || new Date().toISOString()
+    }
+
+    if (selectedMission.value && String(selectedMission.value.id) === String(update.missionId)) {
+      selectedMission.value.progress = `${progress}/${target}`
+      selectedMission.value.percent = Math.round((progress / target) * 100)
+      if (progress > 0 && progress < target) {
+        actionMessage.value = translate('home.missions.visitProgress', {
+          current: progress,
+          target,
+        })
+      }
+    }
+  }
+}
+
+const onVisitProgressEvent = (event) => {
+  applyVisitProgressUpdates(event?.detail?.updates)
+  loadMissions()
+}
+
 onMounted(() => {
   loadMissions()
 
   syncReferralCode()
   unsubscribeAuth = onStoredAuthChange(syncReferralCode)
+  window.addEventListener('vmm:mission-visit-progress', onVisitProgressEvent)
 })
 
 watch(locale, () => {
@@ -325,6 +490,7 @@ watch(locale, () => {
 onUnmounted(() => {
   unsubscribeMissions?.()
   unsubscribeAuth?.()
+  window.removeEventListener('vmm:mission-visit-progress', onVisitProgressEvent)
   window.clearInterval(missionActionTimer)
 })
 </script>

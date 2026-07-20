@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/auth_models.dart';
-import '../../../../core/auth/auth_session.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
@@ -16,7 +15,9 @@ import '../../../notifications/application/notification_controller.dart';
 import '../../../notifications/presentation/pages/notifications_page.dart';
 import '../../../notifications/presentation/widgets/gift_notification_modal.dart';
 import '../../../notifications/presentation/widgets/notifications_bell.dart';
+import '../../../polls/presentation/pages/polls_page.dart';
 import '../../../rewards/presentation/widgets/daily_reward_modal.dart';
+import '../../../users/presentation/pages/user_profile_page.dart';
 import '../../data/auth_service.dart';
 import 'login_page.dart';
 
@@ -160,7 +161,9 @@ class _SignedInPageState extends State<_SignedInPage> {
               centerTitle: true,
               title:
                   (_selectedSection == 'Inicio' ||
-                      _selectedSection == 'Artistas')
+                      _selectedSection == 'Artistas' ||
+                      _selectedSection == 'Votaciones' ||
+                      _selectedSection == 'Misiones')
                   ? Image.asset(
                       'assets/icons/logo-votos.png',
                       width: 54,
@@ -297,11 +300,8 @@ class _SignedInPageState extends State<_SignedInPage> {
             onOpenNews: () => NewsScreen.open(context),
           ),
         ),
-        const KeepAlivePanel(
-          child: _PlaceholderPanel(
-            title: 'Votaciones',
-            subtitle: 'Aquí irán las votaciones disponibles.',
-          ),
+        KeepAlivePanel(
+          child: PollsPage(authService: widget.authService),
         ),
         KeepAlivePanel(child: ArtistsPage(authService: widget.authService)),
         KeepAlivePanel(
@@ -531,7 +531,22 @@ class _HomeMenuDrawer extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _DrawerHeader(user: user, session: authService.session),
+                _DrawerHeader(
+                  user: user,
+                  onOpenProfile: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => UserProfilePage(
+                          authService: authService,
+                          username: user.username.isEmpty
+                              ? null
+                              : user.username,
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 18),
                 ..._items.map(
                   (item) => _DrawerMenuTile(
@@ -566,10 +581,13 @@ class _HomeMenuDrawer extends StatelessWidget {
 }
 
 class _DrawerHeader extends StatelessWidget {
-  const _DrawerHeader({required this.user, required this.session});
+  const _DrawerHeader({
+    required this.user,
+    required this.onOpenProfile,
+  });
 
   final ApiUser user;
-  final AuthSession session;
+  final VoidCallback onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -609,51 +627,59 @@ class _DrawerHeader extends StatelessWidget {
           ),
         ),
 
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
+        Material(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            onTap: onOpenProfile,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: Row(
-            children: [
-              _UserAvatar(user: user, name: displayName),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFFD8D3F7),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: PointsChip(session: session),
-                    ),
-                  ],
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
               ),
-            ],
+              child: Row(
+                children: [
+                  _UserAvatar(user: user, name: displayName),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFD8D3F7),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ],

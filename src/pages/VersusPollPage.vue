@@ -205,7 +205,7 @@ const confirmVote = () => {
 
               <div
                 v-if="index === 0"
-                class="absolute left-1/2 top-1/2 z-30 grid size-12 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-white/20 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-sm font-black shadow-2xl shadow-fuchsia-500/40 ring-4 ring-fuchsia-500/15 md:size-20 md:text-2xl"
+                class="absolute left-1/2 top-[28%] z-30 grid size-12 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-white/20 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-sm font-black shadow-2xl shadow-fuchsia-500/40 ring-4 ring-fuchsia-500/15 md:top-[32%] md:size-20 md:text-2xl"
               >
                 VS
               </div>

@@ -34,6 +34,7 @@ const emptyPoll = {
   anonymousVotingCooldownMinutes: 60,
   anonymousVotingBlockByIp: true,
   hideVoteCounts: false,
+  hideCountdown: false,
 }
 
 const pollForm = ref({ ...emptyPoll })
@@ -224,6 +225,7 @@ const loadPoll = async () => {
       anonymousVotingCooldownMinutes: Number(poll.anonymousVoting?.cooldownMinutes || 60),
       anonymousVotingBlockByIp: poll.anonymousVoting?.blockByIp !== false,
       hideVoteCounts: Boolean(poll.hideVoteCounts),
+      hideCountdown: Boolean(poll.hideCountdown),
     }
   } catch {
     errorMessage.value = translate('admin.pollForm.errors.load')
@@ -268,6 +270,7 @@ const savePoll = async () => {
       blockByIp: Boolean(pollForm.value.anonymousVotingBlockByIp),
     },
     hideVoteCounts: Boolean(pollForm.value.hideVoteCounts),
+    hideCountdown: Boolean(pollForm.value.hideCountdown),
     isLive: pollForm.value.status === 'live',
     winnersStatus: pollForm.value.status === 'closed' ? 'selected' : 'pending',
   }
@@ -575,6 +578,25 @@ onMounted(async () => {
                   class="size-5 accent-violet-400"
                 />
                 {{ $t('admin.pollForm.hideVoteCountsEnabled') }}
+              </label>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-violet-300/20 bg-violet-400/10 p-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-widest text-violet-200">{{ $t('admin.pollForm.hideCountdown') }}</span>
+                <p class="mt-1 text-sm leading-6 text-slate-300">
+                  {{ $t('admin.pollForm.hideCountdownHelp') }}
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-3 text-sm font-black text-violet-100">
+                <input
+                  v-model="pollForm.hideCountdown"
+                  type="checkbox"
+                  class="size-5 accent-violet-400"
+                />
+                {{ $t('admin.pollForm.hideCountdownEnabled') }}
               </label>
             </div>
           </div>

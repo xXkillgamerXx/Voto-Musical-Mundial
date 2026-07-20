@@ -28,6 +28,27 @@ export const completeMission = (missionId, payload = {}) => {
   })
 }
 
+export const createMissionVisitToken = (missionId) => {
+  const auth = getStoredAuth()
+  return apiRequest(`/missions/${encodeURIComponent(missionId)}/visit-token`, {
+    method: 'POST',
+    token: auth?.accessToken,
+  })
+}
+
+export const reportMissionVisitProgress = (pageUrl) => {
+  const auth = getStoredAuth()
+  if (!auth?.accessToken || auth?.user?.isAnonymous) {
+    return Promise.resolve({ ok: false, updates: [] })
+  }
+
+  return apiRequest('/missions/visit-progress', {
+    method: 'POST',
+    body: { pageUrl: String(pageUrl || '').trim() },
+    token: auth.accessToken,
+  })
+}
+
 export const claimDailyReward = () => {
   const auth = getStoredAuth()
   return apiRequest('/rewards/daily-claim', {

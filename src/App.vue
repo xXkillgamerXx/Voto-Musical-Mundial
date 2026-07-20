@@ -9,6 +9,9 @@ import HomeAd from './components/HomeAd.vue'
 import MainCategories from './components/MainCategories.vue'
 import ThemeToggle from './components/theme/ThemeToggle.vue'
 import { preloadRouteData } from './services/firebaseCache'
+import { getStoredAuth } from './services/api/client'
+import { reportMissionVisitProgress } from './services/api/missionsApi'
+import { trackPageView } from './services/googleAnalytics'
 import { activeTheme, applyTheme } from './theme'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
@@ -92,7 +95,30 @@ watch(
   { immediate: true },
 )
 
-const trackPageView = () => {}
+const reportVisitMissionProgress = () => {
+  if (isAdminPage.value || isVersusEmbedPage.value || isEmbeddedPage.value) {
+    return
+  }
+
+  const auth = getStoredAuth()
+  if (!auth?.accessToken || auth?.user?.isAnonymous) {
+    return
+  }
+
+  const pageUrl = window.location.href.split('#')[0]
+  reportMissionVisitProgress(pageUrl)
+    .then((result) => {
+      const updates = Array.isArray(result?.updates) ? result.updates : []
+      if (!updates.length) {
+        return
+      }
+
+      window.dispatchEvent(new CustomEvent('vmm:mission-visit-progress', {
+        detail: { pageUrl, updates },
+      }))
+    })
+    .catch(() => {})
+}
 
 const finishPageLoading = async () => {
   if (PREVIEW_PAGE_LOADING) {
@@ -119,6 +145,7 @@ const syncCurrentPath = () => {
   currentPath.value = window.location.pathname
   currentRouteKey.value = `${window.location.pathname}${window.location.search}${window.location.hash}`
   trackPageView()
+  reportVisitMissionProgress()
   finishPageLoading()
 }
 
@@ -172,6 +199,7 @@ onMounted(() => {
   document.addEventListener('pointerover', preloadAnchorRoute, { passive: true })
   document.addEventListener('touchstart', preloadAnchorRoute, { passive: true })
   trackPageView()
+  reportVisitMissionProgress()
   finishPageLoading()
 })
 
