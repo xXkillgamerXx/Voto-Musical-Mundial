@@ -14,6 +14,7 @@ class PollRound {
     this.endAt,
     this.startAt,
     this.hideVoteCounts = false,
+    this.hideCountdown = false,
   });
 
   final String id;
@@ -25,6 +26,7 @@ class PollRound {
   final DateTime? endAt;
   final DateTime? startAt;
   final bool hideVoteCounts;
+  final bool hideCountdown;
 
   int? get configuredCostPerVote {
     final voting = config['voting'];
@@ -56,6 +58,10 @@ class PollRound {
           json['hideVoteCounts'] == true ||
           config['hideVoteCounts'] == true ||
           metadata['hideVoteCounts'] == true,
+      hideCountdown:
+          json['hideCountdown'] == true ||
+          config['hideCountdown'] == true ||
+          metadata['hideCountdown'] == true,
     );
   }
 }
@@ -127,6 +133,7 @@ class Poll {
     this.endAt,
     this.updatedAt,
     this.createdAt,
+    this.hideCountdownFlag = false,
   });
 
   final String id;
@@ -144,6 +151,7 @@ class Poll {
   final String? leaderArtistId;
   final int leaderVotes;
   final bool hideVoteCounts;
+  final bool hideCountdownFlag;
   final List<PollRound> rounds;
   final List<PollContestant> contestants;
   final Map<String, dynamic> config;
@@ -168,6 +176,16 @@ class Poll {
 
   DateTime? get countdownEndAt {
     return activeEndAt ?? endAt ?? _activeRoundEndAt;
+  }
+
+  bool get hideCountdown {
+    if (hideCountdownFlag || config['hideCountdown'] == true) return true;
+    for (final round in rounds) {
+      if (round.id == effectiveRoundId) {
+        return round.hideCountdown;
+      }
+    }
+    return false;
   }
 
   int get costPerVote {
@@ -306,6 +324,10 @@ class Poll {
           json['hideVoteCounts'] == true ||
           activeRound?.hideVoteCounts == true ||
           metadata['hideVoteCounts'] == true,
+      hideCountdownFlag:
+          json['hideCountdown'] == true ||
+          config['hideCountdown'] == true ||
+          metadata['hideCountdown'] == true,
       rounds: rounds,
       contestants: contestants,
       config: config,

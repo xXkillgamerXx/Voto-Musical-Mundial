@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/points_chip.dart';
 import '../../application/notification_controller.dart';
 import '../../data/app_notification.dart';
 import '../../data/notification_display.dart';
@@ -45,6 +46,9 @@ class NotificationsScreen extends StatelessWidget {
             'Notificaciones',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
+          actions: [
+            AppBarPointsAction(session: controller.authService.session),
+          ],
         ),
         body: NotificationsPage(controller: controller),
       ),

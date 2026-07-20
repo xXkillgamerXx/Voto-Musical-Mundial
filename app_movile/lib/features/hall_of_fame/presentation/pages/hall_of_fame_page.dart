@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../artists/data/artist.dart';
 import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
+import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../home/data/polls_api.dart';
@@ -48,6 +49,9 @@ class HallOfFameScreen extends StatelessWidget {
             'Salón de la fama',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
+          actions: [
+            AppBarPointsAction(session: authService.session),
+          ],
         ),
         body: HallOfFamePage(authService: authService),
       ),

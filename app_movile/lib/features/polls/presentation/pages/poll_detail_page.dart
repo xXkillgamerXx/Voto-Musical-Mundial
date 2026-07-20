@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/widgets/points_chip.dart';
@@ -41,12 +40,15 @@ class _PollDetailPageState extends State<PollDetailPage> {
   String _selectedRoundId = '';
   bool _loading = true;
   bool _refreshingResults = false;
+  bool _resultsRefreshQueued = false;
   String? _error;
   String? _votingContestantId;
   Timer? _resultDebounce;
   Timer? _resultsTimer;
   Timer? _clock;
+  Timer? _stateDebounce;
   DateTime _now = DateTime.now();
+  DateTime _lastResultsRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -59,9 +61,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
       if (mounted) setState(() => _now = DateTime.now());
     });
     _resultsTimer = Timer.periodic(
-      const Duration(seconds: 8),
+      const Duration(seconds: 5),
       (_) => unawaited(_loadResults()),
     );
+    unawaited(widget.authService.getMe());
     _load();
   }
 
@@ -70,6 +73,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     _resultDebounce?.cancel();
     _resultsTimer?.cancel();
     _clock?.cancel();
+    _stateDebounce?.cancel();
     _realtime.dispose();
     super.dispose();
   }
@@ -83,12 +87,13 @@ class _PollDetailPageState extends State<PollDetailPage> {
     }
 
     try {
+      unawaited(widget.authService.getMe());
       final poll = await _pollsApi.getPoll(widget.pollId, forceRefresh: force);
       var roundId = _selectedRoundId;
       if (roundId.isEmpty || !poll.rounds.any((round) => round.id == roundId)) {
         roundId = poll.effectiveRoundId;
       }
-      final results = await _pollsApi.getPollResults(
+      final pollResults = await _pollsApi.getPollResults(
         poll.id,
         roundId: roundId.isEmpty ? null : roundId,
         forceRefresh: true,
@@ -97,7 +102,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
       setState(() {
         _poll = poll;
         _selectedRoundId = roundId;
-        _results = results;
+        _results = pollResults;
         _loading = false;
         _error = null;
       });
@@ -115,29 +120,123 @@ class _PollDetailPageState extends State<PollDetailPage> {
     _realtime.subscribe(
       pollId: pollId,
       onVoteDelta: (event) {
-        final eventRoundId = '${event['roundId'] ?? ''}';
-        if (eventRoundId.isNotEmpty && eventRoundId != _selectedRoundId) {
-          return;
-        }
+        if (!_isEventForSelectedRound(event)) return;
+        _applyOptimisticVoteDelta(event);
         _scheduleResultsRefresh();
       },
-      onResultsDirty: _scheduleResultsRefresh,
-      onPollStateChanged: (_) => unawaited(_load(force: true)),
+      onResultsDirty: (event) {
+        if (!_isEventForSelectedRound(event)) return;
+        _scheduleResultsRefresh();
+      },
+      onPollStateChanged: (event) {
+        final eventPollId = '${event['pollId'] ?? ''}';
+        if (eventPollId.isNotEmpty && eventPollId != pollId) return;
+        _scheduleStateReload();
+      },
     );
   }
 
+  bool _isEventForSelectedRound(Map<String, dynamic> event) {
+    final eventRoundId = '${event['roundId'] ?? ''}';
+    if (eventRoundId.isEmpty || _selectedRoundId.isEmpty) return true;
+    return eventRoundId == _selectedRoundId;
+  }
+
   void _scheduleResultsRefresh() {
+    final now = DateTime.now();
+    if (now.difference(_lastResultsRefreshAt).inMilliseconds < 250) {
+      _resultDebounce?.cancel();
+      _resultDebounce = Timer(
+        const Duration(milliseconds: 280),
+        () => unawaited(_loadResults()),
+      );
+      return;
+    }
+
     _resultDebounce?.cancel();
     _resultDebounce = Timer(
-      const Duration(milliseconds: 280),
+      const Duration(milliseconds: 180),
       () => unawaited(_loadResults()),
     );
   }
 
+  void _scheduleStateReload() {
+    _stateDebounce?.cancel();
+    _stateDebounce = Timer(
+      const Duration(milliseconds: 600),
+      () => unawaited(_load(force: true)),
+    );
+  }
+
+  void _applyOptimisticVoteDelta(Map<String, dynamic> event) {
+    final results = _results;
+    if (results == null || !mounted) return;
+
+    final contestantId = '${event['contestantId'] ?? ''}';
+    final amount = int.tryParse('${event['amount'] ?? 1}') ?? 1;
+    if (contestantId.isEmpty || amount < 1) return;
+
+    final nextRows = results.results.map((row) {
+      if (row.contestantId != contestantId) return row;
+      return PollResultRow(
+        artistId: row.artistId,
+        totalVotes: row.totalVotes + amount,
+        rank: row.rank,
+        percent: row.percent,
+        contestantId: row.contestantId,
+        matchGroup: row.matchGroup,
+        matchOrder: row.matchOrder,
+        artist: row.artist,
+      );
+    }).toList(growable: false);
+
+    if (nextRows.every((row) => row.contestantId != contestantId)) {
+      return;
+    }
+
+    final totalVotes = nextRows.fold<int>(0, (sum, row) => sum + row.totalVotes);
+    final ranked = [...nextRows]
+      ..sort((a, b) => b.totalVotes.compareTo(a.totalVotes));
+    final withPercents = <PollResultRow>[];
+    for (var index = 0; index < ranked.length; index++) {
+      final row = ranked[index];
+      withPercents.add(
+        PollResultRow(
+          artistId: row.artistId,
+          totalVotes: row.totalVotes,
+          rank: index + 1,
+          percent: totalVotes <= 0 ? 0 : (row.totalVotes * 100) / totalVotes,
+          contestantId: row.contestantId,
+          matchGroup: row.matchGroup,
+          matchOrder: row.matchOrder,
+          artist: row.artist,
+        ),
+      );
+    }
+
+    setState(() {
+      _results = PollResults(
+        pollId: results.pollId,
+        totalVotes: totalVotes,
+        leaderArtistId: withPercents.isEmpty
+            ? results.leaderArtistId
+            : withPercents.first.artistId,
+        leaderVotes: withPercents.isEmpty ? 0 : withPercents.first.totalVotes,
+        results: withPercents,
+      );
+    });
+  }
+
   Future<void> _loadResults() async {
     final poll = _poll;
-    if (poll == null || _refreshingResults) return;
+    if (poll == null) return;
+    if (_refreshingResults) {
+      _resultsRefreshQueued = true;
+      return;
+    }
+
     _refreshingResults = true;
+    _lastResultsRefreshAt = DateTime.now();
     try {
       final results = await _pollsApi.getPollResults(
         poll.id,
@@ -149,6 +248,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
       // Keep the latest result while Socket.IO or polling recovers.
     } finally {
       _refreshingResults = false;
+      if (_resultsRefreshQueued) {
+        _resultsRefreshQueued = false;
+        unawaited(_loadResults());
+      }
     }
   }
 
@@ -186,6 +289,16 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   bool get _hideCounts =>
       _poll?.hideVoteCounts == true || _selectedRound?.hideVoteCounts == true;
+
+  bool get _showCountdown {
+    if (_poll?.hideCountdown == true ||
+        _selectedRound?.hideCountdown == true) {
+      return false;
+    }
+    final endAt = _selectedRound?.endAt ?? _poll?.countdownEndAt;
+    if (endAt == null) return false;
+    return endAt.isAfter(_now);
+  }
 
   int get _costPerVote {
     final roundCost = _selectedRound?.configuredCostPerVote;
@@ -504,21 +617,18 @@ class _PollDetailPageState extends State<PollDetailPage> {
         );
       }
       if (!mounted) return;
+      // Optimistic local bump so bars move immediately, then sync from API/socket.
+      _applyOptimisticVoteDelta({
+        'contestantId': entry.contestantId,
+        'amount': amount,
+        'roundId': _selectedRoundId,
+      });
       await _loadResults();
     } catch (error) {
       if (mounted) _showMessage(_messageFor(error));
     } finally {
       if (mounted) setState(() => _votingContestantId = null);
     }
-  }
-
-  Future<void> _sharePoll() async {
-    final poll = _poll;
-    if (poll == null) return;
-    final url =
-        'https://vote.musicmundial.com/votacion/${poll.year}/${poll.slug}';
-    await Clipboard.setData(ClipboardData(text: url));
-    if (mounted) _showMessage('Enlace copiado.');
   }
 
   void _showMessage(String message) {
@@ -531,31 +641,21 @@ class _PollDetailPageState extends State<PollDetailPage> {
   Widget build(BuildContext context) {
     final poll = _poll;
     return Scaffold(
-      extendBodyBehindAppBar: true,
       backgroundColor: const Color(0xFF050213),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFF09061B),
         elevation: 0,
         scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: Colors.white,
         title: Text(
-          poll?.title ?? 'VotaciÃ³n',
+          poll?.title ?? 'Votación',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
-          Center(
-            child: PointsChip(
-              session: widget.authService.session,
-              compact: true,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Compartir',
-            onPressed: poll == null ? null : _sharePoll,
-            icon: const Icon(Icons.share_rounded),
-          ),
+          AppBarPointsAction(session: widget.authService.session),
         ],
       ),
       body: DecoratedBox(
@@ -575,23 +675,36 @@ class _PollDetailPageState extends State<PollDetailPage> {
             : RefreshIndicator(
                 onRefresh: () => _load(force: true),
                 child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
                   slivers: [
-                    SliverToBoxAdapter(child: _PollHero(poll: poll)),
-                    SliverToBoxAdapter(child: _CountdownPanel(state: this)),
+                    // Banner tipo Sliver: al bajar se recoge y deja sitio a votar.
+                    SliverAppBar(
+                      pinned: false,
+                      floating: false,
+                      stretch: true,
+                      automaticallyImplyLeading: false,
+                      backgroundColor: const Color(0xFF09061B),
+                      expandedHeight: 200,
+                      elevation: 0,
+                      scrolledUnderElevation: 0,
+                      flexibleSpace: FlexibleSpaceBar(
+                        collapseMode: CollapseMode.parallax,
+                        background: _PollHero(poll: poll),
+                      ),
+                    ),
+                    if (_showCountdown)
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _CountdownHeaderDelegate(state: this),
+                      ),
                     if (poll.rounds.isNotEmpty)
                       SliverToBoxAdapter(
-                        child: _RoundsBar(
+                        child: _RoundTabs(
                           rounds: poll.rounds,
                           selectedId: _selectedRoundId,
                           onSelected: _selectRound,
-                        ),
-                      ),
-                    if (!_selectingWinners)
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
-                        sliver: SliverToBoxAdapter(
-                          child: _VotingSummary(state: this),
                         ),
                       ),
                     if (_selectingWinners)
@@ -602,7 +715,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           height: 180,
                           child: Center(
                             child: Text(
-                              'Esta ronda todavÃ­a no tiene participantes.',
+                              'Esta ronda todavía no tiene participantes.',
                               style: TextStyle(
                                 color: Color(0xFFCBD5E1),
                                 fontWeight: FontWeight.w700,
@@ -613,11 +726,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       )
                     else if (_selectedRound?.type == 'versus')
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
+                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
                         sliver: SliverList.separated(
                           itemCount: _versusGroups(_entries).length,
                           separatorBuilder: (_, _) =>
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 14),
                           itemBuilder: (context, index) {
                             final group = _versusGroups(_entries)[index];
                             return _VersusMatch(
@@ -633,11 +746,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
+                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
                         sliver: SliverList.separated(
                           itemCount: _entries.length,
                           separatorBuilder: (_, _) =>
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                           itemBuilder: (context, index) {
                             final entry = _entries[index];
                             return _ContestantCard(
@@ -667,78 +780,118 @@ class _PollHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final banner = resolvePollBanner(poll);
-    final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
-    return SizedBox(
-      width: double.infinity,
-      height: 190 + topInset,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (banner.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: banner,
-              fit: BoxFit.cover,
-              errorWidget: (_, _, _) => const SizedBox.shrink(),
-            ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0x44050213),
-                  Color(0xAA13052E),
-                  Color(0xFF120625),
-                ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, topInset + 8, 20, 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                const Text(
-                  'VOTACIÃ“N EN VIVO',
-                  style: TextStyle(
-                    color: Color(0xFFF0ABFC),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 3,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  poll.title,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    height: 1.02,
-                    shadows: [Shadow(color: Color(0x99000000), blurRadius: 12)],
-                  ),
-                ),
-                if (poll.description.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    poll.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+    final description = _stripHtml(poll.description);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (banner.isNotEmpty)
+          CachedNetworkImage(
+            imageUrl: banner,
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => const SizedBox.shrink(),
+          )
+        else
+          const ColoredBox(color: Color(0xFF1A0B2E)),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0x44050213),
+                Color(0xAA13052E),
+                Color(0xFF120625),
               ],
             ),
           ),
-        ],
-      ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              const Text(
+                'VOTACIÓN EN VIVO',
+                style: TextStyle(
+                  color: Color(0xFFF0ABFC),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 3,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                poll.title,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  height: 1.05,
+                  shadows: [Shadow(color: Color(0x99000000), blurRadius: 12)],
+                ),
+              ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
+  }
+}
+
+String _stripHtml(String value) {
+  return value
+      .replaceAll(RegExp(r'<[^>]*>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+class _CountdownHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _CountdownHeaderDelegate({required this.state});
+
+  final _PollDetailPageState state;
+
+  static const double _height = 96;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(
+      color: const Color(0xFF0B031B),
+      elevation: overlapsContent || shrinkOffset > 0 ? 6 : 0,
+      shadowColor: Colors.black54,
+      child: _CountdownPanel(state: state),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _CountdownHeaderDelegate oldDelegate) {
+    return oldDelegate.state._now != state._now ||
+        oldDelegate.state._selectedRoundId != state._selectedRoundId ||
+        oldDelegate.state._poll?.id != state._poll?.id;
   }
 }
 
@@ -755,41 +908,40 @@ class _CountdownPanel extends StatelessWidget {
     if (difference.isNegative) return const SizedBox.shrink();
     final remaining = difference;
     final values = [
-      (remaining.inDays.toString().padLeft(2, '0'), 'DÃAS'),
+      (remaining.inDays.toString().padLeft(2, '0'), 'DÍAS'),
       (remaining.inHours.remainder(24).toString().padLeft(2, '0'), 'HORAS'),
       (remaining.inMinutes.remainder(60).toString().padLeft(2, '0'), 'MIN'),
       (remaining.inSeconds.remainder(60).toString().padLeft(2, '0'), 'SEG'),
     ];
     return Container(
-      margin: const EdgeInsets.only(left: 14, right: 14, bottom: 10),
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2B124A),
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
+          const Text(
             'TIEMPO RESTANTE',
-            style: const TextStyle(
+            style: TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 10,
               fontWeight: FontWeight.w900,
               letterSpacing: 2.2,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Row(
             children: [
               for (var index = 0; index < values.length; index++) ...[
-                if (index > 0) const SizedBox(width: 8),
+                if (index > 0) const SizedBox(width: 6),
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF110A2B),
-                      borderRadius: BorderRadius.circular(16),
+                      color: const Color(0xFF2B124A),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
                     ),
                     child: Column(
                       children: [
@@ -797,18 +949,19 @@ class _CountdownPanel extends StatelessWidget {
                           values[index].$1,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 21,
+                            fontSize: 17,
                             fontWeight: FontWeight.w900,
+                            height: 1,
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 2),
                         Text(
                           values[index].$2,
                           style: const TextStyle(
                             color: Color(0xFF94A3B8),
                             fontSize: 8,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
+                            letterSpacing: 0.6,
                           ),
                         ),
                       ],
@@ -824,8 +977,9 @@ class _CountdownPanel extends StatelessWidget {
   }
 }
 
-class _RoundsBar extends StatelessWidget {
-  const _RoundsBar({
+/// Rondas como tabs/chips horizontales (sin carrusel de círculos).
+class _RoundTabs extends StatelessWidget {
+  const _RoundTabs({
     required this.rounds,
     required this.selectedId,
     required this.onSelected,
@@ -837,120 +991,82 @@ class _RoundsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 4, 14, 12),
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A1248),
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'PROCESO DE RONDAS',
-                  style: TextStyle(
-                    color: Color(0xFF67E8F9),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2.2,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+      child: SizedBox(
+        height: 40,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          itemCount: rounds.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (_, index) {
+            final round = rounds[index];
+            final selected = round.id == selectedId;
+            final live = round.status == 'live';
+            final label = round.title.isEmpty
+                ? 'Ronda ${index + 1}'
+                : round.title;
+            final status = live
+                ? 'EN VIVO'
+                : round.status == 'closed'
+                    ? 'CERRADA'
+                    : 'PRÓXIMA';
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => onSelected(round),
+                borderRadius: BorderRadius.circular(20),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
                   ),
-                ),
-              ),
-              Text(
-                'Ganadores y ronda actual',
-                style: TextStyle(
-                  color: Color(0xFF8B7AA7),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 118,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: rounds.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 18),
-              itemBuilder: (_, index) {
-                final round = rounds[index];
-                final selected = round.id == selectedId;
-                final live = round.status == 'live';
-                return InkWell(
-                  onTap: () => onSelected(round),
-                  borderRadius: BorderRadius.circular(18),
-                  child: SizedBox(
-                    width: 112,
-                    child: Column(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          width: 54,
-                          height: 54,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: selected
-                                ? const Color(0xFF245073)
-                                : const Color(0xFF140C2E),
-                            border: Border.all(
-                              color: selected
-                                  ? const Color(0xFF67E8F9)
-                                  : Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                          child: Text(
-                            '${index + 1}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          round.title.isEmpty
-                              ? 'Ronda ${index + 1}'
-                              : round.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          live
-                              ? 'EN PROGRESO'
-                              : round.status == 'closed'
-                              ? 'FINALIZADA'
-                              : 'PRÃ“XIMAMENTE',
-                          style: TextStyle(
-                            color: live
-                                ? const Color(0xFF67E8F9)
-                                : const Color(0xFF9F8BB8),
-                            fontSize: 8,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ],
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0xFF245073)
+                        : const Color(0xFF2A1248),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected
+                          ? const Color(0xFF67E8F9)
+                          : Colors.white.withValues(alpha: 0.1),
+                      width: selected ? 1.4 : 1,
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-        ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: selected
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.85),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        status,
+                        style: TextStyle(
+                          color: live
+                              ? const Color(0xFF67E8F9)
+                              : const Color(0xFF9F8BB8),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1101,69 +1217,6 @@ class _ProcessingDot extends StatelessWidget {
       width: 6,
       height: 6,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
-
-class _VotingSummary extends StatelessWidget {
-  const _VotingSummary({required this.state});
-
-  final _PollDetailPageState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: state.widget.authService.session,
-      builder: (context, _) {
-        final points = state.widget.authService.session.user?.points ?? 0;
-        final status = state._votingOpen
-            ? 'CADA VOTO CUESTA ${state._costPerVote} PUNTO${state._costPerVote == 1 ? '' : 'S'}'
-            : 'VOTACIÃ“N CERRADA Â· CONSULTA LOS RESULTADOS';
-        return Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
-          decoration: BoxDecoration(
-            color: const Color(0xFF3B1B35),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: const Color(0xFFFBBF24).withValues(alpha: 0.2),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text.rich(
-                TextSpan(
-                  style: const TextStyle(
-                    color: Color(0xFFFDE68A),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  children: [
-                    const TextSpan(text: 'Tus puntos: '),
-                    TextSpan(
-                      text: '${_formatNumber(points)} pts',
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                status,
-                style: const TextStyle(
-                  color: Color(0xFFFDE68A),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.7,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

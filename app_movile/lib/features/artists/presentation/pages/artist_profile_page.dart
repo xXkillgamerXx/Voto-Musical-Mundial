@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/points_chip.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
 import '../../data/artists_api.dart';
@@ -81,6 +82,9 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
         ),
+        actions: [
+          AppBarPointsAction(session: widget.authService.session),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(

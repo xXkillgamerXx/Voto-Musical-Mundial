@@ -81,8 +81,10 @@ class LiveActivityFeed extends ChangeNotifier {
     _socket = io.io(
       origin,
       io.OptionBuilder()
+          .setPath('/socket.io')
           .setTransports(['websocket', 'polling'])
           .enableAutoConnect()
+          .enableForceNew()
           .enableReconnection()
           .setReconnectionAttempts(999)
           .setReconnectionDelay(1000)

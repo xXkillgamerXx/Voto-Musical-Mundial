@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/auth_models.dart';
+import '../../../../core/auth/auth_session.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
@@ -172,15 +173,7 @@ class _SignedInPageState extends State<_SignedInPage> {
                     )
                   : (_selectedTabIndex == -1 ? Text(_selectedSection) : null),
               actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 2),
-                  child: Center(
-                    child: PointsChip(
-                      session: widget.authService.session,
-                      compact: true,
-                    ),
-                  ),
-                ),
+                AppBarPointsAction(session: widget.authService.session),
                 NotificationsBell(controller: _notifications),
                 const SizedBox(width: 4),
               ],
@@ -192,7 +185,10 @@ class _SignedInPageState extends State<_SignedInPage> {
               onSectionSelected: (section) {
                 Navigator.of(context).pop();
                 if (section == 'Noticias') {
-                  NewsScreen.open(context);
+                  NewsScreen.open(
+                    context,
+                    authService: widget.authService,
+                  );
                   return;
                 }
                 if (section == 'Notificaciones') {
@@ -269,6 +265,9 @@ class _SignedInPageState extends State<_SignedInPage> {
               elevation: 0,
               foregroundColor: Colors.white,
               title: const Text('Ranking Popularity'),
+              actions: [
+                AppBarPointsAction(session: widget.authService.session),
+              ],
             ),
             body: RankingPopularityPage(authService: widget.authService),
           ),
@@ -297,7 +296,10 @@ class _SignedInPageState extends State<_SignedInPage> {
           child: HomePage(
             authService: widget.authService,
             onNavigateToSection: _selectSection,
-            onOpenNews: () => NewsScreen.open(context),
+            onOpenNews: () => NewsScreen.open(
+              context,
+              authService: widget.authService,
+            ),
           ),
         ),
         KeepAlivePanel(
@@ -533,6 +535,7 @@ class _HomeMenuDrawer extends StatelessWidget {
               children: [
                 _DrawerHeader(
                   user: user,
+                  session: authService.session,
                   onOpenProfile: () {
                     Navigator.of(context).pop();
                     Navigator.of(context).push(
@@ -546,6 +549,7 @@ class _HomeMenuDrawer extends StatelessWidget {
                       ),
                     );
                   },
+                  onOpenMissions: () => onSectionSelected('Misiones'),
                 ),
                 const SizedBox(height: 18),
                 ..._items.map(
@@ -583,11 +587,15 @@ class _HomeMenuDrawer extends StatelessWidget {
 class _DrawerHeader extends StatelessWidget {
   const _DrawerHeader({
     required this.user,
+    required this.session,
     required this.onOpenProfile,
+    required this.onOpenMissions,
   });
 
   final ApiUser user;
+  final AuthSession session;
   final VoidCallback onOpenProfile;
+  final VoidCallback onOpenMissions;
 
   @override
   Widget build(BuildContext context) {
@@ -626,7 +634,8 @@ class _DrawerHeader extends StatelessWidget {
             ],
           ),
         ),
-
+        _DrawerPointsCard(session: session, onTap: onOpenMissions),
+        const SizedBox(height: 8),
         Material(
           color: Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(18),
@@ -683,6 +692,108 @@ class _DrawerHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DrawerPointsCard extends StatelessWidget {
+  const _DrawerPointsCard({
+    required this.session,
+    required this.onTap,
+  });
+
+  final AuthSession session;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (context, _) {
+        final points = session.user?.points ?? 0;
+        return Material(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF8B5CF6), Color(0xFFFF21C8)],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFF21C8).withValues(alpha: 0.25),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: CircleAvatar(
+                        backgroundColor: Color(0xFF0B071C),
+                        child: Icon(
+                          Icons.bolt_rounded,
+                          color: Color(0xFFFDE68A),
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${formatPoints(points)} pts',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Cómo generar puntos',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Color(0xFFD8D3F7),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

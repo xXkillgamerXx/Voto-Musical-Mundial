@@ -2,6 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../auth/auth_session.dart';
 
+/// Chip de puntos del usuario para AppBar (mismo estilo en toda la app).
+class AppBarPointsAction extends StatelessWidget {
+  const AppBarPointsAction({required this.session, super.key});
+
+  final AuthSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Center(
+        child: PointsChip(session: session, compact: true),
+      ),
+    );
+  }
+}
+
 class PointsChip extends StatefulWidget {
   const PointsChip({required this.session, this.compact = false, super.key});
 
@@ -25,6 +42,7 @@ class _PointsChipState extends State<PointsChip> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _lastKnownPoints = widget.session.user?.points;
+    _animateFrom = _lastKnownPoints ?? 0;
     _animateTo = _lastKnownPoints ?? 0;
     _bounceController = AnimationController(
       vsync: this,
@@ -33,10 +51,12 @@ class _PointsChipState extends State<PointsChip> with TickerProviderStateMixin {
     _countController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
+      value: 1,
     );
     _spentController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 850),
+      value: 1,
     );
     widget.session.addListener(_onSessionChanged);
   }
@@ -53,9 +73,14 @@ class _PointsChipState extends State<PointsChip> with TickerProviderStateMixin {
   void _onSessionChanged() {
     final next = widget.session.user?.points;
     final prev = _lastKnownPoints;
-    if (next == null || prev == null || next == prev) {
+    if (next == null) return;
+    if (prev == null) {
+      _lastKnownPoints = next;
+      _animateFrom = next;
+      _animateTo = next;
       return;
     }
+    if (next == prev) return;
 
     _animateFrom = prev;
     _animateTo = next;
@@ -84,13 +109,16 @@ class _PointsChipState extends State<PointsChip> with TickerProviderStateMixin {
         final countProgress = Curves.easeOutCubic.transform(
           _countController.value,
         );
-        final isCounting =
-            _countController.isAnimating || _countController.value < 1;
+        final isCounting = _countController.isAnimating;
         final displayedPoints = isCounting
             ? (_animateFrom + ((_animateTo - _animateFrom) * countProgress))
                   .round()
             : targetPoints;
         final spentProgress = _spentController.value;
+        final showSpent =
+            _spentDelta > 0 &&
+            _spentController.isAnimating &&
+            spentProgress < 1;
         final spentLift = (1 - spentProgress) * 10;
 
         return Transform.scale(
@@ -115,7 +143,8 @@ class _PointsChipState extends State<PointsChip> with TickerProviderStateMixin {
                       _bounceController.value.clamp(0, 1),
                     )!,
                   ),
-                  boxShadow: _bounceController.value > 0
+                  boxShadow: _bounceController.value > 0 &&
+                          _bounceController.value < 1
                       ? [
                           BoxShadow(
                             color: const Color(
@@ -148,11 +177,11 @@ class _PointsChipState extends State<PointsChip> with TickerProviderStateMixin {
                   ],
                 ),
               ),
-              if (_spentDelta > 0 && spentProgress > 0)
+              if (showSpent)
                 Positioned(
                   top: -18 - spentLift,
                   child: Opacity(
-                    opacity: spentProgress.clamp(0, 1),
+                    opacity: (1 - spentProgress).clamp(0, 1),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,

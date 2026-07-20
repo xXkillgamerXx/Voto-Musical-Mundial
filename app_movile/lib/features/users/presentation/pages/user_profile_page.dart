@@ -6,6 +6,7 @@ import '../../../artists/data/artists_api.dart';
 import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../../core/widgets/points_chip.dart';
 import '../../data/user_profile.dart';
 import '../../data/users_api.dart';
 
@@ -121,6 +122,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
           _isOwnProfileRequest ? 'Mi perfil' : 'Perfil',
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: [
+          AppBarPointsAction(session: widget.authService.session),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(

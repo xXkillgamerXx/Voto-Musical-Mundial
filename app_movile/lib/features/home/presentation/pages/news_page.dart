@@ -3,16 +3,25 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
+import '../../../auth/data/auth_service.dart';
 import '../../data/news_api.dart';
 import '../widgets/news_card.dart';
 
 class NewsScreen extends StatelessWidget {
-  const NewsScreen({super.key});
+  const NewsScreen({required this.authService, super.key});
 
-  static Future<void> open(BuildContext context) {
+  final AuthService authService;
+
+  static Future<void> open(
+    BuildContext context, {
+    required AuthService authService,
+  }) {
     return Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const NewsScreen()),
+      MaterialPageRoute(
+        builder: (_) => NewsScreen(authService: authService),
+      ),
     );
   }
 
@@ -39,6 +48,9 @@ class NewsScreen extends StatelessWidget {
             'Noticias',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
+          actions: [
+            AppBarPointsAction(session: authService.session),
+          ],
         ),
         body: const NewsPage(),
       ),
