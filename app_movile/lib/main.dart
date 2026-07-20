@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'app/voto_music_app.dart';
+import 'core/ads/ad_service.dart';
 import 'core/auth/auth_session.dart';
 import 'core/cache/response_cache.dart';
 import 'features/auth/data/auth_service.dart';
@@ -12,6 +13,7 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await ResponseCache.init();
+  await AdService.initialize();
 
   final authSession = AuthSession();
   await authSession.load();

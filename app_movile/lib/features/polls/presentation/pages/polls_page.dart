@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../home/data/poll.dart';
@@ -173,7 +174,10 @@ class _PollsPageState extends State<PollsPage>
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const BannerAdWidget(
+          padding: EdgeInsets.fromLTRB(18, 8, 18, 4),
+        ),
+        const SizedBox(height: 4),
         Expanded(
           child: FutureBuilder<_PollsData>(
             future: _pollsFuture,

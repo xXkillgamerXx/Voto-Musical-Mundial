@@ -8,6 +8,7 @@ import '../../../artists/data/artist.dart';
 import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
 import '../../../users/presentation/pages/user_profile_page.dart';
 import '../../data/live_activity_feed.dart';
@@ -421,6 +422,7 @@ class _HomePageState extends State<HomePage> {
                       widget.onNavigateToSection('Ranking Popularity'),
                 ),
               ),
+              const SliverToBoxAdapter(child: BannerAdWidget()),
               SliverToBoxAdapter(
                 child: _MainCategoriesSection(
                   categories: data.categories,
