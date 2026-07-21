@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../application/notification_controller.dart';
 import '../../data/app_notification.dart';
@@ -42,9 +43,9 @@ class NotificationsScreen extends StatelessWidget {
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
           foregroundColor: Colors.white,
-          title: const Text(
-            'Notificaciones',
-            style: TextStyle(fontWeight: FontWeight.w900),
+          title: Text(
+            tr('misc.notificationsTitle'),
+            style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           actions: [
             AppBarPointsAction(session: controller.authService.session),
@@ -122,9 +123,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'CENTRO DE NOTIFICACIONES',
-                    style: TextStyle(
+                  Text(
+                    tr('misc.notificationCenter'),
+                    style: const TextStyle(
                       color: Color(0xFFF0ABFC),
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
@@ -132,9 +133,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Tu actividad',
-                    style: TextStyle(
+                  Text(
+                    tr('misc.yourActivity'),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
@@ -143,8 +144,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   const SizedBox(height: 8),
                   Text(
                     controller.unreadCount > 0
-                        ? '${controller.unreadCount} sin leer'
-                        : 'Estás al día con tus avisos.',
+                        ? trp('misc.unreadCount', {'count': controller.unreadCount})
+                        : tr('misc.allCaughtUp'),
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.58),
                       fontWeight: FontWeight.w600,
@@ -154,7 +155,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     const SizedBox(height: 12),
                     OutlinedButton(
                       onPressed: controller.markAllRead,
-                      child: const Text('Marcar todo como leído'),
+                      child: Text(tr('misc.markAllRead')),
                     ),
                   ],
                   if (!controller.pushEnabled) ...[
@@ -172,16 +173,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Activa push notifications',
-                            style: TextStyle(
+                          Text(
+                            tr('misc.enablePushTitle'),
+                            style: const TextStyle(
                               color: Color(0xFF67E8F9),
                               fontWeight: FontWeight.w900,
                             ),
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Recibe regalos, misiones y avisos aunque no tengas la app abierta.',
+                            tr('misc.enablePushBody'),
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.62),
                               fontWeight: FontWeight.w600,
@@ -196,9 +197,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                               backgroundColor: const Color(0xFF22D3EE),
                               foregroundColor: const Color(0xFF020617),
                             ),
-                            child: const Text(
-                              'ACTIVAR PUSH',
-                              style: TextStyle(fontWeight: FontWeight.w900),
+                            child: Text(
+                              tr('misc.enablePushButton'),
+                              style: const TextStyle(fontWeight: FontWeight.w900),
                             ),
                           ),
                         ],
@@ -217,7 +218,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             else if (controller.errorMessage != null && items.isEmpty)
               _EmptyState(message: controller.errorMessage!)
             else if (items.isEmpty)
-              const _EmptyState(message: 'Todavía no tienes notificaciones.')
+              _EmptyState(message: tr('misc.noNotifications'))
             else
               ...items.map(
                 (notification) => Padding(

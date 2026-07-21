@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/cache/response_cache.dart';
+import '../../../core/i18n/tr.dart';
 
 class NewsItem {
   const NewsItem({
@@ -173,12 +174,12 @@ class NewsApi {
       }
 
       if (response.statusCode != 200) {
-        throw NewsApiException('No se pudieron cargar las noticias.');
+        throw NewsApiException(tr('data.newsLoadFailed'));
       }
 
       final payload = jsonDecode(response.body);
       if (payload is! List) {
-        throw NewsApiException('Respuesta inválida del feed de noticias.');
+        throw NewsApiException(tr('data.newsInvalidResponse'));
       }
 
       final items = payload
@@ -201,7 +202,7 @@ class NewsApi {
     } on NewsApiException {
       rethrow;
     } catch (_) {
-      throw NewsApiException('No se pudieron cargar las noticias.');
+      throw NewsApiException(tr('data.newsLoadFailed'));
     }
   }
 

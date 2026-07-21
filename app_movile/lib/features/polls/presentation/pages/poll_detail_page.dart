@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/api/api_exception.dart';
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../artists/data/artist.dart';
@@ -44,10 +45,14 @@ class _PollDetailPageState extends State<PollDetailPage> {
   bool _resultsRefreshQueued = false;
   String? _error;
   String? _votingContestantId;
+  String? _voteFeedbackId;
+  int _voteFeedbackAmount = 0;
+  int _voteFeedbackToken = 0;
   Timer? _resultDebounce;
   Timer? _resultsTimer;
   Timer? _clock;
   Timer? _stateDebounce;
+  Timer? _voteFeedbackTimer;
   DateTime _now = DateTime.now();
   DateTime _lastResultsRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -75,6 +80,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     _resultsTimer?.cancel();
     _clock?.cancel();
     _stateDebounce?.cancel();
+    _voteFeedbackTimer?.cancel();
     _realtime.dispose();
     super.dispose();
   }
@@ -363,17 +369,17 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   Future<void> _showVoteSheet(_VoteEntry entry) async {
     if (!_votingOpen) {
-      _showMessage('Esta ronda no estÃ¡ abierta para votar.');
+      _showMessage(tr('pollDetail.roundNotOpen'));
       return;
     }
     final user = widget.authService.session.user;
     if (user == null) {
-      _showMessage('Inicia sesiÃ³n para votar.');
+      _showMessage(tr('pollDetail.loginToVote'));
       return;
     }
     final maxVotes = user.points ~/ _costPerVote;
     if (maxVotes < 1) {
-      _showMessage('No tienes puntos suficientes para votar.');
+      _showMessage(tr('pollDetail.notEnoughPoints'));
       return;
     }
 
@@ -440,9 +446,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'CONFIRMAR VOTOS',
-                                  style: TextStyle(
+                                Text(
+                                  tr('pollDetail.confirmVotes'),
+                                  style: const TextStyle(
                                     color: Color(0xFFF0ABFC),
                                     fontSize: 9,
                                     fontWeight: FontWeight.w900,
@@ -451,7 +457,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                 ),
                                 const SizedBox(height: 5),
                                 Text(
-                                  entry.artist?.name ?? 'Artista',
+                                  entry.artist?.name ?? tr('pollDetail.artist'),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -462,7 +468,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  'Tienes ${_formatNumber(user.points)} pts disponibles',
+                                  trp('pollDetail.pointsAvailable', {
+                                    'points': _formatNumber(user.points),
+                                  }),
                                   style: const TextStyle(
                                     color: Color(0xFFFDE68A),
                                     fontSize: 11,
@@ -501,9 +509,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Â¿CUÃNTOS VOTOS QUIERES DAR?',
-                            style: TextStyle(
+                          Text(
+                            tr('pollDetail.howManyVotes'),
+                            style: const TextStyle(
                               color: Color(0xFFCBD5E1),
                               fontSize: 10,
                               fontWeight: FontWeight.w900,
@@ -553,7 +561,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           const SizedBox(height: 8),
                           Center(
                             child: Text(
-                              'MÃ¡ximo: ${_formatNumber(sheetMaxVotes)} votos',
+                              trp('pollDetail.maxVotes', {'count': _formatNumber(sheetMaxVotes)}),
                               style: const TextStyle(
                                 color: Color(0xFF94A3B8),
                                 fontSize: 10,
@@ -571,7 +579,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           if (value != 1) const SizedBox(width: 6),
                           Expanded(
                             child: _QuickVoteButton(
-                              label: '$value voto${value == 1 ? '' : 's'}',
+                              label: value == 1
+                                  ? trp('pollDetail.voteSingular', {'count': value})
+                                  : trp('pollDetail.votePlural', {'count': value}),
                               enabled: value <= sheetMaxVotes,
                               onTap: () => setDialogState(() => amount = value),
                             ),
@@ -583,7 +593,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     _VoteGradientButton(
                       enabled: true,
                       loading: false,
-                      label: 'VOTAR',
+                      label: tr('pollDetail.vote'),
                       onTap: () => Navigator.pop(dialogContext, true),
                     ),
                   ],
@@ -620,12 +630,26 @@ class _PollDetailPageState extends State<PollDetailPage> {
         'amount': amount,
         'roundId': _selectedRoundId,
       });
+      _showVoteFeedback(entry.contestantId, amount);
       await _loadResults();
     } catch (error) {
       if (mounted) _showMessage(_messageFor(error));
     } finally {
       if (mounted) setState(() => _votingContestantId = null);
     }
+  }
+
+  void _showVoteFeedback(String contestantId, int amount) {
+    _voteFeedbackTimer?.cancel();
+    setState(() {
+      _voteFeedbackId = contestantId;
+      _voteFeedbackAmount = amount;
+      _voteFeedbackToken++;
+    });
+    _voteFeedbackTimer = Timer(const Duration(milliseconds: 2800), () {
+      if (!mounted) return;
+      setState(() => _voteFeedbackId = null);
+    });
   }
 
   void _showMessage(String message) {
@@ -646,7 +670,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
         surfaceTintColor: Colors.transparent,
         foregroundColor: Colors.white,
         title: Text(
-          poll?.title ?? 'Votación',
+          poll?.title ?? tr('pollDetail.defaultTitle'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w900),
@@ -708,13 +732,13 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     if (_selectingWinners)
                       const SliverToBoxAdapter(child: _CountingVotesPanel())
                     else if (_entries.isEmpty)
-                      const SliverToBoxAdapter(
+                      SliverToBoxAdapter(
                         child: SizedBox(
                           height: 180,
                           child: Center(
                             child: Text(
-                              'Esta ronda todavía no tiene participantes.',
-                              style: TextStyle(
+                              tr('pollDetail.noParticipants'),
+                              style: const TextStyle(
                                 color: Color(0xFFCBD5E1),
                                 fontWeight: FontWeight.w700,
                               ),
@@ -737,6 +761,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                               hideCounts: _hideCounts,
                               votingOpen: _votingOpen,
                               votingId: _votingContestantId,
+                              feedbackId: _voteFeedbackId,
+                              feedbackAmount: _voteFeedbackAmount,
+                              feedbackToken: _voteFeedbackToken,
                               onVote: _showVoteSheet,
                             );
                           },
@@ -756,6 +783,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
                               hideCounts: _hideCounts,
                               votingOpen: _votingOpen,
                               voting: _votingContestantId == entry.contestantId,
+                              showFeedback:
+                                  _voteFeedbackId == entry.contestantId,
+                              feedbackAmount: _voteFeedbackAmount,
+                              feedbackToken: _voteFeedbackToken,
                               onVote: () => _showVoteSheet(entry),
                             );
                           },
@@ -809,9 +840,9 @@ class _PollHero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              const Text(
-                'VOTACIÓN EN VIVO',
-                style: TextStyle(
+              Text(
+                tr('pollDetail.liveVoting'),
+                style: const TextStyle(
                   color: Color(0xFFF0ABFC),
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
@@ -906,10 +937,10 @@ class _CountdownPanel extends StatelessWidget {
     if (difference.isNegative) return const SizedBox.shrink();
     final remaining = difference;
     final values = [
-      (remaining.inDays.toString().padLeft(2, '0'), 'DÍAS'),
-      (remaining.inHours.remainder(24).toString().padLeft(2, '0'), 'HORAS'),
-      (remaining.inMinutes.remainder(60).toString().padLeft(2, '0'), 'MIN'),
-      (remaining.inSeconds.remainder(60).toString().padLeft(2, '0'), 'SEG'),
+      (remaining.inDays.toString().padLeft(2, '0'), tr('pollDetail.days')),
+      (remaining.inHours.remainder(24).toString().padLeft(2, '0'), tr('pollDetail.hours')),
+      (remaining.inMinutes.remainder(60).toString().padLeft(2, '0'), tr('pollDetail.min')),
+      (remaining.inSeconds.remainder(60).toString().padLeft(2, '0'), tr('pollDetail.sec')),
     ];
     return Container(
       alignment: Alignment.center,
@@ -917,9 +948,9 @@ class _CountdownPanel extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'TIEMPO RESTANTE',
-            style: TextStyle(
+          Text(
+            tr('pollDetail.timeRemaining'),
+            style: const TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 10,
               fontWeight: FontWeight.w900,
@@ -1003,13 +1034,13 @@ class _RoundTabs extends StatelessWidget {
             final selected = round.id == selectedId;
             final live = round.status == 'live';
             final label = round.title.isEmpty
-                ? 'Ronda ${index + 1}'
+                ? trp('pollDetail.round', {'number': index + 1})
                 : round.title;
             final status = live
-                ? 'EN VIVO'
+                ? tr('pollDetail.live')
                 : round.status == 'closed'
-                    ? 'CERRADA'
-                    : 'PRÓXIMA';
+                    ? tr('pollDetail.closed')
+                    : tr('pollDetail.upcoming');
             return Material(
               color: Colors.transparent,
               child: InkWell(
@@ -1139,9 +1170,9 @@ class _CountingVotesPanelState extends State<_CountingVotesPanel>
             ),
           ),
           const SizedBox(height: 18),
-          const Text(
-            'CONTEO EN PROCESO',
-            style: TextStyle(
+          Text(
+            tr('pollDetail.countingInProgress'),
+            style: const TextStyle(
               color: Color(0xFFF0ABFC),
               fontSize: 9,
               fontWeight: FontWeight.w900,
@@ -1149,10 +1180,10 @@ class _CountingVotesPanelState extends State<_CountingVotesPanel>
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Estamos contando los votos',
+          Text(
+            tr('pollDetail.countingVotes'),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 30,
               fontWeight: FontWeight.w900,
@@ -1160,10 +1191,10 @@ class _CountingVotesPanelState extends State<_CountingVotesPanel>
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
-            'La votación terminó. Estamos revisando los resultados en tiempo real y eligiendo a los ganadores. Espera un momento.',
+          Text(
+            tr('pollDetail.countingDescription'),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Color(0xFFCBD5E1),
               fontSize: 12,
               height: 1.5,
@@ -1177,18 +1208,18 @@ class _CountingVotesPanelState extends State<_CountingVotesPanel>
               borderRadius: BorderRadius.circular(99),
               border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _ProcessingDot(color: Color(0xFFF472B6)),
-                SizedBox(width: 6),
-                _ProcessingDot(color: Color(0xFF67E8F9)),
-                SizedBox(width: 6),
-                _ProcessingDot(color: Color(0xFFC4B5FD)),
-                SizedBox(width: 10),
+                const _ProcessingDot(color: Color(0xFFF472B6)),
+                const SizedBox(width: 6),
+                const _ProcessingDot(color: Color(0xFF67E8F9)),
+                const SizedBox(width: 6),
+                const _ProcessingDot(color: Color(0xFFC4B5FD)),
+                const SizedBox(width: 10),
                 Text(
-                  'PROCESANDO RESULTADOS EN VIVO',
-                  style: TextStyle(
+                  tr('pollDetail.processingResults'),
+                  style: const TextStyle(
                     color: Color(0xFFE2E8F0),
                     fontSize: 8,
                     fontWeight: FontWeight.w900,
@@ -1225,6 +1256,9 @@ class _ContestantCard extends StatelessWidget {
     required this.hideCounts,
     required this.votingOpen,
     required this.voting,
+    required this.showFeedback,
+    required this.feedbackAmount,
+    required this.feedbackToken,
     required this.onVote,
   });
 
@@ -1232,26 +1266,46 @@ class _ContestantCard extends StatelessWidget {
   final bool hideCounts;
   final bool votingOpen;
   final bool voting;
+  final bool showFeedback;
+  final int feedbackAmount;
+  final int feedbackToken;
   final VoidCallback onVote;
 
   @override
   Widget build(BuildContext context) {
     final artist = entry.artist;
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 420),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
       decoration: BoxDecoration(
-        color: const Color(0xFF21112F),
+        color: showFeedback
+            ? const Color(0xFF1A2F2A)
+            : const Color(0xFF21112F),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 14,
-            offset: Offset(0, 7),
-          ),
+        border: Border.all(
+          color: showFeedback
+              ? const Color(0xFF34D399).withValues(alpha: 0.55)
+              : Colors.white.withValues(alpha: 0.08),
+        ),
+        boxShadow: [
+          if (showFeedback)
+            BoxShadow(
+              color: const Color(0xFF22D3EE).withValues(alpha: 0.28),
+              blurRadius: 28,
+              spreadRadius: 1,
+            )
+          else
+            const BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 14,
+              offset: Offset(0, 7),
+            ),
         ],
       ),
-      child: Column(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Column(
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -1304,7 +1358,7 @@ class _ContestantCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      artist?.name ?? 'Artista',
+                      artist?.name ?? tr('pollDetail.artist'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -1328,7 +1382,9 @@ class _ContestantCard extends StatelessWidget {
                   children: [
                     if (!hideCounts)
                       Text(
-                        '${_formatNumber(entry.totalVotes)} VOTOS',
+                        trp('pollDetail.votesUppercase', {
+                          'count': _formatNumber(entry.totalVotes),
+                        }),
                         style: const TextStyle(
                           color: Color(0xFFE2E8F0),
                           fontSize: 9,
@@ -1379,16 +1435,27 @@ class _ContestantCard extends StatelessWidget {
           _VoteGradientButton(
             enabled: votingOpen && !voting,
             loading: voting,
-            label: votingOpen ? 'VOTAR' : 'VOTACIÓN CERRADA',
+            label: votingOpen ? tr('pollDetail.vote') : tr('pollDetail.votingClosed'),
             onTap: onVote,
           ),
+        ],
+      ),
+          if (showFeedback)
+            Positioned(
+              top: -8,
+              right: 0,
+              child: _VoteFeedbackBadge(
+                key: ValueKey('fb-$feedbackToken'),
+                amount: feedbackAmount,
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _VoteGradientButton extends StatelessWidget {
+class _VoteGradientButton extends StatefulWidget {
   const _VoteGradientButton({
     required this.enabled,
     required this.loading,
@@ -1402,55 +1469,266 @@ class _VoteGradientButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_VoteGradientButton> createState() => _VoteGradientButtonState();
+}
+
+class _VoteGradientButtonState extends State<_VoteGradientButton>
+    with TickerProviderStateMixin {
+  late final AnimationController _shimmer;
+  late final AnimationController _pulse;
+  late final AnimationController _press;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 140),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _syncIdleAnimations();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VoteGradientButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled ||
+        oldWidget.loading != widget.loading) {
+      _syncIdleAnimations();
+    }
+  }
+
+  void _syncIdleAnimations() {
+    final active = widget.enabled && !widget.loading;
+    if (active) {
+      if (!_shimmer.isAnimating) _shimmer.repeat();
+      if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
+    } else {
+      _shimmer.stop();
+      _pulse.stop();
+      _shimmer.value = 0;
+      _pulse.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    _pulse.dispose();
+    _press.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleTap() async {
+    if (!widget.enabled) return;
+    await _press.forward();
+    await _press.reverse();
+    widget.onTap();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Opacity(
-        opacity: enabled || loading ? 1 : 0.45,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: enabled ? onTap : null,
-            borderRadius: BorderRadius.circular(15),
-            child: Ink(
-              height: 48,
-              decoration: BoxDecoration(
+    return AnimatedBuilder(
+      animation: Listenable.merge([_shimmer, _pulse, _press]),
+      builder: (context, _) {
+        final pulse = Curves.easeInOut.transform(_pulse.value);
+        final pressScale = 1 - (_press.value * 0.06);
+        final glow = widget.enabled
+            ? 0.22 + (pulse * 0.2)
+            : 0.0;
+        return Opacity(
+          opacity: widget.enabled || widget.loading ? 1 : 0.45,
+          child: Transform.scale(
+            scale: pressScale,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.enabled ? _handleTap : null,
                 borderRadius: BorderRadius.circular(15),
-                gradient: const LinearGradient(
-                  colors: [
-                    Color(0xFF8B3DFF),
-                    Color(0xFFC026D3),
-                    Color(0xFFF012D6),
-                  ],
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x553C0B66),
-                    blurRadius: 14,
-                    offset: Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
+                child: Ink(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(15),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF8B3DFF),
+                        Color(0xFFC026D3),
+                        Color(0xFFF012D6),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color.fromRGBO(
+                          192,
+                          38,
+                          211,
+                          glow.clamp(0.0, 0.55),
                         ),
-                      )
-                    : Text(
-                        label,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.4,
-                        ),
+                        blurRadius: 16 + (pulse * 10),
+                        spreadRadius: pulse * 1.5,
+                        offset: const Offset(0, 6),
                       ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (widget.enabled && !widget.loading)
+                          IgnorePointer(
+                            child: Align(
+                              alignment: Alignment(
+                                -1.4 + (_shimmer.value * 2.8),
+                                0,
+                              ),
+                              child: Container(
+                                width: 56,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.white.withValues(alpha: 0),
+                                      Colors.white.withValues(alpha: 0.35),
+                                      Colors.white.withValues(alpha: 0),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        Center(
+                          child: widget.loading
+                              ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                              : Text(
+                            widget.label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _VoteFeedbackBadge extends StatefulWidget {
+  const _VoteFeedbackBadge({
+    required this.amount,
+    super.key,
+  });
+
+  final int amount;
+
+  @override
+  State<_VoteFeedbackBadge> createState() => _VoteFeedbackBadgeState();
+}
+
+class _VoteFeedbackBadgeState extends State<_VoteFeedbackBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        double opacity;
+        double dy;
+        double scale;
+        if (t < 0.18) {
+          final p = Curves.easeOut.transform(t / 0.18);
+          opacity = p;
+          dy = 8 * (1 - p);
+          scale = 0.82 + (0.24 * p);
+        } else if (t < 0.78) {
+          final p = (t - 0.18) / 0.6;
+          opacity = 1;
+          dy = -4 * p;
+          scale = 1.06 - (0.06 * p);
+        } else {
+          final p = Curves.easeIn.transform((t - 0.78) / 0.22);
+          opacity = 1 - p;
+          dy = -4 - (10 * p);
+          scale = 1 - (0.04 * p);
+        }
+        return Opacity(
+          opacity: opacity.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, dy),
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: const Color(0xFF6EE7B7).withValues(alpha: 0.4),
+          ),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF10B981), Color(0xFF22D3EE)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF22D3EE).withValues(alpha: 0.35),
+              blurRadius: 18,
+            ),
+          ],
+        ),
+        child: Text(
+          widget.amount == 1
+              ? trp('pollDetail.plusVoteSingular', {'count': widget.amount})
+              : trp('pollDetail.plusVotePlural', {'count': widget.amount}),
+          style: const TextStyle(
+            color: Color(0xFF052E2B),
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.6,
           ),
         ),
       ),
@@ -1465,6 +1743,9 @@ class _VersusMatch extends StatelessWidget {
     required this.hideCounts,
     required this.votingOpen,
     required this.votingId,
+    required this.feedbackId,
+    required this.feedbackAmount,
+    required this.feedbackToken,
     required this.onVote,
   });
 
@@ -1473,23 +1754,38 @@ class _VersusMatch extends StatelessWidget {
   final bool hideCounts;
   final bool votingOpen;
   final String? votingId;
+  final String? feedbackId;
+  final int feedbackAmount;
+  final int feedbackToken;
   final ValueChanged<_VoteEntry> onVote;
 
   @override
   Widget build(BuildContext context) {
+    final showVs = entries.length >= 2;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF21112F),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1C1032), Color(0xFF150A27)],
+        ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFF8B5CF6).withValues(alpha: 0.32),
+          color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         children: [
           Text(
-            'DUELO $number',
+            trp('pollDetail.duel', {'number': number}),
             style: const TextStyle(
               color: Color(0xFFF0ABFC),
               fontSize: 10,
@@ -1497,61 +1793,47 @@ class _VersusMatch extends StatelessWidget {
               letterSpacing: 1.8,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Stack(
-            alignment: Alignment.topCenter,
             clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final entry in entries)
+                  for (var i = 0; i < entries.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
                     Expanded(
-                      child: _VersusArtist(
-                        entry: entry,
-                        hideCounts: hideCounts,
-                        votingOpen: votingOpen,
-                        voting: votingId == entry.contestantId,
-                        onVote: () => onVote(entry),
+                      child: _VersusImage(
+                        entry: entries[i],
+                        label: '${tr('pollDetail.option')} ${String.fromCharCode(65 + i)}',
+                        showFeedback: feedbackId == entries[i].contestantId,
                       ),
                     ),
+                  ],
                 ],
               ),
-              if (entries.length >= 2)
-                Positioned(
-                  top: 62,
-                  child: Transform.scale(
-                    scale: 1.3,
-                    child: ShaderMask(
-                      blendMode: BlendMode.srcIn,
-                      shaderCallback: (bounds) => const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFFFFF7D6),
-                          Color(0xFFFBBF24),
-                          Color(0xFFF59E0B),
-                          Color(0xFFD97706),
-                        ],
-                        stops: [0.0, 0.35, 0.7, 1.0],
-                      ).createShader(bounds),
-                      child: const Text(
-                        'VS',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          shadows: [
-                            Shadow(
-                              color: Color(0xCC000000),
-                              blurRadius: 10,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+              if (showVs) const _VersusBadge(),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < entries.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(
+                  child: _VersusInfo(
+                    entry: entries[i],
+                    hideCounts: hideCounts,
+                    votingOpen: votingOpen,
+                    voting: votingId == entries[i].contestantId,
+                    showFeedback: feedbackId == entries[i].contestantId,
+                    feedbackAmount: feedbackAmount,
+                    feedbackToken: feedbackToken,
+                    onVote: () => onVote(entries[i]),
                   ),
                 ),
+              ],
             ],
           ),
         ],
@@ -1560,12 +1842,188 @@ class _VersusMatch extends StatelessWidget {
   }
 }
 
-class _VersusArtist extends StatelessWidget {
-  const _VersusArtist({
+class _VersusBadge extends StatelessWidget {
+  const _VersusBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const RadialGradient(
+          colors: [Color(0xFF2A1840), Color(0xFF140A24)],
+        ),
+        border: Border.all(
+          color: const Color(0xFFFBBF24).withValues(alpha: 0.9),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
+            blurRadius: 16,
+            spreadRadius: 1,
+          ),
+          const BoxShadow(
+            color: Color(0xCC000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ShaderMask(
+        blendMode: BlendMode.srcIn,
+        shaderCallback: (bounds) => const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFF7D6),
+            Color(0xFFFBBF24),
+            Color(0xFFF59E0B),
+            Color(0xFFD97706),
+          ],
+          stops: [0.0, 0.35, 0.7, 1.0],
+        ).createShader(bounds),
+        child: const Text(
+          'VS',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VersusImage extends StatelessWidget {
+  const _VersusImage({
+    required this.entry,
+    required this.label,
+    required this.showFeedback,
+  });
+
+  final _VoteEntry entry;
+  final String label;
+  final bool showFeedback;
+
+  @override
+  Widget build(BuildContext context) {
+    final artist = entry.artist;
+    final imageUrl = artist == null
+        ? ''
+        : resolveArtistMediaUrl(
+            artist.banner.isNotEmpty ? artist.banner : artist.image,
+          );
+    return AspectRatio(
+      aspectRatio: 1,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 320),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: showFeedback
+                ? const Color(0xFF34D399).withValues(alpha: 0.7)
+                : Colors.white.withValues(alpha: 0.1),
+            width: showFeedback ? 2 : 1,
+          ),
+          boxShadow: showFeedback
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF22D3EE).withValues(alpha: 0.3),
+                    blurRadius: 24,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imageUrl.isEmpty)
+                ColoredBox(
+                  color: const Color(0xFF1A0B2E),
+                  child: Center(
+                    child: Text(
+                      (artist?.name.characters.firstOrNull ?? 'A')
+                          .toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) =>
+                      const ColoredBox(color: Color(0xFF1A0B2E)),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x00000000),
+                      Color(0x22000000),
+                      Color(0x88000000),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B0620).withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VersusInfo extends StatelessWidget {
+  const _VersusInfo({
     required this.entry,
     required this.hideCounts,
     required this.votingOpen,
     required this.voting,
+    required this.showFeedback,
+    required this.feedbackAmount,
+    required this.feedbackToken,
     required this.onVote,
   });
 
@@ -1573,65 +2031,124 @@ class _VersusArtist extends StatelessWidget {
   final bool hideCounts;
   final bool votingOpen;
   final bool voting;
+  final bool showFeedback;
+  final int feedbackAmount;
+  final int feedbackToken;
   final VoidCallback onVote;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final artist = entry.artist;
+    final group = artist?.group ?? '';
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        if (entry.artist != null)
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFF21C8).withValues(alpha: 0.35),
-                  blurRadius: 22,
-                  spreadRadius: 1,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    artist?.name ?? tr('pollDetail.artist'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 350),
+                  style: TextStyle(
+                    color: showFeedback
+                        ? const Color(0xFF6EE7B7)
+                        : const Color(0xFF67E8F9),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                  child: Text('${entry.percent.toStringAsFixed(2)}%'),
                 ),
               ],
             ),
-            child: ArtistAvatar(artist: entry.artist!, size: 165, radius: 30),
-          ),
-        const SizedBox(height: 12),
-        Text(
-          entry.artist?.name ?? 'Artista',
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-          ),
+            if (group.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                group.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFFE9D5FF),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+            if (!hideCounts) ...[
+              const SizedBox(height: 2),
+              Text(
+                trp('pollDetail.votesLower', {
+                  'count': _formatNumber(entry.totalVotes),
+                }),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Stack(
+                    children: [
+                      Container(
+                        height: 6,
+                        width: double.infinity,
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 450),
+                        height: 6,
+                        width:
+                            constraints.maxWidth *
+                            (entry.percent / 100).clamp(0, 1),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF22D3EE), Color(0xFFE879F9)],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            _VoteGradientButton(
+              enabled: votingOpen && !voting,
+              loading: voting,
+              label: votingOpen ? tr('pollDetail.vote') : tr('pollDetail.closed'),
+              onTap: onVote,
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          '${entry.percent.toStringAsFixed(2)}%',
-          style: const TextStyle(
-            color: Color(0xFFFDE68A),
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        if (!hideCounts) ...[
-          const SizedBox(height: 2),
-          Text(
-            '${_formatNumber(entry.totalVotes)} votos',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.55),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+        if (showFeedback)
+          Positioned(
+            top: -22,
+            right: 0,
+            child: _VoteFeedbackBadge(
+              key: ValueKey('vs-fb-$feedbackToken'),
+              amount: feedbackAmount,
             ),
           ),
-        ],
-        const SizedBox(height: 10),
-        _VoteGradientButton(
-          enabled: votingOpen && !voting,
-          loading: voting,
-          label: votingOpen ? 'VOTAR' : 'CERRADA',
-          onTap: onVote,
-        ),
       ],
     );
   }
@@ -1776,7 +2293,7 @@ class _DetailError extends StatelessWidget {
               style: const TextStyle(color: Color(0xFFCBD5E1)),
             ),
             const SizedBox(height: 14),
-            FilledButton(onPressed: retry, child: const Text('REINTENTAR')),
+            FilledButton(onPressed: retry, child: Text(tr('pollDetail.retry'))),
           ],
         ),
       ),
@@ -1831,5 +2348,5 @@ String _formatNumber(int value) {
 
 String _messageFor(Object error) {
   if (error is ApiException) return error.message;
-  return 'No se pudo completar la solicitud.';
+  return tr('pollDetail.requestFailed');
 }

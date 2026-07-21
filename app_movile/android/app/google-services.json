@@ -15,6 +15,58 @@
       },
       "oauth_client": [
         {
+          "client_id": "927668152816-l8r9bt0qrl1te07qs2ua5n2om98ud8os.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.votomusicamundial.app",
+            "certificate_hash": "a2c6f5bf38029f0a929292efa52ead0d8f0fad62"
+          }
+        },
+        {
+          "client_id": "927668152816-qukl8o82qb3tgskcm3tri6do38ce3aks.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.votomusicamundial.app",
+            "certificate_hash": "e72b530243c40874a595f538ca0c473bce9fc445"
+          }
+        },
+        {
+          "client_id": "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSyjidw1cmZRaQQCp07WaY63Pjaetdtno"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "927668152816-dpamk5updrpms0hltel8nuf378qqsqku.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.votomusicamundial.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:927668152816:android:2a3ef0b105f99f09acd535",
+        "android_client_info": {
+          "package_name": "vote.musicmundial.com"
+        }
+      },
+      "oauth_client": [
+        {
           "client_id": "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com",
           "client_type": 3
         }

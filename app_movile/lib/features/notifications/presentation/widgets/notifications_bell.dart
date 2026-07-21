@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../application/notification_controller.dart';
 import '../pages/notifications_page.dart';
 
@@ -19,7 +20,7 @@ class NotificationsBell extends StatelessWidget {
         final unread = controller.unreadCount;
 
         return IconButton(
-          tooltip: 'Notificaciones',
+          tooltip: tr('misc.notificationsTitle'),
           onPressed: () {
             NotificationsScreen.open(
               context,

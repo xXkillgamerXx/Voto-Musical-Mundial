@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
+
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
     required this.title,
@@ -126,7 +128,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 5),
         Text(
-          'AWARDS GLOBALES',
+          tr('auth.brandTagline'),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: colorScheme.onSurfaceVariant,

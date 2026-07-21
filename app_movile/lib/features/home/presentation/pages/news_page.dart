@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
@@ -44,9 +45,9 @@ class NewsScreen extends StatelessWidget {
           surfaceTintColor: Colors.transparent,
           foregroundColor: Colors.white,
           centerTitle: true,
-          title: const Text(
-            'Noticias',
-            style: TextStyle(fontWeight: FontWeight.w900),
+          title: Text(
+            tr('home.newsTitle'),
+            style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           actions: [
             AppBarPointsAction(session: authService.session),
@@ -156,7 +157,7 @@ class _NewsPageState extends State<NewsPage> {
       }
 
       setState(() {
-        _errorMessage = 'No se pudieron cargar las noticias.';
+        _errorMessage = tr('home.newsLoadError');
         _initialLoading = false;
       });
     }
@@ -253,16 +254,16 @@ class _NewsPageState extends State<NewsPage> {
               children: [
                 const SizedBox(height: 10),
                 Text(
-                  'Noticias',
+                  tr('home.newsTitle'),
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Últimas noticias de música y entretenimiento cargadas desde el feed oficial de Music Mundial.',
-                  style: TextStyle(
+                Text(
+                  tr('home.newsSubtitle'),
+                  style: const TextStyle(
                     color: Color(0xFFB9B2D8),
                     fontWeight: FontWeight.w600,
                   ),
@@ -292,11 +293,11 @@ class _NewsPageState extends State<NewsPage> {
               ),
             )
           else if (_items.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               hasScrollBody: false,
               child: _NewsStateMessage(
                 icon: Icons.article_outlined,
-                title: 'No encontramos noticias para tu búsqueda.',
+                title: tr('home.newsEmptySearch'),
               ),
             )
           else ...[
@@ -347,7 +348,7 @@ class _NewsSearchField extends StatelessWidget {
       onChanged: onChanged,
       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
       decoration: InputDecoration(
-        labelText: 'Buscar noticias',
+        labelText: tr('home.searchNews'),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         prefixIcon: const Icon(Icons.search_rounded, size: 22),
         prefixIconConstraints: const BoxConstraints(minWidth: 44),
@@ -392,12 +393,12 @@ class _NewsSearchHeader extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     final countLabel = loading && total == 0
-        ? 'Cargando noticias...'
+        ? tr('home.loadingNews')
         : total == 0
-        ? '0 noticias disponibles'
+        ? trp('home.newsAvailable', {'count': 0})
         : loaded >= total
-        ? '$total noticias disponibles'
-        : 'Mostrando $loaded de $total noticias';
+        ? trp('home.newsAvailable', {'count': total})
+        : trp('home.newsShowing', {'loaded': loaded, 'total': total});
 
     return Container(
       padding: const EdgeInsets.only(top: 2, bottom: 2),
@@ -475,8 +476,11 @@ class _NewsScrollFooter extends StatelessWidget {
     }
 
     if (!hasMore && loaded > 0) {
+      final extra = total > loaded
+          ? trp('home.newsSeenAllExtra', {'total': total})
+          : '';
       return Text(
-        'Has visto las $loaded noticias${total > loaded ? ' de $total' : ''}.',
+        trp('home.newsSeenAll', {'loaded': loaded, 'extra': extra}),
         textAlign: TextAlign.center,
         style: TextStyle(
           color: Colors.white.withValues(alpha: 0.45),
@@ -487,7 +491,7 @@ class _NewsScrollFooter extends StatelessWidget {
     }
 
     return Text(
-      'Desliza hacia abajo para cargar más',
+      tr('home.scrollToLoadMore'),
       textAlign: TextAlign.center,
       style: TextStyle(
         color: Colors.white.withValues(alpha: 0.35),

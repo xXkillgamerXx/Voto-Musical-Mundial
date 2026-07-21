@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/mission.dart';
@@ -50,10 +51,10 @@ class _MissionsPageState extends State<MissionsPage> {
                     size: 42,
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'No se pudieron cargar las misiones.',
+                  Text(
+                    tr('home.missionsLoadError'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
                     ),
@@ -61,7 +62,7 @@ class _MissionsPageState extends State<MissionsPage> {
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: () => _reload(),
-                    child: const Text('Reintentar'),
+                    child: Text(tr('home.retry')),
                   ),
                 ],
               ),

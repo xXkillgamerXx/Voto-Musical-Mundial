@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
@@ -177,7 +178,7 @@ class _DailyRewardDialogState extends State<_DailyRewardDialog> {
       }
 
       setState(() {
-        _errorMessage = 'No se pudo reclamar la recompensa. Intenta otra vez.';
+        _errorMessage = tr('home.rewardClaimError');
         _isClaiming = false;
       });
     }
@@ -290,9 +291,9 @@ class _MainView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          const Text(
-            'RECOMPENSA DIARIA',
-            style: TextStyle(
+          Text(
+            tr('home.dailyReward'),
+            style: const TextStyle(
               color: Color(0xFFF9A8D4),
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -300,9 +301,9 @@ class _MainView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Racha de 7 días',
-            style: TextStyle(
+          Text(
+            tr('home.sevenDayStreak'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w900,
@@ -311,7 +312,7 @@ class _MainView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Entra cada día y reclama puntos gratis para apoyar a tu artista favorito. Cada día suma sus propios puntos dentro de la semana.',
+            tr('home.dailyRewardDescription'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.62),
               fontWeight: FontWeight.w600,
@@ -321,7 +322,7 @@ class _MainView extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Total semanal sumatorio: ${schedule.weeklyTotal} pts',
+            trp('home.weeklyTotalPoints', {'total': schedule.weeklyTotal}),
             style: const TextStyle(
               color: Color(0xFFA7F3D0),
               fontWeight: FontWeight.w800,
@@ -330,7 +331,7 @@ class _MainView extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Si completas los 7 días, la racha vuelve al Día 1 la semana siguiente. Si faltas un día, la racha reinicia.',
+            tr('home.streakRules'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.42),
               fontWeight: FontWeight.w600,
@@ -352,8 +353,8 @@ class _MainView extends StatelessWidget {
               ),
               child: Text(
                 claimed
-                    ? 'HOY ✓ RECLAMADO'
-                    : 'HOY +${todayReward.points} pts',
+                    ? tr('home.todayClaimed')
+                    : trp('home.todayPoints', {'points': todayReward.points}),
                 style: const TextStyle(
                   color: Color(0xFFA7F3D0),
                   fontWeight: FontWeight.w900,
@@ -419,8 +420,10 @@ class _MainView extends StatelessWidget {
                         children: [
                           Text(
                             claimed
-                                ? 'Reclamaste +${todayReward.points} pts hoy'
-                                : 'Tu recompensa de hoy está lista',
+                                ? trp('home.claimedTodayPoints', {
+                                    'points': todayReward.points,
+                                  })
+                                : tr('home.rewardReady'),
                             style: const TextStyle(
                               color: Color(0xFFD1FAE5),
                               fontWeight: FontWeight.w900,
@@ -430,7 +433,7 @@ class _MainView extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text.rich(
                             TextSpan(
-                              text: 'Vuelve mañana por ',
+                              text: tr('home.comeBackTomorrow'),
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.62),
                                 fontWeight: FontWeight.w600,
@@ -438,14 +441,18 @@ class _MainView extends StatelessWidget {
                               ),
                               children: [
                                 TextSpan(
-                                  text: '+${tomorrowReward.points} pts',
+                                  text: trp('home.plusPoints', {
+                                    'points': tomorrowReward.points,
+                                  }),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
                                 TextSpan(
-                                  text: ' · Día ${tomorrowReward.day}',
+                                  text: trp('home.dayLabel', {
+                                    'day': tomorrowReward.day,
+                                  }),
                                 ),
                               ],
                             ),
@@ -468,9 +475,9 @@ class _MainView extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 if (claimed)
-                  const Text(
-                    'COMPLETADA',
-                    style: TextStyle(
+                  Text(
+                    tr('home.completed'),
+                    style: const TextStyle(
                       color: Color(0xFF6EE7B7),
                       fontWeight: FontWeight.w900,
                       fontSize: 13,
@@ -495,7 +502,9 @@ class _MainView extends StatelessWidget {
                           borderRadius: BorderRadius.circular(18),
                           child: Center(
                             child: Text(
-                              isClaiming ? 'RECLAMANDO...' : 'RECLAMAR AHORA',
+                              isClaiming
+                                  ? tr('home.claiming')
+                                  : tr('home.claimNow'),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
@@ -598,7 +607,7 @@ class _DayCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'DÍA ${reward.day}',
+            trp('home.dayUpper', {'day': reward.day}),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
               fontSize: 10,
@@ -616,7 +625,7 @@ class _DayCard extends StatelessWidget {
             ),
           ),
           Text(
-            'PTS',
+            tr('home.pts'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.35),
               fontSize: 10,
@@ -674,9 +683,9 @@ class _SuccessView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          const Text(
-            '¡RECOMPENSA RECLAMADA!',
-            style: TextStyle(
+          Text(
+            tr('home.rewardClaimed'),
+            style: const TextStyle(
               color: Color(0xFF6EE7B7),
               fontWeight: FontWeight.w900,
               fontSize: 11,
@@ -685,7 +694,7 @@ class _SuccessView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Sumaste +$points pts',
+            trp('home.earnedPoints', {'points': points}),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
@@ -695,7 +704,7 @@ class _SuccessView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tus puntos ya están disponibles para apoyar a tu artista favorito.',
+            tr('home.pointsAvailable'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.62),
@@ -716,7 +725,7 @@ class _SuccessView extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'Total actual: ${totalPoints.toString()} pts',
+                trp('home.currentTotal', {'total': totalPoints}),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Color(0xFFD1FAE5),
@@ -741,10 +750,10 @@ class _SuccessView extends StatelessWidget {
                 child: InkWell(
                   onTap: onContinue,
                   borderRadius: BorderRadius.circular(18),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      'CONTINUAR',
-                      style: TextStyle(
+                      tr('home.continueUpper'),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
                       ),

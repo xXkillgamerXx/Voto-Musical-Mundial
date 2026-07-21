@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/app_notification.dart';
 import '../../data/notification_display.dart';
@@ -160,8 +161,8 @@ class _GiftNotificationModalState extends State<GiftNotificationModal>
     final body = message?.isNotEmpty == true
         ? message!
         : _isMission
-        ? 'Completaste una misión y ganaste $_amount puntos.'
-        : 'Recibiste $_amount puntos de regalo.';
+        ? trp('misc.missionCompletedPoints', {'count': _amount})
+        : trp('misc.giftReceivedPoints', {'count': _amount});
 
     return AnimatedBuilder(
       animation: Listenable.merge([
@@ -287,11 +288,11 @@ class _GiftNotificationModalState extends State<GiftNotificationModal>
                                     _AnimatedRevealText(
                                       revealed: _revealed,
                                       hidden: _isMission
-                                          ? 'MISIÓN COMPLETADA'
-                                          : 'TIENES UN REGALO',
+                                          ? tr('misc.missionCompletedLabel')
+                                          : tr('misc.youHaveGift'),
                                       shown: _isMission
-                                          ? 'PREMIO RECIBIDO'
-                                          : 'REGALO ABIERTO',
+                                          ? tr('misc.prizeReceived')
+                                          : tr('misc.giftOpened'),
                                     ),
                                     const SizedBox(height: 10),
                                     AnimatedSwitcher(
@@ -310,7 +311,9 @@ class _GiftNotificationModalState extends State<GiftNotificationModal>
                                       child: Text(
                                         _revealed
                                             ? '+$_amount pts'
-                                            : (_isMission ? 'Premio' : 'Sorpresa'),
+                                            : (_isMission
+                                                  ? tr('misc.prize')
+                                                  : tr('misc.surprise')),
                                         key: ValueKey(_revealed),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
@@ -337,8 +340,8 @@ class _GiftNotificationModalState extends State<GiftNotificationModal>
                                         _revealed
                                             ? body
                                             : (_isMission
-                                                  ? 'Completaste una misión. Abre tu premio para recibir los puntos.'
-                                                  : 'Alguien del equipo te envió un regalo. Ábrelo para descubrir cuántos puntos recibiste.'),
+                                                  ? tr('misc.missionOpenPrize')
+                                                  : tr('misc.someoneSentGift')),
                                         key: ValueKey('body-$_revealed'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
@@ -359,14 +362,14 @@ class _GiftNotificationModalState extends State<GiftNotificationModal>
                                                 children: [
                                                   Expanded(
                                                     child: _InfoTile(
-                                                      label: 'Enviado por',
+                                                      label: tr('misc.sentBy'),
                                                       value: sender,
                                                     ),
                                                   ),
                                                   const SizedBox(width: 10),
                                                   Expanded(
                                                     child: _InfoTile(
-                                                      label: 'Nuevo saldo',
+                                                      label: tr('misc.newBalance'),
                                                       value: '$_displayPoints pts',
                                                       highlight: true,
                                                     ),
@@ -408,7 +411,9 @@ class _GiftNotificationModalState extends State<GiftNotificationModal>
                                               borderRadius: BorderRadius.circular(18),
                                               child: Center(
                                                 child: Text(
-                                                  _revealed ? 'LISTO' : 'ABRIR REGALO',
+                                                  _revealed
+                                                      ? tr('misc.done')
+                                                      : tr('misc.openGift'),
                                                   style: const TextStyle(
                                                     color: Colors.white,
                                                     fontWeight: FontWeight.w900,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/rewards_api.dart';
 import 'daily_reward_modal.dart';
@@ -80,9 +81,9 @@ class DailyRewardBanner extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'RECOMPENSA DIARIA',
-                            style: TextStyle(
+                          Text(
+                            tr('home.dailyReward'),
+                            style: const TextStyle(
                               color: Color(0xFF67E8F9),
                               fontSize: 10,
                               fontWeight: FontWeight.w900,
@@ -90,9 +91,9 @@ class DailyRewardBanner extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          const Text(
-                            'Racha de 7 días',
-                            style: TextStyle(
+                          Text(
+                            tr('home.sevenDayStreak'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
@@ -101,8 +102,10 @@ class DailyRewardBanner extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             claimed
-                                ? 'Ya reclamaste hoy · Día $activeDay completado'
-                                : 'Reclama tus puntos gratis de hoy',
+                                ? trp('home.alreadyClaimedDay', {
+                                    'day': activeDay,
+                                  })
+                                : tr('home.claimFreePoints'),
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.58),
                               fontWeight: FontWeight.w600,
@@ -129,7 +132,7 @@ class DailyRewardBanner extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        claimed ? 'LISTO' : 'ABRIR',
+                        claimed ? tr('home.done') : tr('home.open'),
                         style: TextStyle(
                           color: claimed
                               ? const Color(0xFF6EE7B7)

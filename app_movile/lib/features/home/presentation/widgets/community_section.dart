@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
+
 class CommunityLink {
   const CommunityLink({
     required this.title,
@@ -26,37 +28,44 @@ class CommunitySection extends StatelessWidget {
 
   final Future<void> Function(String url) onOpenLink;
 
-  static const _links = [
+  static List<CommunityLink> get _links => [
     CommunityLink(
-      title: 'Comunidad Startly',
-      description:
-          'Entra al hub de Music Mundial para descubrir enlaces, novedades y contenido destacado.',
-      label: 'Link oficial',
+      title: tr('home.communityStartlyTitle'),
+      description: tr('home.communityStartlyDescription'),
+      label: tr('home.officialLink'),
       url: 'https://startlyapp.com/musicmundial',
       icon: Icons.link_rounded,
-      gradient: [Color(0xFF701A75), Color(0xFF581C87), Color(0xFF020617)],
+      gradient: const [
+        Color(0xFF701A75),
+        Color(0xFF581C87),
+        Color(0xFF020617),
+      ],
     ),
     CommunityLink(
-      title: 'Music Mundial en X',
-      description:
-          'Sigue noticias, votaciones, tendencias KPOP y actualizaciones de la comunidad.',
-      label: '43.5K seguidores',
+      title: tr('home.communityXTitle'),
+      description: tr('home.communityXDescription'),
+      label: tr('home.communityXFollowers'),
       url: 'https://x.com/MusicMundial',
       icon: Icons.tag_rounded,
-      gradient: [Color(0xFF020617), Color(0xFF2E1065), Color(0xFF000000)],
+      gradient: const [
+        Color(0xFF020617),
+        Color(0xFF2E1065),
+        Color(0xFF000000),
+      ],
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final links = _links;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'COMUNIDAD',
-            style: TextStyle(
+          Text(
+            tr('home.community'),
+            style: const TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -64,20 +73,20 @@ class CommunitySection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Music Mundial',
-            style: TextStyle(
+          Text(
+            tr('home.musicMundial'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 18),
-          for (var index = 0; index < _links.length; index++) ...[
+          for (var index = 0; index < links.length; index++) ...[
             if (index > 0) const SizedBox(height: 14),
             _CommunityCard(
-              link: _links[index],
-              onTap: () => onOpenLink(_links[index].url),
+              link: links[index],
+              onTap: () => onOpenLink(links[index].url),
             ),
           ],
         ],
@@ -208,7 +217,7 @@ class _CommunityCard extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                'ABRIR COMUNIDAD',
+                                tr('home.openCommunity'),
                                 style: TextStyle(
                                   color: const Color(0xFFF0ABFC).withValues(alpha: 0.95),
                                   fontSize: 11,

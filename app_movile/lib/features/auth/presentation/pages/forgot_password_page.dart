@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
 
@@ -39,7 +40,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final email = _emailController.text.trim().toLowerCase();
 
     if (email.isEmpty) {
-      setState(() => _errorMessage = 'Escribe tu correo.');
+      setState(() => _errorMessage = tr('auth.enterEmail'));
       return;
     }
 
@@ -48,7 +49,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     try {
       if (!mounted) return;
       setState(
-        () => _successMessage = 'Reset de password pendiente de API propia.',
+        () => _successMessage = tr('auth.resetPending'),
       );
     } finally {
       if (mounted) {
@@ -60,22 +61,22 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      title: 'Recuperar contrasena',
-      subtitle: 'Te enviaremos un enlace para volver a entrar a tu cuenta.',
+      title: tr('auth.forgotTitle'),
+      subtitle: tr('auth.forgotSubtitle'),
       showBackButton: true,
       showBrandHeader: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const AuthFieldLabel('Correo'),
+          AuthFieldLabel(tr('auth.emailLabel')),
           const SizedBox(height: 14),
           TextField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             enabled: !_isLoading,
-            decoration: const InputDecoration(
-              labelText: 'Correo electronico',
-              prefixIcon: Icon(Icons.mail_outline),
+            decoration: InputDecoration(
+              labelText: tr('auth.emailFullHint'),
+              prefixIcon: const Icon(Icons.mail_outline),
             ),
           ),
           const SizedBox(height: 18),
@@ -88,14 +89,14 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
             const SizedBox(height: 12),
           ],
           AuthGradientButton(
-            label: 'Enviar enlace',
+            label: tr('auth.sendLink'),
             onPressed: _handleResetPassword,
             isLoading: _isLoading,
           ),
           const SizedBox(height: 16),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Volver a iniciar sesion'),
+            child: Text(tr('auth.backToLogin')),
           ),
         ],
       ),

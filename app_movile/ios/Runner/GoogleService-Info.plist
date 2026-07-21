@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>927668152816-qth0gukdhrja9lrd6ejcf88ttlo8154t.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.927668152816-qth0gukdhrja9lrd6ejcf88ttlo8154t</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>927668152816-c4ci30btt8t4mdvf3dlb1u9j3u3nf1ok.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAeB9zQgJ41ED8xveo9L0PiFGXXz1F3sOk</string>
+	<key>GCM_SENDER_ID</key>
+	<string>927668152816</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>vote.musicmundial.com</string>
+	<key>PROJECT_ID</key>
+	<string>votos-3420a</string>
+	<key>STORAGE_BUCKET</key>
+	<string>votos-3420a.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:927668152816:ios:39ce9efc464c1e0eacd535</string>
+	<key>DATABASE_URL</key>
+	<string>https://votos-3420a-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

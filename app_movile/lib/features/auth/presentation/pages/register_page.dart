@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
@@ -97,20 +98,18 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<bool> _validateProfileStep() async {
     if (_firstNameController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Escribe tu nombre.');
+      setState(() => _errorMessage = tr('auth.enterFirstName'));
       return false;
     }
 
     if (_lastNameController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Escribe tu apellido.');
+      setState(() => _errorMessage = tr('auth.enterLastName'));
       return false;
     }
 
     if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(_normalizedUsername)) {
       setState(
-        () => _errorMessage =
-            'El username debe tener 3 a 20 caracteres: letras, números o _.'
-                .trim(),
+        () => _errorMessage = tr('auth.usernameRule').trim(),
       );
       return false;
     }
@@ -120,12 +119,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
   bool _validateContactStep() {
     if (_emailController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Escribe tu correo.');
+      setState(() => _errorMessage = tr('auth.enterEmail'));
       return false;
     }
 
     if (_selectedCountry == null) {
-      setState(() => _errorMessage = 'Selecciona tu país.');
+      setState(() => _errorMessage = tr('auth.selectCountry'));
       return false;
     }
 
@@ -141,19 +140,19 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (_passwordController.text.length < 8) {
       setState(
-        () => _errorMessage = 'La contraseña debe tener al menos 8 caracteres.',
+        () => _errorMessage = tr('auth.passwordMinLength'),
       );
       return;
     }
 
     if (_passwordController.text != _confirmPasswordController.text) {
-      setState(() => _errorMessage = 'Las contraseñas no coinciden.');
+      setState(() => _errorMessage = tr('auth.passwordsDontMatch'));
       return;
     }
 
     if (!_acceptedTerms) {
       setState(
-        () => _errorMessage = 'Debes aceptar los términos y condiciones.',
+        () => _errorMessage = tr('auth.mustAcceptTerms'),
       );
       return;
     }
@@ -211,9 +210,8 @@ class _RegisterPageState extends State<RegisterPage> {
         }
       },
       child: AuthScaffold(
-        title: 'Crear cuenta',
-        subtitle:
-            'Crea tu cuenta fan para votar, recibir recompensas y seguir artistas.',
+        title: tr('auth.createAccount'),
+        subtitle: tr('auth.registerSubtitle'),
         showBackButton: true,
         showBrandHeader: false,
         onBackPressed: () {
@@ -228,7 +226,7 @@ class _RegisterPageState extends State<RegisterPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Completa tus datos básicos para votar, reclamar puntos y guardar tu progreso.',
+              tr('auth.registerIntro'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                 height: 1.45,
@@ -261,7 +259,7 @@ class _RegisterPageState extends State<RegisterPage> {
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Ya tengo cuenta'),
+              child: Text(tr('auth.alreadyHaveAccount')),
             ),
           ],
         ),
@@ -336,7 +334,14 @@ class _RegisterProgress extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Center(child: AuthFieldLabel('Paso $currentStep de $totalSteps')),
+        Center(
+          child: AuthFieldLabel(
+            trp('auth.stepProgress', {
+              'current': currentStep,
+              'total': totalSteps,
+            }),
+          ),
+        ),
         const SizedBox(height: 14),
         Row(
           children: List.generate(totalSteps, (index) {
@@ -406,38 +411,38 @@ class _ProfileStep extends StatelessWidget {
       key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AuthFieldLabel('Username'),
+        AuthFieldLabel(tr('auth.usernameLabel')),
         const SizedBox(height: 10),
         TextField(
           controller: usernameController,
           enabled: enabled,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'nombre de usuario',
-            prefixIcon: Icon(Icons.person),
+          decoration: InputDecoration(
+            labelText: tr('auth.usernameHint'),
+            prefixIcon: const Icon(Icons.person),
           ),
         ),
         const SizedBox(height: 18),
-        const AuthFieldLabel('Nombre'),
+        AuthFieldLabel(tr('auth.firstNameLabel')),
         const SizedBox(height: 10),
         TextField(
           controller: firstNameController,
           enabled: enabled,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Tu nombre',
-            prefixIcon: Icon(Icons.person),
+          decoration: InputDecoration(
+            labelText: tr('auth.firstNameHint'),
+            prefixIcon: const Icon(Icons.person),
           ),
         ),
         const SizedBox(height: 18),
-        const AuthFieldLabel('Apellido'),
+        AuthFieldLabel(tr('auth.lastNameLabel')),
         const SizedBox(height: 10),
         TextField(
           controller: lastNameController,
           enabled: enabled,
-          decoration: const InputDecoration(
-            labelText: 'Tu apellido',
-            prefixIcon: Icon(Icons.person),
+          decoration: InputDecoration(
+            labelText: tr('auth.lastNameHint'),
+            prefixIcon: const Icon(Icons.person),
           ),
         ),
       ],
@@ -473,30 +478,30 @@ class _ContactStep extends StatelessWidget {
       key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AuthFieldLabel('Correo'),
+        AuthFieldLabel(tr('auth.emailLabel')),
         const SizedBox(height: 10),
         TextField(
           controller: emailController,
           enabled: enabled,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Correo',
-            prefixIcon: Icon(Icons.mail_outline),
+          decoration: InputDecoration(
+            labelText: tr('auth.emailLabel'),
+            prefixIcon: const Icon(Icons.mail_outline),
           ),
         ),
         const SizedBox(height: 18),
-        const AuthFieldLabel('País donde vives'),
+        AuthFieldLabel(tr('auth.countryLabel')),
         const SizedBox(height: 10),
         _CountrySelectField(
           countries: countries,
           selectedCountry: selectedCountry,
-          placeholder: 'Selecciona tu país',
+          placeholder: tr('auth.selectCountryPlaceholder'),
           enabled: enabled,
           onChanged: onCountryChanged,
         ),
         const SizedBox(height: 18),
-        const AuthFieldLabel('Teléfono (opcional)'),
+        AuthFieldLabel(tr('auth.phoneLabel')),
         const SizedBox(height: 10),
         _PhoneInputField(
           countries: countries,
@@ -552,7 +557,7 @@ class _CountrySelectField extends StatelessWidget {
               final country = await _showCountryPicker(
                 context: context,
                 countries: countries,
-                title: 'Buscar país',
+                title: tr('auth.searchCountry'),
                 selectedCountry: selectedCountry,
               );
 
@@ -608,7 +613,7 @@ class _PhoneInputField extends StatelessWidget {
       enabled: enabled,
       keyboardType: TextInputType.phone,
       decoration: InputDecoration(
-        labelText: 'Tu número',
+        labelText: tr('auth.phoneHint'),
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
         prefixIcon: InkWell(
           onTap: enabled
@@ -616,7 +621,7 @@ class _PhoneInputField extends StatelessWidget {
                   final pickedCountry = await _showCountryPicker(
                     context: context,
                     countries: countries,
-                    title: 'Código del teléfono',
+                    title: tr('auth.phoneCountryTitle'),
                     selectedCountry: selectedCountry,
                   );
 
@@ -776,9 +781,9 @@ class _CountryPickerPageState extends State<_CountryPickerPage> {
               children: [
                 TextField(
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Buscar país',
-                    prefixIcon: Icon(Icons.search),
+                  decoration: InputDecoration(
+                    labelText: tr('auth.searchCountry'),
+                    prefixIcon: const Icon(Icons.search),
                   ),
                   onChanged: (value) => setState(() => _query = value),
                 ),
@@ -861,14 +866,14 @@ class _SecurityStep extends StatelessWidget {
       key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AuthFieldLabel('Contraseña'),
+        AuthFieldLabel(tr('auth.passwordLabel')),
         const SizedBox(height: 10),
         TextField(
           controller: passwordController,
           enabled: enabled,
           obscureText: obscurePassword,
           decoration: InputDecoration(
-            labelText: 'Mínimo 8 caracteres',
+            labelText: tr('auth.passwordMinHint'),
             prefixIcon: const Icon(Icons.lock_outline),
             suffixIcon: IconButton(
               onPressed: enabled ? onTogglePassword : null,
@@ -881,14 +886,14 @@ class _SecurityStep extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        const AuthFieldLabel('Confirmar contraseña'),
+        AuthFieldLabel(tr('auth.confirmPasswordLabel')),
         const SizedBox(height: 10),
         TextField(
           controller: confirmPasswordController,
           enabled: enabled,
           obscureText: obscureConfirmPassword,
           decoration: InputDecoration(
-            labelText: 'Repite tu contraseña',
+            labelText: tr('auth.confirmPasswordHint'),
             prefixIcon: const Icon(Icons.lock_reset_outlined),
             suffixIcon: IconButton(
               onPressed: enabled ? onToggleConfirmPassword : null,
@@ -924,11 +929,11 @@ class _SecurityStep extends StatelessWidget {
                   child: Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      const Text('Acepto los '),
+                      Text(tr('auth.acceptPrefix')),
                       GestureDetector(
                         onTap: onOpenTerms,
                         child: Text(
-                          'términos y condiciones',
+                          tr('auth.termsLink'),
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w900,
@@ -968,7 +973,7 @@ class _RegisterActions extends StatelessWidget {
   Widget build(BuildContext context) {
     if (currentStep == 1) {
       return AuthGradientButton(
-        label: 'Siguiente',
+        label: tr('auth.next'),
         onPressed: onNext,
         isLoading: isLoading,
       );
@@ -985,13 +990,15 @@ class _RegisterActions extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            child: const Text('ATRÁS'),
+            child: Text(tr('auth.back')),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: AuthGradientButton(
-            label: currentStep < totalSteps ? 'Siguiente' : 'Crear cuenta',
+            label: currentStep < totalSteps
+                ? tr('auth.next')
+                : tr('auth.createAccount'),
             onPressed: currentStep < totalSteps ? onNext : onCreateAccount,
             isLoading: isLoading,
           ),

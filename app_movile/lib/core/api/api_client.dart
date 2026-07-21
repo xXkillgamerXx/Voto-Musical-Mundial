@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../auth/auth_models.dart';
 import '../auth/auth_session.dart';
 import '../cache/response_cache.dart';
+import '../i18n/tr.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
 
@@ -57,6 +59,68 @@ class ApiClient {
     }
 
     return payload;
+  }
+
+  /// Sube un archivo con `multipart/form-data`. Devuelve el JSON de
+  /// respuesta (p.ej. `{ "url": "...", "path": "..." }`).
+  Future<Map<String, dynamic>> uploadFile(
+    String path, {
+    required String filePath,
+    String field = 'file',
+    String? token,
+    bool retryOnUnauthorized = true,
+  }) async {
+    Future<http.Response> send(String? authToken) async {
+      final uri = Uri.parse('$baseUrl$path');
+      final req = http.MultipartRequest('POST', uri);
+      if (authToken != null && authToken.isNotEmpty) {
+        req.headers['Authorization'] = 'Bearer $authToken';
+      }
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          field,
+          filePath,
+          contentType: _mediaTypeFor(filePath),
+        ),
+      );
+      final streamed = await req.send();
+      return http.Response.fromStream(streamed);
+    }
+
+    http.Response response = await send(token);
+    dynamic payload = _decodeBody(response);
+
+    if (response.statusCode == 401 && retryOnUnauthorized) {
+      final refreshed = await _refreshStoredAuth();
+      if (refreshed?.accessToken.isNotEmpty == true) {
+        response = await send(refreshed!.accessToken);
+        payload = _decodeBody(response);
+      }
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = _errorMessage(payload);
+      if (response.statusCode == 401) {
+        await _session.signOut();
+      }
+      throw ApiException(
+        message,
+        statusCode: response.statusCode,
+        payload: payload,
+      );
+    }
+
+    return payload is Map<String, dynamic> ? payload : <String, dynamic>{};
+  }
+
+  MediaType? _mediaTypeFor(String filePath) {
+    final lower = filePath.toLowerCase();
+    if (lower.endsWith('.png')) return MediaType('image', 'png');
+    if (lower.endsWith('.webp')) return MediaType('image', 'webp');
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return MediaType('image', 'jpeg');
+    }
+    return null;
   }
 
   Future<dynamic> cachedRequest(
@@ -222,7 +286,7 @@ class ApiClient {
       }
     }
 
-    return 'No se pudo completar la solicitud.';
+    return tr('data.requestFailed');
   }
 
   String? get accessToken => _session.auth?.accessToken;

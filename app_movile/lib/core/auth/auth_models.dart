@@ -65,6 +65,9 @@ class ApiUser {
   };
 
   ApiUser copyWith({
+    String? username,
+    String? displayName,
+    String? photoUrl,
     int? points,
     int? spentPoints,
     int? dailyRewardStreak,
@@ -73,10 +76,10 @@ class ApiUser {
   }) {
     return ApiUser(
       id: id,
-      username: username,
+      username: username ?? this.username,
       email: email,
-      displayName: displayName,
-      photoUrl: photoUrl,
+      displayName: displayName ?? this.displayName,
+      photoUrl: photoUrl ?? this.photoUrl,
       role: role,
       points: points ?? this.points,
       spentPoints: spentPoints ?? this.spentPoints,

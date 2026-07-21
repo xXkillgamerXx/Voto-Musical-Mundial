@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
@@ -108,9 +109,9 @@ class _PollsPageState extends State<PollsPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'VOTACIONES',
-                style: TextStyle(
+              Text(
+                tr('catalog.pollsEyebrow'),
+                style: const TextStyle(
                   color: Color(0xFFF0ABFC),
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
@@ -119,16 +120,16 @@ class _PollsPageState extends State<PollsPage>
               ),
               const SizedBox(height: 6),
               Text(
-                'Todas las encuestas',
+                tr('catalog.pollsTitle'),
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
                     ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Explora votaciones abiertas y consulta resultados de las cerradas.',
-                style: TextStyle(
+              Text(
+                tr('catalog.pollsSubtitle'),
+                style: const TextStyle(
                   color: Color(0xFFB9B2D8),
                   fontWeight: FontWeight.w600,
                   height: 1.4,
@@ -165,9 +166,9 @@ class _PollsPageState extends State<PollsPage>
                     fontWeight: FontWeight.w800,
                     fontSize: 13,
                   ),
-                  tabs: const [
-                    Tab(text: 'Abiertas'),
-                    Tab(text: 'Cerradas'),
+                  tabs: [
+                    Tab(text: tr('catalog.pollsTabOpen')),
+                    Tab(text: tr('catalog.pollsTabClosed')),
                   ],
                 ),
               ),
@@ -185,12 +186,12 @@ class _PollsPageState extends State<PollsPage>
               if (snapshot.hasError) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 80),
+                  children: [
+                    const SizedBox(height: 80),
                     _PollsStateMessage(
                       icon: Icons.error_outline_rounded,
-                      title: 'No se pudieron cargar las votaciones.',
-                      subtitle: 'Desliza hacia abajo para reintentar.',
+                      title: tr('catalog.pollsLoadError'),
+                      subtitle: tr('catalog.pollsRetryHint'),
                     ),
                   ],
                 );
@@ -209,18 +210,16 @@ class _PollsPageState extends State<PollsPage>
                 children: [
                   _PollsTabList(
                     polls: data.openPolls,
-                    emptyTitle: 'Sin votaciones abiertas',
-                    emptySubtitle:
-                        'Cuando haya encuestas en vivo o en proceso, aparecerán aquí.',
+                    emptyTitle: tr('catalog.pollsEmptyOpenTitle'),
+                    emptySubtitle: tr('catalog.pollsEmptyOpenSubtitle'),
                     onRefresh: _refresh,
                     onOpenPoll: _openPoll,
                     isOpenTab: true,
                   ),
                   _PollsTabList(
                     polls: data.closedPolls,
-                    emptyTitle: 'Sin votaciones cerradas',
-                    emptySubtitle:
-                        'Cuando finalice una votación, sus resultados quedarán aquí.',
+                    emptyTitle: tr('catalog.pollsEmptyClosedTitle'),
+                    emptySubtitle: tr('catalog.pollsEmptyClosedSubtitle'),
                     onRefresh: _refresh,
                     onOpenPoll: _openPoll,
                     isOpenTab: false,
@@ -389,7 +388,9 @@ class _PollCard extends StatelessWidget {
                             ),
                           ),
                           child: Text(
-                            '${_formatVotes(poll.totalVotes)} votos',
+                            trp('catalog.votesCount', {
+                              'count': _formatVotes(poll.totalVotes),
+                            }),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
@@ -407,7 +408,9 @@ class _PollCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      poll.title.isEmpty ? 'Votación' : poll.title,
+                      poll.title.isEmpty
+                          ? tr('catalog.pollFallbackTitle')
+                          : poll.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -507,45 +510,51 @@ class _PollCard extends StatelessWidget {
   }
 
   String _actionLabel(Poll poll) {
-    if (poll.status == 'selecting_winners') return 'Ver proceso';
-    if (poll.status == 'closed') return 'Ver resultados';
-    return 'Votar ahora';
+    if (poll.status == 'selecting_winners') {
+      return tr('catalog.pollActionViewProcess');
+    }
+    if (poll.status == 'closed') return tr('catalog.pollActionViewResults');
+    return tr('catalog.pollActionVoteNow');
   }
 
   String _dateLabel(Poll poll) {
     final date = poll.activeEndAt ?? poll.endAt;
-    if (date == null) {
-      return poll.status == 'closed' ? 'Finalizada' : 'En vivo';
+    if (poll.hideCountdown || date == null) {
+      return poll.status == 'closed'
+          ? tr('catalog.pollFinished')
+          : tr('catalog.pollLive');
     }
 
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final formatted = '$day/$month/${date.year}';
-    return poll.status == 'closed' ? 'Terminó $formatted' : 'Termina $formatted';
+    return poll.status == 'closed'
+        ? trp('catalog.pollEndedOn', {'date': formatted})
+        : trp('catalog.pollEndsOn', {'date': formatted});
   }
 
   _StatusMeta _statusMeta(String status) {
     switch (status) {
       case 'live':
-        return const _StatusMeta(
-          label: 'EN VIVO',
-          foreground: Color(0xFFD1FAE5),
-          background: Color(0x2634D399),
-          border: Color(0x4034D399),
+        return _StatusMeta(
+          label: tr('catalog.statusLive'),
+          foreground: const Color(0xFFD1FAE5),
+          background: const Color(0x2634D399),
+          border: const Color(0x4034D399),
         );
       case 'selecting_winners':
-        return const _StatusMeta(
-          label: 'EN PROCESO',
-          foreground: Color(0xFFFEF3C7),
-          background: Color(0x26FBBF24),
-          border: Color(0x40FBBF24),
+        return _StatusMeta(
+          label: tr('catalog.statusInProcess'),
+          foreground: const Color(0xFFFEF3C7),
+          background: const Color(0x26FBBF24),
+          border: const Color(0x40FBBF24),
         );
       default:
-        return const _StatusMeta(
-          label: 'CERRADA',
-          foreground: Color(0xFFE2E8F0),
-          background: Color(0x14FFFFFF),
-          border: Color(0x33FFFFFF),
+        return _StatusMeta(
+          label: tr('catalog.statusClosed'),
+          foreground: const Color(0xFFE2E8F0),
+          background: const Color(0x14FFFFFF),
+          border: const Color(0x33FFFFFF),
         );
     }
   }

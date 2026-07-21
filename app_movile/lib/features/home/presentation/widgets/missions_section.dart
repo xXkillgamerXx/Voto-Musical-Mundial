@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/mission.dart';
 import '../../data/missions_api.dart';
@@ -71,9 +72,9 @@ class _MissionsSectionState extends State<MissionsSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'GANA PUNTOS EXTRA',
-            style: TextStyle(
+          Text(
+            tr('home.earnExtraPoints'),
+            style: const TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -81,9 +82,9 @@ class _MissionsSectionState extends State<MissionsSection> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Misiones',
-            style: TextStyle(
+          Text(
+            tr('home.missionsTitle'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w900,
@@ -190,7 +191,7 @@ class _MissionCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      done ? 'COMPLETADA' : 'PENDIENTE',
+                      done ? tr('home.completed') : tr('home.pending'),
                       style: TextStyle(
                         color: done
                             ? const Color(0xFF6EE7B7)
@@ -235,7 +236,7 @@ class _MissionCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'PROGRESO',
+                        tr('home.progress'),
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.45),
                           fontSize: 10,
@@ -279,10 +280,10 @@ class _MissionCard extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               if (done)
-                const Text(
-                  'COMPLETADA',
+                Text(
+                  tr('home.completed'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFF6EE7B7),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
@@ -302,9 +303,9 @@ class _MissionCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text(
-                      'HACER MISIÓN',
-                      style: TextStyle(
+                    child: Text(
+                      tr('home.doMission'),
+                      style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
                       ),
@@ -353,10 +354,10 @@ class _MissionsEmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'NUEVAS MISIONES PRONTO',
+          Text(
+            tr('home.newMissionsSoon'),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -364,7 +365,7 @@ class _MissionsEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Estamos preparando retos para que puedas ganar puntos extra.',
+            tr('home.missionsEmptyDescription'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),
@@ -412,7 +413,7 @@ class _MissionSheetState extends State<_MissionSheet> {
       if (widget.mission.type == 'follow_social') {
         setState(() {
           _working = true;
-          _message = 'Verificando misión...';
+          _message = tr('home.verifyingMission');
         });
 
         await Future<void>.delayed(const Duration(seconds: 3));
@@ -426,7 +427,7 @@ class _MissionSheetState extends State<_MissionSheet> {
           }
 
           setState(() {
-            _message = '¡Misión completada! Tus puntos se actualizarán.';
+            _message = tr('home.missionCompletedMessage');
           });
           widget.onCompleted();
         } catch (_) {
@@ -435,7 +436,7 @@ class _MissionSheetState extends State<_MissionSheet> {
           }
 
           setState(() {
-            _message = 'No se pudo registrar la misión. Intenta otra vez.';
+            _message = tr('home.missionRegisterError');
           });
         } finally {
           if (mounted) {
@@ -448,8 +449,7 @@ class _MissionSheetState extends State<_MissionSheet> {
     }
 
     setState(() {
-      _message =
-          'Esta misión se valida automáticamente. Completa la acción en la app.';
+      _message = tr('home.missionAutoValidate');
     });
   }
 
@@ -493,9 +493,9 @@ class _MissionSheetState extends State<_MissionSheet> {
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
-            'GANA PUNTOS EXTRA',
-            style: TextStyle(
+          Text(
+            tr('home.earnExtraPoints'),
+            style: const TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -565,10 +565,10 @@ class _MissionSheetState extends State<_MissionSheet> {
           ),
           const SizedBox(height: 18),
           if (mission.isDone)
-            const Center(
+            Center(
               child: Text(
-                'COMPLETADA',
-                style: TextStyle(
+                tr('home.completed'),
+                style: const TextStyle(
                   color: Color(0xFF6EE7B7),
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
@@ -594,7 +594,7 @@ class _MissionSheetState extends State<_MissionSheet> {
                     borderRadius: BorderRadius.circular(18),
                     child: Center(
                       child: Text(
-                        _working ? 'VALIDANDO...' : 'HACER MISIÓN',
+                        _working ? tr('home.validating') : tr('home.doMission'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,

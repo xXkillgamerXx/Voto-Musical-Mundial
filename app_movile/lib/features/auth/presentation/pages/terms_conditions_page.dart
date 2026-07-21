@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../widgets/auth_scaffold.dart';
 
 class TermsConditionsPage extends StatelessWidget {
@@ -8,29 +9,26 @@ class TermsConditionsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      title: 'Términos y condiciones',
+      title: tr('auth.termsTitle'),
       subtitle: '',
       showBackButton: true,
       showBrandHeader: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
+        children: [
           _TermsCard(
-            title: 'Uso responsable',
-            body:
-                'Al crear una cuenta aceptas usar la plataforma de forma responsable y respetar las reglas de votación.',
+            title: tr('auth.termsCard1Title'),
+            body: tr('auth.termsCard1Body'),
           ),
-          SizedBox(height: 14),
+          const SizedBox(height: 14),
           _TermsCard(
-            title: 'Puntos y recompensas',
-            body:
-                'Los puntos, recompensas y rachas pueden ajustarse si se detecta abuso, fraude o actividad automática.',
+            title: tr('auth.termsCard2Title'),
+            body: tr('auth.termsCard2Body'),
           ),
-          SizedBox(height: 14),
+          const SizedBox(height: 14),
           _TermsCard(
-            title: 'Datos de cuenta',
-            body:
-                'Tu correo se usa para iniciar sesión, recuperar tu cuenta y guardar tu progreso dentro de la app.',
+            title: tr('auth.termsCard3Title'),
+            body: tr('auth.termsCard3Body'),
           ),
         ],
       ),

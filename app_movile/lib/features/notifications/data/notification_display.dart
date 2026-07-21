@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/i18n/tr.dart';
 import 'app_notification.dart';
 
 const _hiddenNotificationTypes = {'daily_reward_claimed'};
@@ -14,21 +15,21 @@ String notificationTitle(AppNotification notification) {
 
   switch (notification.type) {
     case 'admin_points_gift':
-      return 'Tienes un regalo';
+      return tr('misc.giftTitle');
     case 'mission_completed':
       final missionTitle = payload['missionTitle'];
       if (missionTitle != null && '$missionTitle'.trim().isNotEmpty) {
-        return 'Misión completada: $missionTitle';
+        return trp('misc.missionCompletedWithTitle', {'title': missionTitle});
       }
-      return 'Misión completada';
+      return tr('misc.missionCompleted');
     case 'artist_push':
       final artistName = payload['artistName'];
       if (artistName != null && '$artistName'.trim().isNotEmpty) {
-        return 'Novedades de $artistName';
+        return trp('misc.artistNews', {'name': artistName});
       }
-      return 'Novedades de artista';
+      return tr('misc.artistNewsGeneric');
     case 'admin_push':
-      return 'Aviso del equipo';
+      return tr('misc.teamNotice');
     default:
       return '';
   }
@@ -45,17 +46,17 @@ String notificationBody(AppNotification notification) {
     case 'admin_points_gift':
       final amount = _toInt(payload['amount'] ?? payload['rewardPoints']);
       return amount > 0
-          ? 'Recibiste ${_formatPoints(amount)} puntos de regalo.'
-          : 'Recibiste puntos de regalo.';
+          ? trp('misc.giftReceivedPoints', {'count': _formatPoints(amount)})
+          : tr('misc.giftReceivedGeneric');
     case 'mission_completed':
       final amount = _toInt(payload['rewardPoints']);
       return amount > 0
-          ? 'Ganaste ${_formatPoints(amount)} puntos.'
-          : 'Completaste una misión y recibiste tu premio.';
+          ? trp('misc.earnedPoints', {'count': _formatPoints(amount)})
+          : tr('misc.missionCompletedPrize');
     case 'artist_push':
       final artistName = payload['artistName'];
       if (artistName != null && '$artistName'.trim().isNotEmpty) {
-        return 'Hay novedades sobre $artistName.';
+        return trp('misc.artistNewsBody', {'name': artistName});
       }
       return '';
     case 'admin_push':
@@ -122,7 +123,7 @@ int giftAmount(AppNotification notification) {
 
 String giftSender(AppNotification notification) {
   if (notification.type == 'mission_completed') {
-    return 'Sistema de misiones';
+    return tr('misc.missionSystem');
   }
 
   final sender = notification.payload['senderName'] ??
@@ -131,7 +132,7 @@ String giftSender(AppNotification notification) {
     return '$sender'.trim();
   }
 
-  return 'Equipo Voto Música Mundial';
+  return tr('misc.vmmTeam');
 }
 
 int _toInt(Object? value) {

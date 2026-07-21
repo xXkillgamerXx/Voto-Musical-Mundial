@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
@@ -135,7 +136,7 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
                           children: [
                             Text(
                               widget.artist.bio.isEmpty
-                                  ? 'Perfil público con popularidad, fans y actividad en votaciones.'
+                                  ? tr('catalog.profileBioFallback')
                                   : widget.artist.bio,
                               style: const TextStyle(
                                 color: Color(0xFFCBD5E1),
@@ -148,19 +149,19 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
                             _StatsGrid(
                               stats: [
                                 _ProfileStatData(
-                                  label: 'Seguidores',
+                                  label: tr('catalog.followers'),
                                   value: _formatProfileCount(_followersCount),
                                 ),
                                 _ProfileStatData(
-                                  label: 'Votos acumulados',
+                                  label: tr('catalog.profileAccumulatedVotes'),
                                   value: _formatProfileCount(accumulatedVotes),
                                 ),
-                                const _ProfileStatData(
-                                  label: 'Apoyo promedio',
+                                _ProfileStatData(
+                                  label: tr('catalog.profileAverageSupport'),
                                   value: '0.00%',
                                 ),
                                 _ProfileStatData(
-                                  label: 'Popularidad',
+                                  label: tr('catalog.popularity'),
                                   value: _formatProfileCount(popularity),
                                 ),
                               ],
@@ -222,7 +223,7 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _errorMessage = 'No se pudo actualizar el seguimiento.');
+        setState(() => _errorMessage = tr('catalog.profileFollowError'));
       }
     } finally {
       if (mounted) {
@@ -239,12 +240,15 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
         backgroundColor: const Color(0xFF100A24),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          'Dejar de seguir',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+        title: Text(
+          tr('catalog.profileUnfollow'),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
         ),
         content: Text(
-          '¿Quieres dejar de seguir a ${widget.artist.name}?',
+          trp('catalog.profileUnfollowConfirm', {'name': widget.artist.name}),
           style: const TextStyle(
             color: Color(0xFFD8D3F7),
             fontWeight: FontWeight.w600,
@@ -253,7 +257,7 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(tr('catalog.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -261,7 +265,7 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
               backgroundColor: const Color(0xFFFF21C8),
               foregroundColor: Colors.white,
             ),
-            child: const Text('Dejar de seguir'),
+            child: Text(tr('catalog.profileUnfollow')),
           ),
         ],
       ),
@@ -380,15 +384,15 @@ class _HeroIdentity extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final avatarSize = wide ? 112.0 : 96.0;
-    final groupLabel = artist.group.isEmpty ? 'Sin grupo' : artist.group;
+    final groupLabel = artist.group.isEmpty ? tr('catalog.noGroup') : artist.group;
 
     final textColumn = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          'PERFIL DE ARTISTA',
-          style: TextStyle(
+        Text(
+          tr('catalog.profileEyebrow'),
+          style: const TextStyle(
             color: Color(0xFF67E8F9),
             fontSize: 11,
             fontWeight: FontWeight.w900,
@@ -425,14 +429,16 @@ class _HeroIdentity extends StatelessWidget {
 
     final followButton = !isSignedIn
         ? _FollowButton(
-            label: 'Inicia sesión para seguir',
+            label: tr('catalog.profileSignInToFollow'),
             isLoading: false,
             isFollowing: false,
             onTap: null,
             compact: wide,
           )
         : _FollowButton(
-            label: isFollowing ? 'SIGUIENDO' : 'SEGUIR',
+            label: isFollowing
+                ? tr('catalog.profileFollowing')
+                : tr('catalog.profileFollow'),
             isLoading: isTogglingFollow || isLoadingFollowStatus,
             isFollowing: isFollowing,
             onTap: onFollowTap,
@@ -670,9 +676,9 @@ class _InfoPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'DATOS',
-            style: TextStyle(
+          Text(
+            tr('catalog.profileDataTitle'),
+            style: const TextStyle(
               color: Color(0xFFF0ABFC),
               fontSize: 12,
               fontWeight: FontWeight.w900,
@@ -684,14 +690,17 @@ class _InfoPanel extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _InfoChip(label: 'Rol', value: artist.role.ifEmpty('Artista')),
               _InfoChip(
-                label: 'País',
-                value: artist.country.ifEmpty('No definido'),
+                label: tr('catalog.profileRole'),
+                value: artist.role.ifEmpty(tr('catalog.profileRoleFallback')),
               ),
               _InfoChip(
-                label: 'Fandom',
-                value: artist.group.ifEmpty('Sin grupo'),
+                label: tr('catalog.profileCountry'),
+                value: artist.country.ifEmpty(tr('catalog.profileNotDefined')),
+              ),
+              _InfoChip(
+                label: tr('catalog.profileFandom'),
+                value: artist.group.ifEmpty(tr('catalog.noGroup')),
               ),
             ],
           ),
@@ -748,9 +757,9 @@ class _AchievementsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'LOGROS',
-            style: TextStyle(
+          Text(
+            tr('catalog.profileAchievements'),
+            style: const TextStyle(
               color: Color(0xFFFCD34D),
               fontSize: 12,
               fontWeight: FontWeight.w900,
@@ -765,9 +774,9 @@ class _AchievementsPanel extends StatelessWidget {
               borderRadius: BorderRadius.circular(99),
               border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
-            child: const Text(
-              'Sin logros todavía',
-              style: TextStyle(
+            child: Text(
+              tr('catalog.profileNoAchievements'),
+              style: const TextStyle(
                 color: Color(0xFF94A3B8),
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
@@ -865,10 +874,10 @@ class _EmptyVotesPanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'SIN RONDAS REGISTRADAS',
+                Text(
+                  tr('catalog.profileNoRoundsEyebrow'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFFF0ABFC),
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
@@ -877,7 +886,7 @@ class _EmptyVotesPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Aún no hay votos de $artistName',
+                  trp('catalog.profileNoVotesTitle', {'name': artistName}),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
@@ -887,10 +896,10 @@ class _EmptyVotesPanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Este artista todavía no aparece con votos registrados en rondas cerradas o activas. Cuando participe en una votación, aquí verás su apoyo, porcentaje y resultados.',
+                Text(
+                  tr('catalog.profileNoVotesBody'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFFCBD5E1),
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -923,9 +932,9 @@ class _EmptyVotesPanel extends StatelessWidget {
                           borderRadius: BorderRadius.circular(99),
                         ),
                       ),
-                      child: const Text(
-                        'VER VOTACIONES',
-                        style: TextStyle(
+                      child: Text(
+                        tr('catalog.profileViewPolls'),
+                        style: const TextStyle(
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.1,
                           fontSize: 13,

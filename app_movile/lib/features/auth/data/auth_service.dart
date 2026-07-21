@@ -5,6 +5,7 @@ import '../../../core/api/api_config.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/auth/auth_models.dart';
 import '../../../core/auth/auth_session.dart';
+import '../../../core/i18n/tr.dart';
 
 class AuthService {
   AuthService(this._session) : _client = ApiClient(_session);
@@ -21,7 +22,7 @@ class AuthService {
       return error.message;
     }
 
-    return 'No se pudo completar la acción. Intenta otra vez.';
+    return tr('data.actionFailed');
   }
 
   Future<ApiAuth> login({
@@ -86,7 +87,7 @@ class AuthService {
     final idToken = googleAuth.idToken;
 
     if (idToken == null || idToken.isEmpty) {
-      throw const ApiException('No se pudo obtener el token de Google.');
+      throw ApiException(tr('data.googleTokenFailed'));
     }
 
     final payload = await _client.request(

@@ -9,6 +9,7 @@ import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/i18n/tr.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
 import '../../../users/presentation/pages/user_profile_page.dart';
 import '../../data/live_activity_feed.dart';
@@ -241,7 +242,7 @@ class _HomePageState extends State<HomePage> {
                 current?.artist ??
                 Artist(
                   id: artistId,
-                  name: 'Artista',
+                  name: tr('home.artistFallback'),
                   group: '',
                   country: '',
                   role: '',
@@ -377,11 +378,11 @@ class _HomePageState extends State<HomePage> {
           if (snapshot.hasError) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                SizedBox(height: 120),
+              children: [
+                const SizedBox(height: 120),
                 _HomeStateMessage(
                   icon: Icons.error_outline_rounded,
-                  title: 'No se pudo cargar el inicio.',
+                  title: tr('home.loadError'),
                 ),
               ],
             );
@@ -550,14 +551,13 @@ class _HeroSlide {
   final bool isEmpty;
 
   factory _HeroSlide.empty() {
-    return const _HeroSlide(
+    return _HeroSlide(
       poll: null,
-      badge: 'Próximamente',
-      status: 'Sin votaciones',
-      eyebrow: 'Votos Musica Mundial',
-      title: 'Prepara tu fandom para la próxima votación',
-      description:
-          'Cuando haya una votación activa, aquí verás el líder, los votos y el avance real del ranking.',
+      badge: tr('home.heroEmptyBadge'),
+      status: tr('home.heroEmptyStatus'),
+      eyebrow: tr('home.heroEmptyEyebrow'),
+      title: tr('home.heroEmptyTitle'),
+      description: tr('home.heroEmptyDescription'),
       leaderVotes: 0,
       totalVotes: 0,
       percent: 0,
@@ -573,7 +573,7 @@ class _HeroSlide {
     final leaderVotes = results?.leaderVotes ?? poll.leaderVotes;
     final percent = totalVotes > 0 ? (leaderVotes / totalVotes) * 100 : 0.0;
     final leaderId = results?.leaderArtistId ?? poll.leaderArtistId;
-    var leaderName = 'Tu artista favorito';
+    var leaderName = tr('home.favoriteArtist');
 
     if (leaderId != null && leaderId.isNotEmpty) {
       for (final row in results?.results ?? const <PollResultRow>[]) {
@@ -590,15 +590,17 @@ class _HeroSlide {
 
     return _HeroSlide(
       poll: poll,
-      badge: index == 0 ? '#1 en vivo' : 'Votación en vivo',
-      status: isSelecting ? 'En proceso' : 'En vivo',
+      badge: index == 0 ? tr('home.heroBadgeTop') : tr('home.heroBadgeLive'),
+      status: isSelecting
+          ? tr('home.heroStatusInProcess')
+          : tr('home.heroStatusLive'),
       eyebrow: poll.title,
       title: leaderId != null && leaderId.isNotEmpty
-          ? '$leaderName lidera la votación'
+          ? trp('home.heroLeaderTitle', {'name': leaderName})
           : poll.title,
       description: poll.description.isNotEmpty
           ? poll.description
-          : 'Tu voto puede cambiar el ranking. Entra, apoya a tu artista y ayuda a tu fandom a subir posiciones.',
+          : tr('home.heroDefaultDescription'),
       leaderVotes: leaderVotes,
       totalVotes: totalVotes,
       percent: percent,
@@ -826,14 +828,14 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                           children: [
                             if (!pageSlide.hideVoteCounts)
                               _HeroStatBlock(
-                                label: 'Votos del líder',
+                                label: tr('home.leaderVotes'),
                                 value: _formatNumber(animatedLeaderVotes),
                                 valueSize: 34,
                               ),
                             _HeroStatBlock(
                               label: pageSlide.hideVoteCounts
-                                  ? 'Liderando'
-                                  : 'Participación',
+                                  ? tr('home.leading')
+                                  : tr('home.participation'),
                               value: '${animatedPercent.toStringAsFixed(2)}%',
                               valueColor: const Color(0xFFF0ABFC),
                               valueSize: 28,
@@ -841,7 +843,7 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                             if (!pageSlide.hideVoteCounts &&
                                 pageSlide.totalVotes > 0)
                               _HeroStatBlock(
-                                label: 'Votos totales',
+                                label: tr('home.totalVotes'),
                                 value: _formatNumber(pageSlide.totalVotes),
                                 valueSize: 20,
                               ),
@@ -868,8 +870,8 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                               Expanded(
                                 child: _HeroMiniStat(
                                   label: pageSlide.hideVoteCounts
-                                      ? 'Participación'
-                                      : 'Votos del líder',
+                                      ? tr('home.participation')
+                                      : tr('home.leaderVotes'),
                                   value: pageSlide.hideVoteCounts
                                       ? '${pageSlide.percent.toStringAsFixed(2)}%'
                                       : _formatNumber(pageSlide.leaderVotes),
@@ -878,7 +880,7 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                               const SizedBox(width: 8),
                               Expanded(
                                 child: _HeroMiniStat(
-                                  label: 'Participantes',
+                                  label: tr('home.participants'),
                                   value: '${pageSlide.contestantCount}',
                                 ),
                               ),
@@ -886,7 +888,7 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _HeroMiniStat(
-                                    label: 'Votos totales',
+                                    label: tr('home.totalVotes'),
                                     value: _formatNumber(pageSlide.totalVotes),
                                   ),
                                 ),
@@ -901,8 +903,8 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                           Expanded(
                             child: _GradientButton(
                               label: pageSlide.isEmpty
-                                  ? 'Ver votaciones'
-                                  : 'Votar ahora',
+                                  ? tr('home.viewPolls')
+                                  : tr('home.voteNow'),
                               onTap: () => widget.onVoteTap(pageSlide.poll),
                             ),
                           ),
@@ -920,9 +922,11 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
                                   borderRadius: BorderRadius.circular(18),
                                 ),
                               ),
-                              child: const Text(
-                                'Ver rankings',
-                                style: TextStyle(fontWeight: FontWeight.w800),
+                              child: Text(
+                                tr('home.viewRankings'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ),
@@ -1104,9 +1108,9 @@ class _ActivePollsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'VOTACIONES ACTIVAS',
-            style: TextStyle(
+          Text(
+            tr('home.activePollsEyebrow'),
+            style: const TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -1114,9 +1118,9 @@ class _ActivePollsSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Vota ahora',
-            style: TextStyle(
+          Text(
+            tr('home.voteNowTitle'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w900,
@@ -1124,7 +1128,7 @@ class _ActivePollsSection extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Las votaciones en vivo están abiertas. Entra y apoya a tu artista favorito.',
+            tr('home.activePollsSubtitle'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),
               fontSize: 13,
@@ -1263,10 +1267,10 @@ class _ActivePollCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               isSelecting
-                                  ? 'Contando votos...'
+                                  ? tr('home.countingVotes')
                                   : (poll.description.isNotEmpty
                                         ? poll.description
-                                        : '¿Quién lidera esta votación?'),
+                                        : tr('home.whoLeadsPoll')),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -1284,7 +1288,9 @@ class _ActivePollCard extends StatelessWidget {
                     _PollCountdown(poll: poll),
                     const SizedBox(height: 14),
                     _GradientButton(
-                      label: isSelecting ? 'Ver proceso' : 'Votar',
+                      label: isSelecting
+                          ? tr('home.viewProcess')
+                          : tr('home.vote'),
                       onTap: onVoteTap,
                     ),
                   ],
@@ -1321,6 +1327,10 @@ class _PollCountdown extends StatelessWidget {
       );
     }
 
+    if (poll.hideCountdown) {
+      return const _LiveBadge();
+    }
+
     final endDate = poll.countdownEndAt;
     if (endDate == null) {
       return const _LiveBadge();
@@ -1338,13 +1348,13 @@ class _PollCountdown extends StatelessWidget {
 
     return Row(
       children: [
-        _CountdownCell(value: _pad(days), label: 'Días'),
+        _CountdownCell(value: _pad(days), label: tr('home.days')),
         const SizedBox(width: 8),
-        _CountdownCell(value: _pad(hours), label: 'Horas'),
+        _CountdownCell(value: _pad(hours), label: tr('home.hours')),
         const SizedBox(width: 8),
-        _CountdownCell(value: _pad(minutes), label: 'Min'),
+        _CountdownCell(value: _pad(minutes), label: tr('home.minutesShort')),
         const SizedBox(width: 8),
-        _CountdownCell(value: _pad(seconds), label: 'Seg'),
+        _CountdownCell(value: _pad(seconds), label: tr('home.secondsShort')),
       ],
     );
   }
@@ -1397,22 +1407,22 @@ class _LiveBadge extends StatelessWidget {
             ),
           ],
         ),
-        child: const Column(
+        child: Column(
           children: [
             Text(
-              'EN VIVO',
+              tr('home.liveNow'),
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Color(0xFFD1FAE5),
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
-              'SIN CIERRE DEFINIDO',
+              tr('home.noCloseDefined'),
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Color(0xFF6EE7B7),
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
@@ -1490,21 +1500,21 @@ class _ActivePollsEmpty extends StatelessWidget {
             runSpacing: 8,
             children: [
               _HeroBadge(
-                label: 'Pronto',
+                label: tr('home.soon'),
                 background: const Color(0xFFFBBF24).withValues(alpha: 0.1),
                 foreground: const Color(0xFFFEF3C7),
               ),
               _HeroBadge(
-                label: 'Sin votaciones en vivo',
+                label: tr('home.noLivePolls'),
                 background: Colors.white.withValues(alpha: 0.06),
                 foreground: const Color(0xFFCBD5E1),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Todavía no hay votaciones activas',
-            style: TextStyle(
+          Text(
+            tr('home.noActivePollsTitle'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 22,
               fontWeight: FontWeight.w900,
@@ -1512,7 +1522,7 @@ class _ActivePollsEmpty extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Cuando se abra una nueva votación, la verás aquí con cuenta regresiva y acceso directo para votar.',
+            tr('home.noActivePollsDescription'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),
               fontSize: 13,
@@ -1531,9 +1541,9 @@ class _ActivePollsEmpty extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
-            child: const Text(
-              'Ver ranking',
-              style: TextStyle(fontWeight: FontWeight.w900),
+            child: Text(
+              tr('home.viewRanking'),
+              style: const TextStyle(fontWeight: FontWeight.w900),
             ),
           ),
         ],
@@ -1569,33 +1579,33 @@ class _TopRankingSection extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'DE LA SEMANA',
-                      style: TextStyle(
+                      tr('home.ofTheWeek'),
+                      style: const TextStyle(
                         color: Color(0xFF67E8F9),
                         fontSize: 11,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 2.8,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Text(
-                      'Más votados en votaciones cerradas',
-                      style: TextStyle(
+                      tr('home.topVotedClosed'),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                         height: 1.1,
                       ),
                     ),
-                    SizedBox(height: 6),
+                    const SizedBox(height: 6),
                     Text(
-                      'Solo se cuentan votos de encuestas ya finalizadas.',
-                      style: TextStyle(
+                      tr('home.topVotedSubtitle'),
+                      style: const TextStyle(
                         color: Color(0xFF94A3B8),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -1607,9 +1617,9 @@ class _TopRankingSection extends StatelessWidget {
               ),
               TextButton(
                 onPressed: onViewArtistsTap,
-                child: const Text(
-                  'Ver artistas',
-                  style: TextStyle(
+                child: Text(
+                  tr('home.viewArtists'),
+                  style: const TextStyle(
                     color: Color(0xFFC4B5FD),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
@@ -1623,9 +1633,8 @@ class _TopRankingSection extends StatelessWidget {
             _HomeEmptyPanel(
               icon: Icons.emoji_events_rounded,
               iconColor: Color(0xFFFCD34D),
-              title: 'Sin votaciones cerradas',
-              description:
-                  'Cuando cierren votaciones esta semana, aquí aparecerán los artistas más votados.',
+              title: tr('home.noClosedPollsTitle'),
+              description: tr('home.noClosedPollsDescription'),
             )
           else
             SizedBox(
@@ -1680,23 +1689,23 @@ class _MainCategoriesSection extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'EXPLORA',
-                      style: TextStyle(
+                      tr('home.explore'),
+                      style: const TextStyle(
                         color: Color(0xFF67E8F9),
                         fontSize: 11,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 2.8,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Text(
-                      'Categorías principales',
-                      style: TextStyle(
+                      tr('home.mainCategories'),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 28,
                         fontWeight: FontWeight.w900,
@@ -1707,9 +1716,9 @@ class _MainCategoriesSection extends StatelessWidget {
               ),
               TextButton(
                 onPressed: onViewAllTap,
-                child: const Text(
-                  'Ver todas',
-                  style: TextStyle(
+                child: Text(
+                  tr('home.viewAll'),
+                  style: const TextStyle(
                     color: Color(0xFFC4B5FD),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
@@ -1723,9 +1732,8 @@ class _MainCategoriesSection extends StatelessWidget {
             _HomeEmptyPanel(
               icon: Icons.layers_rounded,
               iconColor: Color(0xFF67E8F9),
-              title: 'Categorías en preparación',
-              description:
-                  'Cuando existan votaciones con categorías en la base de datos, aquí aparecerán para explorar la comunidad.',
+              title: tr('home.categoriesPreparingTitle'),
+              description: tr('home.categoriesPreparingDescription'),
             )
           else
             SizedBox(
@@ -1838,9 +1846,9 @@ class _MainCategoriesSection extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(height: 6),
-                                    const Text(
-                                      'VER CATEGORÍA',
-                                      style: TextStyle(
+                                    Text(
+                                      tr('home.viewCategory'),
+                                      style: const TextStyle(
                                         color: Color(0xFFF0ABFC),
                                         fontSize: 11,
                                         fontWeight: FontWeight.w900,
@@ -1933,9 +1941,9 @@ class _LiveActivitySection extends StatelessWidget {
                         runSpacing: 8,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          const Text(
-                            'EN TIEMPO REAL',
-                            style: TextStyle(
+                          Text(
+                            tr('home.realTime'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 22,
                               fontWeight: FontWeight.w900,
@@ -1980,7 +1988,9 @@ class _LiveActivitySection extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  isConnected ? 'LIVE' : 'CONECTANDO',
+                                  isConnected
+                                      ? tr('home.liveTag')
+                                      : tr('home.connecting'),
                                   style: TextStyle(
                                     color: isConnected
                                         ? const Color(0xFFFEE2E2)
@@ -1997,7 +2007,7 @@ class _LiveActivitySection extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Fans registrados votando en encuestas activas. Se actualiza al instante.',
+                        tr('home.realTimeSubtitle'),
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.55),
                           fontSize: 13,
@@ -2016,19 +2026,19 @@ class _LiveActivitySection extends StatelessWidget {
                 _LiveStatChip(
                   icon: Icons.groups_rounded,
                   value: _formatNumber(activeFans),
-                  label: 'Fans activos',
+                  label: tr('home.activeFans'),
                 ),
                 const SizedBox(width: 8),
                 _LiveStatChip(
                   icon: Icons.bolt_rounded,
                   value: _formatNumber(votesPerMinute),
-                  label: 'Actividad/min',
+                  label: tr('home.activityPerMin'),
                 ),
                 const SizedBox(width: 8),
                 _LiveStatChip(
                   icon: Icons.how_to_vote_rounded,
                   value: _formatNumber(activePolls),
-                  label: 'Encuestas',
+                  label: tr('home.polls'),
                 ),
               ],
             ),
@@ -2037,9 +2047,8 @@ class _LiveActivitySection extends StatelessWidget {
               _HomeEmptyPanel(
                 icon: Icons.person_search_rounded,
                 iconColor: Color(0xFF67E8F9),
-                title: 'Sin actividad reciente',
-                description:
-                    'Cuando haya votos en encuestas activas, la actividad aparecerá aquí al instante.',
+                title: tr('home.noRecentActivityTitle'),
+                description: tr('home.noRecentActivityDescription'),
                 compact: true,
               )
             else
@@ -2205,7 +2214,7 @@ class _LiveActivityCard extends StatelessWidget {
                       child: Text(
                         activity.pollTitle.isNotEmpty
                             ? activity.pollTitle
-                            : 'Votación',
+                            : tr('home.pollFallback'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -2217,7 +2226,7 @@ class _LiveActivityCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'acaba de votar por ${activity.artistName}',
+                      trp('home.justVotedFor', {'name': activity.artistName}),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -2307,23 +2316,23 @@ class _LatestNewsSection extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'NOTICIAS',
-                      style: TextStyle(
+                      tr('home.news'),
+                      style: const TextStyle(
                         color: Color(0xFF67E8F9),
                         fontSize: 11,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 2.8,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Text(
-                      'Music Mundial',
-                      style: TextStyle(
+                      tr('home.musicMundial'),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 28,
                         fontWeight: FontWeight.w900,
@@ -2334,9 +2343,9 @@ class _LatestNewsSection extends StatelessWidget {
               ),
               TextButton(
                 onPressed: onViewAllTap,
-                child: const Text(
-                  'Ver más',
-                  style: TextStyle(
+                child: Text(
+                  tr('home.seeMore'),
+                  style: const TextStyle(
                     color: Color(0xFFC4B5FD),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
@@ -2639,7 +2648,7 @@ class _TopRankingCard extends StatelessWidget {
                         Text(
                           entry.artist.group.isNotEmpty
                               ? entry.artist.group.toUpperCase()
-                              : 'SIN GRUPO',
+                              : tr('home.noGroup'),
                           style: const TextStyle(
                             color: Color(0xFFF5D0FE),
                             fontSize: 10,
@@ -2655,7 +2664,7 @@ class _TopRankingCard extends StatelessWidget {
                                 value: _formatNumber(
                                   entry.artist.followersCount,
                                 ),
-                                label: 'Seguidores',
+                                label: tr('home.followers'),
                                 valueColor: entry.rank == 1
                                     ? const Color(0xFFFCD34D)
                                     : const Color(0xFFDDD6FE),
@@ -2665,7 +2674,7 @@ class _TopRankingCard extends StatelessWidget {
                             Expanded(
                               child: _TopRankingStat(
                                 value: _formatNumber(entry.pollVotes),
-                                label: 'Votos',
+                                label: tr('home.votes'),
                                 valueColor: entry.rank == 1
                                     ? const Color(0xFFF5D0FE)
                                     : const Color(0xFFA5F3FC),
@@ -2886,7 +2895,7 @@ String _formatNumber(int value) {
 
 String _formatActivityTime(DateTime? createdAt) {
   if (createdAt == null) {
-    return 'ahora';
+    return tr('home.timeNow');
   }
 
   final seconds = DateTime.now()
@@ -2894,18 +2903,18 @@ String _formatActivityTime(DateTime? createdAt) {
       .inSeconds
       .clamp(0, 999999);
   if (seconds < 60) {
-    return 'hace ${seconds == 0 ? 1 : seconds} s';
+    return trp('home.timeSecondsAgo', {'count': seconds == 0 ? 1 : seconds});
   }
 
   final minutes = seconds ~/ 60;
   if (minutes < 60) {
-    return 'hace $minutes min';
+    return trp('home.timeMinutesAgo', {'count': minutes});
   }
 
   final hours = minutes ~/ 60;
   if (hours < 24) {
-    return 'hace $hours h';
+    return trp('home.timeHoursAgo', {'count': hours});
   }
 
-  return 'hace ${hours ~/ 24} d';
+  return trp('home.timeDaysAgo', {'count': hours ~/ 24});
 }

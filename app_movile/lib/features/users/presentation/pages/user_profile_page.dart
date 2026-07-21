@@ -6,6 +6,7 @@ import '../../../artists/data/artists_api.dart';
 import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../data/user_profile.dart';
 import '../../data/users_api.dart';
@@ -119,7 +120,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
         backgroundColor: const Color(0xFF09061B),
         foregroundColor: Colors.white,
         title: Text(
-          _isOwnProfileRequest ? 'Mi perfil' : 'Perfil',
+          _isOwnProfileRequest ? tr('misc.myProfile') : tr('misc.profile'),
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
@@ -144,12 +145,12 @@ class _UserProfilePageState extends State<UserProfilePage> {
               if (snapshot.hasError) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 120),
+                  children: [
+                    const SizedBox(height: 120),
                     _ProfileStateMessage(
                       icon: Icons.person_off_rounded,
-                      title: 'No se pudo cargar el perfil.',
-                      subtitle: 'El usuario no existe o no está disponible.',
+                      title: tr('misc.profileLoadError'),
+                      subtitle: tr('misc.profileUnavailable'),
                     ),
                   ],
                 );
@@ -165,7 +166,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
               final photoUrl = resolveArtistMediaUrl(profile.photoUrl);
               final bannerUrl = resolveArtistMediaUrl(profile.bannerUrl);
               final bio = profile.bio.trim().isEmpty
-                  ? 'Perfil público de fan en Music Mundial Voting.'
+                  ? tr('misc.publicFanProfileBio')
                   : profile.bio;
 
               return ListView(
@@ -300,9 +301,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          const Text(
-                                            'ARTISTAS SEGUIDOS',
-                                            style: TextStyle(
+                                          Text(
+                                            tr('misc.followedArtistsLabel'),
+                                            style: const TextStyle(
                                               color: Color(0xFF94A3B8),
                                               fontSize: 10,
                                               fontWeight: FontWeight.w900,
@@ -343,9 +344,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          'FAVORITOS',
-                          style: TextStyle(
+                        Text(
+                          tr('misc.favoritesLabel'),
+                          style: const TextStyle(
                             color: Color(0xFFF0ABFC),
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
@@ -353,9 +354,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
-                          'Artistas seguidos',
-                          style: TextStyle(
+                        Text(
+                          tr('misc.followedArtistsTitle'),
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
@@ -528,7 +529,7 @@ class _FollowedArtistTile extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       artist.artistGroup.isEmpty
-                          ? 'Siguiendo'
+                          ? tr('misc.following')
                           : artist.artistGroup,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -567,31 +568,31 @@ class _EmptyFollowing extends StatelessWidget {
           color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
         ),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'AÚN SIN FAVORITOS',
-            style: TextStyle(
+            tr('misc.noFavoritesLabel'),
+            style: const TextStyle(
               color: Color(0xFF67E8F9),
               fontSize: 11,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.4,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
-            'Este fan todavía no sigue artistas.',
-            style: TextStyle(
+            tr('misc.fanNoArtists'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.w900,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
-            'Cuando siga artistas, aparecerán aquí.',
-            style: TextStyle(
+            tr('misc.artistsWillAppear'),
+            style: const TextStyle(
               color: Color(0xFF94A3B8),
               fontSize: 13,
               fontWeight: FontWeight.w600,

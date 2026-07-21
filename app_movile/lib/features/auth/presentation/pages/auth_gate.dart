@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
@@ -18,9 +19,14 @@ import '../../../notifications/presentation/widgets/gift_notification_modal.dart
 import '../../../notifications/presentation/widgets/notifications_bell.dart';
 import '../../../polls/presentation/pages/polls_page.dart';
 import '../../../rewards/presentation/widgets/daily_reward_modal.dart';
+import '../../../settings/presentation/pages/settings_page.dart';
 import '../../../users/presentation/pages/user_profile_page.dart';
 import '../../data/auth_service.dart';
 import 'login_page.dart';
+
+/// Traduce el nombre visible de una sección manteniendo su identificador
+/// interno (en español) para la lógica de navegación.
+String _sectionTitle(String section) => tr('section.$section');
 
 class AuthGate extends StatefulWidget {
   const AuthGate({required this.authService, super.key});
@@ -153,7 +159,7 @@ class _SignedInPageState extends State<_SignedInPage> {
               leading: Builder(
                 builder: (context) {
                   return IconButton(
-                    tooltip: 'Abrir menú',
+                    tooltip: tr('auth.openMenu'),
                     onPressed: () => Scaffold.of(context).openDrawer(),
                     icon: const Icon(Icons.menu_rounded),
                   );
@@ -171,7 +177,9 @@ class _SignedInPageState extends State<_SignedInPage> {
                       height: 42,
                       fit: BoxFit.contain,
                     )
-                  : (_selectedTabIndex == -1 ? Text(_selectedSection) : null),
+                  : (_selectedTabIndex == -1
+                        ? Text(_sectionTitle(_selectedSection))
+                        : null),
               actions: [
                 AppBarPointsAction(session: widget.authService.session),
                 NotificationsBell(controller: _notifications),
@@ -264,7 +272,7 @@ class _SignedInPageState extends State<_SignedInPage> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               foregroundColor: Colors.white,
-              title: const Text('Ranking Popularity'),
+              title: Text(_sectionTitle('Ranking Popularity')),
               actions: [
                 AppBarPointsAction(session: widget.authService.session),
               ],
@@ -281,8 +289,8 @@ class _SignedInPageState extends State<_SignedInPage> {
 
     if (tabIndex == -1) {
       return _PlaceholderPanel(
-        title: _selectedSection,
-        subtitle: 'Esta sección se conectará como pantalla completa.',
+        title: _sectionTitle(_selectedSection),
+        subtitle: tr('auth.sectionPlaceholder'),
       );
     }
 
@@ -472,7 +480,7 @@ class _BottomNavButton extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                item.label,
+                _sectionTitle(item.label),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -552,18 +560,43 @@ class _HomeMenuDrawer extends StatelessWidget {
                   onOpenMissions: () => onSectionSelected('Misiones'),
                 ),
                 const SizedBox(height: 18),
-                ..._items.map(
-                  (item) => _DrawerMenuTile(
-                    item: item,
-                    isSelected: selectedSection == item.label,
-                    onTap: () => onSectionSelected(item.label),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ..._items.map(
+                          (item) => _DrawerMenuTile(
+                            item: item,
+                            isSelected: selectedSection == item.label,
+                            onTap: () => onSectionSelected(item.label),
+                          ),
+                        ),
+                        _DrawerMenuTile(
+                          item: const _HomeMenuItem(
+                            'Configuración',
+                            Icons.settings_rounded,
+                          ),
+                          isSelected: false,
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    SettingsPage(authService: authService),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: () => _confirmSignOut(context, authService),
                   icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Cerrar sesión'),
+                  label: Text(tr('auth.signOut')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: BorderSide(
@@ -771,11 +804,11 @@ class _DrawerPointsCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 3),
-                        const Text(
-                          'Cómo generar puntos',
+                        Text(
+                          tr('auth.howToEarnPoints'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Color(0xFFD8D3F7),
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -880,7 +913,7 @@ class _DrawerMenuTile extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    item.label,
+                    _sectionTitle(item.label),
                     style: TextStyle(
                       color: isSelected
                           ? Colors.white
@@ -975,10 +1008,10 @@ Future<void> _confirmSignOut(
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text(
-                  'Cerrar sesión',
+                Text(
+                  tr('auth.signOut'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 26,
                     fontWeight: FontWeight.w900,
@@ -986,10 +1019,10 @@ Future<void> _confirmSignOut(
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  '¿Seguro que quieres salir de tu cuenta?',
+                Text(
+                  tr('auth.signOutConfirm'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFFD8D3F7),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -1012,7 +1045,7 @@ Future<void> _confirmSignOut(
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        child: const Text('Cancelar'),
+                        child: Text(tr('auth.cancel')),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1047,7 +1080,7 @@ Future<void> _confirmSignOut(
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          child: const Text('Sí, salir'),
+                          child: Text(tr('auth.signOutYes')),
                         ),
                       ),
                     ),

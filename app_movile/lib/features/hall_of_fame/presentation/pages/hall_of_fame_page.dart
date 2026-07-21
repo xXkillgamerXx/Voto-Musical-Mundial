@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../artists/data/artist.dart';
 import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
@@ -45,9 +46,9 @@ class HallOfFameScreen extends StatelessWidget {
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
           foregroundColor: Colors.white,
-          title: const Text(
-            'Salón de la fama',
-            style: TextStyle(fontWeight: FontWeight.w900),
+          title: Text(
+            tr('catalog.hofTitle'),
+            style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           actions: [
             AppBarPointsAction(session: authService.session),
@@ -103,9 +104,9 @@ class _HallOfFamePageState extends State<HallOfFamePage> {
       future: _groupsFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const _HallOfFameMessage(
+          return _HallOfFameMessage(
             icon: Icons.error_outline_rounded,
-            title: 'No se pudo cargar el salón de la fama.',
+            title: tr('catalog.hofLoadError'),
           );
         }
 
@@ -181,32 +182,32 @@ class _HallOfFameHero extends StatelessWidget {
               ),
             ),
           ),
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'GANADORES',
-                style: TextStyle(
+                tr('catalog.hofWinnersEyebrow'),
+                style: const TextStyle(
                   color: Color(0xFFFDE68A),
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 2.4,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                'Salón de la fama',
-                style: TextStyle(
+                tr('catalog.hofTitle'),
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   height: 1,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                'Artistas que llegaron al primer lugar en votaciones finalizadas.',
-                style: TextStyle(
+                tr('catalog.hofHeroSubtitle'),
+                style: const TextStyle(
                   color: Color(0xFFCBD5E1),
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -234,7 +235,7 @@ class _HallOfFameYearSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final yearLabel = group.year?.toString() ?? 'Historial';
+    final yearLabel = group.year?.toString() ?? tr('catalog.hofHistory');
     final count = group.entries.length;
 
     return Column(
@@ -246,9 +247,9 @@ class _HallOfFameYearSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'AÑO',
-                    style: TextStyle(
+                  Text(
+                    tr('catalog.hofYear'),
+                    style: const TextStyle(
                       color: Color(0xFFFDE68A),
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
@@ -277,7 +278,7 @@ class _HallOfFameYearSection extends StatelessWidget {
                 ),
               ),
               child: Text(
-                '$count GANADORES',
+                trp('catalog.hofWinnersCount', {'count': count}),
                 style: const TextStyle(
                   color: Color(0xFFFEF3C7),
                   fontSize: 10,
@@ -454,9 +455,9 @@ class _HallOfFameWinnerCard extends StatelessWidget {
                             color: const Color(0xFFF0ABFC).withValues(alpha: 0.28),
                           ),
                         ),
-                        child: const Text(
-                          'VER VOTACIÓN',
-                          style: TextStyle(
+                        child: Text(
+                          tr('catalog.hofViewPoll'),
+                          style: const TextStyle(
                             color: Color(0xFFF5D0FE),
                             fontWeight: FontWeight.w900,
                             fontSize: 10,
@@ -510,10 +511,10 @@ class _HallOfFameEmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'SALÓN DE LA FAMA EN PREPARACIÓN',
+          Text(
+            tr('catalog.hofEmptyTitle'),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -521,7 +522,7 @@ class _HallOfFameEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Cuando una votación cerrada tenga ganador, aparecerá aquí como parte del historial oficial.',
+            tr('catalog.hofEmptyBody'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),

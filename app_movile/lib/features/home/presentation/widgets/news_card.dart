@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../data/news_api.dart';
 
 class NewsCard extends StatelessWidget {
@@ -227,7 +228,7 @@ class _NewsReadButton extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  'LEER NOTICIA',
+                  tr('home.readNews'),
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,

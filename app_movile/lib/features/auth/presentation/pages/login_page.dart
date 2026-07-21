@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
@@ -35,7 +36,7 @@ class _LoginPageState extends State<LoginPage> {
 
     if (_emailController.text.trim().isEmpty ||
         _passwordController.text.isEmpty) {
-      setState(() => _errorMessage = 'Escribe tu correo y contraseña.');
+      setState(() => _errorMessage = tr('auth.loginEnterEmailPassword'));
       return;
     }
 
@@ -79,14 +80,13 @@ class _LoginPageState extends State<LoginPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AuthScaffold(
-      title: 'Iniciar sesion',
-      subtitle:
-          'Inicia en tu cuenta para votar, recibir recompensas y seguir a tus artistas.',
+      title: tr('auth.loginTitle'),
+      subtitle: tr('auth.loginSubtitle'),
       footer: Wrap(
         alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const Text('No tienes cuenta?'),
+          Text(tr('auth.noAccountQuestion')),
           TextButton(
             onPressed: _isLoading
                 ? null
@@ -99,7 +99,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     );
                   },
-            child: const Text('Crear cuenta'),
+            child: Text(tr('auth.createAccount')),
           ),
         ],
       ),
@@ -113,20 +113,20 @@ class _LoginPageState extends State<LoginPage> {
           const SizedBox(height: 10),
           const AuthDivider(),
           const SizedBox(height: 10),
-          const AuthFieldLabel('Correo o usuario'),
+          AuthFieldLabel(tr('auth.emailOrUsernameLabel')),
           const SizedBox(height: 10),
           TextField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             enabled: !_isLoading,
-            decoration: const InputDecoration(
-              labelText: 'Correo o nombre de usuario',
-              prefixIcon: Icon(Icons.mail_outline),
+            decoration: InputDecoration(
+              labelText: tr('auth.emailOrUsernameHint'),
+              prefixIcon: const Icon(Icons.mail_outline),
             ),
           ),
           const SizedBox(height: 18),
-          const AuthFieldLabel('Contrasena'),
+          AuthFieldLabel(tr('auth.loginPasswordLabel')),
           const SizedBox(height: 10),
           TextField(
             controller: _passwordController,
@@ -134,7 +134,7 @@ class _LoginPageState extends State<LoginPage> {
             enabled: !_isLoading,
             onSubmitted: (_) => _handleEmailLogin(),
             decoration: InputDecoration(
-              labelText: 'Contrasena',
+              labelText: tr('auth.loginPasswordLabel'),
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
                 onPressed: () {
@@ -168,7 +168,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Recordar contrasena',
+                  tr('auth.rememberPassword'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium,
@@ -191,9 +191,9 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         );
                       },
-                child: const FittedBox(
+                child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text('Olvidaste tu contrasena?'),
+                  child: Text(tr('auth.forgotPasswordQuestion')),
                 ),
               ),
             ],
@@ -204,7 +204,7 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 12),
           ],
           AuthGradientButton(
-            label: 'Iniciar sesion',
+            label: tr('auth.loginTitle'),
             onPressed: _handleEmailLogin,
             isLoading: _isLoading,
           ),

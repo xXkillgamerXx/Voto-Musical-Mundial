@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../core/i18n/tr.dart';
+
 class AuthGoogleButton extends StatelessWidget {
   const AuthGoogleButton({
     required this.onPressed,
@@ -51,7 +53,7 @@ class AuthGoogleButton extends StatelessWidget {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'Continuar con Google',
+                        tr('auth.continueWithGoogle'),
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w900),
                       ),
@@ -81,7 +83,7 @@ class AuthDivider extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18),
           child: Text(
-            'o',
+            tr('auth.orDivider'),
             style: TextStyle(
               color: colorScheme.primary,
               fontWeight: FontWeight.w800,

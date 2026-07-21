@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
@@ -41,9 +42,9 @@ class _ArtistsPageState extends State<ArtistsPage> {
       future: _artistsFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const _ArtistsStateMessage(
+          return _ArtistsStateMessage(
             icon: Icons.error_outline_rounded,
-            title: 'No se pudieron cargar los artistas.',
+            title: tr('catalog.artistsLoadError'),
           );
         }
 
@@ -76,7 +77,7 @@ class _ArtistsPageState extends State<ArtistsPage> {
                   children: [
                     const SizedBox(height: 10),
                     Text(
-                      'Artistas populares de la semana',
+                      tr('catalog.artistsTitle'),
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(
                             color: Colors.white,
@@ -84,9 +85,9 @@ class _ArtistsPageState extends State<ArtistsPage> {
                           ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Ranking público por fans. Abre cada perfil para ver popularidad, votos y apoyo del fandom.',
-                      style: TextStyle(
+                    Text(
+                      tr('catalog.artistsSubtitle'),
+                      style: const TextStyle(
                         color: Color(0xFFB9B2D8),
                         fontWeight: FontWeight.w600,
                       ),
@@ -111,11 +112,11 @@ class _ArtistsPageState extends State<ArtistsPage> {
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
               if (artists.isEmpty)
-                const SliverFillRemaining(
+                SliverFillRemaining(
                   hasScrollBody: false,
                   child: _ArtistsStateMessage(
                     icon: Icons.person_search_rounded,
-                    title: 'No encontramos artistas con esa búsqueda.',
+                    title: tr('catalog.artistsSearchEmpty'),
                   ),
                 )
               else
@@ -184,7 +185,7 @@ class _ArtistSearchField extends StatelessWidget {
       onChanged: onChanged,
       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
       decoration: InputDecoration(
-        labelText: 'Buscar artista',
+        labelText: tr('catalog.artistsSearchLabel'),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         prefixIcon: const Icon(Icons.search_rounded, size: 22),
         prefixIconConstraints: const BoxConstraints(minWidth: 44),
@@ -252,7 +253,7 @@ class _ArtistsSearchHeader extends SliverPersistentHeaderDelegate {
           ),
           const SizedBox(height: 5),
           Text(
-            '$count artistas disponibles',
+            trp('catalog.artistsAvailableCount', {'count': count}),
             style: const TextStyle(
               color: Color(0xFF8E86B9),
               fontSize: 11,

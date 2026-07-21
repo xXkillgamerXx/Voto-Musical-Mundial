@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../data/artist.dart';
 import 'artist_avatar.dart';
 
@@ -17,9 +18,9 @@ class ArtistCard extends StatelessWidget {
         ? artist.popularityScore
         : followersCount * 10;
     final bannerUrl = resolveArtistBanner(artist);
-    final groupLabel = artist.group.isEmpty ? 'Sin grupo' : artist.group;
+    final groupLabel = artist.group.isEmpty ? tr('catalog.noGroup') : artist.group;
     final bio = artist.bio.isEmpty
-        ? 'Perfil público con actividad, fans y popularidad.'
+        ? tr('catalog.artistCardBioFallback')
         : artist.bio;
 
     return Material(
@@ -96,9 +97,9 @@ class ArtistCard extends StatelessWidget {
                               color: Colors.white.withValues(alpha: 0.15),
                             ),
                           ),
-                          child: const Text(
-                            'POPULAR',
-                            style: TextStyle(
+                          child: Text(
+                            tr('catalog.artistCardPopular'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.w900,
@@ -174,7 +175,7 @@ class ArtistCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: _ArtistStat(
-                              label: 'Seguidores',
+                              label: tr('catalog.followers'),
                               value: _formatCount(followersCount),
                               color: const Color(0xFF22D3EE),
                             ),
@@ -182,7 +183,7 @@ class ArtistCard extends StatelessWidget {
                           const SizedBox(width: 10),
                           Expanded(
                             child: _ArtistStat(
-                              label: 'Popularidad',
+                              label: tr('catalog.popularity'),
                               value: _formatCount(popularityScore),
                               color: const Color(0xFFFBBF24),
                             ),
@@ -208,9 +209,9 @@ class ArtistCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: const Text(
-                          'VER PERFIL',
-                          style: TextStyle(
+                        child: Text(
+                          tr('catalog.artistCardViewProfile'),
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 0.8,

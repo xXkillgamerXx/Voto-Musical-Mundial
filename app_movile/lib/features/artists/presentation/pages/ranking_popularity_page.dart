@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
 import '../../data/artists_api.dart';
@@ -38,9 +39,9 @@ class _RankingPopularityPageState extends State<RankingPopularityPage> {
       future: _rankingFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const _RankingStateMessage(
+          return _RankingStateMessage(
             icon: Icons.error_outline_rounded,
-            title: 'No se pudo cargar el Ranking Popularity.',
+            title: tr('catalog.rankingLoadError'),
           );
         }
 
@@ -151,8 +152,10 @@ class _FullChartSectionState extends State<_FullChartSection> {
   Widget build(BuildContext context) {
     final visibleArtists = widget.artists.take(_visibleCount).toList(growable: false);
     final hasMore = _visibleCount < widget.artists.length;
-    final showingLabel =
-        'Mostrando ${visibleArtists.length} de ${widget.artists.length}';
+    final showingLabel = trp('catalog.rankingShowing', {
+      'shown': visibleArtists.length,
+      'total': widget.artists.length,
+    });
 
     return Container(
       decoration: BoxDecoration(
@@ -173,10 +176,10 @@ class _FullChartSectionState extends State<_FullChartSection> {
             ),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'FULL CHART',
-                    style: TextStyle(
+                    tr('catalog.rankingFullChart'),
+                    style: const TextStyle(
                       color: Color(0xFFF0ABFC),
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
@@ -220,7 +223,9 @@ class _FullChartSectionState extends State<_FullChartSection> {
                     ),
                   ),
                   child: Text(
-                    'Ver más (${widget.artists.length - _visibleCount} restantes)',
+                    trp('catalog.rankingLoadMore', {
+                      'count': widget.artists.length - _visibleCount,
+                    }),
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.4,
@@ -274,7 +279,7 @@ class _RankedArtist {
       return _RankedArtist(
         artist: artist,
         rank: index + 1,
-        lastWeekRank: 'NEW',
+        lastWeekRank: tr('catalog.rankingNew'),
         peakPosition: index + 1,
         weeksOnChart: 1,
         accent: _RankingAccent.forIndex(index),
@@ -376,9 +381,9 @@ class _RankingHeroCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'BILLBOARD STYLE CHART',
-                    style: TextStyle(
+                  Text(
+                    tr('catalog.rankingBillboardStyle'),
+                    style: const TextStyle(
                       color: Color(0xFFFCD34D),
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
@@ -386,9 +391,9 @@ class _RankingHeroCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'RANKING\nPOPULARITY',
-                    style: TextStyle(
+                  Text(
+                    tr('catalog.rankingTitle'),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 34,
                       fontWeight: FontWeight.w900,
@@ -397,9 +402,9 @@ class _RankingHeroCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'El chart oficial de artistas populares según seguidores, votos acumulados y apoyo del público en las votaciones.',
-                    style: TextStyle(
+                  Text(
+                    tr('catalog.rankingHeroSubtitle'),
+                    style: const TextStyle(
                       color: Color(0xFFCBD5E1),
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -440,9 +445,9 @@ class _RankingHeroCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'CHART METRICS',
-                          style: TextStyle(
+                        Text(
+                          tr('catalog.rankingChartMetrics'),
+                          style: const TextStyle(
                             color: Color(0xFFF5D0FE),
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
@@ -454,14 +459,14 @@ class _RankingHeroCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _MetricTile(
-                                label: 'Artistas',
+                                label: tr('catalog.rankingMetricArtists'),
                                 value: '$artistCount',
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: _MetricTile(
-                                label: 'Votos',
+                                label: tr('catalog.rankingMetricVotes'),
                                 value: _formatRankingCount(totalVotes),
                               ),
                             ),
@@ -605,9 +610,9 @@ class _TopThreeHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'TOP 3',
-                style: TextStyle(
+              Text(
+                tr('catalog.rankingTop3'),
+                style: const TextStyle(
                   color: Color(0xFFFCD34D),
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
@@ -616,7 +621,7 @@ class _TopThreeHeader extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Hot artists',
+                tr('catalog.rankingHotArtists'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
@@ -1027,7 +1032,7 @@ class _FeaturedRankingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final artist = ranked.artist;
-    final groupLabel = artist.group.isEmpty ? 'Sin grupo' : artist.group;
+    final groupLabel = artist.group.isEmpty ? tr('catalog.noGroup') : artist.group;
     final bannerUrl = resolveArtistBanner(artist);
     final heroHeight = compact ? 168.0 : 220.0;
     final avatarSize = compact ? 64.0 : 80.0;
@@ -1107,7 +1112,7 @@ class _FeaturedRankingCard extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    'HOT ARTIST',
+                                    tr('catalog.rankingHotArtist'),
                                     style: TextStyle(
                                       color: ranked.accent.text,
                                       fontSize: 11,
@@ -1161,9 +1166,9 @@ class _FeaturedRankingCard extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'POPULARITY SCORE',
-                                  style: TextStyle(
+                                Text(
+                                  tr('catalog.rankingPopularityScore'),
+                                  style: const TextStyle(
                                     color: Color(0xFF64748B),
                                     fontSize: 10,
                                     fontWeight: FontWeight.w900,
@@ -1192,7 +1197,9 @@ class _FeaturedRankingCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(99),
                             ),
                             child: Text(
-                              '${_formatRankingCount(artist.totalVotes)} votos',
+                              trp('catalog.votesCount', {
+                                'count': _formatRankingCount(artist.totalVotes),
+                              }),
                               style: const TextStyle(
                                 color: Color(0xFFCBD5E1),
                                 fontSize: 12,
@@ -1213,14 +1220,14 @@ class _FeaturedRankingCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: _MiniStat(
-                              label: 'Seguidores',
+                              label: tr('catalog.followers'),
                               value: _formatRankingCount(artist.followersCount),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: _MiniStat(
-                              label: 'Last week',
+                              label: tr('catalog.rankingLastWeek'),
                               value: ranked.lastWeekRank,
                             ),
                           ),
@@ -1232,14 +1239,14 @@ class _FeaturedRankingCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _MiniStat(
-                                label: 'Peak',
+                                label: tr('catalog.rankingPeak'),
                                 value: '#${ranked.peakPosition}',
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: _MiniStat(
-                                label: 'Weeks',
+                                label: tr('catalog.rankingWeeks'),
                                 value: '${ranked.weeksOnChart}',
                               ),
                             ),
@@ -1274,7 +1281,7 @@ class _RankingChartRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final artist = ranked.artist;
-    final groupLabel = artist.group.isEmpty ? 'Sin grupo' : artist.group;
+    final groupLabel = artist.group.isEmpty ? tr('catalog.noGroup') : artist.group;
 
     return Material(
       color: Colors.transparent,
@@ -1324,7 +1331,12 @@ class _RankingChartRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$groupLabel · ${_formatRankingCount(artist.followersCount)} seguidores · ${_formatRankingCount(artist.totalVotes)} votos',
+                          trp('catalog.rankingChartRowMeta', {
+                            'group': groupLabel,
+                            'followers':
+                                _formatRankingCount(artist.followersCount),
+                            'votes': _formatRankingCount(artist.totalVotes),
+                          }),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -1342,9 +1354,9 @@ class _RankingChartRow extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const Text(
-                        'SCORE',
-                        style: TextStyle(
+                      Text(
+                        tr('catalog.rankingScore'),
+                        style: const TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 9,
                           fontWeight: FontWeight.w900,
@@ -1373,11 +1385,20 @@ class _RankingChartRow extends StatelessWidget {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _RowMetric(label: 'Last', value: ranked.lastWeekRank),
+                  _RowMetric(
+                    label: tr('catalog.rankingLast'),
+                    value: ranked.lastWeekRank,
+                  ),
                   const SizedBox(width: 16),
-                  _RowMetric(label: 'Peak', value: '#${ranked.peakPosition}'),
+                  _RowMetric(
+                    label: tr('catalog.rankingPeak'),
+                    value: '#${ranked.peakPosition}',
+                  ),
                   const SizedBox(width: 16),
-                  _RowMetric(label: 'Weeks', value: '${ranked.weeksOnChart}'),
+                  _RowMetric(
+                    label: tr('catalog.rankingWeeks'),
+                    value: '${ranked.weeksOnChart}',
+                  ),
                 ],
               ),
             ],
@@ -1541,20 +1562,20 @@ class _RankingEmptyState extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'RANKING POPULARITY EN PREPARACIÓN',
+              Text(
+                tr('catalog.rankingEmptyTitle'),
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Cuando los artistas acumulen votos, seguidores y actividad, el ranking se ordenará automáticamente aquí.',
+              Text(
+                tr('catalog.rankingEmptyBody'),
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -1607,7 +1628,7 @@ String _currentChartWeekLabel() {
   final weekNumber = ((pastDays + firstDayOfYear.weekday) / 7).ceil();
   final week = weekNumber.toString().padLeft(2, '0');
 
-  return '${now.year} · Semana $week';
+  return trp('catalog.rankingWeekLabel', {'year': now.year, 'week': week});
 }
 
 String _formatRankingCount(int value) {
