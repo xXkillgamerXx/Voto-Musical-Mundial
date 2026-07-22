@@ -3,10 +3,12 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { getPolls } from "../services/api/pollsApi";
 import { applyCategoryLocale } from "../utils/pollLocale";
+import { routePath } from "../utils/localizedRoutes";
 
 const { t, locale } = useI18n();
 const dbCategories = ref([]);
 const isLoadingCategories = ref(true);
+const pollsHref = computed(() => routePath("polls", locale.value));
 const dragState = ref({
   isDragging: false,
   startX: 0,
@@ -166,7 +168,7 @@ onMounted(() => {
         </h2>
       </div>
       <a
-        href="/votaciones"
+        :href="pollsHref"
         class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white"
       >
         {{ $t("homeCategories.viewAll") }}

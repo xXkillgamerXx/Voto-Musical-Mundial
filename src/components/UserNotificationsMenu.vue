@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getCurrentApiAuth } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
@@ -11,7 +12,10 @@ import {
   getNotificationTitle,
   shouldDisplayNotification,
 } from '../utils/notificationDisplay'
+import { routePath } from '../utils/localizedRoutes'
 
+const { locale } = useI18n()
+const notificationsHref = computed(() => routePath('notifications', locale.value))
 const isOpen = ref(false)
 const isLoading = ref(false)
 const isEnablingPush = ref(false)
@@ -199,7 +203,7 @@ onUnmounted(() => {
           </button>
         </div>
         <a
-          href="/notificaciones"
+          :href="notificationsHref"
           class="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/15"
           @click="closeMenu"
         >

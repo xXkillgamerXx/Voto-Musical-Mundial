@@ -1,7 +1,8 @@
 <script setup>
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { i18n, translate } from "../i18n";
-import { applyPollLocale } from "../utils/pollLocale";
+import { applyPollLocale, pollUrl as buildPollUrl } from "../utils/pollLocale";
+import { routePath } from "../utils/localizedRoutes";
 import { getArtistsCached } from "../services/firebaseCache";
 import { getCurrentApiAuth, getMe } from "../services/api/authApi";
 import {
@@ -36,6 +37,8 @@ import {
 const ActivePolls = defineAsyncComponent(() => import("../components/ActivePolls.vue"));
 const EmbedAd = defineAsyncComponent(() => import("../components/EmbedAd.vue"));
 const PollComments = defineAsyncComponent(() => import("../components/PollComments.vue"));
+
+const hallOfFameHref = computed(() => routePath("hallOfFame", i18n.global.locale.value));
 
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeYear = Number(pathParts[1]) || new Date().getFullYear();
@@ -288,6 +291,22 @@ watch(
 
     poll.value = applyPollLocale(poll.value, i18n.global.locale.value);
     rounds.value = (poll.value?.rounds || []).map(normalizeApiRound);
+
+    // Actualiza el slug de la URL al idioma actual para que al compartir
+    // el enlace salga en ES o EN según corresponda.
+    try {
+      const nextPath = buildPollUrl(poll.value, i18n.global.locale.value);
+      const url = new URL(window.location.href);
+      if (url.pathname !== nextPath) {
+        window.history.replaceState(
+          {},
+          "",
+          `${nextPath}${url.search}${url.hash}`,
+        );
+      }
+    } catch {
+      // ignore URL sync errors
+    }
   },
 );
 
@@ -3263,7 +3282,7 @@ onUnmounted(() => {
               class="relative flex flex-col items-stretch gap-3 sm:flex-row"
             >
               <a
-                href="/salon-de-la-fama"
+                :href="hallOfFameHref"
                 class="group inline-flex min-h-16 flex-1 items-center justify-center gap-3 rounded-3xl bg-linear-to-r from-amber-300 via-pink-400 to-fuchsia-500 px-5 py-3 text-center text-sm font-black uppercase leading-tight tracking-wide text-white shadow-lg shadow-amber-950/30 transition hover:-translate-y-0.5 hover:shadow-fuchsia-900/35"
               >
                 <span

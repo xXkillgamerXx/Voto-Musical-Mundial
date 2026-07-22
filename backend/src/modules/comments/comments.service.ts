@@ -11,6 +11,7 @@ import {
   BLOCKED_LANGUAGE_MESSAGE,
   isCommentLanguageBlocked,
 } from '../../common/comment-profanity';
+import { pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -37,7 +38,7 @@ export class CommentsService {
 
   private async resolvePoll(pollId: string) {
     const poll = await this.prisma.poll.findFirst({
-      where: { OR: [{ id: BigInt(Number(pollId) || 0) }, { slug: pollId }, { firebaseId: pollId }] },
+      where: pollLookupWhere(pollId),
       select: { id: true },
     });
 

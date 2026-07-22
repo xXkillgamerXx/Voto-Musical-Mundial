@@ -12,11 +12,14 @@ import { onStoredAuthChange } from "../services/api/client";
 import { getPoll, getPolls } from "../services/api/pollsApi";
 import { getArtistsCached } from "../services/firebaseCache";
 import { resolveArtistBanner } from "../utils/artistMedia";
-import { applyArtistLocale } from "../utils/pollLocale";
+import { applyArtistLocale, artistUrl as buildArtistUrl } from "../utils/pollLocale";
+import { routePath } from "../utils/localizedRoutes";
 
 const { locale } = useI18n();
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeArtistKey = pathParts[1] || "";
+const pollsHref = computed(() => routePath("polls", locale.value));
+const profileHref = computed(() => routePath("profile", locale.value));
 
 const artist = ref(null);
 const artistPolls = ref([]);
@@ -533,7 +536,7 @@ onUnmounted(() => {
             Este artista todavía no aparece con votos registrados en rondas cerradas o activas. Cuando participe en una votación, aquí verás su apoyo, porcentaje y resultados.
           </p>
           <a
-            href="/votaciones"
+            :href="pollsHref"
             class="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-linear-to-r from-fuchsia-500 to-cyan-400 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.02]"
           >
             Ver votaciones
@@ -639,7 +642,7 @@ onUnmounted(() => {
               Seguir viendo
             </button>
             <a
-              href="/perfil"
+              :href="profileHref"
               class="inline-flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-cyan-400 px-5 text-sm font-black uppercase text-slate-950 shadow-lg shadow-emerald-950/25 transition hover:scale-[1.01]"
             >
               Ver mi perfil

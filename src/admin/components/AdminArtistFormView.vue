@@ -25,6 +25,8 @@ const emptyArtist = {
   banner: '',
   bio: '',
   bioEn: '',
+  slug: '',
+  slugEn: '',
   status: 'active',
 }
 
@@ -64,6 +66,8 @@ const normalizeArtist = (artist) => {
     banner: getArtistBanner({ ...metadata, ...artist }),
     bio: metadata.bio || artist.bio || '',
     bioEn: metadata.bioEn || artist.bioEn || '',
+    slug: artist.slug || createSlug(artist.name || ''),
+    slugEn: metadata.slugEn || '',
     status: metadata.status || artist.status || 'active',
   }
 }
@@ -152,6 +156,8 @@ const loadArtist = async () => {
       banner: getArtistBanner(artist),
       bio: artist.bio || '',
       bioEn: artist.bioEn || '',
+      slug: artist.slug || createSlug(artist.name || ''),
+      slugEn: artist.slugEn || '',
       status: artist.status || 'active',
     }
     activeLocale.value = 'es'
@@ -173,6 +179,9 @@ const saveArtist = async () => {
 
   isSaving.value = true
 
+  const slugEs = createSlug(artistForm.value.slug || artistForm.value.name)
+  const slugEn = createSlug(artistForm.value.slugEn || artistForm.value.name)
+
   const artistData = {
     ...artistForm.value,
     name: artistForm.value.name.trim(),
@@ -184,7 +193,8 @@ const saveArtist = async () => {
     banner: artistForm.value.banner.trim(),
     bio: artistForm.value.bio.trim(),
     bioEn: artistForm.value.bioEn.trim(),
-    slug: createSlug(artistForm.value.name),
+    slug: slugEs,
+    slugEn: slugEn || slugEs,
     imageUrl: artistForm.value.image.trim(),
     photoUrl: artistForm.value.image.trim(),
     genre: artistForm.value.role.trim(),
@@ -280,8 +290,34 @@ onMounted(loadArtist)
               required
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
               :placeholder="$t('admin.artistForm.namePlaceholder')"
+              @blur="!artistForm.slug && (artistForm.slug = createSlug(artistForm.name))"
             />
           </label>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Slug URL (ES)</span>
+              <input
+                v-model="artistForm.slug"
+                type="text"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+                placeholder="nombre-artista"
+                @blur="artistForm.slug = createSlug(artistForm.slug || artistForm.name)"
+              />
+              <span class="mt-1 block text-[11px] font-bold text-slate-500">/artista/{{ artistForm.slug || '...' }}</span>
+            </label>
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">Slug URL (EN)</span>
+              <input
+                v-model="artistForm.slugEn"
+                type="text"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+                placeholder="artist-name"
+                @blur="artistForm.slugEn = createSlug(artistForm.slugEn || artistForm.name)"
+              />
+              <span class="mt-1 block text-[11px] font-bold text-slate-500">/artist/{{ artistForm.slugEn || artistForm.slug || '...' }}</span>
+            </label>
+          </div>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">

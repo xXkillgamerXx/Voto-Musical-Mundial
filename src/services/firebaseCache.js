@@ -346,11 +346,8 @@ const withTimeout = (promise, timeoutMs = 4500) =>
   ]);
 
 export const preloadRouteData = (db, path) => {
-  if (path === "/votaciones") {
-    return withTimeout(getPollsCached(db));
-  }
-
-  if (path === "/") {
+  const normalized = String(path || '').split('?')[0]
+  if (normalized === '/votaciones' || normalized === '/polls' || normalized === '/') {
     return withTimeout(getPollsCached(db));
   }
 

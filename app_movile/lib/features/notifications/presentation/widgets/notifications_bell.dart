@@ -7,10 +7,12 @@ import '../pages/notifications_page.dart';
 class NotificationsBell extends StatelessWidget {
   const NotificationsBell({
     required this.controller,
+    this.onSelectSection,
     super.key,
   });
 
   final NotificationController controller;
+  final void Function(String section)? onSelectSection;
 
   @override
   Widget build(BuildContext context) {
@@ -25,6 +27,7 @@ class NotificationsBell extends StatelessWidget {
             NotificationsScreen.open(
               context,
               controller: controller,
+              onSelectSection: onSelectSection,
             );
           },
           icon: Stack(

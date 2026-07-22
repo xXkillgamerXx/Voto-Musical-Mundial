@@ -13,6 +13,7 @@ import { getStoredAuth } from './services/api/client'
 import { reportMissionVisitProgress } from './services/api/missionsApi'
 import { trackPageView } from './services/googleAnalytics'
 import { activeTheme, applyTheme } from './theme'
+import { matchStaticRoute, toCanonicalPath } from './utils/localizedRoutes'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
 const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
@@ -46,22 +47,23 @@ const isPageLoading = ref(true)
 let loadingTimer = null
 let loadingToken = 0
 const prefetchedRoutes = new Set()
-const isRegisterPage = computed(() => currentPath.value === '/registro')
-const isTermsPage = computed(() => currentPath.value === '/terminos-y-condiciones')
-const isPrivacyPage = computed(() => currentPath.value === '/politica-de-privacidad')
-const isPollsPage = computed(() => currentPath.value === '/votaciones')
-const isHallOfFamePage = computed(() => currentPath.value === '/salon-de-la-fama')
-const isArtistsPage = computed(() => currentPath.value === '/artistas')
-const isRankingPopularityPage = computed(() => currentPath.value === '/ranking-popularity')
-const isNewsPage = computed(() => currentPath.value === '/noticias')
-const isNotificationsPage = computed(() => currentPath.value === '/notificaciones')
-const isUserProfilePage = computed(() => currentPath.value === '/perfil')
-const isPublicUserProfilePage = computed(() => /^\/user\/[a-z0-9_]{3,20}$/.test(currentPath.value))
-const isListPollPage = computed(() => currentPath.value === '/votacion/lista')
-const isDynamicListPollPage = computed(() => /^\/votacion\/\d{4}\/[^/]+$/.test(currentPath.value))
-const isVersusPollPage = computed(() => currentPath.value === '/votacion/versus')
+const canonicalPath = computed(() => toCanonicalPath(currentPath.value))
+const isRegisterPage = computed(() => matchStaticRoute(currentPath.value, 'register'))
+const isTermsPage = computed(() => matchStaticRoute(currentPath.value, 'terms'))
+const isPrivacyPage = computed(() => matchStaticRoute(currentPath.value, 'privacy'))
+const isPollsPage = computed(() => matchStaticRoute(currentPath.value, 'polls'))
+const isHallOfFamePage = computed(() => matchStaticRoute(currentPath.value, 'hallOfFame'))
+const isArtistsPage = computed(() => matchStaticRoute(currentPath.value, 'artists'))
+const isRankingPopularityPage = computed(() => matchStaticRoute(currentPath.value, 'rankingPopularity'))
+const isNewsPage = computed(() => matchStaticRoute(currentPath.value, 'news'))
+const isNotificationsPage = computed(() => matchStaticRoute(currentPath.value, 'notifications'))
+const isUserProfilePage = computed(() => matchStaticRoute(currentPath.value, 'profile'))
+const isPublicUserProfilePage = computed(() => /^\/user\/[a-z0-9_]{3,20}$/.test(canonicalPath.value))
+const isListPollPage = computed(() => canonicalPath.value === '/votacion/lista')
+const isDynamicListPollPage = computed(() => /^\/votacion\/\d{4}\/[^/]+$/.test(canonicalPath.value))
+const isVersusPollPage = computed(() => canonicalPath.value === '/votacion/versus')
 const isVersusEmbedPage = computed(() => currentPath.value === '/embed/versus')
-const isArtistProfilePage = computed(() => /^\/artista\/[^/]+$/.test(currentPath.value))
+const isArtistProfilePage = computed(() => /^\/artista\/[^/]+$/.test(canonicalPath.value))
 const isAdminPage = computed(() => currentPath.value.startsWith('/admin'))
 const isEmbeddedPage = computed(() => {
   currentRouteKey.value

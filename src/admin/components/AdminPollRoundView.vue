@@ -12,6 +12,7 @@ import {
 } from '../../services/api/adminApi'
 import { getPoll } from '../../services/api/pollsApi'
 import { translate } from '../../i18n'
+import { pollUrl as buildPollUrl } from '../../utils/pollLocale'
 
 const props = defineProps({
   pollId: {
@@ -174,7 +175,7 @@ const getArtistImage = (artist) =>
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 const publicPollPath = computed(() =>
-  `/votacion/${poll.value?.year || new Date().getFullYear()}/${poll.value?.slug || props.pollId}`,
+  poll.value ? buildPollUrl(poll.value, 'es') : `/votacion/${new Date().getFullYear()}/${props.pollId}`,
 )
 const buildRoundEmbedUrl = (groupNumber = null) => {
   const url = new URL(publicPollPath.value, window.location.origin)

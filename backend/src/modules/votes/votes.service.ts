@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { PollStatus, RoundType, UserRole } from '@prisma/client';
 import { Request } from 'express';
 import { BLOCKED_IPS_KEY, BLOCKED_USERS_KEY } from '../../common/moderation-keys';
+import { pollLookupWhere } from '../../common/poll-lookup';
 import { getClientIp, hashIp } from '../../common/request';
 import { serialize } from '../../common/serialize';
 import { AuthService } from '../auth/auth.service';
@@ -221,7 +222,7 @@ export class VotesService {
 
   private async loadPollOnly(pollId: string, roundId?: string) {
     const poll = await this.prisma.poll.findFirst({
-      where: { OR: [{ id: BigInt(Number(pollId) || 0) }, { slug: pollId }, { firebaseId: pollId }] },
+      where: pollLookupWhere(pollId),
     });
 
     if (!poll) {

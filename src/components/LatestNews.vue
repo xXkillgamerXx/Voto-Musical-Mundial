@@ -2,9 +2,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
+import { routePath } from '../utils/localizedRoutes'
 
 const { locale } = useI18n()
 const musicMundialPath = computed(() => locale.value === 'en' ? '/en' : '')
+const newsHref = computed(() => routePath('news', locale.value))
 const feedUrl = computed(() => `https://www.musicmundial.com${musicMundialPath.value}/feed/`)
 const feedProxyUrl = computed(() => `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl.value)}`)
 const feedJsonUrl = computed(() => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl.value)}`)
@@ -287,7 +289,7 @@ watch(locale, loadNews)
           Music Mundial
         </h2>
       </div>
-      <a href="/noticias" class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
+      <a :href="newsHref" class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
         Ver todas
       </a>
     </div>

@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
+import { normalizeSlug, pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -298,14 +299,17 @@ export class AdminController {
 
   @Post('artists')
   async createArtist(@Body() body: any) {
+    const slug = normalizeSlug(body?.slug) || normalizeSlug(body?.name) || null;
+    const slugEn = normalizeSlug(body?.slugEn) || slug || null;
     const metadata = {
       ...(body && typeof body === 'object' ? body : {}),
       bioEn: String(body?.bioEn || '').trim(),
+      slugEn: slugEn || '',
     };
     return serialize(await this.prisma.artist.create({
       data: {
         name: body.name,
-        slug: body.slug || null,
+        slug,
         photoUrl: body.photoUrl || body.imageUrl || null,
         country: body.country || null,
         genre: body.genre || null,
@@ -327,16 +331,25 @@ export class AdminController {
       current.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
         ? (current.metadata as Record<string, unknown>)
         : {};
+    const nextSlug =
+      body?.slug !== undefined
+        ? (normalizeSlug(body.slug) || null)
+        : current.slug;
+    const nextSlugEn =
+      body?.slugEn !== undefined
+        ? (normalizeSlug(body.slugEn) || nextSlug || '')
+        : normalizeSlug(currentMeta.slugEn) || nextSlug || '';
     const metadata = {
       ...currentMeta,
       ...(body && typeof body === 'object' ? body : {}),
       bioEn: String(body?.bioEn ?? currentMeta.bioEn ?? '').trim(),
+      slugEn: nextSlugEn || '',
     };
     return serialize(await this.prisma.artist.update({
       where: { id: toBigInt(id) },
       data: {
         name: body.name,
-        slug: body.slug,
+        slug: body.slug !== undefined ? nextSlug : undefined,
         photoUrl: body.photoUrl || body.imageUrl,
         country: body.country,
         genre: body.genre,
@@ -422,19 +435,54 @@ export class AdminController {
     }));
   }
 
+  private async assertSlugAvailable(slug: string, slugEn: string, excludeId?: bigint) {
+    const keys = [slug, slugEn].filter(Boolean);
+    if (!keys.length) return;
+
+    for (const key of keys) {
+      const clash = await this.prisma.poll.findFirst({
+        where: {
+          AND: [
+            pollLookupWhere(key),
+            excludeId ? { NOT: { id: excludeId } } : {},
+          ],
+        },
+        select: { id: true, slug: true },
+      });
+      if (clash) {
+        throw new ConflictException(`Ya existe una encuesta con el slug "${key}".`);
+      }
+    }
+
+    if (slug && slugEn && slug === slugEn) {
+      // Mismo valor en ES y EN es válido (una sola URL).
+      return;
+    }
+  }
+
   @Post('polls')
   async createPoll(@Body() body: any) {
     try {
+      const slug = normalizeSlug(body?.slug) || normalizeSlug(body?.title || body?.name) || null;
+      const slugEn =
+        normalizeSlug(body?.slugEn) ||
+        normalizeSlug(body?.titleEn) ||
+        slug ||
+        null;
+
+      await this.assertSlugAvailable(slug || '', slugEn || '');
+
       const config = {
         ...(body && typeof body === 'object' ? body : {}),
         titleEn: String(body?.titleEn || '').trim(),
         descriptionEn: String(body?.descriptionEn || '').trim(),
         bodyEn: String(body?.bodyEn || '').trim(),
+        slugEn: slugEn || '',
       };
       return serialize(await this.prisma.poll.create({
         data: {
           categoryId: body.categoryId ? toBigInt(body.categoryId) : null,
-          slug: body.slug || null,
+          slug,
           title: body.title || body.name,
           description: body.description || null,
           status: statusFor(body.status),
@@ -446,6 +494,7 @@ export class AdminController {
         },
       }));
     } catch (error) {
+      if (error instanceof ConflictException) throw error;
       if ((error as { code?: string })?.code === 'P2002') {
         throw new ConflictException('Ya existe una encuesta con ese slug.');
       }
@@ -464,19 +513,34 @@ export class AdminController {
       current.config && typeof current.config === 'object' && !Array.isArray(current.config)
         ? (current.config as Record<string, unknown>)
         : {};
+
+    const nextSlug =
+      body?.slug !== undefined
+        ? (normalizeSlug(body.slug) || null)
+        : current.slug;
+    const nextSlugEn =
+      body?.slugEn !== undefined
+        ? (normalizeSlug(body.slugEn) || normalizeSlug(body?.titleEn) || nextSlug || '')
+        : normalizeSlug(currentConfig.slugEn) || nextSlug || '';
+
+    if (body?.slug !== undefined || body?.slugEn !== undefined || body?.titleEn !== undefined) {
+      await this.assertSlugAvailable(nextSlug || '', nextSlugEn || '', current.id);
+    }
+
     const nextConfig = {
       ...currentConfig,
       ...(body && typeof body === 'object' ? body : {}),
       titleEn: String(body?.titleEn ?? currentConfig.titleEn ?? '').trim(),
       descriptionEn: String(body?.descriptionEn ?? currentConfig.descriptionEn ?? '').trim(),
       bodyEn: String(body?.bodyEn ?? currentConfig.bodyEn ?? '').trim(),
+      slugEn: nextSlugEn || '',
     };
 
     const poll = await this.prisma.poll.update({
       where: { id: toBigInt(id) },
       data: {
         categoryId: body.categoryId === undefined ? undefined : (body.categoryId ? toBigInt(body.categoryId) : null),
-        slug: body.slug,
+        slug: body.slug !== undefined ? nextSlug : undefined,
         title: body.title || body.name,
         description: body.description,
         status: body.status ? statusFor(body.status) : undefined,

@@ -3,24 +3,31 @@ import 'package:flutter/material.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../application/notification_controller.dart';
+import '../../application/notification_deep_link.dart';
 import '../../data/app_notification.dart';
 import '../../data/notification_display.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({
     required this.controller,
+    this.onSelectSection,
     super.key,
   });
 
   final NotificationController controller;
+  final void Function(String section)? onSelectSection;
 
   static Future<void> open(
     BuildContext context, {
     required NotificationController controller,
+    void Function(String section)? onSelectSection,
   }) {
     return Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => NotificationsScreen(controller: controller),
+        builder: (_) => NotificationsScreen(
+          controller: controller,
+          onSelectSection: onSelectSection,
+        ),
       ),
     );
   }
@@ -51,16 +58,24 @@ class NotificationsScreen extends StatelessWidget {
             AppBarPointsAction(session: controller.authService.session),
           ],
         ),
-        body: NotificationsPage(controller: controller),
+        body: NotificationsPage(
+          controller: controller,
+          onSelectSection: onSelectSection,
+        ),
       ),
     );
   }
 }
 
 class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({required this.controller, super.key});
+  const NotificationsPage({
+    required this.controller,
+    this.onSelectSection,
+    super.key,
+  });
 
   final NotificationController controller;
+  final void Function(String section)? onSelectSection;
 
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
@@ -73,6 +88,39 @@ class _NotificationsPageState extends State<NotificationsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.controller.refresh();
     });
+  }
+
+  Future<void> _openNotification(AppNotification notification) async {
+    await widget.controller.markRead(notification);
+    if (!mounted) return;
+
+    // Si el destino es otra pestaña principal, cerramos la bandeja primero.
+    final url = '${notification.payload['url'] ?? ''}'.trim();
+    final path = url.contains('://')
+        ? (Uri.tryParse(url)?.path ?? url)
+        : url;
+    final isTabDestination = path == '/votaciones' ||
+        path == '/artistas' ||
+        path == '/misiones' ||
+        path == '/' ||
+        path.isEmpty;
+
+    if (isTabDestination &&
+        notification.type != 'admin_points_gift' &&
+        notification.type != 'artist_push' &&
+        Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+
+    if (!mounted) return;
+    await NotificationDeepLink.openFromNotification(
+      context,
+      authService: widget.controller.authService,
+      notification: notification,
+      controller: widget.controller,
+      onSelectSection: widget.onSelectSection,
+      fromInbox: true,
+    );
   }
 
   String _formatDate(DateTime? value) {
@@ -226,7 +274,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   child: _NotificationTile(
                     notification: notification,
                     dateLabel: _formatDate(notification.createdAt),
-                    onTap: () => controller.markRead(notification),
+                    onTap: () => _openNotification(notification),
                   ),
                 ),
               ),

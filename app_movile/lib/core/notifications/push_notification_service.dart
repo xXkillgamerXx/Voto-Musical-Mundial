@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -29,8 +30,18 @@ class PushNotificationService {
   bool _initialized = false;
   bool _tokenRefreshAttached = false;
   String? _currentToken;
+
+  /// Se dispara al recibir push en foreground (para refrescar la bandeja).
   VoidCallback? onForegroundMessage;
+
+  /// Regalo en foreground.
   void Function(Map<String, dynamic> data)? onGiftPush;
+
+  /// Usuario tocó una notificación (push o local) y hay que abrir una vista.
+  void Function(Map<String, dynamic> data)? onNotificationOpened;
+
+  /// Deep link pendiente si el tap ocurrió antes de que AuthGate estuviera listo.
+  Map<String, dynamic>? pendingOpenData;
 
   String? get currentToken => _currentToken;
 
@@ -45,7 +56,7 @@ class PushNotificationService {
     const initSettings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (_) {},
+      onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
     );
 
     if (Platform.isAndroid) {
@@ -67,6 +78,7 @@ class PushNotificationService {
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
       _log('App abierta desde push: ${message.messageId}');
       onForegroundMessage?.call();
+      _emitOpened(Map<String, dynamic>.from(message.data));
     });
 
     unawaited(
@@ -74,12 +86,37 @@ class PushNotificationService {
         if (message != null) {
           _log('Push inicial al abrir app: ${message.messageId}');
           onForegroundMessage?.call();
+          _emitOpened(Map<String, dynamic>.from(message.data));
         }
       }),
     );
 
+    // Si la app se abrió tocando una notificación local (foreground → banner).
+    final launchDetails = await _localNotifications
+        .getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true) {
+      final response = launchDetails!.notificationResponse;
+      if (response != null) {
+        _handleLocalNotificationResponse(response);
+      }
+    }
+
     _initialized = true;
     unawaited(_logCurrentToken('init'));
+  }
+
+  /// Registra el handler de apertura y consume cualquier deep link pendiente.
+  void bindOpenHandler(void Function(Map<String, dynamic> data)? handler) {
+    onNotificationOpened = handler;
+    final pending = pendingOpenData;
+    if (handler != null && pending != null) {
+      pendingOpenData = null;
+      handler(pending);
+    }
+  }
+
+  void unbindOpenHandler() {
+    onNotificationOpened = null;
   }
 
   Future<bool> requestPermissionAndRegister(AuthService authService) async {
@@ -243,6 +280,8 @@ class PushNotificationService {
       return;
     }
 
+    final payload = jsonEncode(message.data);
+
     _localNotifications.show(
       message.hashCode,
       title,
@@ -255,7 +294,44 @@ class PushNotificationService {
           priority: Priority.high,
         ),
       ),
+      payload: payload,
     );
+  }
+
+  void _handleLocalNotificationResponse(NotificationResponse response) {
+    final raw = response.payload;
+    if (raw == null || raw.isEmpty) {
+      _emitOpened(const {});
+      return;
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        _emitOpened(decoded);
+        return;
+      }
+      if (decoded is Map) {
+        _emitOpened(Map<String, dynamic>.from(decoded));
+        return;
+      }
+    } catch (_) {
+      // Payload no JSON: tratar como url directa.
+      _emitOpened({'url': raw});
+      return;
+    }
+
+    _emitOpened(const {});
+  }
+
+  void _emitOpened(Map<String, dynamic> data) {
+    _log('Abrir desde notificación: $data');
+    final handler = onNotificationOpened;
+    if (handler != null) {
+      handler(data);
+      return;
+    }
+    pendingOpenData = data;
   }
 
   void _log(String message) {

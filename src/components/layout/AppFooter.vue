@@ -1,18 +1,24 @@
 <script setup>
-const footerLinks = [
-  { titleKey: 'nav.home', href: '/' },
-  { titleKey: 'nav.polls', href: '/votaciones' },
-  { titleKey: 'nav.artists', href: '/artistas' },
-  { titleKey: 'nav.rankingPopularity', href: '/ranking-popularity' },
-  { titleKey: 'nav.hallOfFame', href: '/salon-de-la-fama' },
-  { titleKey: 'nav.news', href: '/noticias' },
-]
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { routePath } from '../../utils/localizedRoutes'
 
-const legalLinks = [
-  { titleKey: 'footer.terms', href: '/terminos-y-condiciones' },
-  { titleKey: 'footer.privacy', href: '/politica-de-privacidad' },
+const { locale } = useI18n()
+
+const footerLinks = computed(() => [
+  { titleKey: 'nav.home', href: routePath('home', locale.value) },
+  { titleKey: 'nav.polls', href: routePath('polls', locale.value) },
+  { titleKey: 'nav.artists', href: routePath('artists', locale.value) },
+  { titleKey: 'nav.rankingPopularity', href: routePath('rankingPopularity', locale.value) },
+  { titleKey: 'nav.hallOfFame', href: routePath('hallOfFame', locale.value) },
+  { titleKey: 'nav.news', href: routePath('news', locale.value) },
+])
+
+const legalLinks = computed(() => [
+  { titleKey: 'footer.terms', href: routePath('terms', locale.value) },
+  { titleKey: 'footer.privacy', href: routePath('privacy', locale.value) },
   { titleKey: 'footer.contact', href: 'https://www.musicmundial.com/en/contact-us/', external: true },
-]
+])
 
 const socialLinks = [
   {

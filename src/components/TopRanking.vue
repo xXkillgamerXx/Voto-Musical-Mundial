@@ -1,10 +1,15 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getPollResults, getPolls } from '../services/api/pollsApi'
+import { artistUrl as buildArtistUrl } from '../utils/pollLocale'
+import { routePath } from '../utils/localizedRoutes'
 
+const { locale } = useI18n()
 const artists = ref([])
 const isLoading = ref(true)
+const artistsHref = computed(() => routePath('artists', locale.value))
 const WEEKLY_ROTATION_POOL_SIZE = 12
 const CLOSED_POLLS_LIMIT = 12
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
@@ -19,7 +24,7 @@ const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || ''
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
-const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`
+const artistUrl = (artist) => buildArtistUrl(artist, locale.value)
 
 const getPollClosedAt = (poll) => {
   const config = poll?.config || {}
@@ -171,7 +176,7 @@ onMounted(loadClosedPollArtists)
           {{ $t('widgets.topRanking.subtitle') }}
         </p>
       </div>
-      <a href="/artistas" class="shrink-0 text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
+      <a :href="artistsHref" class="shrink-0 text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white">
         {{ $t('widgets.topRanking.viewArtists') }}
       </a>
     </div>

@@ -1,6 +1,7 @@
 import { createI18n } from 'vue-i18n'
 import en from './locales/en'
 import es from './locales/es'
+import { syncLocalizedLocation } from '../utils/localizedRoutes'
 
 export const DEFAULT_LOCALE = 'es'
 export const LOCALE_STORAGE_KEY = 'vmm-locale'
@@ -41,6 +42,7 @@ export const setLocale = (locale) => {
   i18n.global.locale.value = locale
   window.localStorage.setItem(LOCALE_STORAGE_KEY, locale)
   document.documentElement.lang = locale
+  syncLocalizedLocation(locale)
 }
 
 export const translate = (...args) => i18n.global.t(...args)

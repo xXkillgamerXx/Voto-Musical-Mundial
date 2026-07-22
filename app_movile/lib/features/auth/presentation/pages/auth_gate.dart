@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/notifications/push_notification_service.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
@@ -14,6 +15,7 @@ import '../../../home/presentation/pages/missions_page.dart';
 import '../../../home/presentation/pages/news_page.dart';
 import '../../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../../notifications/application/notification_controller.dart';
+import '../../../notifications/application/notification_deep_link.dart';
 import '../../../notifications/presentation/pages/notifications_page.dart';
 import '../../../notifications/presentation/widgets/gift_notification_modal.dart';
 import '../../../notifications/presentation/widgets/notifications_bell.dart';
@@ -105,7 +107,21 @@ class _SignedInPageState extends State<_SignedInPage> {
       unawaited(_notifications.initialize());
       unawaited(_maybeShowDailyReward());
       unawaited(_notifications.enablePush());
+      PushNotificationService.instance.bindOpenHandler(_handlePushOpened);
     });
+  }
+
+  void _handlePushOpened(Map<String, dynamic> data) {
+    if (!mounted) return;
+    unawaited(
+      NotificationDeepLink.open(
+        context,
+        authService: widget.authService,
+        data: data,
+        controller: _notifications,
+        onSelectSection: _selectSection,
+      ),
+    );
   }
 
   Future<void> _maybeShowDailyReward() async {
@@ -137,6 +153,7 @@ class _SignedInPageState extends State<_SignedInPage> {
 
   @override
   void dispose() {
+    PushNotificationService.instance.unbindOpenHandler();
     _notifications.dispose();
     _pageController.dispose();
     super.dispose();
@@ -182,7 +199,10 @@ class _SignedInPageState extends State<_SignedInPage> {
                         : null),
               actions: [
                 AppBarPointsAction(session: widget.authService.session),
-                NotificationsBell(controller: _notifications),
+                NotificationsBell(
+                  controller: _notifications,
+                  onSelectSection: _selectSection,
+                ),
                 const SizedBox(width: 4),
               ],
             ),
@@ -200,7 +220,11 @@ class _SignedInPageState extends State<_SignedInPage> {
                   return;
                 }
                 if (section == 'Notificaciones') {
-                  NotificationsScreen.open(context, controller: _notifications);
+                  NotificationsScreen.open(
+                    context,
+                    controller: _notifications,
+                    onSelectSection: _selectSection,
+                  );
                   return;
                 }
                 if (section == 'Salón de la fama') {

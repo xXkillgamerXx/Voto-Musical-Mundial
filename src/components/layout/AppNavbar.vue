@@ -2,21 +2,23 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { availableLocales, setLocale, translate } from "../../i18n";
+import { routePath } from "../../utils/localizedRoutes";
 import AuthModal from "../auth/AuthModal.vue";
 import ThemeToggle from "../theme/ThemeToggle.vue";
 import UserNotificationsMenu from "../UserNotificationsMenu.vue";
 import { getMe, getCurrentApiAuth, logout } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
 
-const navItems = [
-  { labelKey: "nav.home", href: "/" },
-  { labelKey: "nav.polls", href: "/votaciones" },
-  { labelKey: "nav.artists", href: "/artistas" },
-  { labelKey: "nav.rankingPopularity", href: "/ranking-popularity" },
-  { labelKey: "nav.hallOfFame", href: "/salon-de-la-fama" },
-  { labelKey: "nav.news", href: "/noticias" },
-];
 const { locale } = useI18n();
+const navItems = computed(() => [
+  { labelKey: "nav.home", href: routePath("home", locale.value) },
+  { labelKey: "nav.polls", href: routePath("polls", locale.value) },
+  { labelKey: "nav.artists", href: routePath("artists", locale.value) },
+  { labelKey: "nav.rankingPopularity", href: routePath("rankingPopularity", locale.value) },
+  { labelKey: "nav.hallOfFame", href: routePath("hallOfFame", locale.value) },
+  { labelKey: "nav.news", href: routePath("news", locale.value) },
+]);
+const notificationsHref = computed(() => routePath("notifications", locale.value));
 const isMenuOpen = ref(false);
 const isAuthModalOpen = ref(false);
 const isAccountMenuOpen = ref(false);
@@ -375,7 +377,7 @@ onUnmounted(() => {
               Misiones
             </a>
             <a
-              href="/notificaciones"
+              :href="notificationsHref"
               class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
               Notificaciones
@@ -527,7 +529,7 @@ onUnmounted(() => {
           </a>
           <a
             v-if="isSignedInUser"
-            href="/notificaciones"
+            :href="notificationsHref"
             class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
             @click="isMenuOpen = false"
           >

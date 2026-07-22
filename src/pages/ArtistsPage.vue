@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 import { resolveArtistBanner } from '../utils/artistMedia'
-import { applyArtistLocale } from '../utils/pollLocale'
+import { applyArtistLocale, artistUrl as buildArtistUrl } from '../utils/pollLocale'
 
 const { locale } = useI18n()
 const artists = ref([])
@@ -19,7 +19,7 @@ const getArtistBanner = (artist) => resolveArtistBanner(artist)
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 
-const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`
+const artistUrl = (artist) => buildArtistUrl(artist, locale.value)
 
 const getWeeklyRotationIndex = (itemsLength) => {
   if (!itemsLength) {

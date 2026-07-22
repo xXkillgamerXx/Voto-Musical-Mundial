@@ -7,6 +7,7 @@ import {
   pickArtistImage,
   resolveArtistCardImage,
 } from "../utils/artistMedia";
+import { artistUrl as buildArtistUrl } from "../utils/pollLocale";
 
 const { locale } = useI18n();
 const artists = ref([]);
@@ -38,7 +39,7 @@ const getArtistCardImage = (artist) => resolveArtistCardImage(artist);
 
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
 
-const artistUrl = (artist) => `/artista/${artist.slug || artist.id}`;
+const artistUrl = (artist) => buildArtistUrl(artist, locale.value);
 const currentChartWeek = computed(() => {
   const now = new Date();
   const firstDayOfYear = new Date(now.getFullYear(), 0, 1);

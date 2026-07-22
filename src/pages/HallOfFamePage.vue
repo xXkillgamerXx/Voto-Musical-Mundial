@@ -3,7 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { getPollResults, getPolls } from '../services/api/pollsApi'
-import { applyPollLocale } from '../utils/pollLocale'
+import { applyPollLocale, resolvePollSlug } from '../utils/pollLocale'
+import { routePath } from '../utils/localizedRoutes'
 
 const { locale } = useI18n()
 const polls = ref([])
@@ -13,8 +14,18 @@ const errorMessage = ref('')
 const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.photoUrl || artist?.foto || artist?.banner || ''
 
-const pollYearForUrl = (poll) => poll.year || poll.categoryYear || poll.category?.year || 'historial'
-const pollUrl = (poll) => `/votacion/${pollYearForUrl(poll)}/${poll.slug || poll.id}`
+const pollYearForUrl = (poll) => {
+  const year = poll.year || poll.categoryYear || poll.category?.year
+  if (year) return year
+  return locale.value === 'en' ? 'history' : 'historial'
+}
+const pollUrl = (poll) => {
+  const year = pollYearForUrl(poll)
+  const slug = resolvePollSlug(poll, locale.value)
+  const prefix = locale.value === 'en' ? '/poll' : '/votacion'
+  return `${prefix}/${year}/${slug}`
+}
+const hallOfFameHome = computed(() => routePath('hallOfFame', locale.value))
 
 const categoryTitleFor = (poll) => {
   const localized = applyPollLocale(poll, locale.value)

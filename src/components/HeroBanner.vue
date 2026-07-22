@@ -4,7 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { subscribePublicResults } from '../services/pollResults'
-import { applyPollLocale } from '../utils/pollLocale'
+import { applyPollLocale, pollUrl as buildPollUrl } from '../utils/pollLocale'
+import { routePath } from '../utils/localizedRoutes'
 
 const { locale } = useI18n()
 const activeSlide = ref(0)
@@ -65,7 +66,8 @@ const parsePercent = (value) => Number(String(value || 0).replace('%', ''))
 
 const formatVotes = (value) => Math.round(Number(value || 0)).toLocaleString('es-ES')
 const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`
-const pollUrl = (poll) => `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`
+const pollUrl = (poll) => buildPollUrl(poll, locale.value)
+const rankingHref = computed(() => routePath('rankingPopularity', locale.value))
 const getArtistName = (artistId) =>
   artists.value.find((artist) => artist.id === artistId)?.name || translate('common.fallback.favoriteArtist')
 const getEffectiveRoundId = (poll) => poll.activeRoundId || activeRoundIds.value[poll.id] || ''
@@ -464,7 +466,7 @@ onUnmounted(() => {
             <span aria-hidden="true">→</span>
           </a>
           <a
-            href="/ranking-popularity"
+            :href="rankingHref"
             class="flex min-h-14 items-center justify-center rounded-2xl border border-white/15 bg-white/5 px-6 text-center text-sm font-bold text-slate-200 transition hover:bg-white/10"
           >
             {{ $t('widgets.hero.viewRankings') }}

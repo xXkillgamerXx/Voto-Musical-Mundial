@@ -64,14 +64,32 @@ export const applyArtistLocale = (artist, locale = 'es') => {
   const metadata = asRecord(artist.metadata)
   const bioEs = pickText(artist.bioEs, artist.bio, metadata.bio)
   const bioEn = pickText(artist.bioEn, metadata.bioEn)
+  const slugEs = pickText(artist.slugEs, artist.slug, metadata.slug)
+  const slugEn = pickText(artist.slugEn, metadata.slugEn)
   const useEn = resolvePollLocale(locale) === 'en'
 
   return {
     ...artist,
     bioEs,
     bioEn,
+    slugEs,
+    slugEn,
     bio: useEn ? pickText(bioEn, bioEs) : bioEs,
+    slug: useEn ? pickText(slugEn, slugEs, artist.id) : pickText(slugEs, slugEn, artist.id),
   }
+}
+
+export const resolveArtistSlug = (artist, locale = 'es') => {
+  if (!artist) return ''
+  const localized = applyArtistLocale(artist, locale)
+  return pickText(localized.slug, artist.id)
+}
+
+export const artistUrl = (artist, locale = 'es') => {
+  if (!artist) return resolvePollLocale(locale) === 'en' ? '/artists' : '/artistas'
+  const slug = resolveArtistSlug(artist, locale)
+  const prefix = resolvePollLocale(locale) === 'en' ? '/artist' : '/artista'
+  return `${prefix}/${slug}`
 }
 
 export const withPollLocaleFields = (poll) => {
@@ -94,6 +112,8 @@ export const withPollLocaleFields = (poll) => {
     titleEn: pickText(poll.titleEn, config.titleEn, metadata.titleEn),
     descriptionEn: pickText(poll.descriptionEn, config.descriptionEn, metadata.descriptionEn),
     bodyEn: pickText(poll.bodyEn, config.bodyEn, metadata.bodyEn),
+    slugEs: pickText(poll.slugEs, poll.slug, config.slug),
+    slugEn: pickText(poll.slugEn, config.slugEn, metadata.slugEn),
     categoryNameEs: pickText(
       poll.categoryNameEs,
       category?.name,
@@ -109,6 +129,29 @@ export const withPollLocaleFields = (poll) => {
       metadata.categoryNameEn,
     ),
   }
+}
+
+/** Slug según idioma (EN usa slugEn; si no hay, cae al ES / id). */
+export const resolvePollSlug = (poll, locale = 'es') => {
+  if (!poll) return ''
+  const localized = withPollLocaleFields(poll)
+  const useEn = resolvePollLocale(locale) === 'en'
+  return useEn
+    ? pickText(localized.slugEn, localized.slugEs, poll.id)
+    : pickText(localized.slugEs, localized.slugEn, poll.id)
+}
+
+/** URL pública localizada: `/votacion|poll/{year}/{slug}`. */
+export const pollUrl = (poll, locale = 'es') => {
+  if (!poll) return resolvePollLocale(locale) === 'en' ? '/polls' : '/votaciones'
+  const year =
+    Number(poll.year) ||
+    Number(asRecord(poll.config).year) ||
+    Number(asRecord(poll.metadata).year) ||
+    new Date().getFullYear()
+  const slug = resolvePollSlug(poll, locale)
+  const prefix = resolvePollLocale(locale) === 'en' ? '/poll' : '/votacion'
+  return `${prefix}/${year}/${slug}`
 }
 
 export const applyPollLocale = (poll, locale = 'es') => {
@@ -136,6 +179,9 @@ export const applyPollLocale = (poll, locale = 'es') => {
     body: useEn
       ? pickText(localized.bodyEn, localized.bodyEs)
       : pickText(localized.bodyEs, localized.body),
+    slug: useEn
+      ? pickText(localized.slugEn, localized.slugEs, poll.id)
+      : pickText(localized.slugEs, localized.slugEn, poll.id),
     categoryName,
     category: typeof localizedCategory === 'object' && localizedCategory
       ? localizedCategory

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { artistLookupWhere } from '../../common/artist-lookup';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -30,9 +31,7 @@ export class ArtistsService {
 
   async findOne(id: string) {
     const artist = await this.prisma.artist.findFirst({
-      where: {
-        OR: [{ id: BigInt(Number(id) || 0) }, { slug: id }, { firebaseId: id }],
-      },
+      where: artistLookupWhere(id),
     });
 
     return serialize(artist);
@@ -40,9 +39,7 @@ export class ArtistsService {
 
   private async resolveArtist(id: string) {
     const artist = await this.prisma.artist.findFirst({
-      where: {
-        OR: [{ id: BigInt(Number(id) || 0) }, { slug: id }, { firebaseId: id }],
-      },
+      where: artistLookupWhere(id),
       select: { id: true, followersCount: true },
     });
 

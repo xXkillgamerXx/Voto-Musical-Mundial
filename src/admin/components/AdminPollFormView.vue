@@ -21,6 +21,8 @@ const props = defineProps({
 const emptyPoll = {
   title: '',
   titleEn: '',
+  slug: '',
+  slugEn: '',
   description: '',
   descriptionEn: '',
   body: '',
@@ -100,6 +102,19 @@ const createSlug = (value) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
+
+const syncSlugFromTitle = (localeKey) => {
+  if (localeKey === 'en') {
+    if (!pollForm.value.slugEn.trim() && pollForm.value.titleEn.trim()) {
+      pollForm.value.slugEn = createSlug(pollForm.value.titleEn)
+    }
+    return
+  }
+
+  if (!pollForm.value.slug.trim() && pollForm.value.title.trim()) {
+    pollForm.value.slug = createSlug(pollForm.value.title)
+  }
+}
 
 const isAcceptedImageFile = (file) => {
   const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp']
@@ -212,6 +227,8 @@ const loadPoll = async () => {
     pollForm.value = {
       title: poll.title || '',
       titleEn: poll.titleEn || '',
+      slug: poll.slug || createSlug(poll.title || ''),
+      slugEn: poll.slugEn || createSlug(poll.titleEn || '') || createSlug(poll.title || ''),
       description: poll.description || '',
       descriptionEn: poll.descriptionEn || '',
       body: poll.body || '',
@@ -245,6 +262,9 @@ const savePoll = async () => {
 
   isSaving.value = true
 
+  const slugEs = createSlug(pollForm.value.slug || pollForm.value.title)
+  const slugEn = createSlug(pollForm.value.slugEn || pollForm.value.titleEn || pollForm.value.title)
+
   const pollData = {
     title: pollForm.value.title.trim(),
     titleEn: pollForm.value.titleEn.trim(),
@@ -260,7 +280,8 @@ const savePoll = async () => {
     displayType: 'list',
     phase: 'initial',
     year: Number(pollForm.value.year || selectedCategory.value?.year || new Date().getFullYear()),
-    slug: createSlug(pollForm.value.title),
+    slug: slugEs,
+    slugEn: slugEn || slugEs,
     anonymousVoting: {
       enabled: Boolean(pollForm.value.anonymousVotingEnabled),
       cooldownMinutes: Math.max(
@@ -460,6 +481,7 @@ onMounted(async () => {
               required
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
               :placeholder="$t('admin.pollForm.titlePlaceholder')"
+              @blur="syncSlugFromTitle('es')"
             />
             <input
               v-else
@@ -467,7 +489,36 @@ onMounted(async () => {
               type="text"
               class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
               placeholder="Poll title in English"
+              @blur="syncSlugFromTitle('en')"
             />
+          </label>
+
+          <label class="block">
+            <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+              {{ activeLocale === 'es' ? $t('admin.pollForm.slug') + ' (ES)' : $t('admin.pollForm.slugEn') }}
+            </span>
+            <input
+              v-if="activeLocale === 'es'"
+              v-model="pollForm.slug"
+              type="text"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              :placeholder="$t('admin.pollForm.slugPlaceholder')"
+              @blur="pollForm.slug = createSlug(pollForm.slug || pollForm.title)"
+            />
+            <input
+              v-else
+              v-model="pollForm.slugEn"
+              type="text"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+              :placeholder="$t('admin.pollForm.slugEnPlaceholder')"
+              @blur="pollForm.slugEn = createSlug(pollForm.slugEn || pollForm.titleEn || pollForm.title)"
+            />
+            <span class="mt-2 block text-xs font-bold leading-5 text-slate-500">
+              {{ $t('admin.pollForm.slugHelp') }}
+              <span class="text-fuchsia-300/80">
+                /votacion/{{ pollForm.year }}/{{ activeLocale === 'en' ? (pollForm.slugEn || pollForm.slug || '...') : (pollForm.slug || '...') }}
+              </span>
+            </span>
           </label>
 
           <label class="block">

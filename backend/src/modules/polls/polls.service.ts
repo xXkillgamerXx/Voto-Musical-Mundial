@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PollStatus } from '@prisma/client';
+import { pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -48,9 +49,7 @@ export class PollsService {
 
   async findOne(id: string) {
     const poll = await this.prisma.poll.findFirst({
-      where: {
-        OR: [{ id: BigInt(Number(id) || 0) }, { slug: id }, { firebaseId: id }],
-      },
+      where: pollLookupWhere(id),
       include: {
         category: true,
         rounds: { orderBy: { createdAt: 'asc' } },
@@ -70,7 +69,7 @@ export class PollsService {
 
   async getResults(pollId: string, roundId?: string) {
     const poll = await this.prisma.poll.findFirst({
-      where: { OR: [{ id: BigInt(Number(pollId) || 0) }, { slug: pollId }, { firebaseId: pollId }] },
+      where: pollLookupWhere(pollId),
       select: { id: true },
     });
     if (!poll) throw new NotFoundException('La votacion no existe.');

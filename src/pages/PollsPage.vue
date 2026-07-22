@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
-import { applyPollLocale } from "../utils/pollLocale";
+import { applyPollLocale, pollUrl as buildPollUrl } from "../utils/pollLocale";
+import { routePath } from "../utils/localizedRoutes";
 import { subscribePollsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
@@ -12,8 +13,10 @@ const errorMessage = ref("");
 const selectedCategoryId = ref(new URLSearchParams(window.location.search).get("categoria") || "");
 let unsubscribePolls = null;
 
-const pollUrl = (poll) =>
-  `/votacion/${poll.year || new Date().getFullYear()}/${poll.slug || poll.id}`;
+const pollUrl = (poll) => buildPollUrl(poll, locale.value);
+const pollsHref = computed(() => routePath("polls", locale.value));
+const rankingHref = computed(() => routePath("rankingPopularity", locale.value));
+const hallHref = computed(() => routePath("hallOfFame", locale.value));
 
 const statusLabel = (status) =>
   ({
@@ -129,7 +132,7 @@ onUnmounted(() => {
         </h2>
       </div>
       <a
-        href="/votaciones"
+        :href="pollsHref"
         class="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10 hover:text-white"
       >
         Ver todas
@@ -298,13 +301,13 @@ onUnmounted(() => {
 
             <div class="flex flex-col justify-end gap-3 sm:flex-row lg:min-w-80 lg:flex-col">
               <a
-                href="/ranking-popularity"
+                :href="rankingHref"
                 class="inline-flex min-h-12 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/25 transition hover:scale-[1.01]"
               >
                 {{ $t("polls.list.viewRanking") }}
               </a>
               <a
-                href="/salon-de-la-fama"
+                :href="hallHref"
                 class="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-5 text-xs font-black uppercase tracking-wide text-white transition hover:bg-white/12"
               >
                 {{ $t("polls.list.hallOfFame") }}

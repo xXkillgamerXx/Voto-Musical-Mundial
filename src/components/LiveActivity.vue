@@ -1,10 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { getStoredAuth } from '../services/api/client'
 import { onRealtimeConnectionChange, subscribeLivePollsRealtime } from '../services/api/realtimeApi'
 import { getRecentVoteActivity } from '../services/api/votesApi'
+import { pollUrl as buildPollUrl, withPollLocaleFields } from '../utils/pollLocale'
+
+const { locale } = useI18n()
 
 const artists = ref([])
 const pollTitleById = ref({})
@@ -93,10 +97,17 @@ const pollTitleFor = (vote) =>
 
 const pollUrlFor = (vote) => {
   const meta = pollMetaById.value[String(vote?.pollId || '')] || {}
-  const year = vote?.pollYear || meta.year || new Date().getFullYear()
-  const slug = vote?.pollSlug || meta.slug || vote?.pollId
-
-  return slug ? `/votacion/${year}/${slug}` : '/votaciones'
+  if (!meta.id && !vote?.pollId) return '/votaciones'
+  return buildPollUrl(
+    {
+      id: meta.id || vote?.pollId,
+      slug: meta.slug,
+      slugEn: meta.slugEn,
+      year: vote?.pollYear || meta.year,
+      config: { slugEn: meta.slugEn, year: meta.year },
+    },
+    locale.value,
+  )
 }
 
 const formatTime = (createdAt, currentNow = now.value) => {
@@ -237,13 +248,18 @@ const syncPollTitles = (pollRows) => {
   pollMetaById.value = Object.fromEntries(
     (pollRows || [])
       .filter((poll) => poll?.id)
-      .map((poll) => [
-        String(poll.id),
-        {
-          slug: poll.slug || poll.id,
-          year: poll.year || new Date().getFullYear(),
-        },
-      ]),
+      .map((poll) => {
+        const localized = withPollLocaleFields(poll)
+        return [
+          String(poll.id),
+          {
+            id: String(poll.id),
+            slug: localized.slugEs || poll.slug || poll.id,
+            slugEn: localized.slugEn || '',
+            year: poll.year || new Date().getFullYear(),
+          },
+        ]
+      }),
   )
 
   if (livePollIds.value.size) {

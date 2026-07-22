@@ -1,10 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
 import { checkUsername, getCurrentApiAuth, getMe, getPublicProfile, updateMe, uploadProfileImage as uploadProfileImageFile } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
 import ReportModal from '../components/ReportModal.vue'
+import { artistUrl as buildArtistUrl } from '../utils/pollLocale'
+import { routePath } from '../utils/localizedRoutes'
 
+const { locale } = useI18n()
 const pathParts = window.location.pathname.split('/').filter(Boolean)
 const routeUsername = pathParts[0] === 'user' ? (pathParts[1] || '').toLowerCase() : ''
 
@@ -71,27 +75,31 @@ const isUsernameBlocked = computed(() => {
   return isCheckingUsername.value || !usernameStatus.value?.valid || !usernameStatus.value?.available
 })
 
-const artistUrl = (artist) => `/artista/${artist.artistSlug || artist.artistId}`
+const artistUrl = (artist) =>
+  buildArtistUrl(
+    { id: artist.artistId, slug: artist.artistSlug, slugEn: artist.artistSlugEn },
+    locale.value,
+  )
 
 const emptyFollowingActions = computed(() => [
   {
     title: translate('profile.emptyFollowingActions.artists.title'),
     text: translate('profile.emptyFollowingActions.artists.text'),
-    href: '/artistas',
+    href: routePath('artists', locale.value),
     icon: 'fa-solid fa-microphone-lines',
     visual: 'from-violet-950 via-fuchsia-700 to-indigo-950',
   },
   {
     title: translate('profile.emptyFollowingActions.ranking.title'),
     text: translate('profile.emptyFollowingActions.ranking.text'),
-    href: '/ranking-popularity',
+    href: routePath('rankingPopularity', locale.value),
     icon: 'fa-solid fa-ranking-star',
     visual: 'from-slate-800 via-violet-700 to-slate-950',
   },
   {
     title: translate('profile.emptyFollowingActions.polls.title'),
     text: translate('profile.emptyFollowingActions.polls.text'),
-    href: '/votaciones',
+    href: routePath('polls', locale.value),
     icon: 'fa-solid fa-check-to-slot',
     visual: 'from-fuchsia-900 via-pink-700 to-slate-950',
   },
@@ -454,7 +462,7 @@ onUnmounted(() => {
             <h2 class="mt-2 text-2xl font-black text-white">{{ $t('profile.followedArtists') }}</h2>
           </div>
           <a
-            href="/ranking-popularity"
+            :href="routePath('rankingPopularity', locale)"
             class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10"
           >
             {{ $t('profile.viewPopular') }}
@@ -500,7 +508,7 @@ onUnmounted(() => {
                 </p>
               </div>
               <a
-                href="/ranking-popularity"
+                :href="routePath('rankingPopularity', locale)"
                 class="inline-flex min-h-11 items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
               >
                 {{ $t('profile.viewPopular') }}
