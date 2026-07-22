@@ -15,6 +15,7 @@ import '../../../home/data/poll.dart';
 import '../../../home/data/polls_api.dart';
 import '../../../home/data/votes_api.dart';
 import '../../data/poll_realtime_service.dart';
+import 'poll_comments_page.dart';
 
 class PollDetailPage extends StatefulWidget {
   const PollDetailPage({
@@ -715,6 +716,16 @@ class _PollDetailPageState extends State<PollDetailPage> {
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: tr('pollDetail.commentsTitle'),
+            onPressed: () => PollCommentsPage.open(
+              context,
+              pollId: widget.pollId,
+              authService: widget.authService,
+              pollTitle: poll?.title,
+            ),
+            icon: const Icon(Icons.forum_rounded),
+          ),
           AppBarPointsAction(session: widget.authService.session),
         ],
       ),
@@ -787,7 +798,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       )
                     else if (_selectedRound?.type == 'versus')
                       SliverPadding(
-                        padding: EdgeInsets.fromLTRB(14, 4, 14, bottomClearance),
+                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
                         sliver: SliverList.separated(
                           itemCount: _versusGroups(_entries).length,
                           separatorBuilder: (_, _) =>
@@ -810,7 +821,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       )
                     else
                       SliverPadding(
-                        padding: EdgeInsets.fromLTRB(14, 4, 14, bottomClearance),
+                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
                         sliver: SliverList.separated(
                           itemCount: _entries.length,
                           separatorBuilder: (_, _) =>
@@ -831,6 +842,16 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           },
                         ),
                       ),
+                    SliverToBoxAdapter(
+                      child: PollCommentsEntry(
+                        pollId: widget.pollId,
+                        authService: widget.authService,
+                        pollTitle: poll.title,
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(height: bottomClearance),
+                    ),
                   ],
                 ),
               ),

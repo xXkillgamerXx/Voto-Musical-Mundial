@@ -156,4 +156,156 @@ const Map<String, Map<String, String>> pollDetailStrings = {
 
   // Estado de error
   'pollDetail.retry': {'es': 'REINTENTAR', 'en': 'RETRY', 'ko': '다시 시도'},
+
+  // Comentarios
+  'pollDetail.commentsEyebrow': {
+    'es': 'COMUNIDAD',
+    'en': 'COMMUNITY',
+    'ko': '커뮤니티',
+  },
+  'pollDetail.commentsTitle': {
+    'es': 'Comentarios',
+    'en': 'Comments',
+    'ko': '댓글',
+  },
+  'pollDetail.commentsChatTitle': {
+    'es': 'Chat',
+    'en': 'Chat',
+    'ko': '채팅',
+  },
+  'pollDetail.commentsOpenHint': {
+    'es': 'Ver y escribir comentarios',
+    'en': 'View and write comments',
+    'ko': '댓글 보기 및 작성',
+  },
+  'pollDetail.commentsPlaceholder': {
+    'es': 'Escribe tu comentario...',
+    'en': 'Write your comment...',
+    'ko': '댓글을 작성하세요...',
+  },
+  'pollDetail.commentsCount': {
+    'es': '{count} COMENTARIOS',
+    'en': '{count} COMMENTS',
+    'ko': '댓글 {count}개',
+  },
+  'pollDetail.commentsPublish': {
+    'es': 'PUBLICAR',
+    'en': 'POST',
+    'ko': '게시',
+  },
+  'pollDetail.commentsPublishing': {
+    'es': 'PUBLICANDO...',
+    'en': 'POSTING...',
+    'ko': '게시 중...',
+  },
+  'pollDetail.commentsLoginHint': {
+    'es': 'Inicia sesión para comentar.',
+    'en': 'Log in to comment.',
+    'ko': '댓글을 쓰려면 로그인하세요.',
+  },
+  'pollDetail.commentsMinChars': {
+    'es': 'Mínimo {count} caracteres.',
+    'en': 'At least {count} characters.',
+    'ko': '최소 {count}자.',
+  },
+  'pollDetail.commentsCooldown': {
+    'es': 'Espera {time} para comentar de nuevo.',
+    'en': 'Wait {time} before commenting again.',
+    'ko': '{time} 후에 다시 댓글을 쓸 수 있습니다.',
+  },
+  'pollDetail.commentsEmptyTitle': {
+    'es': 'Aún no hay comentarios',
+    'en': 'No comments yet',
+    'ko': '아직 댓글이 없습니다',
+  },
+  'pollDetail.commentsEmptyBody': {
+    'es': 'Sé el primero en opinar sobre esta votación.',
+    'en': 'Be the first to comment on this poll.',
+    'ko': '이 투표에 첫 댓글을 남겨보세요.',
+  },
+  'pollDetail.commentsLoadError': {
+    'es': 'No se pudieron cargar los comentarios.',
+    'en': 'Comments could not be loaded.',
+    'ko': '댓글을 불러올 수 없습니다.',
+  },
+  'pollDetail.commentsPublishError': {
+    'es': 'No se pudo publicar el comentario.',
+    'en': 'The comment could not be posted.',
+    'ko': '댓글을 게시할 수 없습니다.',
+  },
+  'pollDetail.commentsDeleteTitle': {
+    'es': 'Eliminar comentario',
+    'en': 'Delete comment',
+    'ko': '댓글 삭제',
+  },
+  'pollDetail.commentsDeleteBody': {
+    'es': '¿Seguro que quieres borrar este comentario?',
+    'en': 'Are you sure you want to delete this comment?',
+    'ko': '이 댓글을 삭제할까요?',
+  },
+  'pollDetail.commentsDelete': {
+    'es': 'Eliminar',
+    'en': 'Delete',
+    'ko': '삭제',
+  },
+  'pollDetail.commentsCancel': {
+    'es': 'Cancelar',
+    'en': 'Cancel',
+    'ko': '취소',
+  },
+  'pollDetail.commentsDeleteError': {
+    'es': 'No se pudo eliminar el comentario.',
+    'en': 'The comment could not be deleted.',
+    'ko': '댓글을 삭제할 수 없습니다.',
+  },
+  'pollDetail.commentsJustNow': {
+    'es': 'ahora',
+    'en': 'now',
+    'ko': '방금',
+  },
+  'pollDetail.commentsMinutesAgo': {
+    'es': 'hace {count} min',
+    'en': '{count} min ago',
+    'ko': '{count}분 전',
+  },
+  'pollDetail.commentsHoursAgo': {
+    'es': 'hace {count} h',
+    'en': '{count}h ago',
+    'ko': '{count}시간 전',
+  },
+  'pollDetail.commentsDaysAgo': {
+    'es': 'hace {count} d',
+    'en': '{count}d ago',
+    'ko': '{count}일 전',
+  },
+  'pollDetail.commentsGifSearchTitle': {
+    'es': 'Buscar GIF',
+    'en': 'Search GIF',
+    'ko': 'GIF 검색',
+  },
+  'pollDetail.commentsGifSearchHint': {
+    'es': 'Buscar GIF en GIPHY...',
+    'en': 'Search GIF on GIPHY...',
+    'ko': 'GIPHY에서 GIF 검색...',
+  },
+  'pollDetail.commentsGifSearch': {
+    'es': 'Buscar',
+    'en': 'Search',
+    'ko': '검색',
+  },
+  'pollDetail.commentsGifByGiphy': {
+    'es': 'GIF POR GIPHY',
+    'en': 'GIF BY GIPHY',
+    'ko': 'GIPHY GIF',
+  },
+  'pollDetail.commentsGifLoadError': {
+    'es': 'No se pudieron cargar GIFs de GIPHY.',
+    'en': 'Could not load GIFs from GIPHY.',
+    'ko': 'GIPHY GIF를 불러올 수 없습니다.',
+  },
+  'pollDetail.commentsGifMissingKey': {
+    'es': 'Falta configurar GIPHY_API_KEY para buscar GIFs.',
+    'en': 'GIPHY_API_KEY is missing for GIF search.',
+    'ko': 'GIF 검색을 위해 GIPHY_API_KEY가 필요합니다.',
+  },
 };

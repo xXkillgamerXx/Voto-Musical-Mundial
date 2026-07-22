@@ -23,4 +23,11 @@ class ApiConfig {
     defaultValue:
         '927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com',
   );
+
+  /// Misma clave que `VITE_GIPHY_API_KEY` en la web (`.env`).
+  /// Se puede sobreescribir con `--dart-define=GIPHY_API_KEY=...`
+  static const giphyApiKey = String.fromEnvironment(
+    'GIPHY_API_KEY',
+    defaultValue: 'y6JAoCFwoiRlmmkcXapPcfHK0U2gzSpf',
+  );
 }
