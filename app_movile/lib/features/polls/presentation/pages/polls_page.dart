@@ -88,14 +88,11 @@ class _PollsPageState extends State<PollsPage>
   }
 
   void _openPoll(Poll poll) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PollDetailPage(
-          authService: widget.authService,
-          pollId: poll.id,
-          initialPoll: poll,
-        ),
-      ),
+    PollDetailPage.open(
+      context,
+      authService: widget.authService,
+      pollId: poll.id,
+      initialPoll: poll,
     );
   }
 

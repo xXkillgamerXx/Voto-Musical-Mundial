@@ -30,6 +30,40 @@ class PollDetailPage extends StatefulWidget {
 
   @override
   State<PollDetailPage> createState() => _PollDetailPageState();
+
+  static Future<void> open(
+    BuildContext context, {
+    required AuthService authService,
+    required String pollId,
+    Poll? initialPoll,
+  }) {
+    const bg = Color(0xFF050213);
+    return Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        opaque: true,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return ColoredBox(
+            color: bg,
+            child: PollDetailPage(
+              authService: authService,
+              pollId: pollId,
+              initialPoll: initialPoll,
+            ),
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+      ),
+    );
+  }
 }
 
 class _PollDetailPageState extends State<PollDetailPage> {
@@ -661,6 +695,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
   @override
   Widget build(BuildContext context) {
     final poll = _poll;
+    // Menú flotante del shell (~78) + aire para el último VOTAR.
+    final bottomClearance =
+        (MediaQuery.paddingOf(context).bottom < 78
+            ? 96.0
+            : MediaQuery.paddingOf(context).bottom + 24);
     return Scaffold(
       backgroundColor: const Color(0xFF050213),
       appBar: AppBar(
@@ -748,7 +787,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       )
                     else if (_selectedRound?.type == 'versus')
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
+                        padding: EdgeInsets.fromLTRB(14, 4, 14, bottomClearance),
                         sliver: SliverList.separated(
                           itemCount: _versusGroups(_entries).length,
                           separatorBuilder: (_, _) =>
@@ -771,7 +810,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
+                        padding: EdgeInsets.fromLTRB(14, 4, 14, bottomClearance),
                         sliver: SliverList.separated(
                           itemCount: _entries.length,
                           separatorBuilder: (_, _) =>
@@ -792,7 +831,6 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           },
                         ),
                       ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 28)),
                   ],
                 ),
               ),

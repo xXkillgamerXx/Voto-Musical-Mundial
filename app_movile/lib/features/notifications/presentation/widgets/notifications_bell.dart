@@ -8,11 +8,13 @@ class NotificationsBell extends StatelessWidget {
   const NotificationsBell({
     required this.controller,
     this.onSelectSection,
+    this.navigatorKey,
     super.key,
   });
 
   final NotificationController controller;
   final void Function(String section)? onSelectSection;
+  final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +26,18 @@ class NotificationsBell extends StatelessWidget {
         return IconButton(
           tooltip: tr('misc.notificationsTitle'),
           onPressed: () {
+            final nav = navigatorKey?.currentState;
+            if (nav != null) {
+              nav.push<void>(
+                MaterialPageRoute(
+                  builder: (_) => NotificationsScreen(
+                    controller: controller,
+                    onSelectSection: onSelectSection,
+                  ),
+                ),
+              );
+              return;
+            }
             NotificationsScreen.open(
               context,
               controller: controller,

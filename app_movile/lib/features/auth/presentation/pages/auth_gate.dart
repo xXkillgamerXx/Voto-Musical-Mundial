@@ -86,6 +86,8 @@ class _SignedInPage extends StatefulWidget {
 class _SignedInPageState extends State<_SignedInPage> {
   late final PageController _pageController;
   late final NotificationController _notifications;
+  final GlobalKey<NavigatorState> _shellNavigatorKey =
+      GlobalKey<NavigatorState>();
   String _selectedSection = 'Inicio';
   bool _dailyRewardPromptChecked = false;
 
@@ -96,7 +98,14 @@ class _SignedInPageState extends State<_SignedInPage> {
     'Misiones',
   ];
 
+  /// Espacio para que el contenido no quede bajo el menú flotante.
+  static const _bottomNavClearance = 78.0;
+
+  static const _shellBg = Color(0xFF050213);
+
   int get _selectedTabIndex => _tabSections.indexOf(_selectedSection);
+
+  NavigatorState? get _shellNavigator => _shellNavigatorKey.currentState;
 
   @override
   void initState() {
@@ -112,10 +121,11 @@ class _SignedInPageState extends State<_SignedInPage> {
   }
 
   void _handlePushOpened(Map<String, dynamic> data) {
+    final navContext = _shellNavigatorKey.currentContext ?? context;
     if (!mounted) return;
     unawaited(
       NotificationDeepLink.open(
-        context,
+        navContext,
         authService: widget.authService,
         data: data,
         controller: _notifications,
@@ -161,76 +171,39 @@ class _SignedInPageState extends State<_SignedInPage> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+
     return Stack(
       children: [
         _HomeBackground(
           child: Scaffold(
             extendBody: true,
             backgroundColor: Colors.transparent,
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              surfaceTintColor: Colors.transparent,
-              foregroundColor: Colors.white,
-              leading: Builder(
-                builder: (context) {
-                  return IconButton(
-                    tooltip: tr('auth.openMenu'),
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                    icon: const Icon(Icons.menu_rounded),
-                  );
-                },
-              ),
-              centerTitle: true,
-              title:
-                  (_selectedSection == 'Inicio' ||
-                      _selectedSection == 'Artistas' ||
-                      _selectedSection == 'Votaciones' ||
-                      _selectedSection == 'Misiones')
-                  ? Image.asset(
-                      'assets/icons/logo-votos.png',
-                      width: 54,
-                      height: 42,
-                      fit: BoxFit.contain,
-                    )
-                  : (_selectedTabIndex == -1
-                        ? Text(_sectionTitle(_selectedSection))
-                        : null),
-              actions: [
-                AppBarPointsAction(session: widget.authService.session),
-                NotificationsBell(
-                  controller: _notifications,
-                  onSelectSection: _selectSection,
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
             drawer: _HomeMenuDrawer(
               user: widget.user,
               authService: widget.authService,
               selectedSection: _selectedSection,
+              shellNavigatorKey: _shellNavigatorKey,
               onSectionSelected: (section) {
                 Navigator.of(context).pop();
                 if (section == 'Noticias') {
-                  NewsScreen.open(
-                    context,
-                    authService: widget.authService,
+                  _pushInShell(
+                    NewsScreen(authService: widget.authService),
                   );
                   return;
                 }
                 if (section == 'Notificaciones') {
-                  NotificationsScreen.open(
-                    context,
-                    controller: _notifications,
-                    onSelectSection: _selectSection,
+                  _pushInShell(
+                    NotificationsScreen(
+                      controller: _notifications,
+                      onSelectSection: _selectSection,
+                    ),
                   );
                   return;
                 }
                 if (section == 'Salón de la fama') {
-                  HallOfFameScreen.open(
-                    context,
-                    authService: widget.authService,
+                  _pushInShell(
+                    HallOfFameScreen(authService: widget.authService),
                   );
                   return;
                 }
@@ -241,7 +214,33 @@ class _SignedInPageState extends State<_SignedInPage> {
                 _selectSection(section);
               },
             ),
-            body: _buildSectionContent(),
+            // Padding fijo: evita setState al abrir rutas (flash blanco).
+            body: MediaQuery(
+              data: media.copyWith(
+                padding: media.padding.copyWith(
+                  bottom: media.padding.bottom + _bottomNavClearance,
+                ),
+              ),
+              child: Navigator(
+                key: _shellNavigatorKey,
+                onGenerateRoute: (settings) {
+                  return PageRouteBuilder<void>(
+                    settings: settings,
+                    opaque: true,
+                    pageBuilder: (context, animation, secondaryAnimation) {
+                      return ColoredBox(
+                        color: _shellBg,
+                        child: _buildSectionContent(),
+                      );
+                    },
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      return child;
+                    },
+                  );
+                },
+              ),
+            ),
             bottomNavigationBar: _HomeBottomNav(
               selectedSection: _selectedSection,
               onSectionSelected: _selectSection,
@@ -267,42 +266,61 @@ class _SignedInPageState extends State<_SignedInPage> {
     );
   }
 
+  void _pushInShell(Widget page) {
+    _shellNavigator?.push<void>(
+      PageRouteBuilder<void>(
+        opaque: true,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return ColoredBox(color: _shellBg, child: page);
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+      ),
+    );
+  }
+
   void _selectSection(String section) {
     if (section == 'Ranking Popularity') {
       _openRankingPopularity();
       return;
     }
 
+    // Al cambiar de pestaña, vuelve al root del shell para que se vea el tab.
+    _shellNavigator?.popUntil((route) => route.isFirst);
+
     final tabIndex = _tabSections.indexOf(section);
 
     setState(() => _selectedSection = section);
 
     if (tabIndex != -1 && _pageController.hasClients) {
-      _pageController.animateToPage(
-        tabIndex,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-      );
+      // Salto directo: evita el frame en blanco del animateToPage.
+      _pageController.jumpToPage(tabIndex);
     }
   }
 
   void _openRankingPopularity() {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => _HomeBackground(
-          child: Scaffold(
+    _pushInShell(
+      _HomeBackground(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
             backgroundColor: Colors.transparent,
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              foregroundColor: Colors.white,
-              title: Text(_sectionTitle('Ranking Popularity')),
-              actions: [
-                AppBarPointsAction(session: widget.authService.session),
-              ],
-            ),
-            body: RankingPopularityPage(authService: widget.authService),
+            elevation: 0,
+            foregroundColor: Colors.white,
+            title: Text(_sectionTitle('Ranking Popularity')),
+            actions: [
+              AppBarPointsAction(session: widget.authService.session),
+            ],
           ),
+          body: RankingPopularityPage(authService: widget.authService),
         ),
       ),
     );
@@ -311,37 +329,126 @@ class _SignedInPageState extends State<_SignedInPage> {
   Widget _buildSectionContent() {
     final tabIndex = _selectedTabIndex;
 
-    if (tabIndex == -1) {
-      return _PlaceholderPanel(
-        title: _sectionTitle(_selectedSection),
-        subtitle: tr('auth.sectionPlaceholder'),
-      );
-    }
-
-    return PageView(
-      controller: _pageController,
-      onPageChanged: (index) {
-        setState(() => _selectedSection = _tabSections[index]);
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        KeepAlivePanel(
-          child: HomePage(
-            authService: widget.authService,
-            onNavigateToSection: _selectSection,
-            onOpenNews: () => NewsScreen.open(
-              context,
-              authService: widget.authService,
+        _ShellAppBar(
+          selectedSection: _selectedSection,
+          selectedTabIndex: _selectedTabIndex,
+          session: widget.authService.session,
+          notifications: _notifications,
+          onSelectSection: _selectSection,
+          shellNavigatorKey: _shellNavigatorKey,
+        ),
+        Expanded(
+          child: tabIndex == -1
+              ? _PlaceholderPanel(
+                  title: _sectionTitle(_selectedSection),
+                  subtitle: tr('auth.sectionPlaceholder'),
+                )
+              : ColoredBox(
+                  color: _shellBg,
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      setState(() => _selectedSection = _tabSections[index]);
+                    },
+                    children: [
+                      KeepAlivePanel(
+                        child: HomePage(
+                          authService: widget.authService,
+                          onNavigateToSection: _selectSection,
+                          onOpenNews: () => _pushInShell(
+                            NewsScreen(authService: widget.authService),
+                          ),
+                        ),
+                      ),
+                      KeepAlivePanel(
+                        child: PollsPage(authService: widget.authService),
+                      ),
+                      KeepAlivePanel(
+                        child: ArtistsPage(authService: widget.authService),
+                      ),
+                      KeepAlivePanel(
+                        child: MissionsPage(authService: widget.authService),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShellAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _ShellAppBar({
+    required this.selectedSection,
+    required this.selectedTabIndex,
+    required this.session,
+    required this.notifications,
+    required this.onSelectSection,
+    required this.shellNavigatorKey,
+  });
+
+  final String selectedSection;
+  final int selectedTabIndex;
+  final AuthSession session;
+  final NotificationController notifications;
+  final ValueChanged<String> onSelectSection;
+  final GlobalKey<NavigatorState> shellNavigatorKey;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: kToolbarHeight,
+          child: NavigationToolbar(
+            leading: IconButton(
+              tooltip: tr('auth.openMenu'),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              icon: const Icon(Icons.menu_rounded, color: Colors.white),
+            ),
+            middle: (selectedSection == 'Inicio' ||
+                    selectedSection == 'Artistas' ||
+                    selectedSection == 'Votaciones' ||
+                    selectedSection == 'Misiones')
+                ? Image.asset(
+                    'assets/icons/logo-votos.png',
+                    width: 54,
+                    height: 42,
+                    fit: BoxFit.contain,
+                  )
+                : (selectedTabIndex == -1
+                      ? Text(
+                          _sectionTitle(selectedSection),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : null),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppBarPointsAction(session: session),
+                NotificationsBell(
+                  controller: notifications,
+                  onSelectSection: onSelectSection,
+                  navigatorKey: shellNavigatorKey,
+                ),
+                const SizedBox(width: 4),
+              ],
             ),
           ),
         ),
-        KeepAlivePanel(
-          child: PollsPage(authService: widget.authService),
-        ),
-        KeepAlivePanel(child: ArtistsPage(authService: widget.authService)),
-        KeepAlivePanel(
-          child: MissionsPage(authService: widget.authService),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -527,12 +634,14 @@ class _HomeMenuDrawer extends StatelessWidget {
     required this.authService,
     required this.selectedSection,
     required this.onSectionSelected,
+    this.shellNavigatorKey,
   });
 
   final ApiUser user;
   final AuthService authService;
   final String selectedSection;
   final ValueChanged<String> onSectionSelected;
+  final GlobalKey<NavigatorState>? shellNavigatorKey;
 
   static const _items = [
     _HomeMenuItem('Inicio', Icons.home_rounded),
@@ -570,16 +679,20 @@ class _HomeMenuDrawer extends StatelessWidget {
                   session: authService.session,
                   onOpenProfile: () {
                     Navigator.of(context).pop();
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => UserProfilePage(
-                          authService: authService,
-                          username: user.username.isEmpty
-                              ? null
-                              : user.username,
-                        ),
-                      ),
+                    final nav = shellNavigatorKey?.currentState;
+                    final page = UserProfilePage(
+                      authService: authService,
+                      username: user.username.isEmpty ? null : user.username,
                     );
+                    if (nav != null) {
+                      nav.push(
+                        MaterialPageRoute(builder: (_) => page),
+                      );
+                    } else {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => page),
+                      );
+                    }
                   },
                   onOpenMissions: () => onSectionSelected('Misiones'),
                 ),
@@ -604,7 +717,8 @@ class _HomeMenuDrawer extends StatelessWidget {
                           isSelected: false,
                           onTap: () {
                             Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            // Root navigator: Configuración tapa el menú inferior.
+                            Navigator.of(context, rootNavigator: true).push(
                               MaterialPageRoute(
                                 builder: (_) =>
                                     SettingsPage(authService: authService),

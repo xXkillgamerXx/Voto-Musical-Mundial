@@ -22,9 +22,9 @@ class VotoMusicApp extends StatelessWidget {
         return MaterialApp(
           title: 'Music Mundial VOTE',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.light,
+          theme: AppTheme.dark,
           darkTheme: AppTheme.dark,
-          themeMode: ThemeMode.system,
+          themeMode: ThemeMode.dark,
           locale: AppLocale.instance.locale,
           supportedLocales: const [Locale('es'), Locale('en')],
           localizationsDelegates: const [

@@ -172,13 +172,10 @@ class NotificationDeepLink {
         }
         // /votacion|poll/2026/slug  o  /votacion|poll/slug
         final pollId = segments.length >= 3 ? segments[2] : segments[1];
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            builder: (_) => PollDetailPage(
-              authService: authService,
-              pollId: pollId,
-            ),
-          ),
+        await PollDetailPage.open(
+          context,
+          authService: authService,
+          pollId: pollId,
         );
         return;
       default:

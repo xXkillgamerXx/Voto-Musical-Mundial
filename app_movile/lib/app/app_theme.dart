@@ -25,7 +25,8 @@ class AppTheme {
     return ThemeData(
       colorScheme: colorScheme,
       useMaterial3: true,
-      scaffoldBackgroundColor: colorScheme.surface,
+      scaffoldBackgroundColor: const Color(0xFF050213),
+      canvasColor: const Color(0xFF050213),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colorScheme.brightness == Brightness.dark
