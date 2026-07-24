@@ -51,6 +51,11 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': 'Free vote counted! Next in {time}.',
     'ko': '무료 투표 완료! 다음까지 {time}.',
   },
+  'pollDetail.freeVoteWaitLabel': {
+    'es': 'PRÓXIMO VOTO GRATIS',
+    'en': 'NEXT FREE VOTE',
+    'ko': '다음 무료 투표',
+  },
   'pollDetail.freeVoteMissionsTitle': {
     'es': 'CONSIGUE MÁS VOTOS',
     'en': 'GET MORE VOTES',

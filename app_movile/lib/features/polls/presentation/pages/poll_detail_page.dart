@@ -142,11 +142,14 @@ class _PollDetailPageState extends State<PollDetailPage> {
     return tr('pollDetail.freeVote');
   }
 
-  /// Con contador de voto gratis el botón no se puede pulsar.
+  /// Con contador de voto gratis el botón sigue activo para abrir misiones.
   bool _canTapVoteButton(_VoteEntry entry) {
     if (!_votingOpen) return false;
-    if (_freeVoteAvailable && _freeVoteRemainingMs(entry) > 0) return false;
     return true;
+  }
+
+  bool _isOnFreeVoteCooldownFor(_VoteEntry entry) {
+    return _freeVoteAvailable && _freeVoteRemainingMs(entry) > 0;
   }
 
   Future<void> _refreshFreeVoteStatus([_VoteEntry? entry]) async {
@@ -516,6 +519,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
       return;
     }
     if (!_canTapVoteButton(entry)) return;
+    if (_isOnFreeVoteCooldownFor(entry)) {
+      await _showMissionsPromptModal(entry: entry);
+      return;
+    }
     final user = widget.authService.session.user;
     if (user == null) {
       _showMessage(tr('pollDetail.loginToVote'));
@@ -776,7 +783,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
           _freeVoteUntilByScope[_freeVoteScopeKey(entry)] = nextAt;
         });
       }
-      // El contador ya está en el botón; no mostrar snackbar.
+      await _showMissionsPromptModal(entry: entry);
       return;
     }
 
@@ -907,7 +914,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
           });
         }
         _missionsBannerDismissed = false;
-        unawaited(_refreshPendingMissions());
+        unawaited(_promptMissionsAfterFreeVote(entry));
       } else {
         unawaited(_refreshFreeVoteStatus(entry));
       }
@@ -945,6 +952,141 @@ class _PollDetailPageState extends State<PollDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _pendingMissionsCount = null);
+    }
+  }
+
+  Future<void> _promptMissionsAfterFreeVote(_VoteEntry entry) async {
+    await _refreshPendingMissions();
+    if (!mounted) return;
+    if ((_pendingMissionsCount ?? 0) <= 0) return;
+    await _showMissionsPromptModal(entry: entry);
+  }
+
+  Future<void> _showMissionsPromptModal({_VoteEntry? entry}) async {
+    if (!mounted) return;
+    if (_pendingMissionsCount == null) {
+      await _refreshPendingMissions();
+      if (!mounted) return;
+    }
+    final pending = _pendingMissionsCount ?? 0;
+    final nextAt = entry == null
+        ? null
+        : _freeVoteUntilByScope[_freeVoteScopeKey(entry)];
+    final showClock =
+        nextAt != null && nextAt.isAfter(DateTime.now());
+
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.78),
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF2A0B3F), Color(0xFF120826)],
+              ),
+              border: Border.all(
+                color: const Color(0xFFD946EF).withValues(alpha: 0.45),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFD946EF).withValues(alpha: 0.28),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFD946EF).withValues(alpha: 0.18),
+                    border: Border.all(
+                      color: const Color(0xFFD946EF).withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.flag_rounded,
+                    color: Color(0xFFF0ABFC),
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  tr('pollDetail.freeVoteMissionsTitle'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  tr('pollDetail.freeVoteMissionsBody'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+                if (showClock) ...[
+                  const SizedBox(height: 16),
+                  _FreeVoteModalCountdown(until: nextAt),
+                ],
+                if (pending > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    trp('pollDetail.freeVoteMissionsPending', {
+                      'count': '$pending',
+                    }),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFF0ABFC),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                _VoteGradientButton(
+                  enabled: true,
+                  loading: false,
+                  label: tr('pollDetail.freeVoteMissionsGo'),
+                  onTap: () => Navigator.pop(dialogContext, true),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: Text(
+                    tr('pollDetail.freeVoteMissionsLater'),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (go == true && mounted) {
+      await _openMissionsFromPoll();
     }
   }
 
@@ -1318,6 +1460,140 @@ class _PollDetailPageState extends State<PollDetailPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _FreeVoteModalCountdown extends StatefulWidget {
+  const _FreeVoteModalCountdown({required this.until});
+
+  final DateTime until;
+
+  @override
+  State<_FreeVoteModalCountdown> createState() =>
+      _FreeVoteModalCountdownState();
+}
+
+class _FreeVoteModalCountdownState extends State<_FreeVoteModalCountdown> {
+  Timer? _timer;
+  late int _remainingMs;
+
+  @override
+  void initState() {
+    super.initState();
+    _remainingMs = _computeRemaining();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _remainingMs = _computeRemaining());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int _computeRemaining() {
+    final ms = widget.until.difference(DateTime.now()).inMilliseconds;
+    return ms < 0 ? 0 : ms;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalSeconds = (_remainingMs / 1000).ceil().clamp(0, 24 * 60 * 60);
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    final minText = minutes.toString().padLeft(2, '0');
+    final secText = seconds.toString().padLeft(2, '0');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B031B).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFFDE68A).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            tr('pollDetail.freeVoteWaitLabel'),
+            style: const TextStyle(
+              color: Color(0xFFFDE68A),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _FreeVoteTimeDigit(value: minText),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  ':',
+                  style: TextStyle(
+                    color: Color(0xFFFDE68A),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ),
+              _FreeVoteTimeDigit(value: secText),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FreeVoteTimeDigit extends StatelessWidget {
+  const _FreeVoteTimeDigit({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 72),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF3B1D0A), Color(0xFF1A0A05)],
+        ),
+        border: Border.all(
+          color: const Color(0xFFFDE68A).withValues(alpha: 0.55),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFDE68A).withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Text(
+        value,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFFFFF7C2),
+          fontSize: 32,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 2,
+          height: 1,
+          fontFeatures: [FontFeature.tabularFigures()],
+        ),
       ),
     );
   }
