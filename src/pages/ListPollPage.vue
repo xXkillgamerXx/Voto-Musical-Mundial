@@ -16,6 +16,7 @@ import {
   castVote as castApiVote,
   getAnonymousVoteStatus,
 } from "../services/api/votesApi";
+import { getMissions } from "../services/api/missionsApi";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
 import {
   loadContestantMetadata,
@@ -85,6 +86,8 @@ const isLoadingAnonymousStatus = ref(false);
 const isSignupPromptOpen = ref(false);
 const pendingAnonymousVoteFeedback = ref(null);
 const anonymousVoteSuccessToast = ref(null);
+const missionsPrompt = ref(null);
+const pendingMissionsCount = ref(null);
 const roundDetailSection = ref(null);
 const showSecondarySections = ref(false);
 
@@ -98,6 +101,7 @@ let unsubscribeRealtime = null;
 let reloadPublicResults = null;
 let realtimeResultsThrottle = 0;
 let realtimeStateThrottle = 0;
+let missionsPromptTimer = null;
 let clockTimer = null;
 const handleAnonymousVisibilityRefresh = () => {
   if (document.visibilityState !== "visible") {
@@ -671,6 +675,42 @@ const displayedContestants = computed(() =>
     : rankedContestants.value,
 );
 
+const buildFeedWithShare = (rows, idPrefix) => {
+  if (!rows.length) {
+    return [];
+  }
+
+  const insertAt = Math.ceil(rows.length / 2);
+  const items = [];
+
+  rows.forEach((row, index) => {
+    if (index === insertAt) {
+      items.push({ type: "share", id: `${idPrefix}-share` });
+    }
+
+    items.push({
+      type: "row",
+      id: String(row.id || `${idPrefix}-${index}`),
+      row,
+      index,
+    });
+  });
+
+  if (insertAt >= rows.length) {
+    items.push({ type: "share", id: `${idPrefix}-share` });
+  }
+
+  return items;
+};
+
+const contestantFeedItems = computed(() =>
+  buildFeedWithShare(displayedContestants.value, "contestant"),
+);
+
+const versusFeedItems = computed(() =>
+  buildFeedWithShare(displayedVersusMatches.value, "versus"),
+);
+
 const displayedTotalVotes = computed(() =>
   displayedContestants.value.reduce(
     (total, contestant) => total + contestant.totalVotes,
@@ -1114,6 +1154,15 @@ const showAnonymousCooldownNotice = (contestant) => {
   anonymousCooldownNotice.value = "";
   errorMessage.value = "";
 
+  if (
+    currentUser.value &&
+    !currentUser.value.isAnonymous &&
+    isLoggedOutOfPoints.value
+  ) {
+    openMissionsPrompt(contestant);
+    return;
+  }
+
   if (!currentUser.value || currentUser.value.isAnonymous) {
     nextTick(() => {
       document
@@ -1122,6 +1171,127 @@ const showAnonymousCooldownNotice = (contestant) => {
     });
   }
 };
+
+const isMissionDone = (mission) => {
+  const target = Math.max(1, Number(mission?.target || 1));
+  const progress = Math.min(target, Number(mission?.progress || 0));
+  return Boolean(
+    mission?.completedAt || mission?.rewardedAt || progress >= target,
+  );
+};
+
+const refreshPendingMissionsCount = async () => {
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    pendingMissionsCount.value = null;
+    return;
+  }
+
+  try {
+    const missionRows = await getMissions();
+    const list = Array.isArray(missionRows) ? missionRows : [];
+    pendingMissionsCount.value = list.filter(
+      (mission) => mission?.active !== false && !isMissionDone(mission),
+    ).length;
+  } catch {
+    pendingMissionsCount.value = null;
+  }
+};
+
+const closeMissionsPrompt = () => {
+  missionsPrompt.value = null;
+};
+
+const openMissionsPrompt = async (contestant) => {
+  if (!contestant || isEmbeddedPage.value) {
+    return;
+  }
+
+  window.clearTimeout(missionsPromptTimer);
+  const voteScope = getAnonymousVoteScope(contestant);
+  const status = anonymousVoteStatusForScope(voteScope);
+  await refreshPendingMissionsCount();
+  missionsPrompt.value = {
+    contestant,
+    voteScope,
+    nextVoteAt: status?.nextVoteAt || null,
+  };
+};
+
+const scheduleMissionsPromptAfterFreeVote = (contestant) => {
+  if (!contestant || isEmbeddedPage.value) {
+    return;
+  }
+
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    return;
+  }
+
+  window.clearTimeout(missionsPromptTimer);
+  missionsPromptTimer = window.setTimeout(() => {
+    openMissionsPrompt(contestant);
+  }, 2000);
+};
+
+const goToMissionsFromPrompt = () => {
+  closeMissionsPrompt();
+  const nextUrl = "/#misiones";
+  if (
+    window.location.pathname === "/" &&
+    window.location.hash === "#misiones"
+  ) {
+    document
+      .getElementById("misiones")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  window.history.pushState({}, "", nextUrl);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+};
+
+const missionsPromptRemainingMs = computed(() => {
+  const nextVoteAt = missionsPrompt.value?.nextVoteAt;
+  if (!nextVoteAt) {
+    return 0;
+  }
+
+  return Math.max(0, new Date(nextVoteAt).getTime() - now.value);
+});
+
+const missionsPromptCountdown = computed(() => {
+  const totalSeconds = Math.ceil(missionsPromptRemainingMs.value / 1000);
+  const safeSeconds = Math.max(0, Math.min(totalSeconds, 24 * 60 * 60));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+
+  return {
+    minutes: String(minutes).padStart(2, "0"),
+    seconds: String(seconds).padStart(2, "0"),
+  };
+});
+
+const missionsPromptRank = computed(() => {
+  const contestant = missionsPrompt.value?.contestant;
+  if (!contestant) {
+    return null;
+  }
+
+  const artistId = getContestantArtistId(contestant);
+  const index = displayedContestants.value.findIndex(
+    (item) => getContestantArtistId(item) === artistId,
+  );
+
+  return index >= 0 ? index + 1 : null;
+});
+
+const missionsPromptPercent = computed(() => {
+  const contestant = missionsPrompt.value?.contestant;
+  if (!contestant) {
+    return "0%";
+  }
+
+  return percentForDisplayedContestant(contestant);
+});
 
 const renderVisibleTurnstile = async () => {
   if (!shouldShowTurnstile.value) {
@@ -1364,6 +1534,34 @@ const shareFinalWinner = async (winner) => {
     }
 
     errorMessage.value = translate("polls.detail.shareFinalError");
+  }
+};
+
+const sharePoll = async () => {
+  shareMessage.value = "";
+  errorMessage.value = "";
+
+  const title = poll.value?.title || translate("polls.detail.sharePoll");
+  const text = translate("polls.detail.sharePollHint");
+  const url = window.location.href;
+
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url });
+      return;
+    }
+
+    await navigator.clipboard.writeText(`${title}\n${url}`);
+    shareMessage.value = translate("polls.detail.sharePollCopied");
+    window.setTimeout(() => {
+      shareMessage.value = "";
+    }, 3000);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+
+    errorMessage.value = translate("polls.detail.sharePollError");
   }
 };
 
@@ -2680,6 +2878,7 @@ const voteLoggedFreeFor = async (contestant) => {
     setOptimisticVoteTotal(artistId, currentVotes + 1);
     showVoteFeedback(artistId, 1);
     closeVoteModal();
+    scheduleMissionsPromptAfterFreeVote(contestant);
   } catch (error) {
     const details = error?.payload || error?.details || {};
     const nested =
@@ -2877,6 +3076,7 @@ onUnmounted(() => {
   voteFeedbackTimers.forEach((timer) => window.clearTimeout(timer));
   voteFeedbackTimers.clear();
   window.clearTimeout(anonymousVoteToastTimer);
+  window.clearTimeout(missionsPromptTimer);
   voteCountAnimationTimers.forEach((timer) => window.clearInterval(timer));
   voteCountAnimationTimers.clear();
   clearAnimatedDisplayedTotalVotes();
@@ -3742,31 +3942,72 @@ onUnmounted(() => {
         :class="!isEmbeddedPage && 'mt-8'"
       >
         <template v-if="!isLoadingContestants">
-          <article
-            v-for="(match, matchIndex) in displayedVersusMatches"
-            :key="match.id"
-            class="rounded-4xl border border-white/10 bg-white/5"
-            :class="
-                match.contestants.length === 2
+          <template
+            v-for="(feedItem, feedIndex) in versusFeedItems"
+            :key="feedItem.id"
+          >
+            <button
+              v-if="feedItem.type === 'share'"
+              type="button"
+              class="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
+              @click="sharePoll"
+            >
+              <span
+                class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  class="size-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                  <path d="M16 6l-4-4-4 4" />
+                  <path d="M12 2v13" />
+                </svg>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-black text-white">
+                  {{ $t("polls.detail.sharePoll") }}
+                </span>
+                <span
+                  class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
+                >
+                  {{ $t("polls.detail.sharePollHint") }}
+                </span>
+              </span>
+              <span class="text-lg text-white/45" aria-hidden="true">›</span>
+            </button>
+            <article
+              v-else
+              class="rounded-4xl border border-white/10 bg-white/5"
+              :class="
+                feedItem.row.contestants.length === 2
                   ? isEmbeddedPage
                     ? 'p-2 sm:p-4'
                     : 'mx-auto max-w-5xl p-3 sm:p-4'
                   : 'p-4 sm:p-5'
-            "
-            :style="{ animationDelay: `${Math.min(matchIndex, 6) * 80}ms` }"
-          >
+              "
+              :style="{
+                animationDelay: `${Math.min(feedItem.index, 6) * 80}ms`,
+              }"
+            >
           <div class="mb-4 text-center">
             <p
               class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300"
             >
-              {{ match.title }}
+              {{ feedItem.row.title }}
             </p>
           </div>
 
           <div
             class="relative"
             :class="
-              match.contestants.length === 2
+              feedItem.row.contestants.length === 2
                 ? isEmbeddedPage
                   ? 'embed-duel-grid grid grid-cols-2 gap-2 sm:gap-4'
                   : 'grid grid-cols-2 gap-2 sm:gap-4'
@@ -3774,7 +4015,7 @@ onUnmounted(() => {
             "
           >
             <div
-              v-if="match.contestants.length === 2"
+              v-if="feedItem.row.contestants.length === 2"
               class="versus-vs-overlay pointer-events-none absolute inset-x-0 top-0 z-50 flex items-center justify-center"
               :class="isEmbeddedPage && 'embed-duel-vs-layer'"
             >
@@ -3790,7 +4031,7 @@ onUnmounted(() => {
               </span>
             </div>
             <div
-              v-for="(contestant, index) in match.contestants"
+              v-for="(contestant, index) in feedItem.row.contestants"
               :key="contestant.id"
               :data-artist-id="getContestantArtistId(contestant)"
               class="relative overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
@@ -3810,7 +4051,7 @@ onUnmounted(() => {
               <div
                 class="grid gap-0"
                 :class="
-                  match.contestants.length === 2
+                  feedItem.row.contestants.length === 2
                     ? 'h-full grid-rows-[auto_1fr_auto]'
                     : 'md:grid-cols-[14rem_1fr_auto] md:items-center'
                 "
@@ -3818,7 +4059,7 @@ onUnmounted(() => {
                 <div
                   class="relative overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950"
                   :class="
-                    match.contestants.length === 2
+                    feedItem.row.contestants.length === 2
                       ? isEmbeddedPage
                         ? 'aspect-[5/4] min-h-0 sm:aspect-square sm:min-h-72 md:min-h-80'
                         : 'aspect-[5/4] min-h-0 sm:aspect-auto sm:min-h-52 md:min-h-78'
@@ -3848,7 +4089,7 @@ onUnmounted(() => {
                 <div
                   class="p-3"
                   :class="
-                    match.contestants.length === 2
+                    feedItem.row.contestants.length === 2
                       ? isEmbeddedPage
                         ? 'p-2 sm:p-5'
                         : 'p-2 sm:p-3'
@@ -3858,14 +4099,14 @@ onUnmounted(() => {
                   <div
                     class="flex items-start justify-between"
                     :class="
-                      match.contestants.length === 2 ? 'gap-2 sm:gap-4' : 'gap-4'
+                      feedItem.row.contestants.length === 2 ? 'gap-2 sm:gap-4' : 'gap-4'
                     "
                   >
                     <div class="min-w-0">
                       <h3
                         class="font-black text-white"
                         :class="
-                          match.contestants.length === 2
+                          feedItem.row.contestants.length === 2
                             ? isEmbeddedPage
                               ? 'text-base leading-tight sm:text-2xl md:text-3xl'
                               : 'truncate text-sm leading-tight sm:text-2xl'
@@ -3889,21 +4130,21 @@ onUnmounted(() => {
                     <p
                       class="embed-percent shrink-0 font-black text-cyan-100"
                       :class="
-                        match.contestants.length === 2
+                        feedItem.row.contestants.length === 2
                           ? isEmbeddedPage
                             ? 'text-base sm:text-2xl'
                             : 'text-sm sm:text-xl'
                           : 'text-2xl'
                       "
                     >
-                      {{ percentForMatch(contestant, match) }}
+                      {{ percentForMatch(contestant, feedItem.row) }}
                     </p>
                   </div>
 
                   <div
                     class="overflow-hidden rounded-full bg-white/10"
                     :class="
-                      match.contestants.length === 2
+                      feedItem.row.contestants.length === 2
                         ? isEmbeddedPage
                           ? 'mt-3 h-2 sm:mt-4 sm:h-3'
                           : 'mt-3 h-2.5'
@@ -3912,7 +4153,7 @@ onUnmounted(() => {
                   >
                     <div
                       class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
-                      :style="{ width: percentForMatch(contestant, match) }"
+                      :style="{ width: percentForMatch(contestant, feedItem.row) }"
                     ></div>
                   </div>
                   <p
@@ -3956,12 +4197,12 @@ onUnmounted(() => {
                   type="button"
                   class="flex items-center justify-center rounded-2xl font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   :class="[
-                    match.contestants.length === 2
+                    feedItem.row.contestants.length === 2
                       ? isEmbeddedPage
                         ? 'm-2 min-h-11 px-3 text-xs sm:m-4 sm:min-h-12 sm:px-6 sm:text-sm'
                         : 'm-2 min-h-10 px-2 text-[11px] sm:m-3 sm:min-h-10 sm:px-6 sm:text-sm'
                       : 'm-4 min-h-12 px-6 text-sm',
-                    match.contestants.length !== 2 && 'md:min-w-32',
+                    feedItem.row.contestants.length !== 2 && 'md:min-w-32',
                     isAnonymousOnCooldownFor(contestant)
                       ? 'border border-amber-300/35 bg-amber-400/15 text-amber-100 shadow-lg shadow-amber-950/20 hover:bg-amber-400/20'
                       : 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/30',
@@ -3975,6 +4216,7 @@ onUnmounted(() => {
             </div>
           </div>
           </article>
+          </template>
         </template>
 
         <template v-if="isLoadingContestants">
@@ -4145,25 +4387,64 @@ onUnmounted(() => {
           v-else
           class="space-y-4"
         >
-          <article
-            v-for="(contestant, index) in displayedContestants"
-            :key="contestant.id"
-            :data-artist-id="getContestantArtistId(contestant)"
-            class="poll-contestant-enter relative rounded-3xl border p-4 transition sm:p-5"
-            :class="[
-              isContestantWinner(contestant)
-                ? winnerToneClasses(contestant, 'card')
-                : hasRoundWinners
-                  ? 'border-white/10 bg-white/3 opacity-55 grayscale hover:opacity-75'
-                  : 'border-white/10 bg-white/5 hover:bg-white/8',
-              voteFeedbacks[contestant.artistId || contestant.id] &&
-                'vote-feedback-card',
-            ]"
-            :style="{ animationDelay: `${Math.min(index, 8) * 70}ms` }"
+          <template
+            v-for="(feedItem, feedIndex) in contestantFeedItems"
+            :key="feedItem.id"
           >
+            <button
+              v-if="feedItem.type === 'share'"
+              type="button"
+              class="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
+              @click="sharePoll"
+            >
+              <span
+                class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  class="size-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                  <path d="M16 6l-4-4-4 4" />
+                  <path d="M12 2v13" />
+                </svg>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-black text-white">
+                  {{ $t("polls.detail.sharePoll") }}
+                </span>
+                <span
+                  class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
+                >
+                  {{ $t("polls.detail.sharePollHint") }}
+                </span>
+              </span>
+              <span class="text-lg text-white/45" aria-hidden="true">›</span>
+            </button>
+            <article
+              v-else
+              :data-artist-id="getContestantArtistId(feedItem.row)"
+              class="poll-contestant-enter relative rounded-3xl border p-4 transition sm:p-5"
+              :class="[
+                isContestantWinner(feedItem.row)
+                  ? winnerToneClasses(feedItem.row, 'card')
+                  : hasRoundWinners
+                    ? 'border-white/10 bg-white/3 opacity-55 grayscale hover:opacity-75'
+                    : 'border-white/10 bg-white/5 hover:bg-white/8',
+                voteFeedbacks[feedItem.row.artistId || feedItem.row.id] &&
+                  'vote-feedback-card',
+              ]"
+              :style="{ animationDelay: `${Math.min(feedItem.index, 8) * 70}ms` }"
+            >
             <span
-              v-if="voteFeedbacks[contestant.artistId || contestant.id]"
-              :key="`notice-${voteFeedbacks[contestant.artistId || contestant.id].token}`"
+              v-if="voteFeedbacks[feedItem.row.artistId || feedItem.row.id]"
+              :key="`notice-${voteFeedbacks[feedItem.row.artistId || feedItem.row.id].token}`"
               class="vote-feedback-notice"
             >
               {{ $t("polls.detail.voteCounted") }}
@@ -4174,24 +4455,24 @@ onUnmounted(() => {
               <span
                 class="absolute -left-1 -top-1 z-10 rounded-2xl bg-[#080a18]/80 px-2 py-1 text-xl font-black backdrop-blur sm:text-4xl md:static md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-0"
                 :class="
-                  isContestantWinner(contestant)
-                    ? winnerToneClasses(contestant, 'rank')
+                  isContestantWinner(feedItem.row)
+                    ? winnerToneClasses(feedItem.row, 'rank')
                     : 'text-fuchsia-200'
                 "
               >
-                #{{ index + 1 }}
+                #{{ feedItem.index + 1 }}
               </span>
               <span
                 class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-3xl border-2 border-fuchsia-300/35 bg-linear-to-br from-violet-500 to-fuchsia-500 text-3xl font-black text-white shadow-xl shadow-fuchsia-950/20 sm:size-32"
               >
                 <img
-                  v-if="getArtistImage(contestant.artist)"
-                  :src="getArtistImage(contestant.artist)"
-                  :alt="contestant.artist?.name"
+                  v-if="getArtistImage(feedItem.row.artist)"
+                  :src="getArtistImage(feedItem.row.artist)"
+                  :alt="feedItem.row.artist?.name"
                   class="size-full object-cover"
                 />
                 <span v-else>{{
-                  contestant.artist?.name?.charAt(0) || "A"
+                  feedItem.row.artist?.name?.charAt(0) || "A"
                 }}</span>
               </span>
               <div class="min-w-0 flex-1 pr-1">
@@ -4202,7 +4483,7 @@ onUnmounted(() => {
                         class="truncate text-xl font-black leading-none text-white sm:text-3xl"
                       >
                         {{
-                          contestant.artist?.name ||
+                          feedItem.row.artist?.name ||
                           $t("polls.detail.voteFallback")
                         }}
                       </h3>
@@ -4210,15 +4491,15 @@ onUnmounted(() => {
                         v-if="hasRoundWinners"
                         class="inline-flex rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-widest sm:px-5 sm:py-2 sm:text-sm"
                         :class="
-                          isContestantWinner(contestant)
-                            ? winnerToneClasses(contestant, 'badge')
+                          isContestantWinner(feedItem.row)
+                            ? winnerToneClasses(feedItem.row, 'badge')
                             : 'border border-white/10 bg-white/5 text-slate-500'
                         "
                       >
                         {{
-                          isContestantWinner(contestant)
+                          isContestantWinner(feedItem.row)
                             ? $t("polls.detail.winnerBadge", {
-                                rank: contestantWinnerRank(contestant),
+                                rank: contestantWinnerRank(feedItem.row),
                               })
                             : $t("polls.detail.didNotWin")
                         }}
@@ -4228,7 +4509,7 @@ onUnmounted(() => {
                       class="mt-1 text-xs font-bold uppercase text-fuchsia-200 sm:text-sm"
                     >
                       {{
-                        getArtistGroup(contestant.artist) ||
+                        getArtistGroup(feedItem.row.artist) ||
                         $t("polls.detail.soloist")
                       }}
                     </p>
@@ -4238,36 +4519,36 @@ onUnmounted(() => {
                       v-if="!hideVoteCounts"
                       class="relative block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
                       :class="
-                        voteFeedbacks[contestant.artistId || contestant.id] &&
+                        voteFeedbacks[feedItem.row.artistId || feedItem.row.id] &&
                         'text-emerald-200'
                       "
                     >
                       {{
                         $t("polls.detail.votesCount", {
                           count:
-                            displayVoteCountFor(contestant).toLocaleString(
+                            displayVoteCountFor(feedItem.row).toLocaleString(
                               "es",
                             ),
                         })
                       }}
                       <span
                         v-if="
-                          voteFeedbacks[contestant.artistId || contestant.id]
+                          voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
                         "
                         :key="
-                          voteFeedbacks[contestant.artistId || contestant.id]
+                          voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
                             .token
                         "
                         class="vote-feedback-badge right-0"
                       >
                         {{
-                          voteFeedbacks[contestant.artistId || contestant.id]
+                          voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
                             .pending
                             ? "Procesando..."
                             : $t("polls.detail.votesAdded", {
                                 count:
                                   voteFeedbacks[
-                                    contestant.artistId || contestant.id
+                                    feedItem.row.artistId || feedItem.row.id
                                   ].amount,
                               })
                         }}
@@ -4276,7 +4557,7 @@ onUnmounted(() => {
                     <span
                       class="block text-2xl font-black leading-none text-fuchsia-100 sm:text-4xl"
                     >
-                      {{ percentForDisplayedContestant(contestant) }}
+                      {{ percentForDisplayedContestant(feedItem.row) }}
                     </span>
                   </span>
                 </div>
@@ -4284,7 +4565,7 @@ onUnmounted(() => {
                   <div
                     class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
                     :style="{
-                      width: percentForDisplayedContestant(contestant),
+                      width: percentForDisplayedContestant(feedItem.row),
                     }"
                   ></div>
                 </div>
@@ -4294,17 +4575,18 @@ onUnmounted(() => {
                 type="button"
                 class="col-span-3 min-h-12 rounded-2xl px-6 text-sm font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50 md:col-span-1"
                 :class="
-                  isAnonymousOnCooldownFor(contestant)
+                  isAnonymousOnCooldownFor(feedItem.row)
                     ? 'border border-amber-300/35 bg-amber-400/15 text-amber-100 shadow-lg shadow-amber-950/20 hover:bg-amber-400/20'
                     : 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/30'
                 "
-                :disabled="isVoteButtonDisabled(contestant)"
-                @click="openVoteModal(contestant)"
+                :disabled="isVoteButtonDisabled(feedItem.row)"
+                @click="openVoteModal(feedItem.row)"
               >
-                {{ voteButtonLabel(contestant) }}
+                {{ voteButtonLabel(feedItem.row) }}
               </button>
             </div>
           </article>
+          </template>
         </div>
 
         <p
@@ -4485,6 +4767,43 @@ onUnmounted(() => {
                     {{ anonymousVoteMessage }}
                   </p>
                 </div>
+
+                <button
+                  v-if="isAnonymousVotingFlow"
+                  type="button"
+                  class="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
+                  @click="sharePoll"
+                >
+                  <span
+                    class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      class="size-5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                      <path d="M16 6l-4-4-4 4" />
+                      <path d="M12 2v13" />
+                    </svg>
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-black text-white">
+                      {{ $t("polls.detail.sharePoll") }}
+                    </span>
+                    <span
+                      class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
+                    >
+                      {{ $t("polls.detail.sharePollHint") }}
+                    </span>
+                  </span>
+                  <span class="text-lg text-white/45" aria-hidden="true">›</span>
+                </button>
 
                 <label
                   v-else
@@ -4712,6 +5031,165 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="missionsPrompt"
+        class="fixed inset-0 z-95 flex items-center justify-center bg-black/78 px-4 py-6 backdrop-blur-md"
+        @click.self="closeMissionsPrompt"
+      >
+        <div
+          class="relative w-full max-w-md overflow-hidden rounded-[28px] border border-fuchsia-400/45 bg-linear-to-br from-[#2A0B3F] to-[#120826] p-5 text-white shadow-2xl shadow-fuchsia-500/30 sm:p-6"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="absolute right-3 top-3 z-20 grid size-10 place-items-center rounded-full border border-white/10 bg-white/8 text-xl font-black text-slate-300 transition hover:bg-white/15 hover:text-white"
+            :aria-label="$t('common.actions.close')"
+            @click="closeMissionsPrompt"
+          >
+            ×
+          </button>
+
+          <div
+            v-if="missionsPrompt.contestant"
+            class="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/5 p-3 pr-12"
+          >
+            <span
+              class="relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-fuchsia-300/40 bg-linear-to-br from-violet-500 to-fuchsia-500 text-xl font-black"
+            >
+              <img
+                v-if="getArtistImage(missionsPrompt.contestant.artist)"
+                :src="getArtistImage(missionsPrompt.contestant.artist)"
+                :alt="missionsPrompt.contestant.artist?.name"
+                class="size-full object-cover"
+              />
+              <span v-else>
+                {{ missionsPrompt.contestant.artist?.name?.charAt(0) || "A" }}
+              </span>
+              <span
+                v-if="missionsPromptRank"
+                class="absolute -left-1 -top-1 rounded-lg bg-[#080a18]/90 px-1.5 py-0.5 text-[10px] font-black text-fuchsia-200"
+              >
+                #{{ missionsPromptRank }}
+              </span>
+            </span>
+            <span class="min-w-0 flex-1">
+              <strong class="block truncate text-base font-black">
+                {{
+                  missionsPrompt.contestant.artist?.name ||
+                  $t("polls.detail.voteFallback")
+                }}
+              </strong>
+              <span class="mt-0.5 block truncate text-xs font-bold text-fuchsia-200/80">
+                {{
+                  getArtistGroup(missionsPrompt.contestant.artist) ||
+                  $t("polls.detail.soloist")
+                }}
+              </span>
+            </span>
+            <span class="shrink-0 text-lg font-black text-cyan-100">
+              {{ missionsPromptPercent }}
+            </span>
+          </div>
+
+          <h2
+            class="mt-4 text-center text-xl font-black uppercase tracking-wide text-white"
+          >
+            {{ $t("polls.detail.freeVoteMissionsTitle") }}
+          </h2>
+          <p class="mt-2 text-center text-sm font-semibold leading-6 text-white/75">
+            {{ $t("polls.detail.freeVoteMissionsBody") }}
+          </p>
+
+          <div
+            v-if="missionsPromptRemainingMs > 0"
+            class="mt-4 rounded-[18px] border border-amber-200/35 bg-[#0B031B]/85 px-3 py-3 text-center"
+          >
+            <p
+              class="text-[11px] font-black uppercase tracking-[0.18em] text-amber-200"
+            >
+              {{ $t("polls.detail.freeVoteWaitLabel") }}
+            </p>
+            <div class="mt-2.5 flex items-center justify-center gap-1.5">
+              <span
+                class="min-w-14 rounded-xl border border-amber-200/20 bg-[#1a0f08] px-3 py-2 text-2xl font-black tabular-nums text-amber-100"
+              >
+                {{ missionsPromptCountdown.minutes }}
+              </span>
+              <span class="text-2xl font-black text-amber-200">:</span>
+              <span
+                class="min-w-14 rounded-xl border border-amber-200/20 bg-[#1a0f08] px-3 py-2 text-2xl font-black tabular-nums text-amber-100"
+              >
+                {{ missionsPromptCountdown.seconds }}
+              </span>
+            </div>
+          </div>
+
+          <p
+            v-if="pendingMissionsCount > 0"
+            class="mt-3 text-center text-sm font-extrabold text-fuchsia-200"
+          >
+            {{
+              $t("polls.detail.freeVoteMissionsPending", {
+                count: pendingMissionsCount,
+              })
+            }}
+          </p>
+
+          <button
+            type="button"
+            class="mt-3 flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
+            @click="sharePoll"
+          >
+            <span
+              class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                class="size-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                <path d="M16 6l-4-4-4 4" />
+                <path d="M12 2v13" />
+              </svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-black text-white">
+                {{ $t("polls.detail.sharePoll") }}
+              </span>
+              <span
+                class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
+              >
+                {{ $t("polls.detail.freeVoteMissionsShare") }}
+              </span>
+            </span>
+            <span class="text-lg text-white/45" aria-hidden="true">›</span>
+          </button>
+
+          <button
+            type="button"
+            class="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
+            @click="goToMissionsFromPrompt"
+          >
+            {{ $t("polls.detail.freeVoteMissionsGo") }}
+          </button>
+          <button
+            type="button"
+            class="mt-2 min-h-10 w-full text-sm font-bold text-white/65 transition hover:text-white"
+            @click="closeMissionsPrompt"
+          >
+            {{ $t("polls.detail.freeVoteMissionsLater") }}
+          </button>
         </div>
       </div>
     </Teleport>

@@ -741,6 +741,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       ],
                     ),
                     const SizedBox(height: 11),
+                    _VoteShareCard(onShare: _sharePoll),
+                    const SizedBox(height: 11),
                     _VoteGradientButton(
                       enabled: true,
                       loading: false,
@@ -788,10 +790,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     }
 
     final cooldown = poll.freeVoteCooldownMinutes;
-    final accepted = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.78),
+    final accepted = await _showAnimatedDialog<bool>(
       builder: (dialogContext) {
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -818,17 +817,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     letterSpacing: 1.6,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  entry.artist?.name ?? tr('pollDetail.artist'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
                 const SizedBox(height: 10),
+                _ModalArtistCard(entry: entry),
+                const SizedBox(height: 12),
                 Text(
                   tr('pollDetail.freeVoteDescription'),
                   textAlign: TextAlign.center,
@@ -850,7 +841,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+                _VoteShareCard(onShare: _sharePoll),
+                const SizedBox(height: 14),
                 _VoteGradientButton(
                   enabled: true,
                   loading: false,
@@ -956,10 +949,42 @@ class _PollDetailPageState extends State<PollDetailPage> {
   }
 
   Future<void> _promptMissionsAfterFreeVote(_VoteEntry entry) async {
+    // Tras votar: espera ~1s y luego abre el modal de misiones.
+    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    if (!mounted) return;
     await _refreshPendingMissions();
     if (!mounted) return;
-    if ((_pendingMissionsCount ?? 0) <= 0) return;
     await _showMissionsPromptModal(entry: entry);
+  }
+
+  Future<T?> _showAnimatedDialog<T>({
+    required WidgetBuilder builder,
+    bool barrierDismissible = true,
+  }) {
+    return showGeneralDialog<T>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black.withValues(alpha: 0.78),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return builder(context);
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.92, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showMissionsPromptModal({_VoteEntry? entry}) async {
@@ -974,11 +999,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
         : _freeVoteUntilByScope[_freeVoteScopeKey(entry)];
     final showClock =
         nextAt != null && nextAt.isAfter(DateTime.now());
+    final canFreeVoteNow = entry != null &&
+        _freeVoteAvailable &&
+        !_isOnFreeVoteCooldownFor(entry);
 
-    final go = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.78),
+    final action = await _showAnimatedDialog<String>(
       builder: (dialogContext) {
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -1004,36 +1029,41 @@ class _PollDetailPageState extends State<PollDetailPage> {
                 ),
               ],
             ),
-            child: Column(
+            child: SingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFD946EF).withValues(alpha: 0.18),
-                    border: Border.all(
-                      color: const Color(0xFFD946EF).withValues(alpha: 0.5),
+                if (entry != null)
+                  _ModalArtistCard(entry: entry)
+                else
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFD946EF).withValues(alpha: 0.18),
+                      border: Border.all(
+                        color:
+                            const Color(0xFFD946EF).withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.flag_rounded,
+                      color: Color(0xFFF0ABFC),
+                      size: 28,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.flag_rounded,
-                    color: Color(0xFFF0ABFC),
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Text(
                   tr('pollDetail.freeVoteMissionsTitle'),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   tr('pollDetail.freeVoteMissionsBody'),
                   textAlign: TextAlign.center,
@@ -1044,11 +1074,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
                   ),
                 ),
                 if (showClock) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   _FreeVoteModalCountdown(until: nextAt),
                 ],
                 if (pending > 0) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Text(
                     trp('pollDetail.freeVoteMissionsPending', {
                       'count': '$pending',
@@ -1061,15 +1091,29 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
+                _VoteShareCard(
+                  onShare: _sharePoll,
+                  hint: tr('pollDetail.freeVoteMissionsShare'),
+                ),
+                if (canFreeVoteNow) ...[
+                  const SizedBox(height: 12),
+                  _VoteGradientButton(
+                    enabled: true,
+                    loading: false,
+                    label: tr('pollDetail.freeVoteConfirm'),
+                    onTap: () => Navigator.pop(dialogContext, 'freeVote'),
+                  ),
+                ],
+                const SizedBox(height: 12),
                 _VoteGradientButton(
                   enabled: true,
                   loading: false,
                   label: tr('pollDetail.freeVoteMissionsGo'),
-                  onTap: () => Navigator.pop(dialogContext, true),
+                  onTap: () => Navigator.pop(dialogContext, 'missions'),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: () => Navigator.pop(dialogContext),
                   child: Text(
                     tr('pollDetail.freeVoteMissionsLater'),
                     style: TextStyle(
@@ -1080,13 +1124,17 @@ class _PollDetailPageState extends State<PollDetailPage> {
                 ),
               ],
             ),
+            ),
           ),
         );
       },
     );
 
-    if (go == true && mounted) {
+    if (!mounted) return;
+    if (action == 'missions') {
       await _openMissionsFromPoll();
+    } else if (action == 'freeVote' && entry != null) {
+      await _castVote(entry, 1);
     }
   }
 
@@ -1208,23 +1256,6 @@ class _PollDetailPageState extends State<PollDetailPage> {
         showMissionsBanner ? navClearance + 72 : navClearance;
     final title = poll?.title ?? tr('pollDetail.defaultTitle');
     final topActions = <Widget>[
-      IconButton(
-        tooltip: tr('pollDetail.share'),
-        visualDensity: VisualDensity.compact,
-        onPressed: poll == null ? null : _sharePoll,
-        icon: const Icon(Icons.ios_share_rounded, size: 22),
-      ),
-      IconButton(
-        tooltip: tr('pollDetail.commentsTitle'),
-        visualDensity: VisualDensity.compact,
-        onPressed: () => PollCommentsPage.open(
-          context,
-          pollId: widget.pollId,
-          authService: widget.authService,
-          pollTitle: poll?.title,
-        ),
-        icon: const Icon(Icons.forum_rounded, size: 22),
-      ),
       AppBarPointsAction(session: widget.authService.session),
     ];
 
@@ -1235,6 +1266,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
               backgroundColor: const Color(0xFF09061B),
               foregroundColor: Colors.white,
               elevation: 0,
+              scrolledUnderElevation: 0,
+              surfaceTintColor: Colors.transparent,
               title: Text(
                 title,
                 maxLines: 1,
@@ -1297,12 +1330,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                 final range = (max - min).clamp(1.0, 400.0);
                                 final t = ((max - current) / range)
                                     .clamp(0.0, 1.0);
-                                // Compacto en barra al colapsar.
                                 final barTitleOpacity =
                                     Curves.easeOut.transform(
                                   ((t - 0.55) / 0.45).clamp(0.0, 1.0),
                                 );
-                                // Título grande sobre el fondo se oculta al subir.
                                 final heroTitleOpacity =
                                     (1.0 - (t / 0.55)).clamp(0.0, 1.0);
                                 return Stack(
@@ -1312,7 +1343,6 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                       poll: poll,
                                       titleOpacity: heroTitleOpacity,
                                     ),
-                                    // Fondo sólido solo cuando ya colapsó.
                                     Positioned.fill(
                                       child: IgnorePointer(
                                         child: DecoratedBox(
@@ -1327,7 +1357,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                     ),
                                     Positioned(
                                       left: 52,
-                                      right: 148,
+                                      right: 88,
                                       bottom: 14,
                                       child: Opacity(
                                         opacity: barTitleOpacity,
@@ -1385,13 +1415,21 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
                         sliver: SliverList.separated(
-                          itemCount: _versusGroups(_entries).length,
+                          itemCount: _versusGroups(_entries).length +
+                              (_versusGroups(_entries).isEmpty ? 0 : 1),
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: 14),
                           itemBuilder: (context, index) {
-                            final group = _versusGroups(_entries)[index];
+                            final groups = _versusGroups(_entries);
+                            final insertAt = (groups.length / 2).ceil();
+                            if (groups.isNotEmpty && index == insertAt) {
+                              return _VoteShareCard(onShare: _sharePoll);
+                            }
+                            final groupIndex =
+                                index > insertAt ? index - 1 : index;
+                            final group = groups[groupIndex];
                             return _VersusMatch(
-                              number: index + 1,
+                              number: groupIndex + 1,
                               entries: group,
                               hideCounts: _hideCounts,
                               votingOpen: _votingOpen,
@@ -1410,11 +1448,18 @@ class _PollDetailPageState extends State<PollDetailPage> {
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
                         sliver: SliverList.separated(
-                          itemCount: _entries.length,
+                          itemCount: _entries.length +
+                              (_entries.isEmpty ? 0 : 1),
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: 10),
                           itemBuilder: (context, index) {
-                            final entry = _entries[index];
+                            final insertAt = (_entries.length / 2).ceil();
+                            if (_entries.isNotEmpty && index == insertAt) {
+                              return _VoteShareCard(onShare: _sharePoll);
+                            }
+                            final entryIndex =
+                                index > insertAt ? index - 1 : index;
+                            final entry = _entries[entryIndex];
                             return _ContestantCard(
                               entry: entry,
                               hideCounts: _hideCounts,
@@ -1521,7 +1566,12 @@ class _FreeVoteModalCountdownState extends State<_FreeVoteModalCountdown> {
       child: Column(
         children: [
           Text(
-            tr('pollDetail.freeVoteWaitLabel'),
+            () {
+              final label = tr('pollDetail.freeVoteWaitLabel');
+              return label == 'pollDetail.freeVoteWaitLabel'
+                  ? 'PRÓXIMO VOTO GRATIS'
+                  : label;
+            }(),
             style: const TextStyle(
               color: Color(0xFFFDE68A),
               fontSize: 11,
@@ -2144,6 +2194,197 @@ class _ProcessingDot extends StatelessWidget {
       width: 6,
       height: 6,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _ModalArtistCard extends StatelessWidget {
+  const _ModalArtistCard({required this.entry});
+
+  final _VoteEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final artist = entry.artist;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF21112F),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF67E8F9), Color(0xFFD946EF)],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFD946EF).withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: artist != null
+                    ? ArtistAvatar(artist: artist, size: 58, radius: 16)
+                    : const SizedBox(width: 58, height: 58),
+              ),
+              Positioned(
+                left: -8,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF120A27),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    '#${entry.rank > 0 ? entry.rank : '-'}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  artist?.name ?? tr('pollDetail.artist'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if ((artist?.group ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    artist!.group,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFE9D5FF),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Text(
+            '${entry.percent.toStringAsFixed(2)}%',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VoteShareCard extends StatelessWidget {
+  const _VoteShareCard({
+    required this.onShare,
+    this.hint,
+  });
+
+  final VoidCallback onShare;
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onShare,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF151725),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: const Color(0xFF67E8F9).withValues(alpha: 0.28),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFF67E8F9).withValues(alpha: 0.12),
+                ),
+                child: const Icon(
+                  Icons.ios_share_rounded,
+                  color: Color(0xFF67E8F9),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('pollDetail.share'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hint ?? tr('pollDetail.shareCardHint'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.62),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.45),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

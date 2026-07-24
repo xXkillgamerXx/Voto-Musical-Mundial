@@ -98,16 +98,36 @@ const Map<String, Map<String, String>> homeStrings = {
 
   // Sección votaciones activas
   'home.activePollsEyebrow': {
-    'es': 'VOTACIONES ACTIVAS',
-    'en': 'ACTIVE POLLS',
-    'ko': '진행 중인 투표',
+    'es': 'VOTACIONES',
+    'en': 'POLLS',
+    'ko': '투표',
   },
   'home.voteNowTitle': {'es': 'Vota ahora', 'en': 'Vote now', 'ko': '지금 투표하세요'},
   'home.activePollsSubtitle': {
     'es':
-        'Las votaciones en vivo están abiertas. Entra y apoya a tu artista favorito.',
-    'en': 'Live polls are open. Come in and support your favorite artist.',
-    'ko': '실시간 투표가 진행 중입니다. 참여해서 좋아하는 아티스트를 응원하세요.',
+        'Desliza a un lado las abiertas y más abajo las cerradas.',
+    'en': 'Swipe sideways through open polls, then closed ones below.',
+    'ko': '진행 중 투표를 옆으로 넘기고, 아래에서 종료된 투표를 확인하세요.',
+  },
+  'home.openPollsSection': {
+    'es': 'ABIERTAS',
+    'en': 'OPEN',
+    'ko': '진행 중',
+  },
+  'home.swipePollsHint': {
+    'es': 'Desliza para ver más',
+    'en': 'Swipe to see more',
+    'ko': '더 보려면 밀어보세요',
+  },
+  'home.closedPollsSection': {
+    'es': 'CERRADAS',
+    'en': 'CLOSED',
+    'ko': '종료됨',
+  },
+  'home.closedPollsEmpty': {
+    'es': 'Todavía no hay votaciones cerradas para mostrar.',
+    'en': 'There are no closed polls to show yet.',
+    'ko': '아직 표시할 종료된 투표가 없습니다.',
   },
   'home.countingVotes': {
     'es': 'Contando votos...',
@@ -132,6 +152,11 @@ const Map<String, Map<String, String>> homeStrings = {
   'home.minutesShort': {'es': 'Min', 'en': 'Min', 'ko': '분'},
   'home.secondsShort': {'es': 'Seg', 'en': 'Sec', 'ko': '초'},
   'home.liveNow': {'es': 'EN VIVO', 'en': 'LIVE', 'ko': '실시간'},
+  'home.timeRemaining': {
+    'es': 'TIEMPO RESTANTE',
+    'en': 'TIME REMAINING',
+    'ko': '남은 시간',
+  },
   'home.noCloseDefined': {
     'es': 'SIN CIERRE DEFINIDO',
     'en': 'NO DEFINED CLOSE',
@@ -183,10 +208,10 @@ const Map<String, Map<String, String>> homeStrings = {
   },
   'home.noClosedPollsDescription': {
     'es':
-        'Cuando cierren votaciones esta semana, aquí aparecerán los artistas más votados.',
+        'Cuando finalice una votación, aquí verás sus resultados para consultarlos.',
     'en':
-        'When polls close this week, the most voted artists will appear here.',
-    'ko': '이번 주에 투표가 종료되면 최다 득표 아티스트가 여기에 표시됩니다.',
+        'When a poll ends, you will see its results here to check them.',
+    'ko': '투표가 종료되면 여기에서 결과를 확인할 수 있습니다.',
   },
 
   // Categorías
@@ -356,7 +381,7 @@ const Map<String, Map<String, String>> homeStrings = {
   },
   'home.missionsTitle': {'es': 'Misiones', 'en': 'Missions', 'ko': '미션'},
   'home.completed': {'es': 'COMPLETADA', 'en': 'COMPLETED', 'ko': '완료'},
-  'home.pending': {'es': 'PENDIENTE', 'en': 'PENDING', 'ko': '대기 중'},
+  'home.pending': {'es': 'DISPONIBLE', 'en': 'AVAILABLE', 'ko': '가능'},
   'home.progress': {'es': 'PROGRESO', 'en': 'PROGRESS', 'ko': '진행도'},
   'home.doMission': {'es': 'HACER MISIÓN', 'en': 'DO MISSION', 'ko': '미션 하기'},
   'home.newMissionsSoon': {

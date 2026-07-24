@@ -139,7 +139,30 @@ const finishPageLoading = async () => {
 
   loadingTimer = window.setTimeout(() => {
     isPageLoading.value = false
+    scrollToRouteHash()
   }, 420)
+}
+
+const scrollToRouteHash = (attempt = 0) => {
+  const hash = window.location.hash
+  if (!hash || hash === '#') {
+    return
+  }
+
+  const id = decodeURIComponent(hash.slice(1))
+  if (!id) {
+    return
+  }
+
+  const target = document.getElementById(id)
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+
+  if (attempt < 24) {
+    window.setTimeout(() => scrollToRouteHash(attempt + 1), 120)
+  }
 }
 
 const syncCurrentPath = () => {
@@ -174,7 +197,9 @@ const handleDocumentClick = (event) => {
   event.preventDefault()
   isPageLoading.value = true
   window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
-  window.scrollTo({ top: 0, behavior: 'instant' })
+  if (!url.hash) {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
   window.setTimeout(syncCurrentPath, 120)
 }
 

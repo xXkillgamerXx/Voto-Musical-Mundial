@@ -41,8 +41,11 @@ class _MissionsSectionState extends State<MissionsSection> {
     }
   }
 
-  List<Mission> get _visibleMissions =>
-      _missions.take(8).toList(growable: false);
+  List<Mission> get _visibleMissions {
+    final incomplete = _missions.where((m) => !m.isDone).toList();
+    final complete = _missions.where((m) => m.isDone).toList();
+    return [...incomplete, ...complete].take(8).toList(growable: false);
+  }
 
   Future<void> _openMissionSheet(Mission mission) async {
     await showDialog<void>(

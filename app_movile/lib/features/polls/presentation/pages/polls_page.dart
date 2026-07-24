@@ -25,24 +25,15 @@ class PollsPage extends StatefulWidget {
   State<PollsPage> createState() => _PollsPageState();
 }
 
-class _PollsPageState extends State<PollsPage>
-    with SingleTickerProviderStateMixin {
+class _PollsPageState extends State<PollsPage> {
   late final PollsApi _pollsApi;
-  late final TabController _tabController;
   late Future<_PollsData> _pollsFuture;
 
   @override
   void initState() {
     super.initState();
     _pollsApi = PollsApi(widget.authService.client);
-    _tabController = TabController(length: 2, vsync: this);
     _pollsFuture = _loadPolls();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<_PollsData> _loadPolls({bool forceRefresh = false}) async {
@@ -132,65 +123,32 @@ class _PollsPageState extends State<PollsPage>
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 14),
-              Container(
-                height: 46,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  indicator: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF8B5CF6), Color(0xFFFF21C8)],
-                    ),
-                  ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: const Color(0xFFB9B2D8),
-                  labelStyle: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                  tabs: [
-                    Tab(text: tr('catalog.pollsTabOpen')),
-                    Tab(text: tr('catalog.pollsTabClosed')),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
         const BannerAdWidget(
           padding: EdgeInsets.fromLTRB(18, 8, 18, 4),
         ),
-        const SizedBox(height: 4),
         Expanded(
           child: FutureBuilder<_PollsData>(
             future: _pollsFuture,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    const SizedBox(height: 80),
-                    _PollsStateMessage(
-                      icon: Icons.error_outline_rounded,
-                      title: tr('catalog.pollsLoadError'),
-                      subtitle: tr('catalog.pollsRetryHint'),
-                    ),
-                  ],
+                return RefreshIndicator(
+                  color: const Color(0xFFFF21C8),
+                  backgroundColor: const Color(0xFF120A2B),
+                  onRefresh: _refresh,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      const SizedBox(height: 80),
+                      _PollsStateMessage(
+                        icon: Icons.error_outline_rounded,
+                        title: tr('catalog.pollsLoadError'),
+                        subtitle: tr('catalog.pollsRetryHint'),
+                      ),
+                    ],
+                  ),
                 );
               }
 
@@ -201,27 +159,45 @@ class _PollsPageState extends State<PollsPage>
               }
 
               final data = snapshot.data!;
-
-              return TabBarView(
-                controller: _tabController,
-                children: [
-                  _PollsTabList(
-                    polls: data.openPolls,
-                    emptyTitle: tr('catalog.pollsEmptyOpenTitle'),
-                    emptySubtitle: tr('catalog.pollsEmptyOpenSubtitle'),
-                    onRefresh: _refresh,
-                    onOpenPoll: _openPoll,
-                    isOpenTab: true,
+              return RefreshIndicator(
+                color: const Color(0xFFFF21C8),
+                backgroundColor: const Color(0xFF120A2B),
+                onRefresh: _refresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
                   ),
-                  _PollsTabList(
-                    polls: data.closedPolls,
-                    emptyTitle: tr('catalog.pollsEmptyClosedTitle'),
-                    emptySubtitle: tr('catalog.pollsEmptyClosedSubtitle'),
-                    onRefresh: _refresh,
-                    onOpenPoll: _openPoll,
-                    isOpenTab: false,
-                  ),
-                ],
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
+                  children: [
+                    _PollsSectionHeader(
+                      title: tr('catalog.pollsTabOpen'),
+                      count: data.openPolls.length,
+                    ),
+                    const SizedBox(height: 12),
+                    if (data.openPolls.isEmpty)
+                      _PollsStateMessage(
+                        icon: Icons.how_to_vote_outlined,
+                        title: tr('catalog.pollsEmptyOpenTitle'),
+                        subtitle: tr('catalog.pollsEmptyOpenSubtitle'),
+                      )
+                    else
+                      ..._pollCards(data.openPolls, isOpen: true),
+                    const SizedBox(height: 28),
+                    _PollsSectionHeader(
+                      title: tr('catalog.pollsTabClosed'),
+                      count: data.closedPolls.length,
+                    ),
+                    const SizedBox(height: 12),
+                    if (data.closedPolls.isEmpty)
+                      _PollsStateMessage(
+                        icon: Icons.inventory_2_outlined,
+                        title: tr('catalog.pollsEmptyClosedTitle'),
+                        subtitle: tr('catalog.pollsEmptyClosedSubtitle'),
+                      )
+                    else
+                      ..._pollCards(data.closedPolls, isOpen: false),
+                  ],
+                ),
               );
             },
           ),
@@ -229,60 +205,65 @@ class _PollsPageState extends State<PollsPage>
       ],
     );
   }
+
+  List<Widget> _pollCards(List<Poll> polls, {required bool isOpen}) {
+    final children = <Widget>[];
+    for (var i = 0; i < polls.length; i++) {
+      if (i > 0) children.add(const SizedBox(height: 12));
+      children.add(
+        _PollCard(
+          poll: polls[i],
+          isOpenTab: isOpen,
+          onTap: () => _openPoll(polls[i]),
+        ),
+      );
+    }
+    return children;
+  }
 }
 
-class _PollsTabList extends StatelessWidget {
-  const _PollsTabList({
-    required this.polls,
-    required this.emptyTitle,
-    required this.emptySubtitle,
-    required this.onRefresh,
-    required this.onOpenPoll,
-    required this.isOpenTab,
+class _PollsSectionHeader extends StatelessWidget {
+  const _PollsSectionHeader({
+    required this.title,
+    required this.count,
   });
 
-  final List<Poll> polls;
-  final String emptyTitle;
-  final String emptySubtitle;
-  final Future<void> Function() onRefresh;
-  final ValueChanged<Poll> onOpenPoll;
-  final bool isOpenTab;
+  final String title;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      color: const Color(0xFFFF21C8),
-      backgroundColor: const Color(0xFF120A2B),
-      onRefresh: onRefresh,
-      child: polls.isEmpty
-          ? ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(18, 24, 18, 100),
-              children: [
-                _PollsStateMessage(
-                  icon: isOpenTab
-                      ? Icons.how_to_vote_outlined
-                      : Icons.inventory_2_outlined,
-                  title: emptyTitle,
-                  subtitle: emptySubtitle,
-                ),
-              ],
-            )
-          : ListView.separated(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 100),
-              itemCount: polls.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                return _PollCard(
-                  poll: polls[index],
-                  isOpenTab: isOpenTab,
-                  onTap: () => onOpenPoll(polls[index]),
-                );
-              },
+    return Row(
+      children: [
+        Text(
+          title.toUpperCase(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFD946EF).withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: const Color(0xFFD946EF).withValues(alpha: 0.35),
             ),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              color: Color(0xFFF0ABFC),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

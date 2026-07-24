@@ -56,6 +56,11 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': 'NEXT FREE VOTE',
     'ko': '다음 무료 투표',
   },
+  'pollDetail.freeVoteMissionsShare': {
+    'es': 'Comparte para ayudar a subir',
+    'en': 'Share to help them climb',
+    'ko': '공유해서 순위를 올려주세요',
+  },
   'pollDetail.freeVoteMissionsTitle': {
     'es': 'CONSIGUE MÁS VOTOS',
     'en': 'GET MORE VOTES',
@@ -150,6 +155,11 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'es': 'Compartir',
     'en': 'Share',
     'ko': '공유',
+  },
+  'pollDetail.shareCardHint': {
+    'es': 'Comparte esta votación con tus amigos',
+    'en': 'Share this poll with your friends',
+    'ko': '친구들과 이 투표를 공유하세요',
   },
   'pollDetail.liveVoting': {
     'es': 'VOTACIÓN EN VIVO',

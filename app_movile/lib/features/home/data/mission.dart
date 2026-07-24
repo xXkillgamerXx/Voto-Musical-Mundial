@@ -29,8 +29,12 @@ class Mission {
   final String? completedAt;
   final String? rewardedAt;
 
-  bool get isDone =>
-      completedAt != null || rewardedAt != null || progress >= target;
+  /// Completa solo si el progreso alcanzó el objetivo.
+  /// Así no sale COMPLETADA con 0/3 por un completedAt/rewardedAt viejo.
+  bool get isDone {
+    final goal = safeTarget;
+    return progress >= goal;
+  }
 
   int get safeTarget => target < 1 ? 1 : target;
 

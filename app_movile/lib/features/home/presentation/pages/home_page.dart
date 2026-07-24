@@ -129,6 +129,10 @@ class _HomePageState extends State<HomePage> {
     return _HomeData(
       heroSlides: heroSlides,
       livePolls: livePolls,
+      closedPolls: allPolls
+          .where((poll) => poll.status == 'closed')
+          .take(_closedPollsLimit)
+          .toList(growable: false),
       categories: extractCategoriesFromPolls(allPolls),
       topWeekly: await _loadWeeklyTopFromPolls(
         allPolls,
@@ -152,6 +156,7 @@ class _HomePageState extends State<HomePage> {
         _HomeData(
           heroSlides: current.heroSlides,
           livePolls: current.livePolls,
+          closedPolls: current.closedPolls,
           categories: current.categories,
           topWeekly: current.topWeekly,
           livePollIds: current.livePollIds,
@@ -186,10 +191,6 @@ class _HomePageState extends State<HomePage> {
     bool forceRefresh = false,
   }) async {
     try {
-      final closedPolls = pollRows
-          .where((poll) => poll.status == 'closed')
-          .toList(growable: false);
-
       final cutoff = DateTime.now().millisecondsSinceEpoch - _weekMs;
       final weeklyClosedPolls =
           pollRows
@@ -334,10 +335,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _homeFuture = _loadHome(forceRefresh: true);
-    });
-    await _homeFuture;
+    try {
+      final data = await _loadHome(forceRefresh: true);
+      if (!mounted) return;
+      setState(() {
+        _homeFuture = Future.value(data);
+      });
+    } catch (_) {
+      // Mantener datos actuales si el refresh falla.
+    }
   }
 
   void _openProfile(Artist artist) {
@@ -414,10 +420,13 @@ class _HomePageState extends State<HomePage> {
               ),
               SliverToBoxAdapter(
                 child: _ActivePollsSection(
-                  polls: data.livePolls,
+                  openPolls: data.livePolls,
+                  closedPolls: data.closedPolls,
                   onVoteTap: _openPoll,
                   onRankingTap: () =>
                       widget.onNavigateToSection('Ranking Popularity'),
+                  onViewAllTap: () =>
+                      widget.onNavigateToSection('Votaciones'),
                 ),
               ),
               const SliverToBoxAdapter(child: BannerAdWidget()),
@@ -500,6 +509,7 @@ class _HomeData {
   const _HomeData({
     required this.heroSlides,
     required this.livePolls,
+    required this.closedPolls,
     required this.categories,
     required this.topWeekly,
     required this.livePollIds,
@@ -509,6 +519,7 @@ class _HomeData {
 
   final List<_HeroSlide> heroSlides;
   final List<Poll> livePolls;
+  final List<Poll> closedPolls;
   final List<PollCategoryItem> categories;
   final List<_WeeklyTopArtist> topWeekly;
   final List<String> livePollIds;
@@ -1089,14 +1100,18 @@ class _HeroMiniStat extends StatelessWidget {
 
 class _ActivePollsSection extends StatelessWidget {
   const _ActivePollsSection({
-    required this.polls,
+    required this.openPolls,
+    required this.closedPolls,
     required this.onVoteTap,
     required this.onRankingTap,
+    required this.onViewAllTap,
   });
 
-  final List<Poll> polls;
+  final List<Poll> openPolls;
+  final List<Poll> closedPolls;
   final ValueChanged<Poll> onVoteTap;
   final VoidCallback onRankingTap;
+  final VoidCallback onViewAllTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1134,26 +1149,265 @@ class _ActivePollsSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          if (polls.isEmpty)
+          _HomePollsBlockTitle(
+            title: tr('home.openPollsSection'),
+            count: openPolls.length,
+          ),
+          const SizedBox(height: 12),
+          if (openPolls.isEmpty)
             _ActivePollsEmpty(onRankingTap: onRankingTap)
           else
-            SizedBox(
-              height: 430,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: polls.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 14),
-                itemBuilder: (context, index) {
-                  return _ActivePollCard(
-                    poll: polls[index],
-                    visualIndex: index,
-                    onVoteTap: () => onVoteTap(polls[index]),
-                  );
-                },
+            _PollsHorizontalCarousel(
+              height: 448,
+              cardWidthFactor: 0.82,
+              polls: openPolls,
+              compact: false,
+              onVoteTap: onVoteTap,
+            ),
+          const SizedBox(height: 24),
+          _HomePollsBlockTitle(
+            title: tr('home.closedPollsSection'),
+            count: closedPolls.length,
+            trailing: TextButton(
+              onPressed: onViewAllTap,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFF0ABFC),
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
+              child: Text(
+                tr('home.viewPolls'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (closedPolls.isEmpty)
+            const _ClosedPollsEmptyCard()
+          else
+            _PollsHorizontalCarousel(
+              height: 308,
+              cardWidthFactor: 0.74,
+              polls: closedPolls,
+              compact: true,
+              onVoteTap: onVoteTap,
             ),
         ],
       ),
+    );
+  }
+}
+
+class _PollsHorizontalCarousel extends StatefulWidget {
+  const _PollsHorizontalCarousel({
+    required this.polls,
+    required this.onVoteTap,
+    required this.height,
+    required this.cardWidthFactor,
+    required this.compact,
+  });
+
+  final List<Poll> polls;
+  final ValueChanged<Poll> onVoteTap;
+  final double height;
+  final double cardWidthFactor;
+  final bool compact;
+
+  @override
+  State<_PollsHorizontalCarousel> createState() =>
+      _PollsHorizontalCarouselState();
+}
+
+class _PollsHorizontalCarouselState extends State<_PollsHorizontalCarousel> {
+  final _controller = ScrollController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_controller.hasClients) return;
+    final cardWidth =
+        MediaQuery.sizeOf(context).width * widget.cardWidthFactor + 14;
+    final next = (_controller.offset / cardWidth).round().clamp(
+      0,
+      widget.polls.length - 1,
+    );
+    if (next != _index) {
+      setState(() => _index = next);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onScroll);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showHint = widget.polls.length > 1;
+    final cardWidth = MediaQuery.sizeOf(context).width * widget.cardWidthFactor;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showHint) ...[
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 10, right: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tr('home.swipePollsHint'),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Colors.white.withValues(alpha: 0.45),
+                    size: 12,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        SizedBox(
+          height: widget.height,
+          child: Stack(
+            children: [
+              ListView.separated(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.only(right: 28),
+                itemCount: widget.polls.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 14),
+                itemBuilder: (context, index) {
+                  return SizedBox(
+                    width: cardWidth,
+                    child: _ActivePollCard(
+                      poll: widget.polls[index],
+                      visualIndex: index,
+                      compact: widget.compact,
+                      onVoteTap: () => widget.onVoteTap(widget.polls[index]),
+                    ),
+                  );
+                },
+              ),
+              if (showHint && _index < widget.polls.length - 1)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 36,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            const Color(0xFF050213).withValues(alpha: 0),
+                            const Color(0xFF050213).withValues(alpha: 0.72),
+                          ],
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFFF0ABFC),
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (showHint) ...[
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.polls.length, (i) {
+              final active = i == _index;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 18 : 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: active
+                      ? const Color(0xFFF012D6)
+                      : Colors.white.withValues(alpha: 0.22),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _HomePollsBlockTitle extends StatelessWidget {
+  const _HomePollsBlockTitle({
+    required this.title,
+    required this.count,
+    this.trailing,
+  });
+
+  final String title;
+  final int count;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFD946EF).withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              color: Color(0xFFF0ABFC),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const Spacer(),
+        if (trailing != null) trailing!,
+      ],
     );
   }
 }
@@ -1163,11 +1417,13 @@ class _ActivePollCard extends StatelessWidget {
     required this.poll,
     required this.visualIndex,
     required this.onVoteTap,
+    this.compact = false,
   });
 
   final Poll poll;
   final int visualIndex;
   final VoidCallback onVoteTap;
+  final bool compact;
 
   static const _visualGradients = [
     [Color(0xFF4C1D95), Color(0xFFC026D3), Color(0xFF312E81)],
@@ -1180,134 +1436,152 @@ class _ActivePollCard extends StatelessWidget {
     final gradient = _visualGradients[visualIndex % _visualGradients.length];
     final banner = resolvePollBanner(poll);
     final isSelecting = poll.status == 'selecting_winners';
+    final isClosed = poll.status == 'closed';
+    final bannerHeight = compact ? 118.0 : 176.0;
 
-    return SizedBox(
-      width: MediaQuery.sizeOf(context).width * 0.88,
-      height: 430,
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF090B19).withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF4C1D95).withValues(alpha: 0.25),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-          ],
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF090B19).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: 176,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: gradient,
-                      ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4C1D95).withValues(alpha: 0.25),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: bannerHeight,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: gradient,
                     ),
                   ),
-                  if (banner.isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: banner,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, _, _) => const SizedBox.shrink(),
-                    ),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.05),
-                          Colors.transparent,
-                          const Color(0xFF080A17),
-                        ],
-                      ),
+                ),
+                if (banner.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: banner,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.05),
+                        Colors.transparent,
+                        const Color(0xFF080A17),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            poll.title.toUpperCase(),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              height: 1.12,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Expanded(
-                            child: Text(
-                              isSelecting
-                                  ? tr('home.countingVotes')
-                                  : (poll.description.isNotEmpty
-                                        ? poll.description
-                                        : tr('home.whoLeadsPoll')),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.55),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, compact ? 14 : 18, 20, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  poll.title.toUpperCase(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: compact ? 16 : 18,
+                    fontWeight: FontWeight.w900,
+                    height: 1.12,
+                  ),
+                ),
+                if (!compact) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    isSelecting
+                        ? tr('home.countingVotes')
+                        : (poll.description.isNotEmpty
+                              ? poll.description
+                              : tr('home.whoLeadsPoll')),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
                     ),
-                    const SizedBox(height: 14),
-                    _PollCountdown(poll: poll),
-                    const SizedBox(height: 14),
-                    _GradientButton(
-                      label: isSelecting
+                  ),
+                  const SizedBox(height: 14),
+                  _PollCountdown(poll: poll),
+                  const SizedBox(height: 14),
+                ] else ...[
+                  const SizedBox(height: 10),
+                ],
+                _GradientButton(
+                  label: isClosed
+                      ? tr('catalog.pollActionViewResults')
+                      : isSelecting
                           ? tr('home.viewProcess')
                           : tr('home.vote'),
-                      onTap: onVoteTap,
-                    ),
-                  ],
+                  onTap: onVoteTap,
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _PollCountdown extends StatelessWidget {
+class _PollCountdown extends StatefulWidget {
   const _PollCountdown({required this.poll});
 
   final Poll poll;
 
   @override
+  State<_PollCountdown> createState() => _PollCountdownState();
+}
+
+class _PollCountdownState extends State<_PollCountdown> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final poll = widget.poll;
+
     if (poll.status == 'selecting_winners') {
       return _PollCountdownShell(
         child: Row(
@@ -1333,26 +1607,50 @@ class _PollCountdown extends StatelessWidget {
       return const _LiveBadge();
     }
 
-    final remaining = endDate.difference(DateTime.now());
+    final remaining = endDate.difference(_now);
     if (remaining.isNegative && poll.status == 'live') {
       return const _LiveBadge();
     }
 
-    final days = remaining.inDays;
-    final hours = remaining.inHours.remainder(24);
-    final minutes = remaining.inMinutes.remainder(60);
-    final seconds = remaining.inSeconds.remainder(60);
+    final days = remaining.inDays.clamp(0, 999);
+    final hours = remaining.inHours.remainder(24).clamp(0, 23);
+    final minutes = remaining.inMinutes.remainder(60).clamp(0, 59);
+    final seconds = remaining.inSeconds.remainder(60).clamp(0, 59);
 
-    return Row(
-      children: [
-        _CountdownCell(value: _pad(days), label: tr('home.days')),
-        const SizedBox(width: 8),
-        _CountdownCell(value: _pad(hours), label: tr('home.hours')),
-        const SizedBox(width: 8),
-        _CountdownCell(value: _pad(minutes), label: tr('home.minutesShort')),
-        const SizedBox(width: 8),
-        _CountdownCell(value: _pad(seconds), label: tr('home.secondsShort')),
-      ],
+    return _PollCountdownShell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tr('home.timeRemaining'),
+            style: const TextStyle(
+              color: Color(0xFFFDE68A),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _CountdownCell(value: _pad(days), label: tr('home.days')),
+              const SizedBox(width: 8),
+              _CountdownCell(value: _pad(hours), label: tr('home.hours')),
+              const SizedBox(width: 8),
+              _CountdownCell(
+                value: _pad(minutes),
+                label: tr('home.minutesShort'),
+              ),
+              const SizedBox(width: 8),
+              _CountdownCell(
+                value: _pad(seconds),
+                label: tr('home.secondsShort'),
+                accent: true,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1369,11 +1667,17 @@ class _PollCountdownShell extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1A1230), Color(0xFF0C0818)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFFDE68A).withValues(alpha: 0.28),
+          ),
         ),
         child: child,
       ),
@@ -1390,6 +1694,7 @@ class _LiveBadge extends StatelessWidget {
       width: double.infinity,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: const Color(0xFF34D399).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(14),
@@ -1405,6 +1710,7 @@ class _LiveBadge extends StatelessWidget {
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               tr('home.liveNow'),
@@ -1434,42 +1740,154 @@ class _LiveBadge extends StatelessWidget {
 }
 
 class _CountdownCell extends StatelessWidget {
-  const _CountdownCell({required this.value, required this.label});
+  const _CountdownCell({
+    required this.value,
+    required this.label,
+    this.accent = false,
+  });
 
   final String value;
   final String label;
+  final bool accent;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          color: accent
+              ? const Color(0xFF3B1D0A).withValues(alpha: 0.85)
+              : Colors.black.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: accent
+                ? const Color(0xFFFDE68A).withValues(alpha: 0.45)
+                : Colors.white.withValues(alpha: 0.12),
+          ),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.25),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Text(
+                value,
+                key: ValueKey(value),
+                style: TextStyle(
+                  color: accent ? const Color(0xFFFFF7C2) : Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ),
-            if (label.isNotEmpty)
+            if (label.isNotEmpty) ...[
+              const SizedBox(height: 4),
               Text(
                 label.toUpperCase(),
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.45),
-                  fontSize: 9,
+                  color: accent
+                      ? const Color(0xFFFDE68A).withValues(alpha: 0.85)
+                      : Colors.white.withValues(alpha: 0.5),
+                  fontSize: 10,
                   fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
                 ),
               ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ClosedPollsEmptyCard extends StatelessWidget {
+  const _ClosedPollsEmptyCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF15122A), Color(0xFF0B0918)],
+        ),
+        border: Border.all(
+          color: const Color(0xFF8B5CF6).withValues(alpha: 0.22),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4C1D95).withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: const Color(0xFFD946EF).withValues(alpha: 0.12),
+              border: Border.all(
+                color: const Color(0xFFD946EF).withValues(alpha: 0.28),
+              ),
+            ),
+            child: const Icon(
+              Icons.inventory_2_outlined,
+              color: Color(0xFFF0ABFC),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr('home.noClosedPollsTitle'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  tr('home.noClosedPollsDescription'),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
