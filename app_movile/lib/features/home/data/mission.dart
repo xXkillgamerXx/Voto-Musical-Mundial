@@ -1,5 +1,7 @@
 import 'dart:ui' show PlatformDispatcher;
 
+import '../../../core/utils/strip_html.dart';
+
 class Mission {
   const Mission({
     required this.id,
@@ -65,9 +67,10 @@ class Mission {
 
     return Mission(
       id: '${json['id'] ?? ''}',
-      title: useEn && titleEn.isNotEmpty ? titleEn : titleEs,
-      description:
-          useEn && descriptionEn.isNotEmpty ? descriptionEn : descriptionEs,
+      title: stripHtml(useEn && titleEn.isNotEmpty ? titleEn : titleEs),
+      description: stripHtml(
+        useEn && descriptionEn.isNotEmpty ? descriptionEn : descriptionEs,
+      ),
       type: '${json['type'] ?? 'manual'}',
       icon: '${json['icon'] ?? 'fa-solid fa-bolt'}',
       actionUrl: _nullableString(json['actionUrl'] ?? json['action_url']),

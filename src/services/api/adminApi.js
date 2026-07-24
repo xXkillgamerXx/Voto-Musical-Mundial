@@ -72,6 +72,20 @@ export const createAdminContestant = (pollId, body) => adminRequest(`/polls/${en
 export const updateAdminContestant = (pollId, contestantId, body) => adminRequest(`/polls/${encodeURIComponent(pollId)}/contestants/${encodeURIComponent(contestantId)}`, { method: 'PATCH', body })
 export const deleteAdminContestant = (pollId, contestantId) => adminRequest(`/polls/${encodeURIComponent(pollId)}/contestants/${encodeURIComponent(contestantId)}`, { method: 'DELETE' })
 export const adjustAdminContestantVotes = (pollId, contestantId, amount) => adminRequest(`/polls/${encodeURIComponent(pollId)}/contestants/${encodeURIComponent(contestantId)}/manual-votes`, { method: 'POST', body: { amount } })
+export const createAdminBotCampaign = (pollId, contestantId, body) =>
+  adminRequest(
+    `/polls/${encodeURIComponent(pollId)}/contestants/${encodeURIComponent(contestantId)}/bot-campaigns`,
+    { method: 'POST', body },
+  )
+export const getAdminBotCampaigns = (pollId) =>
+  adminRequest(`/polls/${encodeURIComponent(pollId)}/bot-campaigns`)
+export const getAdminBotCampaign = (campaignId) =>
+  adminRequest(`/bot-campaigns/${encodeURIComponent(campaignId)}`)
+export const cancelAdminBotCampaign = (campaignId) =>
+  adminRequest(`/bot-campaigns/${encodeURIComponent(campaignId)}/cancel`, {
+    method: 'POST',
+    body: {},
+  })
 export const finishAdminRound = (pollId, roundId, body) => adminRequest(`/polls/${encodeURIComponent(pollId)}/rounds/${encodeURIComponent(roundId)}/finish`, { method: 'POST', body })
 export const launchAdminRound = (pollId, roundId) => adminRequest(`/polls/${encodeURIComponent(pollId)}/rounds/${encodeURIComponent(roundId)}/launch`, { method: 'POST', body: {} })
 export const closeAdminPoll = (pollId) => adminRequest(`/polls/${encodeURIComponent(pollId)}/close`, { method: 'POST', body: {} })
@@ -103,6 +117,10 @@ export const deleteAdminMission = (id) => adminRequest(`/missions/${encodeURICom
 export const getAdminDailyRewards = () => adminRequest('/settings/daily-rewards')
 export const updateAdminDailyRewards = (body) =>
   adminRequest('/settings/daily-rewards', { method: 'PATCH', body })
+
+export const getAdminShareVoteBoost = () => adminRequest('/settings/share-vote-boost')
+export const updateAdminShareVoteBoost = (body) =>
+  adminRequest('/settings/share-vote-boost', { method: 'PATCH', body })
 
 export const getAdminTerms = () => adminRequest('/settings/terms')
 export const updateAdminTerms = (body) =>

@@ -53,14 +53,26 @@ class VoteActivity {
   factory VoteActivity.fromRealtimePayload(Map<String, dynamic> json) {
     final createdAt = _parseDate(json['createdAt']) ?? DateTime.now();
     final pollId = '${json['pollId'] ?? ''}';
-    final userId = '${json['userId'] ?? ''}';
     final artistId = '${json['artistId'] ?? ''}';
     final username = _stringValue([json['username']]);
+    final displayName = _stringValue([
+      json['userDisplayName'],
+      username,
+    ]);
     final isAnonymous =
         json['isAnonymous'] == true || json['isAnonymous'] == '1';
     final isStaffVote = json['staffVote'] == true || json['staffVote'] == '1';
+    final botCampaignId = '${json['botCampaignId'] ?? ''}';
+    final rawUserId = '${json['userId'] ?? ''}';
+    final userId = rawUserId.isNotEmpty
+        ? rawUserId
+        : (displayName.isNotEmpty ? 'fan:$displayName' : '');
 
-    if (isAnonymous || isStaffVote || userId.isEmpty) {
+    // Bot campaigns look like normal fans in the live feed.
+    final isBotFan = botCampaignId.isNotEmpty && displayName.isNotEmpty;
+    final looksRegistered = userId.isNotEmpty && !isAnonymous && !isStaffVote;
+
+    if (isStaffVote || (!looksRegistered && !isBotFan)) {
       return VoteActivity(
         id: '',
         createdAt: createdAt,
@@ -88,10 +100,7 @@ class VoteActivity {
       artistPhotoUrl: _stringValue([json['artistPhotoUrl']]),
       userId: userId,
       username: username,
-      userDisplayName: _stringValue([
-        json['userDisplayName'],
-        username,
-      ]).ifEmpty('Fan'),
+      userDisplayName: displayName.ifEmpty('Fan'),
       userPhotoUrl: _stringValue([json['userPhotoUrl']]),
     );
   }

@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module';
+import { VoteBotCampaignWorker } from './vote-bot-campaign.worker';
 import { VoteSyncWorker } from './vote-sync.worker';
 
 async function bootstrap() {
@@ -7,8 +8,10 @@ async function bootstrap() {
     logger: ['log', 'error', 'warn'],
   });
   const voteSyncWorker = app.get(VoteSyncWorker);
+  const voteBotCampaignWorker = app.get(VoteBotCampaignWorker);
 
   await voteSyncWorker.start();
+  await voteBotCampaignWorker.start();
 
   const shutdown = async () => {
     await app.close();

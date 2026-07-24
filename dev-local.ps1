@@ -65,7 +65,7 @@ if (-not (Test-Path $key)) {
 Write-Host "=== Entorno local (DB produccion via tunel SSH) ===" -ForegroundColor Cyan
 
 if (-not (Test-PortListening -Port 5432) -or -not (Test-PortListening -Port 6379)) {
-  Write-Host "1/3  Abriendo tunel SSH (PostgreSQL 5432 + Redis 6379)..." -ForegroundColor Cyan
+  Write-Host "1/4  Abriendo tunel SSH (PostgreSQL 5432 + Redis 6379)..." -ForegroundColor Cyan
   Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
     "Write-Host 'Tunel SSH activo. No cierres esta ventana.' -ForegroundColor Green; ssh -N -L 127.0.0.1:5432:127.0.0.1:5432 -L 127.0.0.1:6379:127.0.0.1:6379 -p ${sshPort} -i `"$key`" -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 ${sshUser}@${sshHost}"
@@ -76,11 +76,11 @@ if (-not (Test-PortListening -Port 5432) -or -not (Test-PortListening -Port 6379
     exit 1
   }
 } else {
-  Write-Host "1/3  Tunel SSH ya activo (5432/6379)." -ForegroundColor Green
+  Write-Host "1/4  Tunel SSH ya activo (5432/6379)." -ForegroundColor Green
 }
 
 if (-not (Test-PortListening -Port $apiPort)) {
-  Write-Host "2/3  Iniciando API local (http://localhost:${apiPort})..." -ForegroundColor Cyan
+  Write-Host "2/4  Iniciando API local (http://localhost:${apiPort})..." -ForegroundColor Cyan
   Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
     "cd `"$root\backend`"; npm run start:dev"
@@ -96,11 +96,24 @@ if (-not (Test-PortListening -Port $apiPort)) {
     exit 1
   }
 } else {
-  Write-Host "2/3  API ya activa en http://localhost:${apiPort}." -ForegroundColor Green
+  Write-Host "2/4  API ya activa en http://localhost:${apiPort}." -ForegroundColor Green
   if (-not (Wait-ApiHealth -TimeoutSeconds 10)) {
     Write-Host "La API en ${apiPort} no responde ok en /api/health." -ForegroundColor Red
     exit 1
   }
+}
+
+$workerRunning = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -match 'workers[/\\]main|start:worker' }
+if (-not $workerRunning) {
+  Write-Host "3/4  Iniciando worker (bots + sync de votos)..." -ForegroundColor Cyan
+  Start-Process powershell -ArgumentList @(
+    "-NoExit", "-Command",
+    "cd `"$root\backend`"; npm run start:worker:dev"
+  )
+  Start-Sleep -Seconds 2
+} else {
+  Write-Host "3/4  Worker ya activo." -ForegroundColor Green
 }
 
 if (Test-PortListening -Port $frontendPort) {
@@ -111,7 +124,7 @@ if (Test-PortListening -Port $frontendPort) {
 
 Stop-ListenPort -Port 5174
 
-Write-Host "3/3  Iniciando frontend (http://localhost:${frontendPort})..." -ForegroundColor Cyan
+Write-Host "4/4  Iniciando frontend (http://localhost:${frontendPort})..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList @(
   "-NoExit", "-Command",
   "cd `"$root`"; npm run dev"
@@ -126,6 +139,7 @@ Write-Host ""
 Write-Host "Listo:" -ForegroundColor Green
 Write-Host "  Web:  http://localhost:${frontendPort}" -ForegroundColor Green
 Write-Host "  API:  http://localhost:${apiPort}/api/health" -ForegroundColor Green
+Write-Host "  Worker: bots + vote-sync" -ForegroundColor Green
 Write-Host "  DB:   produccion via tunel SSH (5432/6379)" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "No cierres la ventana del tunel SSH ni la de la API." -ForegroundColor DarkGray
+Write-Host "No cierres las ventanas del tunel SSH, la API ni el worker." -ForegroundColor DarkGray

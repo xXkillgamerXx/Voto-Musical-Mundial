@@ -289,6 +289,11 @@ const Map<String, Map<String, String>> homeStrings = {
   'home.noGroup': {'es': 'SIN GRUPO', 'en': 'NO GROUP', 'ko': '그룹 없음'},
   'home.followers': {'es': 'Seguidores', 'en': 'Followers', 'ko': '팔로워'},
   'home.votes': {'es': 'Votos', 'en': 'Votes', 'ko': '득표'},
+  'home.votesCount': {
+    'es': '{count} votos',
+    'en': '{count} votes',
+    'ko': '{count}표',
+  },
 
   // Tiempo relativo de actividad
   'home.timeNow': {'es': 'ahora', 'en': 'now', 'ko': '방금'},

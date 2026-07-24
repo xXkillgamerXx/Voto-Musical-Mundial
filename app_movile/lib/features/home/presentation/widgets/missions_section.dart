@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/api/api_config.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/mission.dart';
@@ -406,46 +408,24 @@ class _MissionSheetState extends State<_MissionSheet> {
       return;
     }
 
-    final url = widget.mission.actionUrl;
+    final mission = widget.mission;
+    final isShareMission =
+        mission.type.startsWith('share_') || mission.type == 'share_poll';
+
+    if (isShareMission) {
+      await _shareAndClaim(mission);
+      return;
+    }
+
+    final url = mission.actionUrl;
     if (url != null && url.isNotEmpty) {
       final uri = Uri.tryParse(url);
       if (uri != null) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
 
-      if (widget.mission.type == 'follow_social') {
-        setState(() {
-          _working = true;
-          _message = tr('home.verifyingMission');
-        });
-
-        await Future<void>.delayed(const Duration(seconds: 3));
-
-        try {
-          await MissionsApi(widget.authService.client).completeMission(
-            widget.mission.id,
-          );
-          if (!mounted) {
-            return;
-          }
-
-          setState(() {
-            _message = tr('home.missionCompletedMessage');
-          });
-          widget.onCompleted();
-        } catch (_) {
-          if (!mounted) {
-            return;
-          }
-
-          setState(() {
-            _message = tr('home.missionRegisterError');
-          });
-        } finally {
-          if (mounted) {
-            setState(() => _working = false);
-          }
-        }
+      if (mission.type == 'follow_social') {
+        await _claimAfterDelay(mission, const Duration(seconds: 3));
       }
 
       return;
@@ -454,6 +434,75 @@ class _MissionSheetState extends State<_MissionSheet> {
     setState(() {
       _message = tr('home.missionAutoValidate');
     });
+  }
+
+  Future<void> _shareAndClaim(Mission mission) async {
+    final shareUrl = ApiConfig.uploadsOrigin;
+    final text = '${mission.title}\n$shareUrl';
+
+    try {
+      if (mission.type == 'share_whatsapp') {
+        final uri = Uri.parse(
+          'https://wa.me/?text=${Uri.encodeComponent(text)}',
+        );
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (mission.type == 'share_facebook') {
+        final uri = Uri.parse(
+          'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(shareUrl)}',
+        );
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (mission.type == 'share_twitter') {
+        final uri = Uri.parse(
+          'https://twitter.com/intent/tweet?text=${Uri.encodeComponent(mission.title)}&url=${Uri.encodeComponent(shareUrl)}',
+        );
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        await SharePlus.instance.share(
+          ShareParams(
+            text: text,
+            subject: mission.title,
+            title: mission.title,
+          ),
+        );
+      }
+    } catch (_) {
+      // Usuario canceló o no hay app de share.
+    }
+
+    await _claimAfterDelay(mission, const Duration(seconds: 2));
+  }
+
+  Future<void> _claimAfterDelay(Mission mission, Duration delay) async {
+    setState(() {
+      _working = true;
+      _message = tr('home.verifyingMission');
+    });
+
+    await Future<void>.delayed(delay);
+
+    try {
+      await MissionsApi(widget.authService.client).completeMission(mission.id);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _message = tr('home.missionCompletedMessage');
+      });
+      widget.onCompleted();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _message = tr('home.missionRegisterError');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _working = false);
+      }
+    }
   }
 
   @override

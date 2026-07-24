@@ -141,6 +141,7 @@ model Poll {
   rounds         Round[]
   contestants    Contestant[]
   voteLedger     VoteLedger[]
+  voteBotCampaigns VoteBotCampaign[]
   comments       Comment[]
   commentLocks   CommentLock[]
   contentReports ContentReport[]
@@ -189,6 +190,7 @@ model Contestant {
   round        Round?       @relation(fields: [roundId], references: [id], onDelete: Cascade)
   artist       Artist       @relation(fields: [artistId], references: [id])
   voteLedger   VoteLedger[]
+  voteBotCampaigns VoteBotCampaign[]
 
   @@index([pollId, roundId])
   @@unique([pollId, roundId, artistId])
@@ -218,6 +220,32 @@ model VoteLedger {
   @@index([pollId, roundId, createdAt])
   @@index([contestantId, createdAt])
   @@map("vote_ledger")
+}
+
+model VoteBotCampaign {
+  id              BigInt    @id @default(autoincrement())
+  pollId          BigInt    @map("poll_id")
+  roundId         BigInt?   @map("round_id")
+  contestantId    BigInt    @map("contestant_id")
+  artistId        BigInt    @map("artist_id")
+  totalAmount     Int       @map("total_amount")
+  botsCount       Int       @map("bots_count")
+  durationSeconds Int       @map("duration_seconds")
+  appliedAmount   Int       @default(0) @map("applied_amount")
+  status          String    @default("running")
+  botNames        Json      @default("[]") @map("bot_names")
+  createdBy       String?   @map("created_by")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  endsAt          DateTime  @map("ends_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  poll            Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  contestant      Contestant @relation(fields: [contestantId], references: [id], onDelete: Cascade)
+
+  @@index([status, endsAt])
+  @@index([pollId, status])
+  @@map("vote_bot_campaigns")
 }
 
 model Mission {

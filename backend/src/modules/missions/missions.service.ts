@@ -208,6 +208,22 @@ export class MissionsService {
       VISIT_SESSION_TTL_SECONDS,
     );
 
+    // External destinations (Google News, Instagram, etc.) cannot load our visit script.
+    // Count the open itself as the visit so the fan receives the reward after "Hacer mision".
+    let visitResult: {
+      awarded?: boolean;
+      progress?: number;
+      pointsAfter?: number | string | bigint | null;
+    } | null = null;
+
+    if (!this.isAppOwnedUrl(startUrl)) {
+      try {
+        visitResult = await this.recordPageVisit(mission, userId, startUrl);
+      } catch {
+        visitResult = null;
+      }
+    }
+
     return {
       token,
       url,
@@ -217,7 +233,10 @@ export class MissionsService {
       visitMode: visitConfig.mode,
       visitUrls: visitConfig.urls,
       target: mission.target,
-      progress: existing?.progress || 0,
+      progress: Number(visitResult?.progress ?? existing?.progress ?? 0),
+      awarded: Boolean(visitResult?.awarded),
+      pointsAfter:
+        visitResult?.pointsAfter == null ? null : Number(visitResult.pointsAfter),
     };
   }
 
@@ -312,6 +331,20 @@ export class MissionsService {
 
   private getVisitConfig(mission: { actionUrl?: string | null; metadata?: unknown }): VisitConfig {
     return buildVisitConfig(mission.actionUrl, asRecord(mission.metadata));
+  }
+
+  private isAppOwnedUrl(url: string) {
+    const page = normalizePath(url);
+    if (!page) {
+      return false;
+    }
+
+    const configured = String(this.config.get<string>('PUBLIC_WEB_HOST') || 'vote.musicmundial.com')
+      .split(',')
+      .map((host) => host.trim().replace(/^www\./, '').toLowerCase())
+      .filter(Boolean);
+    const hosts = new Set(['vote.musicmundial.com', 'localhost', '127.0.0.1', ...configured]);
+    return hosts.has(page.host);
   }
 
   private pageMatchesVisitConfig(config: VisitConfig, pageUrl: string) {

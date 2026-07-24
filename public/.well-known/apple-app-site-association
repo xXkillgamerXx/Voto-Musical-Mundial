@@ -1,0 +1,27 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.vote.musicmundial.com",
+        "paths": [
+          "/votacion/*",
+          "/poll/*",
+          "/artista/*",
+          "/artist/*",
+          "/registro*",
+          "/register*",
+          "/noticias*",
+          "/news*",
+          "/misiones*",
+          "/missions*",
+          "/votaciones*",
+          "/polls*",
+          "/artistas*",
+          "/artists*",
+          "/user/*"
+        ]
+      }
+    ]
+  }
+}

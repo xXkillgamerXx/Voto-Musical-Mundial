@@ -26,6 +26,22 @@ let missionActionTimer = null
 
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
 
+const stripHtml = (value) =>
+  String(value || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+
 const loadMissions = () => {
   getMissions()
     .then((missionRows) => {
@@ -50,8 +66,8 @@ const missions = computed(() => {
       return {
         id: mission.id,
         icon: mission.icon || 'fa-solid fa-check',
-        title: mission.title || 'Mision',
-        text: mission.description || '',
+        title: stripHtml(mission.title || 'Mision'),
+        text: stripHtml(mission.description || ''),
         type: mission.type || 'manual',
         actionUrl: mission.actionUrl || mission.url || '',
         visitMode: mission.visitMode === 'host' ? 'host' : 'exact',
@@ -86,9 +102,6 @@ const closeMissionModal = () => {
 const closeMissionReward = () => {
   completedMissionReward.value = null
 }
-const shareTextForMission = (mission) =>
-  encodeURIComponent(`${missionTitle(mission)} - Votos Mundial`)
-const shareUrl = () => encodeURIComponent(window.location.origin)
 const referralUrl = () => {
   const url = new URL('/registro', window.location.origin)
 
@@ -275,6 +288,28 @@ const performMissionAction = async (mission) => {
       } else {
         const visit = await createMissionVisitToken(mission.id)
         window.open(visit.url || firstUrl, '_blank', 'noopener,noreferrer')
+
+        // External pages are credited when the visit token is created.
+        if (
+          visit?.awarded
+          || Number(visit?.progress || 0) >= target
+        ) {
+          markMissionCompletedLocally(mission)
+          applyUpdatedPoints(visit?.pointsAfter)
+          try {
+            const me = await getMe()
+            applyUpdatedPoints(me?.points)
+            userProfile.value = me || userProfile.value
+          } catch {
+            // ignore
+          }
+          selectedMission.value = null
+          if (!wasDone) {
+            openMissionReward(mission)
+          }
+          return
+        }
+
         actionMessage.value = mission.visitMode === 'host' || target > 1
           ? translate('home.missions.visitWaitingHost')
           : translate('home.missions.visitWaiting')
@@ -350,65 +385,124 @@ const performMissionAction = async (mission) => {
     window.open(mission.actionUrl, '_blank', 'noopener,noreferrer')
 
     if (mission.type === 'follow_social') {
-      const wasDone = mission.done
-
-      try {
-        missionActionInProgress.value = true
-        missionActionCountdown.value = 10
-        actionMessage.value = translate('home.missions.socialOpened')
-
-        await new Promise((resolve) => {
-          missionActionTimer = window.setInterval(() => {
-            missionActionCountdown.value = Math.max(0, missionActionCountdown.value - 1)
-
-            if (missionActionCountdown.value <= 0) {
-              window.clearInterval(missionActionTimer)
-              missionActionTimer = null
-              resolve()
-            }
-          }, 1000)
-        })
-
-        const response = await completeMission(mission.id)
-        markMissionCompletedLocally(mission)
-        applyUpdatedPoints(response?.pointsAfter)
-        selectedMission.value = null
-
-        if (!wasDone && response?.awarded !== false) {
-          openMissionReward(mission)
-        }
-      } catch {
-        actionMessage.value = translate('home.missions.registerError')
-      } finally {
-        missionActionInProgress.value = false
-        missionActionCountdown.value = 0
-      }
+      await claimHonorMission(mission, {
+        countdownSeconds: 2,
+        waitingMessage: translate('home.missions.socialOpened'),
+      })
     }
 
     return
   }
 
-  if (mission.type === 'share_whatsapp') {
-    window.open(`https://wa.me/?text=${shareTextForMission(mission)}%20${shareUrl()}`, '_blank', 'noopener,noreferrer')
-    return
-  }
-
-  if (mission.type === 'share_facebook') {
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${shareUrl()}`, '_blank', 'noopener,noreferrer')
-    return
-  }
-
-  if (mission.type === 'share_twitter') {
-    window.open(`https://twitter.com/intent/tweet?text=${shareTextForMission(mission)}&url=${shareUrl()}`, '_blank', 'noopener,noreferrer')
+  if (mission.type?.startsWith('share_') || mission.type === 'share_poll') {
+    await shareMissionLink(mission)
+    await claimHonorMission(mission, {
+      countdownSeconds: 2,
+      waitingMessage: translate('home.missions.socialOpened'),
+    })
     return
   }
 
   if (navigator.share) {
-    navigator.share({
-      title: missionTitle(mission),
-      text: missionText(mission),
-      url: window.location.origin,
-    }).catch(() => {})
+    try {
+      await navigator.share({
+        title: missionTitle(mission),
+        text: missionText(mission),
+        url: window.location.origin,
+      })
+      if (mission.type?.startsWith('share_') || mission.type === 'share_poll') {
+        await claimHonorMission(mission, {
+          countdownSeconds: 1,
+          waitingMessage: translate('home.missions.socialOpened'),
+        })
+      }
+    } catch {
+      // Usuario canceló el share.
+    }
+  }
+}
+
+const shareMissionLink = async (mission) => {
+  const url = window.location.origin
+  const title = missionTitle(mission)
+  const text = `${title} - Music Mundial VOTE`
+
+  if (mission.type === 'share_whatsapp') {
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+    return
+  }
+
+  if (mission.type === 'share_facebook') {
+    window.open(
+      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+    return
+  }
+
+  if (mission.type === 'share_twitter') {
+    window.open(
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+    return
+  }
+
+  if (navigator.share) {
+    await navigator.share({ title, text, url }).catch(() => {})
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`)
+  } catch {
+    // ignore
+  }
+}
+
+const claimHonorMission = async (mission, { countdownSeconds = 3, waitingMessage = '' } = {}) => {
+  if (!mission || mission.done) {
+    return
+  }
+
+  const wasDone = mission.done
+
+  try {
+    missionActionInProgress.value = true
+    missionActionCountdown.value = countdownSeconds
+    actionMessage.value = waitingMessage
+
+    await new Promise((resolve) => {
+      missionActionTimer = window.setInterval(() => {
+        missionActionCountdown.value = Math.max(0, missionActionCountdown.value - 1)
+
+        if (missionActionCountdown.value <= 0) {
+          window.clearInterval(missionActionTimer)
+          missionActionTimer = null
+          resolve()
+        }
+      }, 1000)
+    })
+
+    const response = await completeMission(mission.id)
+    markMissionCompletedLocally(mission)
+    applyUpdatedPoints(response?.pointsAfter)
+    selectedMission.value = null
+
+    if (!wasDone && response?.awarded !== false) {
+      openMissionReward(mission)
+    }
+  } catch {
+    actionMessage.value = translate('home.missions.registerError')
+  } finally {
+    missionActionInProgress.value = false
+    missionActionCountdown.value = 0
   }
 }
 

@@ -40,3 +40,19 @@ export const getRecentVoteActivity = (limit = 24, hours = 168) => {
 
   return recentActivityRequests.get(key)
 }
+
+export const getShareVoteBoost = async ({ anonymous = false } = {}) => {
+  const auth = anonymous ? await getAnonymousToken() : getStoredAuth()
+  return apiRequest('/votes/share-boost', {
+    token: auth?.accessToken,
+  })
+}
+
+export const claimShareVoteBoost = async (platform, { anonymous = false } = {}) => {
+  const auth = anonymous ? await getAnonymousToken() : getStoredAuth()
+  return apiRequest('/votes/share-boost', {
+    method: 'POST',
+    body: { platform },
+    token: auth?.accessToken,
+  })
+}

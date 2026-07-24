@@ -2,6 +2,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import '../../artists/data/artist.dart';
 import '../../artists/presentation/widgets/artist_avatar.dart';
+import '../../../core/utils/strip_html.dart';
 
 class PollRound {
   const PollRound({
@@ -468,10 +469,10 @@ String _localizedPollText(
       PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
 
   if (useEn && enValue.isNotEmpty) {
-    return enValue;
+    return stripHtml(enValue);
   }
 
-  return esValue.isEmpty ? fallback : esValue;
+  return stripHtml(esValue.isEmpty ? fallback : esValue);
 }
 
 String _stringValue(List<Object?> values) {

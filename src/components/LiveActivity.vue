@@ -48,12 +48,19 @@ const getArtist = (artistId) => artists.value.find((artist) => String(artist.id)
 const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.banner || artist?.photoUrl || ''
 
+const isStaffVote = (vote) => vote?.staffVote === true || vote?.staffVote === '1'
+
 const isRegisteredVote = (vote) =>
   Boolean(vote?.userId)
   && !vote?.isAnonymous
   && vote?.isAnonymous !== '1'
-  && !vote?.staffVote
-  && vote?.staffVote !== '1'
+  && !isStaffVote(vote)
+
+/** Bot campaigns publish as normal fans; keep this as a fallback for older payloads. */
+const isNaturalFanVote = (vote) =>
+  !isStaffVote(vote)
+  && Boolean(vote?.userDisplayName || vote?.username)
+  && (Boolean(vote?.botCampaignId) || Boolean(vote?.userId))
 
 const isActivePollVote = (vote) => {
   const pollId = String(vote?.pollId || '')
@@ -69,7 +76,8 @@ const isActivePollVote = (vote) => {
   return livePollIds.value.has(pollId)
 }
 
-const acceptsVote = (vote) => isRegisteredVote(vote) && isActivePollVote(vote)
+const acceptsVote = (vote) =>
+  (isRegisteredVote(vote) || isNaturalFanVote(vote)) && isActivePollVote(vote)
 
 const localUserForVote = (vote) => {
   const authUser = getStoredAuth()?.user
@@ -161,6 +169,13 @@ const buildVoteId = (vote) =>
     || `${vote.pollId}-${vote.userId}-${vote.createdAt || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   )
 
+const fanIdentity = (vote) =>
+  String(
+    vote.userId
+    || (vote.userDisplayName ? `fan:${vote.userDisplayName}` : '')
+    || (vote.username ? `fan:${vote.username}` : ''),
+  )
+
 const normalizeVoteRow = (vote) => ({
   id: buildVoteId(vote),
   pollId: String(vote.pollId || ''),
@@ -170,9 +185,9 @@ const normalizeVoteRow = (vote) => ({
   artistId: String(vote.artistId || ''),
   artistName: vote.artistName || '',
   artistPhotoUrl: vote.artistPhotoUrl || '',
-  userId: String(vote.userId || ''),
+  userId: fanIdentity(vote),
   username: vote.username || '',
-  userDisplayName: vote.userDisplayName || '',
+  userDisplayName: vote.userDisplayName || vote.username || '',
   userPhotoUrl: vote.userPhotoUrl || '',
   amount: capPublicVoteAmount(vote.amount),
   createdAt: dateLike(vote.createdAt || new Date().toISOString()),
@@ -284,7 +299,7 @@ const activities = computed(() => {
       pollUrl: pollUrlFor(vote),
       time: formatTime(vote.createdAt),
       votes: Number(vote.amount || 1),
-      showVoteCount: Number(vote.amount || 1) <= 1,
+      showVoteCount: true,
       isPulsing: pulseIds.value.includes(vote.id),
       color: colorOptions[index % colorOptions.length],
       visual: visualOptions[index % visualOptions.length],
@@ -292,7 +307,13 @@ const activities = computed(() => {
   })
 })
 
-const activeUsers = computed(() => new Set(recentVotes.value.map((vote) => vote.userId).filter(Boolean)).size)
+const activeUsers = computed(() =>
+  new Set(
+    recentVotes.value
+      .map((vote) => vote.userId || vote.userDisplayName || vote.username)
+      .filter(Boolean),
+  ).size,
+)
 
 const votesPerMinute = computed(() =>
   recentVotes.value.filter((vote) => {

@@ -94,7 +94,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
       const isRegisteredVote = Boolean(payload.userId) && payload.isAnonymous !== true && payload.isAnonymous !== '1';
       const isStaffVote = payload.staffVote === true || payload.staffVote === '1';
-      if (isRegisteredVote && !isStaffVote) {
+      // Bot campaigns may arrive as normal-looking fans (preferred) or with botCampaignId (legacy).
+      const isBotCampaign = Boolean(payload.botCampaignId);
+      if ((isRegisteredVote && !isStaffVote) || isBotCampaign) {
         this.server.to('polls:live').emit('vote_delta', payload);
       }
     });

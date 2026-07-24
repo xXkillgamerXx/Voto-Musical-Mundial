@@ -14,9 +14,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { DailyRewardsConfigService } from '../rewards/daily-rewards-config.service';
+import { ShareVoteBoostConfigService } from '../rewards/share-vote-boost-config.service';
 import { PrivacyConfigService } from '../settings/privacy-config.service';
 import { TermsConfigService } from '../settings/terms-config.service';
 import { AdminPushService } from './admin-push.service';
+import { VoteBotCampaignService } from './vote-bot-campaign.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 const toDate = (value: unknown) => {
@@ -55,9 +57,11 @@ export class AdminController {
     private readonly redis: RedisService,
     private readonly metrics: MetricsService,
     private readonly dailyRewardsConfig: DailyRewardsConfigService,
+    private readonly shareVoteBoostConfig: ShareVoteBoostConfigService,
     private readonly termsConfig: TermsConfigService,
     private readonly privacyConfig: PrivacyConfigService,
     private readonly adminPush: AdminPushService,
+    private readonly voteBotCampaigns: VoteBotCampaignService,
   ) {}
 
   @Get('metrics')
@@ -721,6 +725,37 @@ export class AdminController {
     return serialize(updated);
   }
 
+  @Post('polls/:pollId/contestants/:id/bot-campaigns')
+  async createBotCampaign(
+    @Param('pollId') pollId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.voteBotCampaigns.create({
+      pollId,
+      contestantId: id,
+      amount: Number(body.amount || 0),
+      botsCount: Number(body.botsCount || body.bots || 0),
+      durationMinutes: Number(body.durationMinutes || body.duration || 0),
+      createdBy: body.createdBy ? String(body.createdBy) : null,
+    });
+  }
+
+  @Get('polls/:pollId/bot-campaigns')
+  async listBotCampaigns(@Param('pollId') pollId: string) {
+    return this.voteBotCampaigns.listForPoll(pollId);
+  }
+
+  @Get('bot-campaigns/:id')
+  async getBotCampaign(@Param('id') id: string) {
+    return this.voteBotCampaigns.getDetail(id);
+  }
+
+  @Post('bot-campaigns/:id/cancel')
+  async cancelBotCampaign(@Param('id') id: string) {
+    return this.voteBotCampaigns.cancel(id);
+  }
+
   @Post('polls/:pollId/rounds/:roundId/finish')
   async finishRound(
     @Param('pollId') pollId: string,
@@ -1014,6 +1049,18 @@ export class AdminController {
   @Patch('settings/daily-rewards')
   updateDailyRewardsSettings(@Body() body: { days?: Array<{ day: number; points: number }> }) {
     return this.dailyRewardsConfig.updateSchedule(body?.days || []);
+  }
+
+  @Get('settings/share-vote-boost')
+  shareVoteBoostSettings() {
+    return this.shareVoteBoostConfig.getConfigPayload();
+  }
+
+  @Patch('settings/share-vote-boost')
+  updateShareVoteBoostSettings(
+    @Body() body: { enabled?: boolean; multiplier?: number; durationMinutes?: number },
+  ) {
+    return this.shareVoteBoostConfig.updateConfig(body || {});
   }
 
   @Get('settings/terms')

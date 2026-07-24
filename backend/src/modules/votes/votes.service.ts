@@ -17,6 +17,7 @@ import { AuthService } from '../auth/auth.service';
 import { VoteIdentity } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { ShareVoteBoostConfigService } from '../rewards/share-vote-boost-config.service';
 import { CastVoteDto } from './dto/cast-vote.dto';
 import { VoteStatusDto } from './dto/vote-status.dto';
 import { TurnstileService } from './turnstile.service';
@@ -29,6 +30,14 @@ const DEFAULT_POINTS_PER_VOTE = 1;
 const DEFAULT_USER_VOTES_PER_MINUTE_LIMIT = 20000;
 const DEFAULT_IP_VOTES_PER_MINUTE_LIMIT = 30000;
 const STAFF_ROLES = new Set<UserRole>([UserRole.admin, UserRole.superadmin, UserRole.owner]);
+const SHARE_BOOST_PLATFORMS = new Set([
+  'facebook',
+  'whatsapp',
+  'telegram',
+  'twitter',
+  'startly',
+  'more',
+]);
 
 @Injectable()
 export class VotesService {
@@ -38,6 +47,7 @@ export class VotesService {
     private readonly auth: AuthService,
     private readonly config: ConfigService,
     private readonly turnstile: TurnstileService,
+    private readonly shareVoteBoostConfig: ShareVoteBoostConfigService,
   ) {}
 
   async castVote(dto: CastVoteDto, request: Request) {
@@ -99,6 +109,12 @@ export class VotesService {
       }
     }
 
+    const shareBoost = await this.getActiveShareBoost(identity);
+    const countedAmount = Math.min(
+      MAX_BATCH_VOTES * Math.max(1, shareBoost?.multiplier || 1),
+      amount * Math.max(1, shareBoost?.multiplier || 1),
+    );
+
     const roundKey = context.round?.id?.toString() || '_root';
     const counterKey = `votes:poll:${context.poll.id.toString()}:round:${roundKey}`;
     const rankingKey = `ranking:poll:${context.poll.id.toString()}:round:${roundKey}`;
@@ -137,16 +153,17 @@ export class VotesService {
       anonymousId: identity.type === 'anonymous' ? identity.id : '',
       ipHash,
       voteScope: voteScope || '',
-      amount: amount.toString(),
+      amount: countedAmount.toString(),
       pointsSpent: usedFreeVote ? '0' : String(amount * costPerVote),
       isAnonymous: identity.type === 'anonymous' ? '1' : '0',
+      shareBoost: shareBoost ? '1' : '0',
       createdAt: now.toISOString(),
     };
 
     await this.redis.client
       .multi()
-      .hincrby(counterKey, context.contestant.id.toString(), amount)
-      .zincrby(rankingKey, amount, context.contestant.id.toString())
+      .hincrby(counterKey, context.contestant.id.toString(), countedAmount)
+      .zincrby(rankingKey, countedAmount, context.contestant.id.toString())
       .xadd('votes:stream', 'MAXLEN', '~', '1000000', '*', ...Object.entries(streamPayload).flat())
       .publish(
         channel,
@@ -164,9 +181,10 @@ export class VotesService {
           username: voteUser?.username || null,
           userDisplayName: userDisplayName || null,
           userPhotoUrl: userPhotoUrl || null,
-          amount,
+          amount: countedAmount,
           isAnonymous: identity.type === 'anonymous',
           staffVote: isStaffVote,
+          shareBoost: Boolean(shareBoost),
           createdAt: now.toISOString(),
         }),
       )
@@ -183,12 +201,113 @@ export class VotesService {
       roundId: context.round?.id?.toString() || null,
       contestantId: context.contestant.id.toString(),
       artistId: context.contestant.artistId.toString(),
-      amount,
+      amount: countedAmount,
+      spentAmount: amount,
+      multiplier: shareBoost?.multiplier || 1,
+      shareBoostActive: Boolean(shareBoost),
+      shareBoostEndsAt: shareBoost?.endsAt || null,
       user,
       freeVote: usedFreeVote,
       status: usedFreeVote
         ? this.statusPayload(context.config.cooldownMinutes, Date.now() + context.config.cooldownMs)
         : null,
+    };
+  }
+
+  async getShareBoost(request: Request) {
+    const identity = await this.auth.resolveVoteIdentity(request.headers.authorization);
+    const config = await this.shareVoteBoostConfig.getConfig();
+    const active = await this.getActiveShareBoost(identity);
+    const claimedToday = config.oncePerDay ? await this.hasClaimedShareBoostToday(identity) : false;
+
+    return {
+      enabled: config.enabled,
+      multiplier: config.multiplier,
+      durationMinutes: config.durationMinutes,
+      oncePerDay: config.oncePerDay,
+      claimedToday,
+      canClaim: Boolean(config.enabled && !active && (!config.oncePerDay || !claimedToday)),
+      active: active
+        ? {
+            multiplier: active.multiplier,
+            endsAt: active.endsAt,
+            remainingMs: Math.max(0, active.endsAt - Date.now()),
+          }
+        : null,
+    };
+  }
+
+  async claimShareBoost(request: Request, platform?: string) {
+    const identity = await this.auth.resolveVoteIdentity(request.headers.authorization);
+    const config = await this.shareVoteBoostConfig.getConfig();
+
+    if (!config.enabled) {
+      throw new BadRequestException('El boost por compartir esta desactivado.');
+    }
+
+    const normalizedPlatform = String(platform || 'more').toLowerCase();
+    if (!SHARE_BOOST_PLATFORMS.has(normalizedPlatform)) {
+      throw new BadRequestException('Red social no valida.');
+    }
+
+    const active = await this.getActiveShareBoost(identity);
+    if (active) {
+      // Already running: do not restart the timer on every share click.
+      return {
+        ok: true,
+        enabled: true,
+        multiplier: config.multiplier,
+        durationMinutes: config.durationMinutes,
+        oncePerDay: config.oncePerDay,
+        claimedToday: true,
+        canClaim: false,
+        platform: normalizedPlatform,
+        alreadyActive: true,
+        active: {
+          multiplier: active.multiplier,
+          endsAt: active.endsAt,
+          remainingMs: Math.max(0, active.endsAt - Date.now()),
+        },
+      };
+    }
+
+    if (config.oncePerDay && (await this.hasClaimedShareBoostToday(identity))) {
+      throw new BadRequestException('Ya activaste el boost por compartir hoy. Vuelve manana.');
+    }
+
+    const ttlSeconds = Math.max(60, config.durationMinutes * 60);
+    const endsAt = Date.now() + ttlSeconds * 1000;
+    const key = this.shareBoostKey(identity);
+    const payload = JSON.stringify({
+      multiplier: config.multiplier,
+      platform: normalizedPlatform,
+      claimedAt: new Date().toISOString(),
+    });
+
+    const pipeline = this.redis.client.multi();
+    pipeline.set(key, payload, 'EX', ttlSeconds);
+    if (config.oncePerDay) {
+      const dayKey = this.shareBoostDayKey(identity);
+      // Keep the daily lock until next UTC midnight (+ small buffer).
+      pipeline.set(dayKey, '1', 'EX', this.secondsUntilNextUtcMidnight());
+    }
+    await pipeline.exec();
+
+    return {
+      ok: true,
+      enabled: true,
+      multiplier: config.multiplier,
+      durationMinutes: config.durationMinutes,
+      oncePerDay: config.oncePerDay,
+      claimedToday: true,
+      canClaim: false,
+      platform: normalizedPlatform,
+      alreadyActive: false,
+      active: {
+        multiplier: config.multiplier,
+        endsAt,
+        remainingMs: ttlSeconds * 1000,
+      },
     };
   }
 
@@ -317,6 +436,51 @@ export class VotesService {
     }
 
     return `match_${matchGroup || 1}`;
+  }
+
+  private shareBoostKey(identity: VoteIdentity) {
+    return `share_vote_boost:${identity.type}:${identity.id}`;
+  }
+
+  private shareBoostDayKey(identity: VoteIdentity) {
+    const day = new Date().toISOString().slice(0, 10);
+    return `share_vote_boost_day:${identity.type}:${identity.id}:${day}`;
+  }
+
+  private secondsUntilNextUtcMidnight() {
+    const now = new Date();
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    return Math.max(60, Math.ceil((next.getTime() - now.getTime()) / 1000));
+  }
+
+  private async hasClaimedShareBoostToday(identity: VoteIdentity) {
+    try {
+      return Boolean(await this.redis.client.exists(this.shareBoostDayKey(identity)));
+    } catch {
+      return false;
+    }
+  }
+
+  private async getActiveShareBoost(identity: VoteIdentity) {
+    const key = this.shareBoostKey(identity);
+    try {
+      const [raw, ttlSeconds] = await Promise.all([
+        this.redis.client.get(key),
+        this.redis.client.ttl(key),
+      ]);
+      if (!raw || ttlSeconds <= 0) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as { multiplier?: number };
+      const multiplier = Math.max(2, Math.floor(Number(parsed.multiplier || 2)));
+      return {
+        multiplier,
+        endsAt: Date.now() + ttlSeconds * 1000,
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async enforceNotBlocked(ipHash: string, userId: bigint | null) {
@@ -456,73 +620,133 @@ export class VotesService {
     const hours = Math.min(Math.max(Number(hoursValue || 24), 1), 720);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const rows = await this.prisma.voteLedger.findMany({
-      where: {
-        isAnonymous: false,
-        userId: { not: null },
-        createdAt: { gte: since },
-        poll: {
-          status: PollStatus.live,
-        },
-        user: {
-          role: { notIn: [UserRole.admin, UserRole.superadmin, UserRole.owner] },
-        },
-      },
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            photoUrl: true,
+    const [registeredRows, botRows] = await Promise.all([
+      this.prisma.voteLedger.findMany({
+        where: {
+          isAnonymous: false,
+          userId: { not: null },
+          createdAt: { gte: since },
+          poll: {
+            status: PollStatus.live,
+          },
+          user: {
+            role: { notIn: [UserRole.admin, UserRole.superadmin, UserRole.owner] },
           },
         },
-        contestant: {
-          include: {
-            artist: {
-              select: {
-                id: true,
-                name: true,
-                photoUrl: true,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              photoUrl: true,
+            },
+          },
+          contestant: {
+            include: {
+              artist: {
+                select: {
+                  id: true,
+                  name: true,
+                  photoUrl: true,
+                },
               },
             },
           },
-        },
-        poll: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            config: true,
-            createdAt: true,
+          poll: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              config: true,
+              createdAt: true,
+            },
           },
         },
-      },
+      }),
+      this.prisma.voteLedger.findMany({
+        where: {
+          isAnonymous: true,
+          createdAt: { gte: since },
+          poll: {
+            status: PollStatus.live,
+          },
+        },
+        take: Math.min(limit * 4, 80),
+        orderBy: { createdAt: 'desc' },
+        include: {
+          contestant: {
+            include: {
+              artist: {
+                select: {
+                  id: true,
+                  name: true,
+                  photoUrl: true,
+                },
+              },
+            },
+          },
+          poll: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              config: true,
+              createdAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const botCampaignRows = botRows.filter((row) => {
+      const metadata =
+        row.metadata && typeof row.metadata === 'object'
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      return Boolean(metadata.botCampaignId);
     });
 
-    return serialize(
-      rows.map((row) => {
-        const pollConfig = (row.poll?.config || {}) as Record<string, unknown>;
+    const shape = (row: any, bot = false) => {
+      const pollConfig = (row.poll?.config || {}) as Record<string, unknown>;
+      const metadata =
+        row.metadata && typeof row.metadata === 'object'
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const displayName = bot
+        ? String(metadata.displayName || metadata.userDisplayName || 'Fan')
+        : row.user?.displayName || row.user?.username || '';
+      const publicUserId = bot
+        ? `f${String(metadata.displayName || row.id || 'fan').replace(/\W+/g, '').slice(0, 12).toLowerCase() || row.id}`
+        : row.userId?.toString() || '';
 
-        return {
-          id: row.id.toString(),
-          createdAt: row.createdAt,
-          amount: Math.min(Number(row.amount || 0), 5),
-          pollId: row.pollId.toString(),
-          pollTitle: row.poll?.title || '',
-          pollSlug: row.poll?.slug || '',
-          pollYear: Number(pollConfig.year || new Date(row.poll?.createdAt || Date.now()).getFullYear()),
-          artistId: row.contestant?.artistId?.toString() || '',
-          artistName: row.contestant?.artist?.name || '',
-          artistPhotoUrl: row.contestant?.artist?.photoUrl || '',
-          userId: row.userId?.toString() || '',
-          username: row.user?.username || '',
-          userDisplayName: row.user?.displayName || row.user?.username || '',
-          userPhotoUrl: row.user?.photoUrl || '',
-        };
-      }),
-    );
+      return {
+        id: row.id.toString(),
+        createdAt: row.createdAt,
+        amount: Math.min(Number(row.amount || 0), 5),
+        pollId: row.pollId.toString(),
+        pollTitle: row.poll?.title || '',
+        pollSlug: row.poll?.slug || '',
+        pollYear: Number(pollConfig.year || new Date(row.poll?.createdAt || Date.now()).getFullYear()),
+        artistId: row.contestant?.artistId?.toString() || '',
+        artistName: row.contestant?.artist?.name || '',
+        artistPhotoUrl: row.contestant?.artist?.photoUrl || '',
+        userId: publicUserId,
+        username: bot ? displayName : row.user?.username || '',
+        userDisplayName: displayName,
+        userPhotoUrl: bot ? '' : row.user?.photoUrl || '',
+      };
+    };
+
+    const merged = [
+      ...registeredRows.map((row) => shape(row, false)),
+      ...botCampaignRows.map((row) => shape(row, true)),
+    ]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
+
+    return serialize(merged);
   }
 }

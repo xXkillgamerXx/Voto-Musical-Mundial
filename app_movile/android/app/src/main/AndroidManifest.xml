@@ -37,6 +37,83 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- App Links: https://vote.musicmundial.com/... abre la app si está instalada -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/votacion"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/poll"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/artista"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/artist"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/registro"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/register"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/noticias"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/news"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/misiones"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/missions"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/votaciones"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/polls"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/artistas"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/artists"/>
+                <data
+                    android:scheme="https"
+                    android:host="vote.musicmundial.com"
+                    android:pathPrefix="/user"/>
+                <data
+                    android:scheme="https"
+                    android:host="www.vote.musicmundial.com"
+                    android:pathPrefix="/votacion"/>
+            </intent-filter>
+            <!-- Scheme propio de respaldo: vmm://votacion/2026/slug -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="vmm"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

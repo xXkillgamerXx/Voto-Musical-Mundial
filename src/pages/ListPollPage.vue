@@ -14,7 +14,9 @@ import { getPoll, getPolls, getPollResults } from "../services/api/pollsApi";
 import { hasRichTextContent, richTextToHtml } from "../utils/richText";
 import {
   castVote as castApiVote,
+  claimShareVoteBoost,
   getAnonymousVoteStatus,
+  getShareVoteBoost,
 } from "../services/api/votesApi";
 import { getMissions } from "../services/api/missionsApi";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
@@ -38,6 +40,9 @@ import {
 const ActivePolls = defineAsyncComponent(() => import("../components/ActivePolls.vue"));
 const EmbedAd = defineAsyncComponent(() => import("../components/EmbedAd.vue"));
 const PollComments = defineAsyncComponent(() => import("../components/PollComments.vue"));
+const PollShareNetworksBar = defineAsyncComponent(
+  () => import("../components/PollShareNetworksBar.vue"),
+);
 
 const hallOfFameHref = computed(() => routePath("hallOfFame", i18n.global.locale.value));
 
@@ -70,7 +75,20 @@ const isVoting = ref("");
 const errorMessage = ref("");
 const anonymousCooldownNotice = ref("");
 const shareMessage = ref("");
+const shareBoostConfig = ref({
+  enabled: true,
+  multiplier: 2,
+  durationMinutes: 10,
+  oncePerDay: true,
+});
+const shareBoostActive = ref(null);
+const shareBoostClaimedToday = ref(false);
+const shareBoostCanClaim = ref(true);
+const isClaimingShareBoost = ref(false);
+const shareBoostMessage = ref("");
+const facebookShareDraft = ref("");
 const now = ref(Date.now());
+const STARTLY_SHARE_URL = "https://startlyapp.com/musicmundial";
 const selectedRoundId = ref("");
 const voteModalContestant = ref(null);
 const voteAmount = ref(1);
@@ -1080,6 +1098,32 @@ const normalizedVoteAmount = computed(() =>
     Math.max(1, Math.floor(Number(voteAmount.value || 1))),
   ),
 );
+const shareBoostMultiplier = computed(() =>
+  Math.max(1, Number(shareBoostActive.value?.multiplier || 1)),
+);
+const shareBoostRemainingMs = computed(() => {
+  const endsAt = Number(shareBoostActive.value?.endsAt || 0);
+  if (!endsAt) return 0;
+  return Math.max(0, endsAt - now.value);
+});
+const shareBoostRemainingLabel = computed(() => {
+  const totalSeconds = Math.ceil(shareBoostRemainingMs.value / 1000);
+  if (totalSeconds <= 0) return "00:00";
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+});
+const isShareBoostLive = computed(
+  () =>
+    Boolean(shareBoostConfig.value.enabled) &&
+    shareBoostMultiplier.value > 1 &&
+    shareBoostRemainingMs.value > 0,
+);
+const effectiveVoteAmount = computed(() =>
+  isShareBoostLive.value
+    ? normalizedVoteAmount.value * shareBoostMultiplier.value
+    : normalizedVoteAmount.value,
+);
 const selectedVoteArtist = computed(
   () => voteModalContestant.value?.artist || null,
 );
@@ -1199,6 +1243,7 @@ const refreshPendingMissionsCount = async () => {
 
 const closeMissionsPrompt = () => {
   missionsPrompt.value = null;
+  facebookShareDraft.value = "";
 };
 
 const openMissionsPrompt = async (contestant) => {
@@ -1215,6 +1260,7 @@ const openMissionsPrompt = async (contestant) => {
     voteScope,
     nextVoteAt: status?.nextVoteAt || null,
   };
+  loadShareVoteBoost();
 };
 
 const scheduleMissionsPromptAfterFreeVote = (contestant) => {
@@ -1537,13 +1583,36 @@ const shareFinalWinner = async (winner) => {
   }
 };
 
+const buildSharePayload = () => {
+  const pollTitle = poll.value?.title || translate("polls.detail.sharePoll");
+  const year = Number(poll.value?.year || routeYear) || new Date().getFullYear();
+  const title = `${pollTitle} ${year}`;
+  const artistName =
+    selectedVoteArtist.value?.name ||
+    missionsPrompt.value?.contestant?.artist?.name ||
+    "";
+  const text = artistName
+    ? translate("polls.detail.shareVoteTextArtist", {
+        artist: artistName,
+        title: pollTitle,
+        year,
+      })
+    : translate("polls.detail.shareVoteText", {
+        title: pollTitle,
+        year,
+      });
+  const path = poll.value
+    ? buildPollUrl(poll.value, i18n.global.locale.value)
+    : window.location.pathname;
+  const url = `${window.location.origin}${path}${window.location.search || ""}`;
+  return { title, text, url };
+};
+
 const sharePoll = async () => {
   shareMessage.value = "";
   errorMessage.value = "";
 
-  const title = poll.value?.title || translate("polls.detail.sharePoll");
-  const text = translate("polls.detail.sharePollHint");
-  const url = window.location.href;
+  const { title, text, url } = buildSharePayload();
 
   try {
     if (navigator.share) {
@@ -1551,7 +1620,7 @@ const sharePoll = async () => {
       return;
     }
 
-    await navigator.clipboard.writeText(`${title}\n${url}`);
+    await navigator.clipboard.writeText(`${text}\n${url}`);
     shareMessage.value = translate("polls.detail.sharePollCopied");
     window.setTimeout(() => {
       shareMessage.value = "";
@@ -1562,6 +1631,146 @@ const sharePoll = async () => {
     }
 
     errorMessage.value = translate("polls.detail.sharePollError");
+  }
+};
+
+const applyShareBoostPayload = (payload) => {
+  if (!payload) return;
+  shareBoostConfig.value = {
+    enabled: payload.enabled !== false,
+    multiplier: Math.max(2, Number(payload.multiplier || 2)),
+    durationMinutes: Math.max(1, Number(payload.durationMinutes || 10)),
+    oncePerDay: payload.oncePerDay !== false,
+  };
+  shareBoostClaimedToday.value = Boolean(payload.claimedToday);
+  shareBoostCanClaim.value =
+    payload.canClaim !== undefined
+      ? Boolean(payload.canClaim)
+      : !shareBoostClaimedToday.value;
+  if (payload.active?.endsAt) {
+    shareBoostActive.value = {
+      multiplier: Math.max(2, Number(payload.active.multiplier || payload.multiplier || 2)),
+      endsAt: Number(payload.active.endsAt),
+    };
+  } else {
+    shareBoostActive.value = null;
+  }
+};
+
+const loadShareVoteBoost = async () => {
+  try {
+    const anonymous = !currentUser.value || Boolean(currentUser.value?.isAnonymous);
+    const payload = await getShareVoteBoost({ anonymous });
+    applyShareBoostPayload(payload);
+  } catch {
+    // Keep defaults if boost status cannot be loaded.
+  }
+};
+
+const claimShareBoostAfterShare = async (platform) => {
+  if (!shareBoostConfig.value.enabled || isClaimingShareBoost.value) {
+    return;
+  }
+  if (!shareBoostCanClaim.value && !isShareBoostLive.value) {
+    shareBoostMessage.value = translate("polls.detail.shareBoostAlreadyUsed");
+    return;
+  }
+  if (isShareBoostLive.value) {
+    // Keep current countdown; do not restart.
+    return;
+  }
+
+  isClaimingShareBoost.value = true;
+  shareBoostMessage.value = "";
+  try {
+    const anonymous = !currentUser.value || Boolean(currentUser.value?.isAnonymous);
+    const payload = await claimShareVoteBoost(platform, { anonymous });
+    applyShareBoostPayload(payload);
+    if (payload?.alreadyActive) {
+      return;
+    }
+    shareBoostMessage.value = translate("polls.detail.shareBoostClaimed", {
+      multiplier: payload?.multiplier || shareBoostConfig.value.multiplier,
+    });
+    window.setTimeout(() => {
+      shareBoostMessage.value = "";
+    }, 3500);
+  } catch (error) {
+    shareBoostMessage.value =
+      error?.message || translate("polls.detail.shareBoostClaimError");
+  } finally {
+    isClaimingShareBoost.value = false;
+  }
+};
+
+const sharePollOnNetwork = async (platform) => {
+  shareMessage.value = "";
+  errorMessage.value = "";
+  const { title, text, url } = buildSharePayload();
+  const encodedUrl = encodeURIComponent(url);
+  const encodedText = encodeURIComponent(`${text}\n${url}`);
+
+  try {
+    if (platform === "facebook") {
+      // Facebook blocks autofill text and often opens an empty share_channel.
+      // Copy the full message and open Facebook so the fan can paste it.
+      const draft = `${text}\n${url}`;
+      facebookShareDraft.value = draft;
+      try {
+        await navigator.clipboard.writeText(draft);
+      } catch {
+        // Draft stays visible so the fan can copy manually.
+      }
+      shareBoostMessage.value = translate("polls.detail.shareFacebookCopied");
+      window.open("https://www.facebook.com/", "_blank", "noopener,noreferrer");
+    } else if (platform === "whatsapp") {
+      facebookShareDraft.value = "";
+      window.open(`https://wa.me/?text=${encodedText}`, "_blank", "noopener,noreferrer");
+    } else if (platform === "telegram") {
+      facebookShareDraft.value = "";
+      window.open(
+        `https://t.me/share/url?url=${encodedUrl}&text=${encodeURIComponent(text)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } else if (platform === "twitter") {
+      facebookShareDraft.value = "";
+      window.open(
+        `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodedUrl}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } else if (platform === "startly") {
+      facebookShareDraft.value = "";
+      window.open(STARTLY_SHARE_URL, "_blank", "noopener,noreferrer");
+    } else if (navigator.share) {
+      facebookShareDraft.value = "";
+      await navigator.share({ title, text, url });
+    } else {
+      facebookShareDraft.value = "";
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      shareMessage.value = translate("polls.detail.sharePollCopied");
+      window.setTimeout(() => {
+        shareMessage.value = "";
+      }, 3000);
+    }
+
+    await claimShareBoostAfterShare(platform === "more" ? "more" : platform);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+    errorMessage.value = translate("polls.detail.sharePollError");
+  }
+};
+
+const copyFacebookShareDraft = async () => {
+  if (!facebookShareDraft.value) return;
+  try {
+    await navigator.clipboard.writeText(facebookShareDraft.value);
+    shareBoostMessage.value = translate("polls.detail.shareFacebookCopied");
+  } catch {
+    shareBoostMessage.value = translate("polls.detail.sharePollError");
   }
 };
 
@@ -2516,6 +2725,8 @@ const closeVoteModal = () => {
   turnstileError.value = "";
   voteModalContestant.value = null;
   voteAmount.value = 1;
+  shareBoostMessage.value = "";
+  facebookShareDraft.value = "";
 };
 
 const resetVisibleTurnstile = () => {
@@ -2601,12 +2812,14 @@ const openVoteModal = (contestant) => {
 
     voteModalContestant.value = contestant;
     voteAmount.value = 1;
+    loadShareVoteBoost();
     return;
   }
 
   if (Number(userPoints.value || 0) >= pointsPerVote.value) {
     voteModalContestant.value = contestant;
     voteAmount.value = Math.min(1, maxVoteAmount.value);
+    loadShareVoteBoost();
     return;
   }
 
@@ -2623,6 +2836,7 @@ const openVoteModal = (contestant) => {
 
   voteModalContestant.value = contestant;
   voteAmount.value = 1;
+  loadShareVoteBoost();
 };
 
 const setVoteAmountToMax = () => {
@@ -3058,6 +3272,7 @@ onMounted(() => {
   window.addEventListener("focus", handleAnonymousVisibilityRefresh);
   applyEmbeddedNoScroll();
   loadPoll();
+  loadShareVoteBoost();
   secondarySectionsTimer = window.setTimeout(() => {
     showSecondarySections.value = true;
   }, 700);
@@ -3946,42 +4161,16 @@ onUnmounted(() => {
             v-for="(feedItem, feedIndex) in versusFeedItems"
             :key="feedItem.id"
           >
-            <button
+            <PollShareNetworksBar
               v-if="feedItem.type === 'share'"
-              type="button"
-              class="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
-              @click="sharePoll"
-            >
-              <span
-                class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  class="size-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-                  <path d="M16 6l-4-4-4 4" />
-                  <path d="M12 2v13" />
-                </svg>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-black text-white">
-                  {{ $t("polls.detail.sharePoll") }}
-                </span>
-                <span
-                  class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
-                >
-                  {{ $t("polls.detail.sharePollHint") }}
-                </span>
-              </span>
-              <span class="text-lg text-white/45" aria-hidden="true">›</span>
-            </button>
+              :is-boost-live="isShareBoostLive"
+              :multiplier="shareBoostMultiplier"
+              :remaining-label="shareBoostRemainingLabel"
+              :title="$t('polls.detail.sharePoll')"
+              :hint="$t('polls.detail.sharePollHint')"
+              :claiming="isClaimingShareBoost"
+              @share="sharePollOnNetwork"
+            />
             <article
               v-else
               class="rounded-4xl border border-white/10 bg-white/5"
@@ -4391,42 +4580,16 @@ onUnmounted(() => {
             v-for="(feedItem, feedIndex) in contestantFeedItems"
             :key="feedItem.id"
           >
-            <button
+            <PollShareNetworksBar
               v-if="feedItem.type === 'share'"
-              type="button"
-              class="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
-              @click="sharePoll"
-            >
-              <span
-                class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  class="size-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-                  <path d="M16 6l-4-4-4 4" />
-                  <path d="M12 2v13" />
-                </svg>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-black text-white">
-                  {{ $t("polls.detail.sharePoll") }}
-                </span>
-                <span
-                  class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
-                >
-                  {{ $t("polls.detail.sharePollHint") }}
-                </span>
-              </span>
-              <span class="text-lg text-white/45" aria-hidden="true">›</span>
-            </button>
+              :is-boost-live="isShareBoostLive"
+              :multiplier="shareBoostMultiplier"
+              :remaining-label="shareBoostRemainingLabel"
+              :title="$t('polls.detail.sharePoll')"
+              :hint="$t('polls.detail.sharePollHint')"
+              :claiming="isClaimingShareBoost"
+              @share="sharePollOnNetwork"
+            />
             <article
               v-else
               :data-artist-id="getContestantArtistId(feedItem.row)"
@@ -4768,45 +4931,24 @@ onUnmounted(() => {
                   </p>
                 </div>
 
-                <button
-                  v-if="isAnonymousVotingFlow"
-                  type="button"
-                  class="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
-                  @click="sharePoll"
-                >
-                  <span
-                    class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      class="size-5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-                      <path d="M16 6l-4-4-4 4" />
-                      <path d="M12 2v13" />
-                    </svg>
-                  </span>
-                  <span class="min-w-0 flex-1">
-                    <span class="block text-sm font-black text-white">
-                      {{ $t("polls.detail.sharePoll") }}
-                    </span>
-                    <span
-                      class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
-                    >
-                      {{ $t("polls.detail.sharePollHint") }}
-                    </span>
-                  </span>
-                  <span class="text-lg text-white/45" aria-hidden="true">›</span>
-                </button>
+                <PollShareNetworksBar
+                  v-if="shareBoostConfig.enabled"
+                  :is-boost-live="isShareBoostLive"
+                  :multiplier="shareBoostMultiplier"
+                  :remaining-label="shareBoostRemainingLabel"
+                  :title="$t('polls.detail.shareForDoubleTitle', { multiplier: shareBoostConfig.multiplier })"
+                  :hint="shareBoostConfig.oncePerDay && shareBoostClaimedToday ? $t('polls.detail.shareBoostAlreadyUsed') : $t('polls.detail.shareForDoubleHint', { minutes: shareBoostConfig.durationMinutes, multiplier: shareBoostConfig.multiplier })"
+                  :claiming="isClaimingShareBoost"
+                  :message="shareBoostMessage || shareMessage"
+                  :facebook-draft="facebookShareDraft"
+                  :facebook-hint="$t('polls.detail.shareFacebookDraftHint')"
+                  :facebook-copy-label="$t('polls.detail.shareFacebookCopyAgain')"
+                  @share="sharePollOnNetwork"
+                  @copy-facebook="copyFacebookShareDraft"
+                />
 
                 <label
-                  v-else
+                  v-if="!isAnonymousVotingFlow"
                   class="block rounded-3xl border border-white/10 bg-white/5 p-4"
                 >
                   <span
@@ -4951,10 +5093,20 @@ onUnmounted(() => {
                       isVoting === getContestantArtistId(voteModalContestant)
                         ? $t("polls.detail.voting")
                         : isAnonymousVotingFlow
-                          ? $t("polls.detail.useFreeVote")
-                          : $t("polls.detail.castVotes", {
-                              count: normalizedVoteAmount.toLocaleString("es"),
-                            })
+                          ? isShareBoostLive
+                            ? $t("polls.detail.castVotesBoosted", {
+                                count: "1",
+                                effective: String(shareBoostMultiplier),
+                              })
+                            : $t("polls.detail.useFreeVote")
+                          : isShareBoostLive
+                            ? $t("polls.detail.castVotesBoosted", {
+                                count: normalizedVoteAmount.toLocaleString("es"),
+                                effective: effectiveVoteAmount.toLocaleString("es"),
+                              })
+                            : $t("polls.detail.castVotes", {
+                                count: normalizedVoteAmount.toLocaleString("es"),
+                              })
                     }}
                   </button>
                 </div>
@@ -5140,38 +5292,34 @@ onUnmounted(() => {
             }}
           </p>
 
+          <PollShareNetworksBar
+            v-if="shareBoostConfig.enabled"
+            class="mt-3"
+            :is-boost-live="isShareBoostLive"
+            :multiplier="shareBoostMultiplier"
+            :remaining-label="shareBoostRemainingLabel"
+            :title="$t('polls.detail.shareForDoubleTitle', { multiplier: shareBoostConfig.multiplier })"
+            :hint="$t('polls.detail.freeVoteMissionsShare')"
+            :claiming="isClaimingShareBoost"
+            :message="shareBoostMessage"
+            :facebook-draft="facebookShareDraft"
+            :facebook-hint="$t('polls.detail.shareFacebookDraftHint')"
+            :facebook-copy-label="$t('polls.detail.shareFacebookCopyAgain')"
+            @share="sharePollOnNetwork"
+            @copy-facebook="copyFacebookShareDraft"
+          />
           <button
+            v-else
             type="button"
             class="mt-3 flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/30 bg-[#151725] px-3.5 py-3 text-left transition hover:border-cyan-200/45 hover:bg-[#1a1d2e]"
             @click="sharePoll"
           >
-            <span
-              class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                class="size-5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-                <path d="M16 6l-4-4-4 4" />
-                <path d="M12 2v13" />
-              </svg>
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300">
+              <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
             </span>
             <span class="min-w-0 flex-1">
-              <span class="block text-sm font-black text-white">
-                {{ $t("polls.detail.sharePoll") }}
-              </span>
-              <span
-                class="mt-0.5 block truncate text-[11px] font-semibold text-white/60"
-              >
-                {{ $t("polls.detail.freeVoteMissionsShare") }}
-              </span>
+              <span class="block text-sm font-black text-white">{{ $t('polls.detail.sharePoll') }}</span>
+              <span class="mt-0.5 block truncate text-[11px] font-semibold text-white/60">{{ $t('polls.detail.freeVoteMissionsShare') }}</span>
             </span>
             <span class="text-lg text-white/45" aria-hidden="true">›</span>
           </button>

@@ -17,6 +17,8 @@ type StreamVote = {
   amount: string;
   pointsSpent: string;
   isAnonymous: string;
+  botCampaignId: string;
+  userDisplayName: string;
   createdAt: string;
 };
 
@@ -93,6 +95,14 @@ export class VoteSyncWorker implements OnModuleDestroy {
           amount: Number(vote.amount || 1),
           pointsSpent: Number(vote.pointsSpent || 0),
           isAnonymous: vote.isAnonymous === '1',
+          metadata: {
+            ...(vote.botCampaignId
+              ? { botCampaignId: vote.botCampaignId }
+              : {}),
+            ...(vote.userDisplayName
+              ? { displayName: vote.userDisplayName }
+              : {}),
+          },
           createdAt: vote.createdAt ? new Date(vote.createdAt) : new Date(),
         })),
       });

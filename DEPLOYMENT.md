@@ -142,6 +142,20 @@ Expected upload mount:
 /www/wwwroot/vote.musicmundial.com/uploads -> /app/uploads
 ```
 
+## App Links (abrir app desde links compartidos)
+
+Para que `https://vote.musicmundial.com/votacion/...` abra la app si está instalada:
+
+1. Desplegar frontend (incluye `public/.well-known/`).
+2. En Play Console → App signing → copiar el **SHA-256** y reemplazar `REPLACE_WITH_PLAY_APP_SIGNING_SHA256` en `.well-known/assetlinks.json`.
+3. En Apple Developer → Team ID: reemplazar `TEAMID` en `.well-known/apple-app-site-association`.
+4. Verificar:
+   - `https://vote.musicmundial.com/.well-known/assetlinks.json`
+   - `https://vote.musicmundial.com/.well-known/apple-app-site-association`
+5. Apache debe servir `apple-app-site-association` como `application/json` (sin redirect).
+
+Scheme de respaldo (siempre funciona en builds con el intent-filter): `vmm://votacion/2026/slug`
+
 ## Quick deploy script
 
 From repo root:

@@ -18,6 +18,16 @@ export class VotesController {
     return this.votes.status(dto, request);
   }
 
+  @Get('share-boost')
+  getShareBoost(@Req() request: Request) {
+    return this.votes.getShareBoost(request);
+  }
+
+  @Post('share-boost')
+  claimShareBoost(@Body() body: { platform?: string }, @Req() request: Request) {
+    return this.votes.claimShareBoost(request, body?.platform);
+  }
+
   @Get('recent-activity')
   recentActivity(@Query('limit') limit?: string, @Query('hours') hours?: string) {
     return this.votes.recentRegisteredActivity(limit, hours);

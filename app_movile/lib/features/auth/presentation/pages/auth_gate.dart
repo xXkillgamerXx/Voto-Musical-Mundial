@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/navigation/app_deep_link.dart';
 import '../../../../core/notifications/push_notification_service.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
 import '../../../../core/widgets/points_chip.dart';
@@ -117,7 +118,38 @@ class _SignedInPageState extends State<_SignedInPage> {
       unawaited(_maybeShowDailyReward());
       unawaited(_notifications.enablePush());
       PushNotificationService.instance.bindOpenHandler(_handlePushOpened);
+      unawaited(_startDeepLinks());
     });
+  }
+
+  Future<void> _startDeepLinks() async {
+    await AppDeepLinkService.instance.start(_handleIncomingDeepLink);
+    AppDeepLinkService.instance.flushPending();
+  }
+
+  void _handleIncomingDeepLink(Uri uri) {
+    final path = AppDeepLinkService.pathFromUri(uri);
+    if (path == null) {
+      return;
+    }
+
+    final navContext = _shellNavigatorKey.currentContext ?? context;
+    if (!mounted) {
+      return;
+    }
+
+    unawaited(
+      NotificationDeepLink.open(
+        navContext,
+        authService: widget.authService,
+        data: {
+          'url': path,
+          if (uri.queryParameters.isNotEmpty) ...uri.queryParameters,
+        },
+        controller: _notifications,
+        onSelectSection: _selectSection,
+      ),
+    );
   }
 
   void _handlePushOpened(Map<String, dynamic> data) {
@@ -163,6 +195,7 @@ class _SignedInPageState extends State<_SignedInPage> {
 
   @override
   void dispose() {
+    unawaited(AppDeepLinkService.instance.stop());
     PushNotificationService.instance.unbindOpenHandler();
     _notifications.dispose();
     _pageController.dispose();

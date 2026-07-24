@@ -2,18 +2,22 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   adjustAdminContestantVotes,
+  cancelAdminBotCampaign,
   closeAdminPoll,
+  createAdminBotCampaign,
   createAdminContestant,
   createAdminRound,
   deleteAdminRound,
   finishAdminRound,
   getAdminArtists,
+  getAdminBotCampaign,
+  getAdminBotCampaigns,
   getAdminMetrics,
   getAdminRounds,
   launchAdminRound,
   updateAdminRound,
 } from '../../services/api/adminApi'
-import { getPoll } from '../../services/api/pollsApi'
+import { getPoll, getPollResults } from '../../services/api/pollsApi'
 import { subscribePollRealtime } from '../../services/api/realtimeApi'
 import {
   mergeContestantsWithPublicResults,
@@ -47,6 +51,57 @@ const selectedRoundId = ref('')
 const winnersToAdvance = ref(2)
 const manualVoteAmounts = ref({})
 const adjustingVoteContestantId = ref('')
+const botCampaigns = ref([])
+const isBotCampaignModalOpen = ref(false)
+const botCampaignContestant = ref(null)
+const botCampaignForm = ref({
+  amount: 100,
+  botsCount: 25,
+  durationMinutes: 10,
+})
+const botCampaignNamePreview = ref([])
+const botCampaignModalError = ref('')
+const isStartingBotCampaign = ref(false)
+const cancellingBotCampaignId = ref('')
+const botCampaignDetail = ref(null)
+const isBotCampaignDetailOpen = ref(false)
+const isLoadingBotCampaignDetail = ref(false)
+const monitorBootError = ref('')
+let botCampaignsTimer = null
+let botCampaignDetailTimer = null
+
+const hasRunningBotCampaigns = () =>
+  (botCampaigns.value || []).some(
+    (campaign) => campaign.status === 'running' || campaign.status === 'paused',
+  )
+
+const runningBotCampaigns = computed(() =>
+  (botCampaigns.value || []).filter(
+    (campaign) => campaign.status === 'running' || campaign.status === 'paused',
+  ),
+)
+
+const SAMPLE_BOT_FIRST = [
+  'Army', 'Blink', 'Stay', 'Once', 'Midzy', 'Atiny', 'Carat', 'Sofi', 'Dani', 'Nova', 'Kai', 'Mina',
+]
+const SAMPLE_BOT_SECOND = [
+  'Fan', 'Lover', 'Wave', 'Heart', 'Dream', 'Light', 'Sky', 'Glow', 'Beat', 'Vibe', 'Spark', 'Bloom',
+]
+const SAMPLE_BOT_SUFFIX = ['07', '13', '99', 'x', 'xo', 'latam', 'vip']
+
+const refreshBotNamePreview = (botsCount = botCampaignForm.value.botsCount) => {
+  const count = Math.min(8, Math.max(3, Math.trunc(Number(botsCount) || 5)))
+  const names = new Set()
+  let guard = 0
+  while (names.size < count && guard < 80) {
+    guard += 1
+    const a = SAMPLE_BOT_FIRST[Math.floor(Math.random() * SAMPLE_BOT_FIRST.length)]
+    const b = SAMPLE_BOT_SECOND[Math.floor(Math.random() * SAMPLE_BOT_SECOND.length)]
+    const s = SAMPLE_BOT_SUFFIX[Math.floor(Math.random() * SAMPLE_BOT_SUFFIX.length)]
+    names.add(Math.random() > 0.5 ? `${a}${b}${s}` : `${a}_${b}`)
+  }
+  botCampaignNamePreview.value = [...names]
+}
 const roundForm = ref({
   title: '',
   type: 'list',
@@ -63,7 +118,162 @@ const successMessage = ref('')
 const guidedLoading = ref(null)
 const isClosingPoll = ref(false)
 let unsubscribeRealtime = null
+let lastListenedRoundId = ''
 let realtimeRefreshThrottle = 0
+let resultsSoftRefreshSeq = 0
+let voteDeltaFlushTimer = null
+const pendingVoteDeltas = []
+
+const currentResultsTotal = () =>
+  (publicResults.value?.results || []).reduce(
+    (sum, row) => sum + Number(row.totalVotes || 0),
+    0,
+  )
+
+const applyPublicResultsSafely = (results, { allowDecrease = false } = {}) => {
+  const nextRows = Array.isArray(results?.results) ? results.results : []
+
+  // Never blank the ranking with an empty/partial payload while we already have data.
+  if (!nextRows.length && publicResults.value?.results?.length) {
+    return false
+  }
+
+  if (!allowDecrease && publicResults.value?.results?.length && nextRows.length) {
+    const currentTotal = currentResultsTotal()
+    const nextTotal = nextRows.reduce((sum, row) => sum + Number(row.totalVotes || 0), 0)
+    // Bot campaigns can make API snapshots lag; ignore big downward jumps that look like a wipe.
+    if (currentTotal > 20 && nextTotal < currentTotal * 0.7) {
+      return false
+    }
+  }
+
+  publicResults.value = results
+  return true
+}
+
+const softRefreshPublicResults = async ({ force = false } = {}) => {
+  if (!activeRound.value?.id) {
+    return
+  }
+
+  // While bot campaigns run, live vote_delta already moves the ranking.
+  // Extra API refreshes fight those updates and make the panel flicker/blank.
+  if (!force && hasRunningBotCampaigns()) {
+    return
+  }
+
+  const seq = ++resultsSoftRefreshSeq
+  try {
+    const results = await getPollResults({
+      pollId: props.pollId,
+      roundId: activeRound.value.id,
+    })
+    if (seq !== resultsSoftRefreshSeq) {
+      return
+    }
+    applyPublicResultsSafely(results, { allowDecrease: force })
+  } catch {
+    // Keep current ranking if soft refresh fails.
+  }
+}
+
+const applyVoteDeltaLocally = (payload) => {
+  const artistId = String(payload.artistId || '')
+  const contestantId = String(payload.contestantId || '')
+  const amount = Math.max(1, Number(payload.amount || 1))
+  if (!amount || (!artistId && !contestantId)) return
+
+  if (publicResults.value?.results?.length) {
+    publicResults.value = {
+      ...publicResults.value,
+      results: publicResults.value.results.map((row) => {
+        const sameArtist = artistId && String(row.artistId) === artistId
+        const sameContestant = contestantId && String(row.contestantId || row.id) === contestantId
+        if (!sameArtist && !sameContestant) {
+          return row
+        }
+        return {
+          ...row,
+          votes: Number(row.votes || 0) + amount,
+          totalVotes: Number(row.totalVotes || 0) + amount,
+        }
+      }),
+    }
+  }
+
+  if (activeRoundContestants.value.length) {
+    activeRoundContestants.value = activeRoundContestants.value.map((contestant) => {
+      const sameArtist = artistId && String(contestant.artistId) === artistId
+      const sameContestant = contestantId && String(contestant.id) === contestantId
+      if (!sameArtist && !sameContestant) {
+        return contestant
+      }
+      return {
+        ...contestant,
+        votes: Number(contestant.votes || 0) + amount,
+        totalVotes: Number(contestant.totalVotes || 0) + amount,
+      }
+    })
+  }
+}
+
+const flushPendingVoteDeltas = () => {
+  voteDeltaFlushTimer = null
+  if (!pendingVoteDeltas.length) {
+    return
+  }
+
+  // Keep the UI responsive under bot floods: fold ranking deltas, show a short activity sample.
+  const batch = pendingVoteDeltas.splice(0, pendingVoteDeltas.length)
+  const rankingDelta = new Map()
+
+  for (const payload of batch) {
+    const key = `${payload.contestantId || ''}:${payload.artistId || ''}`
+    const amount = Math.max(1, Number(payload.amount || 1))
+    const current = rankingDelta.get(key) || {
+      contestantId: payload.contestantId,
+      artistId: payload.artistId,
+      amount: 0,
+    }
+    current.amount += amount
+    rankingDelta.set(key, current)
+  }
+
+  for (const delta of rankingDelta.values()) {
+    applyVoteDeltaLocally(delta)
+  }
+
+  const activitySample = batch.slice(-12).reverse().map((payload) => {
+    const createdAt = toValidDate(payload.createdAt) || new Date()
+    return {
+      id: `live-${createdAt.getTime()}-${payload.userDisplayName || 'fan'}-${Math.random()}`,
+      roundId: payload.roundId || null,
+      artistId: payload.artistId,
+      userId: payload.userId || `fan:${payload.userDisplayName || 'fan'}`,
+      userDisplayName: payload.userDisplayName || translate('admin.monitor.userFallback'),
+      userPhotoURL: payload.userPhotoUrl || null,
+      amount: Number(payload.amount || 1),
+      createdAt: {
+        toMillis: () => createdAt.getTime(),
+      },
+    }
+  })
+
+  recentActivity.value = [...activitySample, ...recentActivity.value].slice(0, 40)
+}
+
+const queueVoteDelta = (payload) => {
+  if (!payload) return
+  // Soften bot floods: keep only the newest events.
+  pendingVoteDeltas.push(payload)
+  if (pendingVoteDeltas.length > 80) {
+    pendingVoteDeltas.splice(0, pendingVoteDeltas.length - 80)
+  }
+  if (voteDeltaFlushTimer) {
+    return
+  }
+  voteDeltaFlushTimer = window.setTimeout(flushPendingVoteDeltas, 1200)
+}
 let metricsTimer = null
 const serverMetrics = ref(null)
 let unsubscribePoll = null
@@ -376,7 +586,16 @@ const loadServerMetrics = async () => {
   }
 }
 
-const toApiDate = (value) => (value ? new Date(value).toISOString() : null)
+const toValidDate = (value) => {
+  if (!value) return null
+  const date = value?.toDate?.() || new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const toApiDate = (value) => {
+  const date = toValidDate(value)
+  return date ? date.toISOString() : null
+}
 
 const openDatePicker = (input) => {
   input?.focus()
@@ -384,7 +603,7 @@ const openDatePicker = (input) => {
 }
 
 const formatDate = (value) => {
-  const date = value?.toDate?.() || (value ? new Date(value) : null)
+  const date = toValidDate(value)
   return date
     ? new Intl.DateTimeFormat('es', {
         dateStyle: 'medium',
@@ -394,7 +613,7 @@ const formatDate = (value) => {
 }
 
 const formatTime = (value) => {
-  const date = value?.toDate?.() || (value ? new Date(value) : null)
+  const date = toValidDate(value)
   return date
     ? new Intl.DateTimeFormat('es', {
         hour: '2-digit',
@@ -485,7 +704,9 @@ const listenRounds = () => {
       }
 
       listenActiveRoundContestants()
-      restartResultsAggregator()
+      if (!stopResultsAggregator) {
+        restartResultsAggregator()
+      }
     })
     .catch(() => {
       errorMessage.value = translate('admin.monitor.errors.listenRounds')
@@ -494,18 +715,25 @@ const listenRounds = () => {
 
 const selectRound = (roundId) => {
   selectedRoundId.value = roundId
-  listenActiveRoundContestants()
+  listenActiveRoundContestants({ force: true })
   restartResultsAggregator()
 }
 
-const listenActiveRoundContestants = () => {
+const listenActiveRoundContestants = ({ force = false } = {}) => {
+  const roundId = activeRound.value?.id ? String(activeRound.value.id) : ''
+
+  if (!force && roundId && roundId === lastListenedRoundId && unsubscribePublicResults) {
+    return
+  }
+
   unsubscribeActiveRoundContestants?.()
   unsubscribePublicResults?.()
-  activeRoundContestants.value = []
-  publicResults.value = null
-  recentActivity.value = []
+  lastListenedRoundId = roundId
 
   if (!activeRound.value) {
+    activeRoundContestants.value = []
+    publicResults.value = null
+    recentActivity.value = []
     return
   }
 
@@ -518,8 +746,14 @@ const listenActiveRoundContestants = () => {
     pollId: props.pollId,
     roundId: activeRound.value.id,
     onData: (results) => {
-      publicResults.value = results
-      recentActivity.value = results?.recentActivity || []
+      // While bots are active, ignore periodic API snapshots that lag and blank/flicker the UI.
+      if (hasRunningBotCampaigns()) {
+        return
+      }
+      applyPublicResultsSafely(results)
+      if (!recentActivity.value.length && Array.isArray(results?.recentActivity)) {
+        recentActivity.value = results.recentActivity
+      }
     },
     onError: () => {
       errorMessage.value = translate('admin.monitor.errors.listenResults')
@@ -688,11 +922,220 @@ const addManualVotes = async (contestant) => {
       ? translate('admin.monitor.manualVotesAdded', { count: amount })
       : translate('admin.monitor.manualVotesRemoved', { count: Math.abs(amount) })
     restartResultsAggregator()
-    listenActiveRoundContestants()
+    listenActiveRoundContestants({ force: true })
   } catch {
     errorMessage.value = translate('admin.monitor.errors.adjustVotes')
   } finally {
     adjustingVoteContestantId.value = ''
+  }
+}
+
+const botCampaignStatusLabel = (status) => {
+  if (status === 'running') return translate('admin.monitor.botCampaignStatusRunning')
+  if (status === 'cancelled') return translate('admin.monitor.botCampaignStatusCancelled')
+  return translate('admin.monitor.botCampaignStatusDone')
+}
+
+const loadBotCampaigns = async () => {
+  try {
+    const rows = await getAdminBotCampaigns(props.pollId)
+    const next = Array.isArray(rows)
+      ? [...rows].sort((a, b) => {
+          const rank = (status) => (status === 'running' || status === 'paused' ? 0 : 1)
+          const byStatus = rank(a.status) - rank(b.status)
+          if (byStatus !== 0) return byStatus
+          return Number(b.id || 0) - Number(a.id || 0)
+        })
+      : []
+
+    const signature = (list) =>
+      list
+        .map((row) =>
+          [
+            row.id,
+            row.status,
+            row.appliedAmount,
+            row.totalAmount,
+            row.percent,
+            row.remainingAmount,
+          ].join(':'),
+        )
+        .join('|')
+
+    if (signature(botCampaigns.value) === signature(next)) {
+      return
+    }
+
+    botCampaigns.value = next
+  } catch {
+    // Keep previous list if refresh fails.
+  }
+}
+
+const formatBotCampaignEta = (campaign) => {
+  const endsAt = toValidDate(campaign?.endsAt)
+  const endsAtMs = endsAt ? endsAt.getTime() : 0
+  const etaMs =
+    campaign?.status === 'running' && endsAtMs
+      ? Math.max(0, endsAtMs - Date.now())
+      : Number(campaign?.etaMs || 0)
+  const safeEtaMs = Number.isFinite(etaMs) ? etaMs : 0
+  const minutes = Math.max(1, Math.ceil(safeEtaMs / 60000))
+  return translate('admin.monitor.botCampaignEta', { minutes })
+}
+
+const openBotCampaignModal = (contestant) => {
+  errorMessage.value = ''
+  botCampaignModalError.value = ''
+  botCampaignContestant.value = contestant
+  const defaultAmount = Math.max(10, Number(manualVoteAmounts.value[contestant.id] || 100))
+  const botsCount = Math.min(50, Math.max(5, Math.floor(defaultAmount / 4)))
+  botCampaignForm.value = {
+    amount: defaultAmount,
+    botsCount,
+    durationMinutes: 10,
+  }
+  refreshBotNamePreview(botsCount)
+  isBotCampaignModalOpen.value = true
+}
+
+const closeBotCampaignModal = () => {
+  isBotCampaignModalOpen.value = false
+  botCampaignContestant.value = null
+  botCampaignModalError.value = ''
+  isStartingBotCampaign.value = false
+}
+
+const startBotCampaign = async () => {
+  const contestant = botCampaignContestant.value
+  if (!contestant || isStartingBotCampaign.value) return
+
+  botCampaignModalError.value = ''
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  const amount = Math.trunc(Number(botCampaignForm.value.amount))
+  const botsCount = Math.trunc(Number(botCampaignForm.value.botsCount))
+  const durationMinutes = Math.trunc(Number(botCampaignForm.value.durationMinutes))
+
+  if (!Number.isFinite(amount) || amount < 1) {
+    botCampaignModalError.value = translate('admin.monitor.errors.botCampaignAmount')
+    return
+  }
+  if (!Number.isFinite(botsCount) || botsCount < 1) {
+    botCampaignModalError.value = translate('admin.monitor.errors.botCampaignBots')
+    return
+  }
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 180) {
+    botCampaignModalError.value = translate('admin.monitor.errors.botCampaignDuration')
+    return
+  }
+
+  isStartingBotCampaign.value = true
+  try {
+    await createAdminBotCampaign(props.pollId, contestant.id, {
+      amount,
+      botsCount,
+      durationMinutes,
+    })
+    // Close first so a follow-up refresh error cannot leave the modal stuck open.
+    isBotCampaignModalOpen.value = false
+    botCampaignContestant.value = null
+    botCampaignModalError.value = ''
+    successMessage.value = translate('admin.monitor.botCampaignStarted', {
+      count: amount,
+      minutes: durationMinutes,
+    })
+    await loadBotCampaigns()
+    restartResultsAggregator()
+    listenActiveRoundContestants({ force: true })
+  } catch (error) {
+    const raw = error?.message
+    botCampaignModalError.value = Array.isArray(raw)
+      ? raw.join(' ')
+      : (raw || translate('admin.monitor.errors.botCampaignCreate'))
+  } finally {
+    isStartingBotCampaign.value = false
+  }
+}
+
+const cancelBotCampaign = async (campaign) => {
+  if (!campaign?.id) return
+  const artist = campaign.artistName || translate('admin.common.artist')
+  const ok = window.confirm(
+    translate('admin.monitor.botCampaignStopConfirm', {
+      artist,
+      applied: campaign.appliedAmount || 0,
+      total: campaign.totalAmount || 0,
+    }),
+  )
+  if (!ok) return
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    cancellingBotCampaignId.value = campaign.id
+    await cancelAdminBotCampaign(campaign.id)
+    successMessage.value = translate('admin.monitor.botCampaignCancelled')
+    await loadBotCampaigns()
+    if (botCampaignDetail.value?.id === campaign.id) {
+      await openBotCampaignDetail(campaign.id)
+    }
+  } catch (error) {
+    const raw = error?.message
+    errorMessage.value = Array.isArray(raw)
+      ? raw.join(' ')
+      : (raw || translate('admin.monitor.errors.botCampaignCancel'))
+  } finally {
+    cancellingBotCampaignId.value = ''
+  }
+}
+
+const closeBotCampaignDetail = () => {
+  isBotCampaignDetailOpen.value = false
+  botCampaignDetail.value = null
+  isLoadingBotCampaignDetail.value = false
+  if (botCampaignDetailTimer) {
+    window.clearInterval(botCampaignDetailTimer)
+    botCampaignDetailTimer = null
+  }
+}
+
+const openBotCampaignDetail = async (campaignOrId) => {
+  const campaignId = typeof campaignOrId === 'object' ? campaignOrId?.id : campaignOrId
+  if (!campaignId) return
+
+  errorMessage.value = ''
+  isBotCampaignDetailOpen.value = true
+  isLoadingBotCampaignDetail.value = true
+  try {
+    botCampaignDetail.value = await getAdminBotCampaign(campaignId)
+  } catch (error) {
+    const raw = error?.message
+    errorMessage.value = Array.isArray(raw)
+      ? raw.join(' ')
+      : (raw || translate('admin.monitor.errors.botCampaignDetail'))
+    closeBotCampaignDetail()
+    return
+  } finally {
+    isLoadingBotCampaignDetail.value = false
+  }
+
+  if (botCampaignDetailTimer) {
+    window.clearInterval(botCampaignDetailTimer)
+  }
+  if (botCampaignDetail.value?.status === 'running' || botCampaignDetail.value?.status === 'paused') {
+    botCampaignDetailTimer = window.setInterval(() => {
+      getAdminBotCampaign(campaignId)
+        .then((detail) => {
+          botCampaignDetail.value = detail
+          if (detail.status !== 'running' && detail.status !== 'paused') {
+            window.clearInterval(botCampaignDetailTimer)
+            botCampaignDetailTimer = null
+          }
+        })
+        .catch(() => {})
+    }, 4000)
   }
 }
 
@@ -791,32 +1234,51 @@ const confirmDeleteRound = async () => {
   }
 }
 
-const refreshFromRealtime = () => {
+const refreshStructureFromRealtime = () => {
   const nowMs = Date.now()
-  if (nowMs - realtimeRefreshThrottle < 800) {
+  if (nowMs - realtimeRefreshThrottle < 5000) {
+    return
+  }
+  // Bot campaigns never change poll structure; ignore noisy state bursts while they run.
+  if (hasRunningBotCampaigns()) {
     return
   }
   realtimeRefreshThrottle = nowMs
   listenPoll()
   listenRounds()
-  listenActiveRoundContestants()
+}
+
+const refreshResultsFromRealtime = () => {
+  // results_dirty fires on every bot micro-vote; skip while campaigns are running.
+  if (hasRunningBotCampaigns()) {
+    return
+  }
+  softRefreshPublicResults()
 }
 
 onMounted(async () => {
-  await loadArtists()
-  listenPoll()
-  listenContestants()
-  listenRounds()
+  monitorBootError.value = ''
+  try {
+    await loadArtists()
+    listenPoll()
+    listenContestants()
+    listenRounds()
 
-  // Admin en vivo por socket: cuando cambia el estado, llegan votos o se ajustan votos manuales,
-  // el panel se refresca solo (sin recargar y sin polling agresivo).
-  unsubscribeRealtime = subscribePollRealtime(props.pollId, {
-    onPollStateChanged: refreshFromRealtime,
-    onResultsDirty: refreshFromRealtime,
-  })
+    unsubscribeRealtime = subscribePollRealtime(props.pollId, {
+      onPollStateChanged: refreshStructureFromRealtime,
+      onResultsDirty: refreshResultsFromRealtime,
+      onVoteDelta: queueVoteDelta,
+    })
 
-  loadServerMetrics()
-  metricsTimer = window.setInterval(loadServerMetrics, 10000)
+    await loadBotCampaigns()
+    botCampaignsTimer = window.setInterval(loadBotCampaigns, 10000)
+
+    loadServerMetrics()
+    metricsTimer = window.setInterval(loadServerMetrics, 30000)
+  } catch (error) {
+    monitorBootError.value =
+      error?.message || translate('admin.monitor.loadError') || 'No se pudo cargar el monitor.'
+  }
 })
 
 onUnmounted(() => {
@@ -828,6 +1290,13 @@ onUnmounted(() => {
   unsubscribeRealtime?.()
   stopResultsAggregator?.()
   window.clearInterval(metricsTimer)
+  window.clearInterval(botCampaignsTimer)
+  if (botCampaignDetailTimer) {
+    window.clearInterval(botCampaignDetailTimer)
+  }
+  if (voteDeltaFlushTimer) {
+    window.clearTimeout(voteDeltaFlushTimer)
+  }
 })
 </script>
 
@@ -845,6 +1314,13 @@ onUnmounted(() => {
           {{ $t('admin.monitor.description') }}
         </p>
       </div>
+    </div>
+
+    <div
+      v-if="monitorBootError"
+      class="rounded-3xl border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm font-bold text-rose-100"
+    >
+      {{ monitorBootError }}
     </div>
 
     <article
@@ -1131,6 +1607,90 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <div
+          v-if="runningBotCampaigns.length"
+          class="mt-5 space-y-3 rounded-3xl border-2 border-amber-300/40 bg-amber-400/10 p-4 shadow-lg shadow-amber-950/20"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-xs font-black uppercase tracking-[0.24em] text-amber-200">
+                {{ $t('admin.monitor.botCampaignsRunning') }}
+              </p>
+              <p class="mt-1 text-sm font-bold text-amber-100/80">
+                {{ $t('admin.monitor.botCampaignsRunningHint') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-[11px] font-black uppercase tracking-wide text-amber-100/80 hover:text-white"
+              @click="loadBotCampaigns"
+            >
+              {{ $t('admin.monitor.botCampaignRefresh') }}
+            </button>
+          </div>
+
+          <div
+            v-for="campaign in runningBotCampaigns"
+            :key="`running-${campaign.id}`"
+            class="rounded-2xl border border-amber-200/20 bg-slate-950/70 p-4"
+          >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="min-w-0">
+                <p class="truncate text-base font-black text-white">
+                  {{ campaign.artistName || $t('admin.common.artist') }}
+                </p>
+                <p class="mt-1 text-sm font-bold text-slate-300">
+                  {{
+                    $t('admin.monitor.botCampaignProgressDetail', {
+                      applied: campaign.appliedAmount || 0,
+                      total: campaign.totalAmount || 0,
+                      percent: campaign.percent || 0,
+                      remaining: campaign.remainingAmount || 0,
+                    })
+                  }}
+                </p>
+                <p class="mt-1 text-xs font-bold text-amber-100/80">
+                  {{ formatBotCampaignEta(campaign) }}
+                </p>
+              </div>
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-cyan-300/30 bg-cyan-400/10 px-4 text-sm font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
+                  @click="openBotCampaignDetail(campaign)"
+                >
+                  <i class="fa-solid fa-list" aria-hidden="true"></i>
+                  {{ $t('admin.monitor.botCampaignView') }}
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-red-300/40 bg-red-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-950/40 transition hover:bg-red-400 disabled:opacity-50"
+                  :disabled="cancellingBotCampaignId === campaign.id"
+                  @click="cancelBotCampaign(campaign)"
+                >
+                  <i
+                    v-if="cancellingBotCampaignId === campaign.id"
+                    class="fa-solid fa-circle-notch fa-spin"
+                    aria-hidden="true"
+                  ></i>
+                  <i
+                    v-else
+                    class="fa-solid fa-stop"
+                    aria-hidden="true"
+                  ></i>
+                  {{ $t('admin.monitor.botCampaignStop') }}
+                </button>
+              </div>
+            </div>
+            <div class="mt-3 h-3 overflow-hidden rounded-full bg-white/10">
+              <div
+                class="h-full rounded-full bg-linear-to-r from-amber-300 to-fuchsia-400 transition-[width]"
+                :style="{ width: `${campaign.percent || 0}%` }"
+              ></div>
+            </div>
+          </div>
+        </div>
+
         <div v-if="activeRound" class="mt-5 space-y-3">
           <div
             v-for="(contestant, index) in activeRoundRanking"
@@ -1181,12 +1741,12 @@ onUnmounted(() => {
                 v-model="manualVoteAmounts[contestant.id]"
                 type="number"
                 step="1"
-                class="min-h-10 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/50 sm:w-32"
+                class="min-h-10 w-full rounded-2xl border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-fuchsia-300/50 sm:max-w-[9rem]"
                 :placeholder="$t('admin.monitor.manualVotesPlaceholder')"
               />
               <button
                 type="button"
-                class="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-2xl border border-violet-300/25 bg-violet-400/10 px-4 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                class="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="Boolean(adjustingVoteContestantId)"
                 @click="addManualVotes(contestant)"
               >
@@ -1195,7 +1755,21 @@ onUnmounted(() => {
                   class="fa-solid fa-circle-notch fa-spin"
                   aria-hidden="true"
                 ></i>
-                {{ adjustingVoteContestantId === contestant.id ? 'Ajustando...' : $t('admin.monitor.adjustVotes') }}
+                <i
+                  v-else
+                  class="fa-solid fa-sliders"
+                  aria-hidden="true"
+                ></i>
+                {{ $t('admin.monitor.adjustVotes') }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-2xl border border-violet-300/25 bg-violet-400/10 px-4 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="Boolean(adjustingVoteContestantId) || isStartingBotCampaign"
+                @click="openBotCampaignModal(contestant)"
+              >
+                <i class="fa-solid fa-robot" aria-hidden="true"></i>
+                {{ $t('admin.monitor.botCampaignTitle') }}
               </button>
             </div>
           </div>
@@ -1213,6 +1787,85 @@ onUnmounted(() => {
           class="mt-5 rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400"
         >
           {{ $t('admin.monitor.createRoundForStats') }}
+        </p>
+
+        <div
+          v-if="botCampaigns.length"
+          class="mt-6 space-y-3 rounded-3xl border border-cyan-300/20 bg-cyan-400/5 p-4"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-200">
+              {{ $t('admin.monitor.botCampaignsHistory') }}
+            </p>
+            <button
+              type="button"
+              class="text-[11px] font-black uppercase tracking-wide text-cyan-100/80 hover:text-white"
+              @click="loadBotCampaigns"
+            >
+              {{ $t('admin.monitor.botCampaignRefresh') }}
+            </button>
+          </div>
+          <div
+            v-for="campaign in botCampaigns"
+            :key="campaign.id"
+            class="rounded-2xl border border-white/10 bg-slate-950/50 p-4"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-black text-white">
+                  {{ campaign.artistName || $t('admin.common.artist') }}
+                </p>
+                <p class="mt-1 text-xs font-bold text-slate-400">
+                  {{ botCampaignStatusLabel(campaign.status) }}
+                  ·
+                  {{
+                    $t('admin.monitor.botCampaignProgress', {
+                      applied: campaign.appliedAmount,
+                      total: campaign.totalAmount,
+                    })
+                  }}
+                  · {{ campaign.percent || 0 }}%
+                </p>
+              </div>
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-cyan-100"
+                  @click="openBotCampaignDetail(campaign)"
+                >
+                  {{ $t('admin.monitor.botCampaignView') }}
+                </button>
+                <button
+                  v-if="campaign.status === 'running' || campaign.status === 'paused'"
+                  type="button"
+                  class="rounded-xl border border-red-300/40 bg-red-500/20 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-red-100 disabled:opacity-50"
+                  :disabled="cancellingBotCampaignId === campaign.id"
+                  @click="cancelBotCampaign(campaign)"
+                >
+                  {{ $t('admin.monitor.botCampaignStop') }}
+                </button>
+              </div>
+            </div>
+            <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                class="h-full rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-400 transition-[width]"
+                :style="{ width: `${campaign.percent || 0}%` }"
+              ></div>
+            </div>
+            <p
+              v-if="campaign.status === 'running'"
+              class="mt-2 text-[11px] font-bold text-cyan-100/80"
+            >
+              {{ formatBotCampaignEta(campaign) }}
+            </p>
+          </div>
+        </div>
+
+        <p
+          v-else-if="activeRound"
+          class="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-sm font-bold text-slate-500"
+        >
+          {{ $t('admin.monitor.botCampaignsEmpty') }}
         </p>
       </article>
 
@@ -1244,7 +1897,12 @@ onUnmounted(() => {
                   <span class="block truncate text-xs text-slate-400">{{ $t('admin.monitor.votedFor', { artist: vote.artist?.name || $t('admin.monitor.artistFallback') }) }}</span>
                 </span>
               </div>
-              <span class="text-xs font-bold text-slate-500">{{ formatTime(vote.createdAt) }}</span>
+              <div class="shrink-0 text-right">
+                <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-2.5 py-1 text-[11px] font-black text-fuchsia-100">
+                  {{ $t('admin.common.votes', { count: vote.amount || 1 }) }}
+                </span>
+                <span class="mt-1 block text-[11px] font-bold text-slate-500">{{ formatTime(vote.createdAt) }}</span>
+              </div>
             </div>
 
             <p
@@ -1512,6 +2170,270 @@ onUnmounted(() => {
               ></i>
               {{ isDeletingRound ? 'Eliminando...' : 'Sí, eliminar fase' }}
             </button>
+          </div>
+        </article>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="isBotCampaignModalOpen && botCampaignContestant"
+        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      >
+        <article
+          class="w-full max-w-lg rounded-4xl border border-violet-300/30 bg-[#080a18] p-6 text-white shadow-2xl shadow-violet-950/40"
+          @click.stop
+        >
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-violet-300">
+            {{ $t('admin.monitor.botCampaignTitle') }}
+          </p>
+          <h2 class="mt-3 text-3xl font-black">
+            {{ botCampaignContestant.artist?.name || $t('admin.common.artist') }}
+          </h2>
+          <p class="mt-2 text-sm leading-6 text-slate-300">
+            {{ $t('admin.monitor.botCampaignDescription') }}
+          </p>
+
+          <p
+            v-if="botCampaignModalError"
+            class="mt-4 rounded-2xl border border-red-300/25 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100"
+          >
+            {{ botCampaignModalError }}
+          </p>
+
+          <div class="mt-5 grid gap-4 sm:grid-cols-3">
+            <label class="block">
+              <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                {{ $t('admin.monitor.botCampaignAmount') }}
+              </span>
+              <input
+                v-model.number="botCampaignForm.amount"
+                type="number"
+                min="1"
+                class="mt-2 min-h-11 w-full rounded-2xl border border-white/10 bg-slate-950 px-3 text-sm font-black text-white outline-none focus:border-violet-300/50"
+              />
+            </label>
+            <label class="block">
+              <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                {{ $t('admin.monitor.botCampaignBots') }}
+              </span>
+              <input
+                v-model.number="botCampaignForm.botsCount"
+                type="number"
+                min="1"
+                max="500"
+                class="mt-2 min-h-11 w-full rounded-2xl border border-white/10 bg-slate-950 px-3 text-sm font-black text-white outline-none focus:border-violet-300/50"
+                @change="refreshBotNamePreview()"
+              />
+            </label>
+            <label class="block">
+              <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                {{ $t('admin.monitor.botCampaignDuration') }}
+              </span>
+              <input
+                v-model.number="botCampaignForm.durationMinutes"
+                type="number"
+                min="1"
+                max="180"
+                class="mt-2 min-h-11 w-full rounded-2xl border border-white/10 bg-slate-950 px-3 text-sm font-black text-white outline-none focus:border-violet-300/50"
+              />
+            </label>
+          </div>
+
+          <div class="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-[11px] font-black uppercase tracking-widest text-cyan-200">
+                {{ $t('admin.monitor.botCampaignPreview') }}
+              </p>
+              <button
+                type="button"
+                class="text-[11px] font-black uppercase tracking-wide text-cyan-100/70 hover:text-white"
+                @click="refreshBotNamePreview()"
+              >
+                {{ $t('admin.monitor.botCampaignRefreshNames') }}
+              </button>
+            </div>
+            <p class="mt-2 text-sm font-bold text-slate-300">
+              {{ botCampaignForm.botsCount }} bots · {{ botCampaignForm.amount }} votos · {{ botCampaignForm.durationMinutes }} min
+            </p>
+            <p class="mt-2 text-xs font-bold leading-5 text-slate-400">
+              {{ botCampaignNamePreview.join(' · ') }}
+            </p>
+          </div>
+
+          <div class="mt-5 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
+              @click="closeBotCampaignModal"
+            >
+              {{ $t('admin.monitor.botCampaignClose') }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:opacity-60"
+              :disabled="isStartingBotCampaign"
+              @click="startBotCampaign"
+            >
+              <i
+                v-if="isStartingBotCampaign"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ $t('admin.monitor.botCampaignStart') }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="isBotCampaignDetailOpen"
+        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+      >
+        <article
+          class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-4xl border border-cyan-300/30 bg-[#080a18] text-white shadow-2xl shadow-cyan-950/40"
+        >
+          <div class="border-b border-white/10 p-5 sm:p-6">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+                  {{ $t('admin.monitor.botCampaignDetailTitle') }}
+                </p>
+                <h2 class="mt-2 text-2xl font-black sm:text-3xl">
+                  {{ botCampaignDetail?.artistName || $t('admin.common.artist') }}
+                </h2>
+                <p
+                  v-if="botCampaignDetail"
+                  class="mt-2 text-sm font-bold text-slate-300"
+                >
+                  {{ botCampaignStatusLabel(botCampaignDetail.status) }}
+                  ·
+                  {{
+                    $t('admin.monitor.botCampaignProgressDetail', {
+                      applied: botCampaignDetail.appliedAmount || 0,
+                      total: botCampaignDetail.totalAmount || 0,
+                      percent: botCampaignDetail.percent || 0,
+                      remaining: botCampaignDetail.remainingAmount || 0,
+                    })
+                  }}
+                </p>
+                <p
+                  v-if="botCampaignDetail?.stats"
+                  class="mt-1 text-xs font-bold text-slate-400"
+                >
+                  {{
+                    $t('admin.monitor.botCampaignDetailStats', {
+                      voted: botCampaignDetail.stats.botsVoted || 0,
+                      total: botCampaignDetail.stats.botsTotal || 0,
+                      ledger: botCampaignDetail.stats.ledgerVotes || 0,
+                    })
+                  }}
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  v-if="botCampaignDetail?.status === 'running' || botCampaignDetail?.status === 'paused'"
+                  type="button"
+                  class="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-red-300/40 bg-red-500 px-4 text-xs font-black uppercase tracking-wide text-white disabled:opacity-50"
+                  :disabled="cancellingBotCampaignId === botCampaignDetail?.id"
+                  @click="cancelBotCampaign(botCampaignDetail)"
+                >
+                  {{ $t('admin.monitor.botCampaignStop') }}
+                </button>
+                <button
+                  type="button"
+                  class="min-h-10 rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200"
+                  @click="closeBotCampaignDetail"
+                >
+                  {{ $t('admin.monitor.botCampaignClose') }}
+                </button>
+              </div>
+            </div>
+            <div
+              v-if="botCampaignDetail"
+              class="mt-4 h-2 overflow-hidden rounded-full bg-white/10"
+            >
+              <div
+                class="h-full rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-400 transition-[width]"
+                :style="{ width: `${botCampaignDetail.percent || 0}%` }"
+              ></div>
+            </div>
+          </div>
+
+          <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 sm:grid-cols-2 sm:p-6">
+            <div v-if="isLoadingBotCampaignDetail" class="col-span-full py-10 text-center text-sm font-bold text-slate-400">
+              <i class="fa-solid fa-circle-notch fa-spin mr-2" aria-hidden="true"></i>
+              {{ $t('admin.monitor.botCampaignDetailLoading') }}
+            </div>
+
+            <template v-else-if="botCampaignDetail">
+              <div>
+                <p class="text-[11px] font-black uppercase tracking-widest text-cyan-200">
+                  {{ $t('admin.monitor.botCampaignBotsList') }}
+                </p>
+                <div class="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  <div
+                    v-for="bot in botCampaignDetail.bots || []"
+                    :key="bot.name"
+                    class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2"
+                  >
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-black text-white">{{ bot.name }}</p>
+                      <p class="text-[11px] font-bold text-slate-500">
+                        {{
+                          bot.hasVoted
+                            ? $t('admin.monitor.botCampaignBotVoted', { hits: bot.hits || 0 })
+                            : $t('admin.monitor.botCampaignBotWaiting')
+                        }}
+                      </p>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black"
+                      :class="bot.hasVoted
+                        ? 'border-emerald-300/25 bg-emerald-400/10 text-emerald-100'
+                        : 'border-white/10 bg-white/5 text-slate-400'"
+                    >
+                      {{ $t('admin.common.votes', { count: bot.votes || 0 }) }}
+                    </span>
+                  </div>
+                  <p
+                    v-if="!(botCampaignDetail.bots || []).length"
+                    class="rounded-2xl border border-white/10 px-3 py-4 text-sm font-bold text-slate-500"
+                  >
+                    {{ $t('admin.monitor.botCampaignNoBots') }}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p class="text-[11px] font-black uppercase tracking-widest text-fuchsia-200">
+                  {{ $t('admin.monitor.botCampaignRecentVotes') }}
+                </p>
+                <div class="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  <div
+                    v-for="vote in botCampaignDetail.recentVotes || []"
+                    :key="vote.id"
+                    class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2"
+                  >
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-black text-white">{{ vote.name }}</p>
+                      <p class="text-[11px] font-bold text-slate-500">{{ formatTime(vote.createdAt) }}</p>
+                    </div>
+                    <span class="shrink-0 rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-2.5 py-1 text-[11px] font-black text-fuchsia-100">
+                      {{ $t('admin.common.votes', { count: vote.amount || 1 }) }}
+                    </span>
+                  </div>
+                  <p
+                    v-if="!(botCampaignDetail.recentVotes || []).length"
+                    class="rounded-2xl border border-white/10 px-3 py-4 text-sm font-bold text-slate-500"
+                  >
+                    {{ $t('admin.monitor.botCampaignNoVotesYet') }}
+                  </p>
+                </div>
+              </div>
+            </template>
           </div>
         </article>
       </div>
