@@ -1234,7 +1234,8 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// Acceso a la pantalla de comentarios desde el detalle de votación.
+/// Vista previa de comentarios al final del detalle de votación:
+/// muestra 3 al inicio y "Ver más" carga de 10 en 10.
 class PollCommentsEntry extends StatefulWidget {
   const PollCommentsEntry({
     required this.pollId,
@@ -1252,34 +1253,62 @@ class PollCommentsEntry extends StatefulWidget {
 }
 
 class _PollCommentsEntryState extends State<PollCommentsEntry> {
-  int? _count;
+  static const _initialVisible = 3;
+  static const _pageSize = 10;
+
+  late final CommentsApi _api;
+  List<PollComment> _comments = const [];
+  int _visibleCount = _initialVisible;
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadCount();
+    _api = CommentsApi(widget.authService.client);
+    _load();
   }
 
   @override
   void didUpdateWidget(covariant PollCommentsEntry oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pollId != widget.pollId) {
-      _loadCount();
+      _visibleCount = _initialVisible;
+      _load();
     }
   }
 
-  Future<void> _loadCount() async {
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final rows = await CommentsApi(widget.authService.client).list(widget.pollId);
+      final rows = await _api.list(widget.pollId);
       if (!mounted) return;
-      setState(() => _count = rows.length);
+      setState(() {
+        _comments = rows;
+        _visibleCount = rows.isEmpty
+            ? 0
+            : rows.length.clamp(1, _initialVisible);
+        _loading = false;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _count = null);
+      setState(() {
+        _loading = false;
+        _error = tr('pollDetail.commentsLoadError');
+      });
     }
   }
 
-  Future<void> _open() async {
+  void _showMore() {
+    setState(() {
+      _visibleCount = (_visibleCount + _pageSize).clamp(0, _comments.length);
+    });
+  }
+
+  Future<void> _openFull() async {
     await PollCommentsPage.open(
       context,
       pollId: widget.pollId,
@@ -1287,101 +1316,288 @@ class _PollCommentsEntryState extends State<PollCommentsEntry> {
       pollTitle: widget.pollTitle,
     );
     if (mounted) {
-      await _loadCount();
+      await _load();
     }
   }
 
+  String _formatCommentDate(DateTime? date) {
+    if (date == null) return '';
+    final local = date.toLocal();
+    final diff = DateTime.now().difference(local);
+    if (diff.inMinutes < 1) return tr('pollDetail.commentsJustNow');
+    if (diff.inMinutes < 60) {
+      return trp('pollDetail.commentsMinutesAgo', {
+        'count': '${diff.inMinutes}',
+      });
+    }
+    if (diff.inHours < 24) {
+      return trp('pollDetail.commentsHoursAgo', {'count': '${diff.inHours}'});
+    }
+    if (diff.inDays < 7) {
+      return trp('pollDetail.commentsDaysAgo', {'count': '${diff.inDays}'});
+    }
+    final locale = AppLocale.instance.code == 'en' ? 'en' : 'es';
+    return DateFormat('d MMM', locale).format(local);
+  }
+
+  List<PollComment> get _visibleComments {
+    if (_comments.isEmpty) return const [];
+    final end = _visibleCount.clamp(0, _comments.length);
+    return _comments.sublist(0, end);
+  }
+
+  bool get _hasMore => _visibleCount < _comments.length;
+
   @override
   Widget build(BuildContext context) {
-    final countLabel = _count == null
-        ? tr('pollDetail.commentsOpenHint')
-        : trp('pollDetail.commentsCount', {'count': '$_count'});
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _open,
-          borderRadius: BorderRadius.circular(20),
-          child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: Colors.white.withValues(alpha: 0.05),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
-                  child: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: Color(0xFFF0ABFC),
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        tr('pollDetail.commentsTitle'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        countLabel,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: const Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  color: Color(0xFFF0ABFC),
                 ),
-                if (_count != null)
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('pollDetail.commentsTitle'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD946EF).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: const Color(0xFFD946EF).withValues(alpha: 0.3),
+                    const SizedBox(height: 2),
+                    Text(
+                      _loading
+                          ? tr('pollDetail.commentsOpenHint')
+                          : trp('pollDetail.commentsCount', {
+                              'count': '${_comments.length}',
+                            }),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: _openFull,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFF0ABFC),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: Text(
+                  tr('pollDetail.commentsWrite'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                _error!,
+                style: const TextStyle(
+                  color: Color(0xFFFCA5A5),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else if (_comments.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    tr('pollDetail.commentsEmptyTitle'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    tr('pollDetail.commentsEmptyBody'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            for (var i = 0; i < _visibleComments.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              _PreviewCommentCard(
+                comment: _visibleComments[i],
+                timeLabel: _formatCommentDate(_visibleComments[i].createdAt),
+              ),
+            ],
+            if (_hasMore) ...[
+              const SizedBox(height: 12),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _showMore,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Ink(
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFFD946EF).withValues(alpha: 0.35),
+                      ),
+                      color: const Color(0xFFD946EF).withValues(alpha: 0.12),
                     ),
                     child: Text(
-                      '$_count',
+                      trp('pollDetail.commentsSeeMore', {
+                        'count': '${(_comments.length - _visibleCount).clamp(0, _pageSize)}',
+                      }),
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Color(0xFFF5D0FE),
                         fontWeight: FontWeight.w900,
                         fontSize: 13,
+                        letterSpacing: 0.4,
                       ),
                     ),
                   ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.white.withValues(alpha: 0.55),
                 ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewCommentCard extends StatelessWidget {
+  const _PreviewCommentCard({
+    required this.comment,
+    required this.timeLabel,
+  });
+
+  final PollComment comment;
+  final String timeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Avatar(name: comment.displayName, photoUrl: comment.photoUrl),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        comment.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    if (timeLabel.isNotEmpty)
+                      Text(
+                        timeLabel,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
+                if (comment.text.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    comment.text,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+                if (comment.gifUrl.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl: comment.gifUrl,
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

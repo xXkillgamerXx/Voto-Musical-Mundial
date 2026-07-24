@@ -363,6 +363,7 @@ export default {
       anonymousVoteError: 'Could not register your free vote.',
       anonymousConfirmTitle: 'Confirm free vote',
       anonymousConfirmDescription: 'You can use 1 free vote as a visitor. Then log in to earn points and keep voting.',
+      loggedFreeVoteDescription: "You're out of points. You can use 1 free vote with the poll cooldown.",
       anonymousOneFreeVote: 'You have 1 free vote available',
       useFreeVote: 'Use free vote',
       anonymousVoteSuccessLogin: 'Your free vote was counted. Log in to keep voting and earn points.',
@@ -587,6 +588,8 @@ export default {
       pageOf: 'Page {page} of {total}',
       previous: 'Previous',
       next: 'Next',
+      refresh: 'Refresh',
+      refreshing: 'Refreshing...',
     },
   },
   gift: {

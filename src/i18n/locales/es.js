@@ -363,6 +363,7 @@ export default {
       anonymousVoteError: 'No se pudo registrar tu voto gratis.',
       anonymousConfirmTitle: 'Confirmar voto gratis',
       anonymousConfirmDescription: 'Puedes usar 1 voto gratis como visitante. Después inicia sesión para ganar puntos y seguir votando.',
+      loggedFreeVoteDescription: 'No tienes puntos. Puedes usar 1 voto gratis con el tiempo configurado en la votación.',
       anonymousOneFreeVote: 'Tienes 1 voto gratis disponible',
       useFreeVote: 'Usar voto gratis',
       anonymousVoteSuccessLogin: 'Tu voto gratis fue contado. Inicia sesión para seguir votando y ganar puntos.',
@@ -587,6 +588,8 @@ export default {
       pageOf: 'Página {page} de {total}',
       previous: 'Anterior',
       next: 'Siguiente',
+      refresh: 'Actualizar',
+      refreshing: 'Actualizando...',
     },
   },
   gift: {

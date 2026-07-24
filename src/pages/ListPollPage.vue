@@ -977,21 +977,55 @@ const canUseAnonymousVote = computed(() =>
 const isAnonymousVotingFlow = computed(() =>
   Boolean(
     voteModalContestant.value &&
-    (!currentUser.value || currentUser.value.isAnonymous),
+      (!currentUser.value ||
+        currentUser.value.isAnonymous ||
+        (anonymousVotingConfig.value.enabled &&
+          Number(userPoints.value || 0) < pointsPerVote.value)),
   ),
 );
-const shouldShowTurnstile = computed(() =>
-  isAnonymousVotingFlow.value && isTurnstileEnabled(),
+const isGuestAnonymousFlow = computed(
+  () =>
+    Boolean(voteModalContestant.value) &&
+    (!currentUser.value || Boolean(currentUser.value.isAnonymous)),
 );
-const hasEnoughPointsToVote = computed(() =>
-  currentUser.value?.isAnonymous || !currentUser.value
-    ? canUseAnonymousVote.value
-    : Number(userPoints.value || 0) >= pointsPerVote.value,
+const shouldShowTurnstile = computed(
+  () => isGuestAnonymousFlow.value && isTurnstileEnabled(),
 );
-const hasEnoughPointsToVoteFor = (contestant) =>
-  currentUser.value?.isAnonymous || !currentUser.value
-    ? canUseAnonymousVoteFor(contestant)
-    : hasEnoughPointsToVote.value;
+const isLoggedOutOfPoints = computed(
+  () =>
+    Boolean(currentUser.value) &&
+    !currentUser.value.isAnonymous &&
+    Number(userPoints.value || 0) < pointsPerVote.value,
+);
+const needsFreeVoteCooldown = computed(
+  () =>
+    anonymousVotingConfig.value.enabled &&
+    (!currentUser.value ||
+      Boolean(currentUser.value.isAnonymous) ||
+      isLoggedOutOfPoints.value),
+);
+const hasEnoughPointsToVote = computed(() => {
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    return canUseAnonymousVote.value;
+  }
+  if (Number(userPoints.value || 0) >= pointsPerVote.value) {
+    return true;
+  }
+  return (
+    anonymousVotingConfig.value.enabled && canUseAnonymousVote.value
+  );
+});
+const hasEnoughPointsToVoteFor = (contestant) => {
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    return canUseAnonymousVoteFor(contestant);
+  }
+  if (Number(userPoints.value || 0) >= pointsPerVote.value) {
+    return true;
+  }
+  return (
+    anonymousVotingConfig.value.enabled && canUseAnonymousVoteFor(contestant)
+  );
+};
 const formattedUserPoints = computed(() =>
   Number(displayUserPoints.value || 0).toLocaleString("es"),
 );
@@ -1042,13 +1076,13 @@ const anonymousLiveCountdownLabel = computed(() =>
 );
 const isAnonymousWaitingToVote = computed(
   () =>
-    (!currentUser.value || currentUser.value.isAnonymous) &&
+    needsFreeVoteCooldown.value &&
     anonymousVoteScopes.value.some(
       (scope) => anonymousRemainingMsForScope(scope) > 0,
     ),
 );
 const isAnonymousOnCooldownFor = (contestant) => {
-  if (currentUser.value && !currentUser.value.isAnonymous) {
+  if (!needsFreeVoteCooldown.value) {
     return false;
   }
 
@@ -1067,19 +1101,26 @@ const isVoteButtonDisabled = (contestant) => {
     return false;
   }
 
-  return !hasEnoughPointsToVoteFor(contestant);
+  if (Number(userPoints.value || 0) >= pointsPerVote.value) {
+    return false;
+  }
+
+  // Logged-in with 0 points: keep button clickable when free vote is on
+  // (shows countdown / wait notice), same as guests.
+  return !anonymousVotingConfig.value.enabled;
 };
 const showAnonymousCooldownNotice = (contestant) => {
-  anonymousCooldownNotice.value = anonymousVoteMessageForScope(
-    getAnonymousVoteScope(contestant),
-  );
+  // El contador ya vive en el botón (Gratis en mm:ss). No mostrar aviso extra.
+  anonymousCooldownNotice.value = "";
   errorMessage.value = "";
 
-  nextTick(() => {
-    document
-      .getElementById("anonymous-vote-status-banner")
-      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
+  if (!currentUser.value || currentUser.value.isAnonymous) {
+    nextTick(() => {
+      document
+        .getElementById("anonymous-vote-status-banner")
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
 };
 
 const renderVisibleTurnstile = async () => {
@@ -2175,14 +2216,7 @@ const syncStoredPoints = (points, spentPoints) => {
 };
 
 const refreshAnonymousVoteStatuses = async () => {
-  const isGuestOrAnonymous =
-    !currentUser.value || Boolean(currentUser.value.isAnonymous);
-
-  if (
-    !isGuestOrAnonymous ||
-    !poll.value?.id ||
-    !anonymousVotingConfig.value.enabled
-  ) {
+  if (!poll.value?.id || !needsFreeVoteCooldown.value) {
     anonymousVoteStatuses.value = {};
     return;
   }
@@ -2191,14 +2225,20 @@ const refreshAnonymousVoteStatuses = async () => {
   hydrateAnonymousCooldownsFromStorage();
   isLoadingAnonymousStatus.value = true;
 
+  const useAnonymousToken =
+    !currentUser.value || Boolean(currentUser.value.isAnonymous);
+
   try {
     const statuses = await Promise.all(
       anonymousVoteScopes.value.map(async (scope) => {
-        const result = await getAnonymousVoteStatus({
-          pollId: poll.value.id,
-          roundId: activeRound.value?.id || null,
-          voteScope: scope === anonymousDefaultScope ? null : scope,
-        });
+        const result = await getAnonymousVoteStatus(
+          {
+            pollId: poll.value.id,
+            roundId: activeRound.value?.id || null,
+            voteScope: scope === anonymousDefaultScope ? null : scope,
+          },
+          { anonymous: useAnonymousToken },
+        );
 
         return [
           scope,
@@ -2244,7 +2284,19 @@ const voteButtonLabel = (contestant) => {
     return translate("polls.detail.voting");
   }
 
-  if (currentUser.value?.isAnonymous || !currentUser.value) {
+  const useFreeVoteLabel =
+    !currentUser.value ||
+    currentUser.value.isAnonymous ||
+    (isLoggedOutOfPoints.value && anonymousVotingConfig.value.enabled);
+
+  if (useFreeVoteLabel) {
+    if (
+      isLoggedOutOfPoints.value &&
+      !anonymousVotingConfig.value.enabled
+    ) {
+      return translate("polls.detail.noPoints");
+    }
+
     const scope = getAnonymousVoteScope(contestant);
 
     return anonymousRemainingMsForScope(scope) > 0
@@ -2254,9 +2306,7 @@ const voteButtonLabel = (contestant) => {
       : translate("polls.detail.freeVote");
   }
 
-  return hasEnoughPointsToVote.value
-    ? translate("polls.detail.vote")
-    : translate("polls.detail.noPoints");
+  return translate("polls.detail.vote");
 };
 
 const closeVoteModal = () => {
@@ -2356,13 +2406,25 @@ const openVoteModal = (contestant) => {
     return;
   }
 
-  if (!hasEnoughPointsToVote.value) {
+  if (Number(userPoints.value || 0) >= pointsPerVote.value) {
+    voteModalContestant.value = contestant;
+    voteAmount.value = Math.min(1, maxVoteAmount.value);
+    return;
+  }
+
+  if (!anonymousVotingConfig.value.enabled) {
     errorMessage.value = translate("polls.detail.notEnoughPoints");
     return;
   }
 
+  const scope = getAnonymousVoteScope(contestant);
+  if (!canUseAnonymousVoteForScope(scope)) {
+    showAnonymousCooldownNotice(contestant);
+    return;
+  }
+
   voteModalContestant.value = contestant;
-  voteAmount.value = Math.min(1, maxVoteAmount.value);
+  voteAmount.value = 1;
 };
 
 const setVoteAmountToMax = () => {
@@ -2514,6 +2576,14 @@ const voteFor = async (contestant, amount = 1) => {
   }
 
   if (Number(userPoints.value || 0) < pointsToSpend) {
+    if (
+      votesToAdd === 1 &&
+      anonymousVotingConfig.value.enabled &&
+      isLoggedOutOfPoints.value
+    ) {
+      await voteLoggedFreeFor(contestant);
+      return;
+    }
     errorMessage.value = translate("polls.detail.notEnoughPoints");
     return;
   }
@@ -2553,6 +2623,102 @@ const voteFor = async (contestant, amount = 1) => {
   }
 };
 
+const voteLoggedFreeFor = async (contestant) => {
+  if (!anonymousVotingConfig.value.enabled) {
+    errorMessage.value = translate("polls.detail.notEnoughPoints");
+    return;
+  }
+
+  const voteScope = getAnonymousVoteScope(contestant);
+
+  if (anonymousRemainingMsForScope(voteScope) > 0) {
+    showAnonymousCooldownNotice(contestant);
+    return;
+  }
+
+  const artistId = getContestantArtistId(contestant);
+  const currentContestant = displayedContestants.value.find(
+    (item) => getContestantArtistId(item) === artistId,
+  );
+  const currentVotes = displayVoteCountFor(currentContestant || contestant);
+
+  try {
+    isVoting.value = artistId;
+
+    const result = await castApiVote(
+      {
+        pollId: poll.value.id,
+        roundId: activeRound.value?.id || null,
+        artistId,
+        contestantId: contestant.id,
+        amount: 1,
+        voteScope: voteScope === anonymousDefaultScope ? null : voteScope,
+      },
+      { anonymous: false },
+    );
+
+    const nextStatus = mergeAnonymousStatus(
+      result?.status || {
+        enabled: true,
+        cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
+        remainingMs: anonymousVotingConfig.value.cooldownMinutes * 60 * 1000,
+        nextVoteAt: new Date(
+          Date.now() + anonymousVotingConfig.value.cooldownMinutes * 60 * 1000,
+        ).toISOString(),
+      },
+      voteScope,
+    );
+    anonymousVoteStatuses.value = {
+      ...anonymousVoteStatuses.value,
+      [voteScope]: nextStatus,
+    };
+
+    if (result?.user?.points !== undefined && result?.user?.points !== null) {
+      syncStoredPoints(result.user.points, result.user.spentPoints);
+    }
+
+    setOptimisticVoteTotal(artistId, currentVotes + 1);
+    showVoteFeedback(artistId, 1);
+    closeVoteModal();
+  } catch (error) {
+    const details = error?.payload || error?.details || {};
+    const nested =
+      details?.message && typeof details.message === "object"
+        ? details.message
+        : details;
+    const remainingMs = Number(nested?.remainingMs || 0);
+    const nextVoteAt = nested?.nextVoteAt || null;
+
+    if (error?.status === 429 || remainingMs > 0 || nextVoteAt) {
+      anonymousVoteStatuses.value = {
+        ...anonymousVoteStatuses.value,
+        [voteScope]: mergeAnonymousStatus(
+          {
+            ...(anonymousVoteStatuses.value[voteScope] || {}),
+            enabled: true,
+            cooldownMinutes: anonymousVotingConfig.value.cooldownMinutes,
+            nextVoteAt,
+            remainingMs,
+          },
+          voteScope,
+        ),
+      };
+      showAnonymousCooldownNotice(contestant);
+      closeVoteModal();
+      return;
+    }
+
+    errorMessage.value =
+      error?.message || translate("polls.detail.anonymousVoteError");
+    if (/esperar|wait to vote|resource-exhausted/i.test(String(errorMessage.value))) {
+      errorMessage.value = "";
+      showAnonymousCooldownNotice(contestant);
+    }
+  } finally {
+    isVoting.value = "";
+  }
+};
+
 const confirmVoteAmount = () => {
   if (!voteModalContestant.value) {
     return;
@@ -2577,6 +2743,7 @@ watch(
     poll.value?.id,
     activeRound.value?.id,
     anonymousVoteScopes.value.join("|"),
+    isLoggedOutOfPoints.value,
   ],
   () => {
     refreshAnonymousVoteStatuses();
@@ -3934,13 +4101,6 @@ onUnmounted(() => {
           </span>
         </div>
 
-        <p
-          v-if="anonymousCooldownNotice"
-          class="rounded-3xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-100"
-        >
-          {{ anonymousCooldownNotice }}
-        </p>
-
         <template v-if="isLoadingSelectedRound">
           <article
             v-for="index in 4"
@@ -4313,7 +4473,11 @@ onUnmounted(() => {
                     {{ $t("polls.detail.freeVote") }}
                   </p>
                   <p class="mt-2 text-sm leading-6 text-slate-200">
-                    {{ $t("polls.detail.anonymousConfirmDescription") }}
+                    {{
+                      isGuestAnonymousFlow
+                        ? $t("polls.detail.anonymousConfirmDescription")
+                        : $t("polls.detail.loggedFreeVoteDescription")
+                    }}
                   </p>
                   <p
                     class="mt-3 rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm font-bold text-cyan-100"

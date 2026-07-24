@@ -16,6 +16,71 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': "You don't have enough points to vote.",
     'ko': '투표할 포인트가 부족합니다.',
   },
+  'pollDetail.freeVoteTitle': {
+    'es': 'VOTO GRATIS',
+    'en': 'FREE VOTE',
+    'ko': '무료 투표',
+  },
+  'pollDetail.freeVoteDescription': {
+    'es': 'No tienes puntos. Puedes usar 1 voto gratis con el tiempo configurado en la votación.',
+    'en': "You're out of points. You can use 1 free vote with the poll cooldown.",
+    'ko': '포인트가 없습니다. 투표 대기 시간에 맞춰 무료 1표를 사용할 수 있습니다.',
+  },
+  'pollDetail.freeVoteCooldownHint': {
+    'es': 'Luego deberás esperar {minutes} min para otro voto gratis.',
+    'en': 'Then wait {minutes} min for another free vote.',
+    'ko': '이후 {minutes}분 후에 다시 무료 투표할 수 있습니다.',
+  },
+  'pollDetail.freeVoteConfirm': {
+    'es': 'USAR VOTO GRATIS',
+    'en': 'USE FREE VOTE',
+    'ko': '무료 투표하기',
+  },
+  'pollDetail.freeVoteWait': {
+    'es': 'Tu próximo voto gratis estará listo en {time}.',
+    'en': 'Your next free vote will be ready in {time}.',
+    'ko': '{time} 후에 무료 투표를 다시 할 수 있습니다.',
+  },
+  'pollDetail.freeVoteSuccess': {
+    'es': '¡Voto gratis registrado!',
+    'en': 'Free vote counted!',
+    'ko': '무료 투표가 반영되었습니다!',
+  },
+  'pollDetail.freeVoteSuccessWait': {
+    'es': '¡Voto gratis registrado! Próximo en {time}.',
+    'en': 'Free vote counted! Next in {time}.',
+    'ko': '무료 투표 완료! 다음까지 {time}.',
+  },
+  'pollDetail.freeVoteMissionsTitle': {
+    'es': 'CONSIGUE MÁS VOTOS',
+    'en': 'GET MORE VOTES',
+    'ko': '더 많은 표 받기',
+  },
+  'pollDetail.freeVoteMissionsBody': {
+    'es': 'Completa tus misiones para ganar puntos y seguir votando sin esperar.',
+    'en': 'Complete your missions to earn points and keep voting without waiting.',
+    'ko': '미션을 완료해 포인트를 얻고 기다림 없이 계속 투표하세요.',
+  },
+  'pollDetail.freeVoteMissionsPending': {
+    'es': 'Te quedan {count} misiones por completar.',
+    'en': 'You have {count} missions left.',
+    'ko': '남은 미션 {count}개.',
+  },
+  'pollDetail.freeVoteMissionsGo': {
+    'es': 'IR A MISIONES',
+    'en': 'GO TO MISSIONS',
+    'ko': '미션으로 가기',
+  },
+  'pollDetail.freeVoteMissionsLater': {
+    'es': 'Ahora no',
+    'en': 'Not now',
+    'ko': '나중에',
+  },
+  'pollDetail.freeVoteMissionsBanner': {
+    'es': 'Haz misiones y gana puntos para votar sin esperar',
+    'en': 'Do missions and earn points to vote without waiting',
+    'ko': '미션으로 포인트를 모아 기다림 없이 투표하세요',
+  },
   'pollDetail.requestFailed': {
     'es': 'No se pudo completar la solicitud.',
     'en': 'The request could not be completed.',
@@ -57,6 +122,16 @@ const Map<String, Map<String, String>> pollDetailStrings = {
 
   // Botones de voto
   'pollDetail.vote': {'es': 'VOTAR', 'en': 'VOTE', 'ko': '투표'},
+  'pollDetail.freeVote': {
+    'es': 'VOTO GRATIS',
+    'en': 'FREE VOTE',
+    'ko': '무료 투표',
+  },
+  'pollDetail.freeVoteCountdown': {
+    'es': 'GRATIS EN {time}',
+    'en': 'FREE IN {time}',
+    'ko': '{time} 후 무료',
+  },
   'pollDetail.votingClosed': {
     'es': 'VOTACIÓN CERRADA',
     'en': 'VOTING CLOSED',
@@ -66,6 +141,11 @@ const Map<String, Map<String, String>> pollDetailStrings = {
 
   // Cabecera / título
   'pollDetail.defaultTitle': {'es': 'Votación', 'en': 'Voting', 'ko': '투표'},
+  'pollDetail.share': {
+    'es': 'Compartir',
+    'en': 'Share',
+    'ko': '공유',
+  },
   'pollDetail.liveVoting': {
     'es': 'VOTACIÓN EN VIVO',
     'en': 'LIVE VOTING',
@@ -307,5 +387,15 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'es': 'Falta configurar GIPHY_API_KEY para buscar GIFs.',
     'en': 'GIPHY_API_KEY is missing for GIF search.',
     'ko': 'GIF 검색을 위해 GIPHY_API_KEY가 필요합니다.',
+  },
+  'pollDetail.commentsSeeMore': {
+    'es': 'VER MÁS (+{count})',
+    'en': 'SEE MORE (+{count})',
+    'ko': '더보기 (+{count})',
+  },
+  'pollDetail.commentsWrite': {
+    'es': 'ESCRIBIR',
+    'en': 'WRITE',
+    'ko': '작성',
   },
 };

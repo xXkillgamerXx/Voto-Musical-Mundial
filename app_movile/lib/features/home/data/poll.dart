@@ -203,6 +203,35 @@ class Poll {
     return _intValue(raw, 1).clamp(1, 1000);
   }
 
+  /// Voto gratis (config admin: voto anónimo) cuando el usuario no tiene puntos.
+  Map<String, dynamic> get _anonymousVotingConfig {
+    PollRound? activeRound;
+    for (final round in rounds) {
+      if (round.id == effectiveRoundId) {
+        activeRound = round;
+        break;
+      }
+    }
+    final pollCfg = config['anonymousVoting'];
+    final roundCfg = activeRound?.config['anonymousVoting'];
+    return {
+      if (pollCfg is Map) ...Map<String, dynamic>.from(pollCfg),
+      if (roundCfg is Map) ...Map<String, dynamic>.from(roundCfg),
+    };
+  }
+
+  bool get freeVoteEnabled {
+    final raw = _anonymousVotingConfig['enabled'];
+    if (raw == null) return true;
+    return raw != false;
+  }
+
+  int get freeVoteCooldownMinutes {
+    final raw = _anonymousVotingConfig['cooldownMinutes'];
+    final minutes = _intValue(raw, 60);
+    return minutes.clamp(1, 24 * 60);
+  }
+
   DateTime? get _activeRoundEndAt {
     if (activeRoundId.isEmpty) {
       return null;

@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/api/api_config.dart';
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
@@ -11,9 +13,11 @@ import '../../../../core/widgets/skeleton_box.dart';
 import '../../../artists/data/artist.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../home/data/missions_api.dart';
 import '../../../home/data/poll.dart';
 import '../../../home/data/polls_api.dart';
 import '../../../home/data/votes_api.dart';
+import '../../../home/presentation/pages/missions_page.dart';
 import '../../data/poll_realtime_service.dart';
 import 'poll_comments_page.dart';
 
@@ -90,6 +94,106 @@ class _PollDetailPageState extends State<PollDetailPage> {
   Timer? _voteFeedbackTimer;
   DateTime _now = DateTime.now();
   DateTime _lastResultsRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
+  /// Próximo voto gratis por scope (tiempo del admin).
+  final Map<String, DateTime> _freeVoteUntilByScope = {};
+  int? _pendingMissionsCount;
+  bool _missionsBannerDismissed = false;
+
+  String _freeVoteScopeKey(_VoteEntry entry) => entry.voteScope ?? '_root';
+
+  bool get _userOutOfPoints {
+    final user = widget.authService.session.user;
+    if (user == null) return false;
+    return user.points < _costPerVote;
+  }
+
+  bool get _freeVoteAvailable =>
+      _poll?.freeVoteEnabled == true && _userOutOfPoints;
+
+  bool get _isOnFreeVoteCooldown {
+    if (!_freeVoteAvailable) return false;
+    for (final until in _freeVoteUntilByScope.values) {
+      if (until.isAfter(_now)) return true;
+    }
+    return false;
+  }
+
+  bool get _showMissionsCooldownBanner =>
+      _isOnFreeVoteCooldown &&
+      (_pendingMissionsCount ?? 0) > 0 &&
+      !_missionsBannerDismissed;
+
+  int _freeVoteRemainingMs(_VoteEntry entry) {
+    final until = _freeVoteUntilByScope[_freeVoteScopeKey(entry)];
+    if (until == null) return 0;
+    final ms = until.difference(_now).inMilliseconds;
+    return ms < 0 ? 0 : ms;
+  }
+
+  String _voteButtonLabel(_VoteEntry entry) {
+    if (!_votingOpen) return tr('pollDetail.votingClosed');
+    if (!_freeVoteAvailable) return tr('pollDetail.vote');
+    final remaining = _freeVoteRemainingMs(entry);
+    if (remaining > 0) {
+      return trp('pollDetail.freeVoteCountdown', {
+        'time': _formatFreeVoteWait(remaining),
+      });
+    }
+    return tr('pollDetail.freeVote');
+  }
+
+  /// Con contador de voto gratis el botón no se puede pulsar.
+  bool _canTapVoteButton(_VoteEntry entry) {
+    if (!_votingOpen) return false;
+    if (_freeVoteAvailable && _freeVoteRemainingMs(entry) > 0) return false;
+    return true;
+  }
+
+  Future<void> _refreshFreeVoteStatus([_VoteEntry? entry]) async {
+    final poll = _poll;
+    if (poll == null || !poll.freeVoteEnabled) return;
+    if (!_userOutOfPoints) {
+      if (_freeVoteUntilByScope.isNotEmpty && mounted) {
+        setState(() => _freeVoteUntilByScope.clear());
+      }
+      return;
+    }
+
+    final scopes = <String?>{};
+    if (entry != null) {
+      scopes.add(entry.voteScope);
+    } else {
+      for (final e in _entries) {
+        scopes.add(e.voteScope);
+      }
+      if (scopes.isEmpty) scopes.add(null);
+    }
+
+    final nextByScope = <String, DateTime>{};
+    final clearKeys = <String>{};
+    for (final scope in scopes) {
+      try {
+        final status = await _votesApi.getFreeVoteStatus(
+          pollId: widget.pollId,
+          roundId: _selectedRoundId.isEmpty ? null : _selectedRoundId,
+          voteScope: scope,
+        );
+        final key = scope ?? '_root';
+        if (status.canVoteNow || status.nextVoteAt == null) {
+          clearKeys.add(key);
+        } else {
+          nextByScope[key] = status.nextVoteAt!;
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final key in clearKeys) {
+        _freeVoteUntilByScope.remove(key);
+      }
+      _freeVoteUntilByScope.addAll(nextByScope);
+    });
+  }
 
   @override
   void initState() {
@@ -149,6 +253,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
         _error = null;
       });
       _subscribeRealtime(poll.id);
+      unawaited(_refreshFreeVoteStatus());
+      unawaited(_refreshPendingMissions());
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -398,8 +504,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
     setState(() {
       _selectedRoundId = round.id;
       _results = null;
+      _freeVoteUntilByScope.clear();
     });
     await _loadResults();
+    unawaited(_refreshFreeVoteStatus());
   }
 
   Future<void> _showVoteSheet(_VoteEntry entry) async {
@@ -407,6 +515,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
       _showMessage(tr('pollDetail.roundNotOpen'));
       return;
     }
+    if (!_canTapVoteButton(entry)) return;
     final user = widget.authService.session.user;
     if (user == null) {
       _showMessage(tr('pollDetail.loginToVote'));
@@ -414,7 +523,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     }
     final maxVotes = user.points ~/ _costPerVote;
     if (maxVotes < 1) {
-      _showMessage(tr('pollDetail.notEnoughPoints'));
+      await _showFreeVoteSheet(entry);
       return;
     }
 
@@ -642,6 +751,129 @@ class _PollDetailPageState extends State<PollDetailPage> {
     if (accepted == true) await _castVote(entry, amount);
   }
 
+  Future<void> _showFreeVoteSheet(_VoteEntry entry) async {
+    final poll = _poll;
+    if (poll == null || !poll.freeVoteEnabled) {
+      _showMessage(tr('pollDetail.notEnoughPoints'));
+      return;
+    }
+
+    FreeVoteStatus? status;
+    try {
+      status = await _votesApi.getFreeVoteStatus(
+        pollId: widget.pollId,
+        roundId: _selectedRoundId.isEmpty ? null : _selectedRoundId,
+        voteScope: entry.voteScope,
+      );
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    if (status != null && !status.canVoteNow) {
+      final nextAt = status.nextVoteAt;
+      if (nextAt != null) {
+        setState(() {
+          _freeVoteUntilByScope[_freeVoteScopeKey(entry)] = nextAt;
+        });
+      }
+      // El contador ya está en el botón; no mostrar snackbar.
+      return;
+    }
+
+    final cooldown = poll.freeVoteCooldownMinutes;
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.78),
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF080817),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: const Color(0xFF67E8F9).withValues(alpha: 0.28),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  tr('pollDetail.freeVoteTitle'),
+                  style: const TextStyle(
+                    color: Color(0xFF67E8F9),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.6,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  entry.artist?.name ?? tr('pollDetail.artist'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  tr('pollDetail.freeVoteDescription'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  trp('pollDetail.freeVoteCooldownHint', {
+                    'minutes': '$cooldown',
+                  }),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFFDE68A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _VoteGradientButton(
+                  enabled: true,
+                  loading: false,
+                  label: tr('pollDetail.freeVoteConfirm'),
+                  onTap: () => Navigator.pop(dialogContext, true),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: Text(tr('pollDetail.commentsCancel')),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (accepted == true) {
+      await _castVote(entry, 1);
+    }
+  }
+
+  String _formatFreeVoteWait(int remainingMs) {
+    final totalSeconds = (remainingMs / 1000).ceil().clamp(0, 24 * 60 * 60);
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (minutes <= 0) return '${seconds}s';
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _castVote(_VoteEntry entry, int amount) async {
     if (_votingContestantId != null) return;
     setState(() => _votingContestantId = entry.contestantId);
@@ -651,6 +883,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
         roundId: _selectedRoundId.isEmpty ? null : _selectedRoundId,
         contestantId: entry.contestantId,
         amount: amount,
+        voteScope: entry.voteScope,
       );
       final user = widget.authService.session.user;
       if (user != null && result.points != null) {
@@ -666,12 +899,126 @@ class _PollDetailPageState extends State<PollDetailPage> {
         'roundId': _selectedRoundId,
       });
       _showVoteFeedback(entry.contestantId, amount);
+      if (result.freeVote) {
+        if (result.nextVoteAt != null) {
+          setState(() {
+            _freeVoteUntilByScope[_freeVoteScopeKey(entry)] =
+                result.nextVoteAt!;
+          });
+        }
+        _missionsBannerDismissed = false;
+        unawaited(_refreshPendingMissions());
+      } else {
+        unawaited(_refreshFreeVoteStatus(entry));
+      }
       await _loadResults();
     } catch (error) {
-      if (mounted) _showMessage(_messageFor(error));
+      if (!mounted) return;
+      final hadCooldown = _tryApplyCooldownFromError(entry, error);
+      if (!hadCooldown) {
+        _showMessage(_messageFor(error));
+      }
     } finally {
       if (mounted) setState(() => _votingContestantId = null);
     }
+  }
+
+  Future<void> _refreshPendingMissions() async {
+    if (!_userOutOfPoints) {
+      if ((_pendingMissionsCount != null || _missionsBannerDismissed) &&
+          mounted) {
+        setState(() {
+          _pendingMissionsCount = null;
+          _missionsBannerDismissed = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final missions = await MissionsApi(
+        widget.authService.client,
+      ).getMissions(forceRefresh: true);
+      if (!mounted) return;
+      final pending = missions.where((mission) => !mission.isDone).length;
+      setState(() => _pendingMissionsCount = pending);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _pendingMissionsCount = null);
+    }
+  }
+
+  Future<void> _openMissionsFromPoll() async {
+    await Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        opaque: true,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return ColoredBox(
+            color: const Color(0xFF050213),
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                foregroundColor: Colors.white,
+                title: Text(tr('nav.missions')),
+              ),
+              body: MissionsPage(authService: widget.authService),
+            ),
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 220),
+      ),
+    );
+    if (mounted) {
+      await widget.authService.getMe();
+      await _refreshPendingMissions();
+    }
+  }
+
+  bool _tryApplyCooldownFromError(_VoteEntry entry, Object error) {
+    if (error is! ApiException) return false;
+    final payload = error.payload;
+    if (payload is! Map) return false;
+    final map = Map<String, dynamic>.from(payload);
+    final nested = map['message'];
+    final source = nested is Map
+        ? Map<String, dynamic>.from(nested)
+        : map;
+    DateTime? nextAt = DateTime.tryParse('${source['nextVoteAt'] ?? ''}');
+    var remainingMs = 0;
+    final remainingRaw = source['remainingMs'];
+    if (remainingRaw is num) {
+      remainingMs = remainingRaw.toInt();
+    } else {
+      remainingMs = int.tryParse('${remainingRaw ?? ''}') ?? 0;
+    }
+    if (nextAt == null && remainingMs > 0) {
+      nextAt = DateTime.now().add(Duration(milliseconds: remainingMs));
+    }
+    final message = error.message.toLowerCase();
+    final looksLikeCooldown =
+        nextAt != null ||
+        remainingMs > 0 ||
+        error.statusCode == 429 ||
+        message.contains('esperar') ||
+        message.contains('wait');
+    if (!looksLikeCooldown) return false;
+    if (nextAt != null) {
+      setState(() {
+        _freeVoteUntilByScope[_freeVoteScopeKey(entry)] = nextAt!;
+      });
+    }
+    return true;
   }
 
   void _showVoteFeedback(String contestantId, int amount) {
@@ -693,95 +1040,191 @@ class _PollDetailPageState extends State<PollDetailPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _sharePoll() async {
+    final poll = _poll;
+    if (poll == null) return;
+    final slug = poll.slug.trim().isNotEmpty ? poll.slug.trim() : poll.id;
+    final url = '${ApiConfig.uploadsOrigin}/votacion/${poll.year}/$slug';
+    await SharePlus.instance.share(
+      ShareParams(
+        text: '${poll.title}\n$url',
+        subject: poll.title,
+        title: poll.title,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final poll = _poll;
     // Menú flotante del shell (~78) + aire para el último VOTAR.
+    final navClearance = MediaQuery.paddingOf(context).bottom < 78
+        ? 96.0
+        : MediaQuery.paddingOf(context).bottom + 24;
+    final showMissionsBanner = _showMissionsCooldownBanner;
     final bottomClearance =
-        (MediaQuery.paddingOf(context).bottom < 78
-            ? 96.0
-            : MediaQuery.paddingOf(context).bottom + 24);
+        showMissionsBanner ? navClearance + 72 : navClearance;
+    final title = poll?.title ?? tr('pollDetail.defaultTitle');
+    final topActions = <Widget>[
+      IconButton(
+        tooltip: tr('pollDetail.share'),
+        visualDensity: VisualDensity.compact,
+        onPressed: poll == null ? null : _sharePoll,
+        icon: const Icon(Icons.ios_share_rounded, size: 22),
+      ),
+      IconButton(
+        tooltip: tr('pollDetail.commentsTitle'),
+        visualDensity: VisualDensity.compact,
+        onPressed: () => PollCommentsPage.open(
+          context,
+          pollId: widget.pollId,
+          authService: widget.authService,
+          pollTitle: poll?.title,
+        ),
+        icon: const Icon(Icons.forum_rounded, size: 22),
+      ),
+      AppBarPointsAction(session: widget.authService.session),
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFF050213),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF09061B),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        title: Text(
-          poll?.title ?? tr('pollDetail.defaultTitle'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        actions: [
-          IconButton(
-            tooltip: tr('pollDetail.commentsTitle'),
-            onPressed: () => PollCommentsPage.open(
-              context,
-              pollId: widget.pollId,
-              authService: widget.authService,
-              pollTitle: poll?.title,
-            ),
-            icon: const Icon(Icons.forum_rounded),
-          ),
-          AppBarPointsAction(session: widget.authService.session),
-        ],
-      ),
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF17052F), Color(0xFF0B031B), Color(0xFF050213)],
-          ),
-        ),
-        child: _loading && poll == null
-            ? const _DetailSkeleton()
-            : _error != null && poll == null
-            ? _DetailError(message: _error!, retry: _load)
-            : poll == null
-            ? const SizedBox.shrink()
-            : RefreshIndicator(
-                onRefresh: () => _load(force: true),
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  slivers: [
-                    // Banner tipo Sliver: al bajar se recoge y deja sitio a votar.
-                    SliverAppBar(
-                      pinned: false,
-                      floating: false,
-                      stretch: true,
-                      automaticallyImplyLeading: false,
-                      backgroundColor: const Color(0xFF09061B),
-                      expandedHeight: 200,
-                      elevation: 0,
-                      scrolledUnderElevation: 0,
-                      flexibleSpace: FlexibleSpaceBar(
-                        collapseMode: CollapseMode.parallax,
-                        background: _PollHero(poll: poll),
-                      ),
-                    ),
-                    if (_showCountdown)
-                      SliverPersistentHeader(
-                        pinned: true,
-                        delegate: _CountdownHeaderDelegate(state: this),
-                      ),
-                    if (poll.rounds.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: _RoundTabs(
-                          rounds: poll.rounds,
-                          selectedId: _selectedRoundId,
-                          onSelected: _selectRound,
+      appBar: poll == null
+          ? AppBar(
+              backgroundColor: const Color(0xFF09061B),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              title: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              actions: topActions,
+            )
+          : null,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF17052F),
+                    Color(0xFF0B031B),
+                    Color(0xFF050213),
+                  ],
+                ),
+              ),
+              child: _loading && poll == null
+                  ? const _DetailSkeleton()
+                  : _error != null && poll == null
+                  ? _DetailError(message: _error!, retry: _load)
+                  : poll == null
+                  ? const SizedBox.shrink()
+                  : RefreshIndicator(
+                      onRefresh: () => _load(force: true),
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
                         ),
-                      ),
-                    const SliverToBoxAdapter(child: BannerAdWidget()),
-                    if (_selectingWinners)
-                      const SliverToBoxAdapter(child: _CountingVotesPanel())
-                    else if (_entries.isEmpty)
+                        slivers: [
+                          SliverAppBar(
+                            pinned: true,
+                            floating: false,
+                            stretch: true,
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: Colors.white,
+                            expandedHeight: 220,
+                            elevation: 0,
+                            scrolledUnderElevation: 0,
+                            forceElevated: false,
+                            leading: const BackButton(color: Colors.white),
+                            actions: topActions,
+                            flexibleSpace: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final settings = context
+                                    .dependOnInheritedWidgetOfExactType<
+                                        FlexibleSpaceBarSettings>();
+                                final min =
+                                    settings?.minExtent ?? kToolbarHeight;
+                                final max = settings?.maxExtent ?? 220;
+                                final current =
+                                    settings?.currentExtent ?? max;
+                                final range = (max - min).clamp(1.0, 400.0);
+                                final t = ((max - current) / range)
+                                    .clamp(0.0, 1.0);
+                                // Compacto en barra al colapsar.
+                                final barTitleOpacity =
+                                    Curves.easeOut.transform(
+                                  ((t - 0.55) / 0.45).clamp(0.0, 1.0),
+                                );
+                                // Título grande sobre el fondo se oculta al subir.
+                                final heroTitleOpacity =
+                                    (1.0 - (t / 0.55)).clamp(0.0, 1.0);
+                                return Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    _PollHero(
+                                      poll: poll,
+                                      titleOpacity: heroTitleOpacity,
+                                    ),
+                                    // Fondo sólido solo cuando ya colapsó.
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF09061B)
+                                                .withValues(
+                                              alpha: barTitleOpacity,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: 52,
+                                      right: 148,
+                                      bottom: 14,
+                                      child: Opacity(
+                                        opacity: barTitleOpacity,
+                                        child: Text(
+                                          title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          if (_showCountdown)
+                            SliverPersistentHeader(
+                              pinned: true,
+                              delegate: _CountdownHeaderDelegate(state: this),
+                            ),
+                          if (poll.rounds.isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: _RoundTabs(
+                                rounds: poll.rounds,
+                                selectedId: _selectedRoundId,
+                                onSelected: _selectRound,
+                              ),
+                            ),
+                          const SliverToBoxAdapter(child: BannerAdWidget()),
+                          if (_selectingWinners)
+                            const SliverToBoxAdapter(
+                              child: _CountingVotesPanel(),
+                            )
+                          else if (_entries.isEmpty)
                       SliverToBoxAdapter(
                         child: SizedBox(
                           height: 180,
@@ -814,6 +1257,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
                               feedbackId: _voteFeedbackId,
                               feedbackAmount: _voteFeedbackAmount,
                               feedbackToken: _voteFeedbackToken,
+                              voteLabel: _voteButtonLabel,
+                              canVote: _canTapVoteButton,
                               onVote: _showVoteSheet,
                             );
                           },
@@ -837,6 +1282,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                   _voteFeedbackId == entry.contestantId,
                               feedbackAmount: _voteFeedbackAmount,
                               feedbackToken: _voteFeedbackToken,
+                              voteLabel: _voteButtonLabel(entry),
+                              voteEnabled: _canTapVoteButton(entry),
                               onVote: () => _showVoteSheet(entry),
                             );
                           },
@@ -855,28 +1302,155 @@ class _PollDetailPageState extends State<PollDetailPage> {
                   ],
                 ),
               ),
+            ),
+          ),
+          if (showMissionsBanner)
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: navClearance - 10,
+              child: _MissionsCooldownBanner(
+                pendingCount: _pendingMissionsCount ?? 0,
+                onOpen: _openMissionsFromPoll,
+                onDismiss: () {
+                  setState(() => _missionsBannerDismissed = true);
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MissionsCooldownBanner extends StatelessWidget {
+  const _MissionsCooldownBanner({
+    required this.pendingCount,
+    required this.onOpen,
+    required this.onDismiss,
+  });
+
+  final int pendingCount;
+  final VoidCallback onOpen;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      elevation: 10,
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF2A0B3F), Color(0xFF120826)],
+            ),
+            border: Border.all(
+              color: const Color(0xFFD946EF).withValues(alpha: 0.45),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFD946EF).withValues(alpha: 0.28),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFD946EF).withValues(alpha: 0.2),
+                ),
+                child: const Icon(
+                  Icons.flag_rounded,
+                  color: Color(0xFFF0ABFC),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      tr('pollDetail.freeVoteMissionsBanner'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      trp('pollDetail.freeVoteMissionsPending', {
+                        'count': '$pendingCount',
+                      }),
+                      style: const TextStyle(
+                        color: Color(0xFFFDE68A),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                tr('pollDetail.freeVoteMissionsGo'),
+                style: const TextStyle(
+                  color: Color(0xFFF0ABFC),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 10,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: onDismiss,
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _PollHero extends StatelessWidget {
-  const _PollHero({required this.poll});
+  const _PollHero({
+    required this.poll,
+    this.titleOpacity = 1,
+  });
 
   final Poll poll;
+  final double titleOpacity;
 
   @override
   Widget build(BuildContext context) {
     final banner = resolvePollBanner(poll);
-    final description = _stripHtml(poll.description);
+    final hasBanner = banner.isNotEmpty;
+    final topPad = MediaQuery.paddingOf(context).top + kToolbarHeight + 8;
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (banner.isNotEmpty)
+        if (hasBanner)
           CachedNetworkImage(
             imageUrl: banner,
             fit: BoxFit.cover,
-            errorWidget: (_, _, _) => const SizedBox.shrink(),
+            errorWidget: (_, _, _) =>
+                const ColoredBox(color: Color(0xFF1A0B2E)),
           )
         else
           const ColoredBox(color: Color(0xFF1A0B2E)),
@@ -886,67 +1460,56 @@ class _PollHero extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color(0x44050213),
-                Color(0xAA13052E),
-                Color(0xFF120625),
+                Color(0x55050213),
+                Color(0x22050213),
+                Color(0xCC0B031B),
               ],
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                tr('pollDetail.liveVoting'),
-                style: const TextStyle(
-                  color: Color(0xFFF0ABFC),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 3,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                poll.title,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  height: 1.05,
-                  shadows: [Shadow(color: Color(0x99000000), blurRadius: 12)],
-                ),
-              ),
-              if (description.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w600,
+        if (titleOpacity > 0.01)
+          Opacity(
+            opacity: titleOpacity,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, topPad, 16, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    tr('pollDetail.liveVoting'),
+                    style: const TextStyle(
+                      color: Color(0xFFF0ABFC),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 3,
+                    ),
                   ),
-                ),
-              ],
-            ],
+                  const SizedBox(height: 8),
+                  Text(
+                    poll.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                      shadows: [
+                        Shadow(color: Color(0xCC000000), blurRadius: 14),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
       ],
     );
   }
 }
 
-String _stripHtml(String value) {
-  return value
-      .replaceAll(RegExp(r'<[^>]*>'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-}
+
 
 class _CountdownHeaderDelegate extends SliverPersistentHeaderDelegate {
   _CountdownHeaderDelegate({required this.state});
@@ -1318,6 +1881,8 @@ class _ContestantCard extends StatelessWidget {
     required this.showFeedback,
     required this.feedbackAmount,
     required this.feedbackToken,
+    required this.voteLabel,
+    required this.voteEnabled,
     required this.onVote,
   });
 
@@ -1328,6 +1893,8 @@ class _ContestantCard extends StatelessWidget {
   final bool showFeedback;
   final int feedbackAmount;
   final int feedbackToken;
+  final String voteLabel;
+  final bool voteEnabled;
   final VoidCallback onVote;
 
   @override
@@ -1492,9 +2059,9 @@ class _ContestantCard extends StatelessWidget {
           ),
           const SizedBox(height: 13),
           _VoteGradientButton(
-            enabled: votingOpen && !voting,
+            enabled: voteEnabled && !voting,
             loading: voting,
-            label: votingOpen ? tr('pollDetail.vote') : tr('pollDetail.votingClosed'),
+            label: voteLabel,
             onTap: onVote,
           ),
         ],
@@ -1805,6 +2372,8 @@ class _VersusMatch extends StatelessWidget {
     required this.feedbackId,
     required this.feedbackAmount,
     required this.feedbackToken,
+    required this.voteLabel,
+    required this.canVote,
     required this.onVote,
   });
 
@@ -1816,6 +2385,8 @@ class _VersusMatch extends StatelessWidget {
   final String? feedbackId;
   final int feedbackAmount;
   final int feedbackToken;
+  final String Function(_VoteEntry entry) voteLabel;
+  final bool Function(_VoteEntry entry) canVote;
   final ValueChanged<_VoteEntry> onVote;
 
   @override
@@ -1889,6 +2460,8 @@ class _VersusMatch extends StatelessWidget {
                     showFeedback: feedbackId == entries[i].contestantId,
                     feedbackAmount: feedbackAmount,
                     feedbackToken: feedbackToken,
+                    voteLabel: voteLabel(entries[i]),
+                    voteEnabled: canVote(entries[i]),
                     onVote: () => onVote(entries[i]),
                   ),
                 ),
@@ -2083,6 +2656,8 @@ class _VersusInfo extends StatelessWidget {
     required this.showFeedback,
     required this.feedbackAmount,
     required this.feedbackToken,
+    required this.voteLabel,
+    required this.voteEnabled,
     required this.onVote,
   });
 
@@ -2093,6 +2668,8 @@ class _VersusInfo extends StatelessWidget {
   final bool showFeedback;
   final int feedbackAmount;
   final int feedbackToken;
+  final String voteLabel;
+  final bool voteEnabled;
   final VoidCallback onVote;
 
   @override
@@ -2192,9 +2769,9 @@ class _VersusInfo extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _VoteGradientButton(
-              enabled: votingOpen && !voting,
+              enabled: voteEnabled && !voting,
               loading: voting,
-              label: votingOpen ? tr('pollDetail.vote') : tr('pollDetail.closed'),
+              label: voteLabel,
               onTap: onVote,
             ),
           ],
@@ -2378,6 +2955,9 @@ class _VoteEntry {
   final int rank;
   final int matchGroup;
   final int matchOrder;
+
+  String? get voteScope =>
+      matchGroup > 0 ? 'match_$matchGroup' : null;
 }
 
 List<List<_VoteEntry>> _versusGroups(List<_VoteEntry> entries) {

@@ -13,8 +13,11 @@ export const castVote = async (payload, { anonymous = false } = {}) => {
   })
 }
 
-export const getAnonymousVoteStatus = async (payload) => {
-  const auth = await getAnonymousToken()
+export const getAnonymousVoteStatus = async (
+  payload,
+  { anonymous = true } = {},
+) => {
+  const auth = anonymous ? await getAnonymousToken() : getStoredAuth()
   return apiRequest('/votes/status', {
     method: 'POST',
     body: payload,

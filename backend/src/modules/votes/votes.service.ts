@@ -66,12 +66,37 @@ export class VotesService {
 
     await this.enforceNotBlocked(ipHash, identity.userId || null);
     await this.enforceRateLimit(identity, ipHash, amount);
+
+    let usedFreeVote = false;
     if (identity.type === 'anonymous') {
       // Bot protection: anonymous voters must pass a Cloudflare Turnstile challenge (when enabled).
       await this.turnstile.verify(dto.turnstileToken, clientIp);
-      await this.enforceAnonymousCooldown(identity, ipHash, context.poll.id, context.round?.id || null, voteScope, context.config);
+      await this.enforceAnonymousCooldown(
+        identity,
+        ipHash,
+        context.poll.id,
+        context.round?.id || null,
+        voteScope,
+        context.config,
+      );
+      usedFreeVote = true;
     } else {
-      await this.spendUserPoints(identity, amount, costPerVote);
+      const spent = await this.trySpendUserPoints(identity, amount, costPerVote);
+      if (!spent) {
+        // Sin puntos: 1 voto gratis con el cooldown del admin (voto anónimo).
+        if (amount !== 1 || !context.config.enabled) {
+          throw new BadRequestException('No tienes puntos suficientes para votar.');
+        }
+        await this.enforceAnonymousCooldown(
+          identity,
+          ipHash,
+          context.poll.id,
+          context.round?.id || null,
+          voteScope,
+          context.config,
+        );
+        usedFreeVote = true;
+      }
     }
 
     const roundKey = context.round?.id?.toString() || '_root';
@@ -113,7 +138,7 @@ export class VotesService {
       ipHash,
       voteScope: voteScope || '',
       amount: amount.toString(),
-      pointsSpent: identity.type === 'user' ? String(amount * costPerVote) : '0',
+      pointsSpent: usedFreeVote ? '0' : String(amount * costPerVote),
       isAnonymous: identity.type === 'anonymous' ? '1' : '0',
       createdAt: now.toISOString(),
     };
@@ -160,7 +185,8 @@ export class VotesService {
       artistId: context.contestant.artistId.toString(),
       amount,
       user,
-      status: identity.type === 'anonymous'
+      freeVote: usedFreeVote,
+      status: usedFreeVote
         ? this.statusPayload(context.config.cooldownMinutes, Date.now() + context.config.cooldownMs)
         : null,
     };
@@ -170,13 +196,15 @@ export class VotesService {
     const identity = await this.auth.resolveVoteIdentity(request.headers.authorization);
     const context = await this.loadPollOnly(dto.pollId, dto.roundId);
     const config = this.anonymousConfig(context.poll.config, context.round?.config);
-
-    if (identity.type !== 'anonymous') {
-      return this.statusPayload(config.cooldownMinutes, 0);
-    }
-
     const ipHash = hashIp(getClientIp(request), this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial');
-    const keys = this.cooldownKeys(identity.id, ipHash, context.poll.id, context.round?.id || null, dto.voteScope || null, config.blockByIp);
+    const keys = this.cooldownKeys(
+      identity.id,
+      ipHash,
+      context.poll.id,
+      context.round?.id || null,
+      dto.voteScope || null,
+      config.blockByIp,
+    );
     const ttls = await Promise.all(keys.map((key) => this.redis.client.pttl(key)));
     const remainingMs = Math.max(0, ...ttls);
 
@@ -384,9 +412,13 @@ export class VotesService {
     return keys;
   }
 
-  private async spendUserPoints(identity: VoteIdentity, amount: number, pointsPerVote: number) {
+  private async trySpendUserPoints(
+    identity: VoteIdentity,
+    amount: number,
+    pointsPerVote: number,
+  ): Promise<boolean> {
     const pointsToSpend = amount * pointsPerVote;
-    if (!identity.userId || pointsToSpend <= 0) return;
+    if (!identity.userId || pointsToSpend <= 0) return true;
 
     const updated = await this.prisma.user.updateMany({
       where: {
@@ -399,7 +431,12 @@ export class VotesService {
       },
     });
 
-    if (!updated.count) {
+    return updated.count > 0;
+  }
+
+  private async spendUserPoints(identity: VoteIdentity, amount: number, pointsPerVote: number) {
+    const spent = await this.trySpendUserPoints(identity, amount, pointsPerVote);
+    if (!spent) {
       throw new BadRequestException('No tienes puntos suficientes.');
     }
   }

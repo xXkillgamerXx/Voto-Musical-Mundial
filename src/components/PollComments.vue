@@ -323,6 +323,14 @@ const loadComments = async () => {
   }
 };
 
+const refreshComments = async () => {
+  if (isLoadingComments.value || !props.pollId) {
+    return;
+  }
+  currentCommentsPage.value = 1;
+  await loadComments();
+};
+
 const resetAndLoadComments = () => {
   comments.value = [];
   hasLoadedComments.value = false;
@@ -491,7 +499,7 @@ onUnmounted(() => {
 
 <template>
   <section ref="commentsRoot" class="mx-auto mt-10 max-w-5xl">
-    <div class="mb-5 flex items-end justify-between">
+    <div class="mb-5 flex items-end justify-between gap-3">
       <div>
         <p class="text-xs font-black uppercase tracking-[0.32em] text-cyan-300">
           {{ $t('widgets.comments.eyebrow') }}
@@ -500,9 +508,31 @@ onUnmounted(() => {
           {{ $t('widgets.comments.title') }}
         </h2>
       </div>
-      <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-500/10 px-3 py-1 text-sm font-black text-fuchsia-100">
-        {{ comments.length }}
-      </span>
+      <div class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="isLoadingComments || !pollId"
+          :aria-label="$t('widgets.comments.refresh')"
+          @click="refreshComments"
+        >
+          <i
+            class="fa-solid fa-arrows-rotate"
+            :class="{ 'animate-spin': isLoadingComments }"
+            aria-hidden="true"
+          ></i>
+          <span class="hidden sm:inline">
+            {{
+              isLoadingComments
+                ? $t('widgets.comments.refreshing')
+                : $t('widgets.comments.refresh')
+            }}
+          </span>
+        </button>
+        <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-500/10 px-3 py-1 text-sm font-black text-fuchsia-100">
+          {{ comments.length }}
+        </span>
+      </div>
     </div>
 
     <div class="relative overflow-hidden rounded-3xl border border-violet-300/15 bg-[#090b19]/90 p-4 shadow-xl shadow-fuchsia-950/20">

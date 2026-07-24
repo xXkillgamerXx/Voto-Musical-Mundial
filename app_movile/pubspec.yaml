@@ -48,6 +48,7 @@ dependencies:
   google_mobile_ads: ^9.0.0
   image_picker: ^1.2.3
   http_parser: ^4.1.2
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

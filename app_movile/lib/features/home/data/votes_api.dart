@@ -141,6 +141,24 @@ class VotesApi {
     return CastVoteResult.fromJson(payload as Map<String, dynamic>);
   }
 
+  Future<FreeVoteStatus> getFreeVoteStatus({
+    required String pollId,
+    String? roundId,
+    String? voteScope,
+  }) async {
+    final payload = await _client.request(
+      '/votes/status',
+      method: 'POST',
+      token: _client.accessToken,
+      body: {
+        'pollId': pollId,
+        if (roundId != null && roundId.isNotEmpty) 'roundId': roundId,
+        if (voteScope != null && voteScope.isNotEmpty) 'voteScope': voteScope,
+      },
+    );
+    return FreeVoteStatus.fromJson(payload as Map<String, dynamic>);
+  }
+
   Future<List<VoteActivity>> getRecentActivity({
     int limit = 24,
     int hours = 168,
@@ -160,27 +178,67 @@ class VotesApi {
   }
 }
 
+class FreeVoteStatus {
+  const FreeVoteStatus({
+    required this.cooldownMinutes,
+    required this.nextVoteAt,
+    required this.remainingMs,
+  });
+
+  final int cooldownMinutes;
+  final DateTime? nextVoteAt;
+  final int remainingMs;
+
+  bool get canVoteNow => remainingMs <= 0;
+
+  factory FreeVoteStatus.fromJson(Map<String, dynamic> json) {
+    final next = DateTime.tryParse('${json['nextVoteAt'] ?? ''}');
+    final remainingRaw = json['remainingMs'];
+    var remaining = remainingRaw is num
+        ? remainingRaw.toInt()
+        : int.tryParse('${remainingRaw ?? ''}') ?? 0;
+    if (remaining <= 0 && next != null) {
+      remaining = next.difference(DateTime.now()).inMilliseconds;
+    }
+    return FreeVoteStatus(
+      cooldownMinutes: _intValue(json['cooldownMinutes'], 60),
+      nextVoteAt: next,
+      remainingMs: remaining < 0 ? 0 : remaining,
+    );
+  }
+}
+
 class CastVoteResult {
   const CastVoteResult({
     required this.ok,
     required this.amount,
     required this.points,
     required this.spentPoints,
+    this.freeVote = false,
+    this.nextVoteAt,
   });
 
   final bool ok;
   final int amount;
   final int? points;
   final int? spentPoints;
+  final bool freeVote;
+  final DateTime? nextVoteAt;
 
   factory CastVoteResult.fromJson(Map<String, dynamic> json) {
     final user = json['user'];
     final userMap = user is Map ? Map<String, dynamic>.from(user) : null;
+    final status = json['status'];
+    final statusMap = status is Map ? Map<String, dynamic>.from(status) : null;
     return CastVoteResult(
       ok: json['ok'] == true,
       amount: _intValue(json['amount'], 1),
-      points: userMap == null ? null : _intValue(userMap['points']),
-      spentPoints: userMap == null ? null : _intValue(userMap['spentPoints']),
+      points: userMap == null ? null : _intValue(userMap['points'], 0),
+      spentPoints: userMap == null
+          ? null
+          : _intValue(userMap['spentPoints'], 0),
+      freeVote: json['freeVote'] == true,
+      nextVoteAt: DateTime.tryParse('${statusMap?['nextVoteAt'] ?? ''}'),
     );
   }
 }
