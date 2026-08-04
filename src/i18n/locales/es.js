@@ -175,6 +175,9 @@ export default {
       eyebrow: 'Gana puntos extra',
       title: 'Misiones',
       doMission: 'Hacer misión',
+      viewDetail: 'Ver detalle',
+      detailEyebrow: 'Detalle de misión',
+      objective: 'Objetivo',
       validation: {
         referralReady: 'Comparte tu enlace. Cuando alguien se registre con ese código quedará afiliado a tu cuenta y se sumarán los puntos.',
         referralLogin: 'Inicia sesión para generar y compartir tu código afiliado.',

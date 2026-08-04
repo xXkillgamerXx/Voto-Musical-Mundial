@@ -7,6 +7,7 @@ import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../data/user_profile.dart';
 import '../../data/users_api.dart';
@@ -332,6 +333,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 18),
+                  const BannerAdWidget(
+                    padding: EdgeInsets.fromLTRB(0, 0, 0, 18),
+                  ),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(

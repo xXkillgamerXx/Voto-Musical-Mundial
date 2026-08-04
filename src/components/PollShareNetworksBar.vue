@@ -72,7 +72,22 @@ defineEmits(['share', 'copy-facebook'])
       <div class="flex shrink-0 flex-wrap items-center justify-center gap-2.5">
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-full border border-blue-300/30 bg-blue-500 text-white transition hover:scale-105 disabled:opacity-60"
+          class="grid size-10 place-items-center overflow-hidden rounded-full bg-white p-1.5 transition hover:scale-105 disabled:opacity-60"
+          :disabled="claiming"
+          :aria-label="$t('polls.detail.shareStartly')"
+          title="Startly"
+          @click="$emit('share', 'startly')"
+        >
+          <img
+            src="/startly-icon.png"
+            alt=""
+            class="size-full object-contain"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="grid size-10 place-items-center rounded-full border border-blue-300/30 bg-blue-500 text-[1.25rem] leading-none text-white transition hover:scale-105 disabled:opacity-60"
           :disabled="claiming"
           @click="$emit('share', 'facebook')"
         >
@@ -80,35 +95,30 @@ defineEmits(['share', 'copy-facebook'])
         </button>
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-full border border-green-300/30 bg-green-500 text-white transition hover:scale-105 disabled:opacity-60"
+          class="grid size-10 place-items-center rounded-full border border-green-300/30 bg-green-500 text-[1.25rem] leading-none text-white transition hover:scale-105 disabled:opacity-60"
           :disabled="claiming"
           @click="$emit('share', 'whatsapp')"
         >
-          <i class="fa-brands fa-whatsapp text-lg" aria-hidden="true"></i>
+          <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
         </button>
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-full border border-sky-300/30 bg-sky-500 text-white transition hover:scale-105 disabled:opacity-60"
+          class="inline-flex size-10 items-center justify-center overflow-hidden rounded-full border-2 border-[#2AABEE] bg-white p-0 text-[#2AABEE] transition hover:scale-105 disabled:opacity-60"
           :disabled="claiming"
           @click="$emit('share', 'telegram')"
         >
-          <i class="fa-brands fa-telegram text-lg" aria-hidden="true"></i>
+          <i
+            class="fa-brands fa-telegram-plane text-[2.5rem] leading-none translate-x-[1px]"
+            aria-hidden="true"
+          ></i>
         </button>
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-full border border-white/15 bg-black text-white transition hover:scale-105 disabled:opacity-60"
+          class="grid size-12 place-items-center rounded-full border border-white/15 bg-black text-[1.5rem] leading-none text-white transition hover:scale-105 disabled:opacity-60"
           :disabled="claiming"
           @click="$emit('share', 'twitter')"
         >
           <i class="fa-brands fa-x-twitter" aria-hidden="true"></i>
-        </button>
-        <button
-          type="button"
-          class="grid size-10 place-items-center rounded-full border border-violet-300/30 bg-violet-500 text-white transition hover:scale-105 disabled:opacity-60"
-          :disabled="claiming"
-          @click="$emit('share', 'startly')"
-        >
-          <i class="fa-solid fa-star" aria-hidden="true"></i>
         </button>
       </div>
     </div>

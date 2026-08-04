@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Social crawlers need poll banner OG tags before the SPA boots.
+# Keep lang so share cards resolve ES (/votacion) vs EN (/poll) correctly.
+RewriteCond %{HTTP_USER_AGENT} (facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|Slackbot|LinkedInBot|Discordbot|Pinterest|SkypeUriPreview|vkShare|Applebot|Google.*snippet|meta-externalagent|meta-externalads|ThreadsBot|Redditbot|Embedly|Quora\ Link\ Preview|BitlyBot|Iframely) [NC]
+RewriteRule ^(?:en/)?votacion/([0-9]+)/([^/]+)/?$ /api/share/poll/$1/$2?lang=es [L,QSA]
+RewriteCond %{HTTP_USER_AGENT} (facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|Slackbot|LinkedInBot|Discordbot|Pinterest|SkypeUriPreview|vkShare|Applebot|Google.*snippet|meta-externalagent|meta-externalads|ThreadsBot|Redditbot|Embedly|Quora\ Link\ Preview|BitlyBot|Iframely) [NC]
+RewriteRule ^(?:en/)?poll/([0-9]+)/([^/]+)/?$ /api/share/poll/$1/$2?lang=en [L,QSA]
+
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteCond %{REQUEST_URI} !^/socket.io/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]

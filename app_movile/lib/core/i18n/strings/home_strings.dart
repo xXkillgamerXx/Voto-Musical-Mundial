@@ -389,6 +389,11 @@ const Map<String, Map<String, String>> homeStrings = {
   'home.pending': {'es': 'DISPONIBLE', 'en': 'AVAILABLE', 'ko': '가능'},
   'home.progress': {'es': 'PROGRESO', 'en': 'PROGRESS', 'ko': '진행도'},
   'home.doMission': {'es': 'HACER MISIÓN', 'en': 'DO MISSION', 'ko': '미션 하기'},
+  'home.viewDetail': {
+    'es': 'VER DETALLE',
+    'en': 'VIEW DETAILS',
+    'ko': '자세히 보기',
+  },
   'home.newMissionsSoon': {
     'es': 'NUEVAS MISIONES PRONTO',
     'en': 'NEW MISSIONS SOON',

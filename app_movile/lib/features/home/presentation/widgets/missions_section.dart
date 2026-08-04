@@ -73,7 +73,7 @@ class _MissionsSectionState extends State<MissionsSection> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -86,36 +86,32 @@ class _MissionsSectionState extends State<MissionsSection> {
               letterSpacing: 2.8,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             tr('home.missionsTitle'),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w900,
+              height: 1.05,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           if (_visibleMissions.isEmpty)
             const _MissionsEmptyState()
           else
-            SizedBox(
-              height: 340,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _visibleMissions.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 14),
-                itemBuilder: (context, index) {
-                  final mission = _visibleMissions[index];
-                  return SizedBox(
-                    width: MediaQuery.sizeOf(context).width * 0.82,
-                    child: _MissionCard(
-                      mission: mission,
-                      onTap: () => _openMissionSheet(mission),
-                    ),
-                  );
-                },
-              ),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _visibleMissions.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final mission = _visibleMissions[index];
+                return _MissionMiniCard(
+                  mission: mission,
+                  onTap: () => _openMissionSheet(mission),
+                );
+              },
             ),
         ],
       ),
@@ -123,8 +119,8 @@ class _MissionsSectionState extends State<MissionsSection> {
   }
 }
 
-class _MissionCard extends StatelessWidget {
-  const _MissionCard({required this.mission, required this.onTap});
+class _MissionMiniCard extends StatelessWidget {
+  const _MissionMiniCard({required this.mission, required this.onTap});
 
   final Mission mission;
   final VoidCallback onTap;
@@ -132,191 +128,167 @@ class _MissionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final done = mission.isDone;
+    final featured = mission.featured && !done;
+    final accent = done
+        ? const Color(0xFF34D399)
+        : featured
+        ? const Color(0xFFFBBF24)
+        : const Color(0xFF22D3EE);
+    final rewardColor = done
+        ? const Color(0xFF6EE7B7)
+        : featured
+        ? const Color(0xFFFDE68A)
+        : const Color(0xFF67E8F9);
 
     return Material(
       color: Colors.transparent,
-      clipBehavior: Clip.antiAlias,
-      borderRadius: BorderRadius.circular(24),
+      elevation: 0,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(18),
         child: Ink(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(18),
             color: done
-                ? const Color(0xFF10B981).withValues(alpha: 0.08)
-                : mission.featured
-                ? const Color(0xFFD946EF).withValues(alpha: 0.08)
-                : const Color(0xFF090B19).withValues(alpha: 0.85),
+                ? const Color(0xFF0B2A22)
+                : featured
+                ? const Color(0xFF1A150C)
+                : const Color(0xFF12141F),
             border: Border.all(
-              color: done
-                  ? const Color(0xFF34D399).withValues(alpha: 0.35)
-                  : mission.featured
-                  ? const Color(0xFFF0ABFC).withValues(alpha: 0.35)
-                  : const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+              width: 1.5,
+              color: accent.withValues(alpha: done ? 0.55 : 0.4),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      color: done
-                          ? const Color(0xFF34D399).withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(14),
+                      color: accent.withValues(alpha: 0.14),
                       border: Border.all(
-                        color: done
-                            ? const Color(0xFF34D399).withValues(alpha: 0.3)
-                            : Colors.white.withValues(alpha: 0.1),
+                        color: accent.withValues(alpha: 0.35),
                       ),
                     ),
                     child: Icon(
-                      _missionIcon(mission.icon),
-                      color: done
-                          ? const Color(0xFF6EE7B7)
-                          : const Color(0xFFF0ABFC),
+                      done
+                          ? Icons.check_rounded
+                          : _missionIcon(mission.icon),
+                      size: 22,
+                      color: rewardColor,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mission.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
+                          ),
+                        ),
+                        if (mission.description.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            mission.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.55),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: 9,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: done
-                          ? const Color(0xFF34D399).withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(999),
+                      borderRadius: BorderRadius.circular(10),
+                      color: accent.withValues(alpha: 0.16),
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Text(
-                      done ? tr('home.completed') : tr('home.pending'),
+                      mission.rewardLabel,
                       style: TextStyle(
-                        color: done
-                            ? const Color(0xFF6EE7B7)
-                            : const Color(0xFFCBD5E1),
-                        fontSize: 9,
+                        color: rewardColor,
+                        fontSize: 12,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.6,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              Text(
-                mission.title.toUpperCase(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Text(
-                  mission.description,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
-                ),
-              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        tr('home.progress'),
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1,
-                        ),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 6,
+                        value: mission.percent / 100,
+                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        valueColor: AlwaysStoppedAnimation<Color>(accent),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        mission.progressLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    mission.rewardLabel,
-                    style: const TextStyle(
-                      color: Color(0xFFF0ABFC),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
                     ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    mission.progressLabel,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    done
+                        ? Icons.check_circle_rounded
+                        : Icons.chevron_right_rounded,
+                    size: 20,
+                    color: done
+                        ? const Color(0xFF34D399)
+                        : Colors.white.withValues(alpha: 0.4),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  minHeight: 8,
-                  value: mission.percent / 100,
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF22D3EE),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (done)
-                Text(
-                  tr('home.completed'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF6EE7B7),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                    letterSpacing: 0.6,
-                  ),
-                )
-              else
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: OutlinedButton(
-                    onPressed: onTap,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      tr('home.doMission'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
@@ -510,7 +482,7 @@ class _MissionSheetState extends State<_MissionSheet> {
     final mission = widget.mission;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      padding: const EdgeInsets.fromLTRB(0, 20, 20, 0),
       decoration: BoxDecoration(
         color: const Color(0xFF090B19),
         borderRadius: BorderRadius.circular(28),

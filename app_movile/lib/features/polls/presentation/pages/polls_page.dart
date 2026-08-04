@@ -182,7 +182,11 @@ class _PollsPageState extends State<PollsPage> {
                       )
                     else
                       ..._pollCards(data.openPolls, isOpen: true),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 16),
+                    const BannerAdWidget(
+                      padding: EdgeInsets.symmetric(vertical: 4),
+                    ),
+                    const SizedBox(height: 16),
                     _PollsSectionHeader(
                       title: tr('catalog.pollsTabClosed'),
                       count: data.closedPolls.length,

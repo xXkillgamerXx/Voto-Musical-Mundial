@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/ads/admob_config.dart';
+import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/api/api_config.dart';
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/i18n/tr.dart';
@@ -790,7 +792,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     }
 
     final cooldown = poll.freeVoteCooldownMinutes;
-    final accepted = await _showAnimatedDialog<bool>(
+    final action = await _showAnimatedDialog<String>(
       builder: (dialogContext) {
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -843,15 +845,44 @@ class _PollDetailPageState extends State<PollDetailPage> {
                 ),
                 const SizedBox(height: 14),
                 _VoteShareCard(onShare: _sharePoll),
+                if (AdMobConfig.adsEnabled) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    tr('pollDetail.watchAdHint'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext, 'watchAd'),
+                    icon: const Icon(Icons.play_circle_outline_rounded),
+                    label: Text(
+                      trp('pollDetail.watchAdForPoints', {
+                        'points': '${AdMobConfig.testRewardPoints}',
+                      }),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFDE68A),
+                      side: BorderSide(
+                        color: const Color(0xFFFDE68A).withValues(alpha: 0.5),
+                      ),
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 _VoteGradientButton(
                   enabled: true,
                   loading: false,
                   label: tr('pollDetail.freeVoteConfirm'),
-                  onTap: () => Navigator.pop(dialogContext, true),
+                  onTap: () => Navigator.pop(dialogContext, 'freeVote'),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: () => Navigator.pop(dialogContext),
                   child: Text(tr('pollDetail.commentsCancel')),
                 ),
               ],
@@ -861,9 +892,39 @@ class _PollDetailPageState extends State<PollDetailPage> {
       },
     );
 
-    if (accepted == true) {
+    if (action == 'freeVote') {
       await _castVote(entry, 1);
+    } else if (action == 'watchAd') {
+      await _watchAdForPoints();
     }
+  }
+
+  Future<void> _watchAdForPoints() async {
+    if (!AdMobConfig.adsEnabled) return;
+    _showMessage(tr('pollDetail.watchAdLoading'));
+    final result = await RewardedAdService.show();
+    if (!mounted) return;
+
+    if (result != RewardedAdResult.earned) {
+      if (result != RewardedAdResult.dismissed) {
+        _showMessage(tr('pollDetail.watchAdFailed'));
+      }
+      return;
+    }
+
+    // Modo prueba: suma puntos locales. En producción hará falta endpoint backend.
+    final bonus = AdMobConfig.testRewardPoints;
+    final user = widget.authService.session.user;
+    if (user != null && AdMobConfig.useTestAds) {
+      await widget.authService.session.updateUser(
+        user.copyWith(points: user.points + bonus),
+      );
+    }
+    if (!mounted) return;
+    _showMessage(
+      trp('pollDetail.watchAdEarned', {'points': '$bonus'}),
+    );
+    setState(() {});
   }
 
   String _formatFreeVoteWait(int remainingMs) {
@@ -1096,6 +1157,25 @@ class _PollDetailPageState extends State<PollDetailPage> {
                   onShare: _sharePoll,
                   hint: tr('pollDetail.freeVoteMissionsShare'),
                 ),
+                if (AdMobConfig.adsEnabled) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext, 'watchAd'),
+                    icon: const Icon(Icons.play_circle_outline_rounded),
+                    label: Text(
+                      trp('pollDetail.watchAdForPoints', {
+                        'points': '${AdMobConfig.testRewardPoints}',
+                      }),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFDE68A),
+                      side: BorderSide(
+                        color: const Color(0xFFFDE68A).withValues(alpha: 0.5),
+                      ),
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ],
                 if (canFreeVoteNow) ...[
                   const SizedBox(height: 12),
                   _VoteGradientButton(
@@ -1135,6 +1215,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
       await _openMissionsFromPoll();
     } else if (action == 'freeVote' && entry != null) {
       await _castVote(entry, 1);
+    } else if (action == 'watchAd') {
+      await _watchAdForPoints();
     }
   }
 

@@ -2,11 +2,6 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Sin anuncios en esta versión: quitamos el ID de publicidad que inyecta
-         google_mobile_ads para poder declarar "No usa ID de publicidad" en Play.
-         Para activar anuncios en el futuro, elimina esta línea y declara "Sí". -->
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID"
-        tools:node="remove"/>
 
     <application
         android:label="Music Mundial VOTE"

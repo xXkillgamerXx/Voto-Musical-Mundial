@@ -2,6 +2,11 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { i18n, translate } from "../i18n";
 import { applyPollLocale, pollUrl as buildPollUrl } from "../utils/pollLocale";
+import {
+  applyShareMeta,
+  resolvePollShareImage,
+  shareWithOptionalImage,
+} from "../utils/shareMeta";
 import { routePath } from "../utils/localizedRoutes";
 import { getArtistsCached } from "../services/firebaseCache";
 import { getCurrentApiAuth, getMe } from "../services/api/authApi";
@@ -1605,26 +1610,40 @@ const buildSharePayload = () => {
     ? buildPollUrl(poll.value, i18n.global.locale.value)
     : window.location.pathname;
   const url = `${window.location.origin}${path}${window.location.search || ""}`;
-  return { title, text, url };
+  const imageUrl = resolvePollShareImage(poll.value);
+  return { title, text, url, imageUrl };
+};
+
+const syncPollShareMeta = () => {
+  if (!poll.value) {
+    return;
+  }
+
+  const { title, text, url, imageUrl } = buildSharePayload();
+  applyShareMeta({
+    title,
+    description: text || poll.value.description || "",
+    url,
+    image: imageUrl,
+  });
 };
 
 const sharePoll = async () => {
   shareMessage.value = "";
   errorMessage.value = "";
 
-  const { title, text, url } = buildSharePayload();
+  const { title, text, url, imageUrl } = buildSharePayload();
+  syncPollShareMeta();
 
   try {
-    if (navigator.share) {
-      await navigator.share({ title, text, url });
-      return;
+    const mode = await shareWithOptionalImage({ title, text, url, imageUrl });
+    if (mode === "unsupported") {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      shareMessage.value = translate("polls.detail.sharePollCopied");
+      window.setTimeout(() => {
+        shareMessage.value = "";
+      }, 3000);
     }
-
-    await navigator.clipboard.writeText(`${text}\n${url}`);
-    shareMessage.value = translate("polls.detail.sharePollCopied");
-    window.setTimeout(() => {
-      shareMessage.value = "";
-    }, 3000);
   } catch (error) {
     if (error?.name === "AbortError") {
       return;
@@ -1707,6 +1726,7 @@ const sharePollOnNetwork = async (platform) => {
   shareMessage.value = "";
   errorMessage.value = "";
   const { title, text, url } = buildSharePayload();
+  syncPollShareMeta();
   const encodedUrl = encodeURIComponent(url);
   const encodedText = encodeURIComponent(`${text}\n${url}`);
 
@@ -1736,7 +1756,7 @@ const sharePollOnNetwork = async (platform) => {
     } else if (platform === "twitter") {
       facebookShareDraft.value = "";
       window.open(
-        `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodedUrl}`,
+        `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodedUrl}`,
         "_blank",
         "noopener,noreferrer",
       );
@@ -2520,6 +2540,7 @@ const loadPoll = async ({ silent = false } = {}) => {
     const pollDetail = apiPoll.rounds ? apiPoll : await getPoll(apiPoll.slug || apiPoll.id);
     poll.value = normalizeApiPoll(pollDetail);
     currentPollId.value = poll.value.id;
+    syncPollShareMeta();
     unsubscribePoll = null;
     listenRounds(poll.value.id);
     subscribeRealtime(poll.value.id);

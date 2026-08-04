@@ -175,6 +175,9 @@ export default {
       eyebrow: 'Earn extra points',
       title: 'Missions',
       doMission: 'Do mission',
+      viewDetail: 'View details',
+      detailEyebrow: 'Mission details',
+      objective: 'Objective',
       validation: {
         referralReady: 'Share your link. When someone signs up with that code they will be linked to your account and the points will be added.',
         referralLogin: 'Sign in to generate and share your affiliate code.',

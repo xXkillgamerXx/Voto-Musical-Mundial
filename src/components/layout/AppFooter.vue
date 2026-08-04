@@ -28,7 +28,7 @@ const socialLinks = [
   },
   {
     titleKey: 'footer.startlyCommunity',
-    icon: 'fa-solid fa-link',
+    image: '/startly-icon.png',
     href: 'https://startlyapp.com/musicmundial',
   },
   {
@@ -90,7 +90,14 @@ const socialLinks = [
               rel="noreferrer"
               class="grid size-10 place-items-center rounded-full border border-white/10 bg-white/5 text-sm font-black text-slate-200 transition hover:border-fuchsia-300/40 hover:bg-white/10 hover:text-white"
             >
-              <i :class="social.icon" aria-hidden="true"></i>
+              <img
+                v-if="social.image"
+                :src="social.image"
+                alt=""
+                class="size-5 object-contain"
+                aria-hidden="true"
+              />
+              <i v-else :class="social.icon" aria-hidden="true"></i>
             </a>
           </div>
 

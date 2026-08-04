@@ -81,6 +81,7 @@ flutter:
   assets:
     - assets/icons/google_g.svg
     - assets/icons/logo-votos.png
+    - assets/branding/startly-icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

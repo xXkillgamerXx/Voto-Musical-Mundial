@@ -86,6 +86,31 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': 'Not now',
     'ko': '나중에',
   },
+  'pollDetail.watchAdForPoints': {
+    'es': 'Ver video (+{points} pts)',
+    'en': 'Watch video (+{points} pts)',
+    'ko': '영상 보기 (+{points} pts)',
+  },
+  'pollDetail.watchAdHint': {
+    'es': 'Mira un anuncio corto y gana puntos para seguir votando.',
+    'en': 'Watch a short ad and earn points to keep voting.',
+    'ko': '짧은 광고를 보고 포인트를 받아 계속 투표하세요.',
+  },
+  'pollDetail.watchAdLoading': {
+    'es': 'Cargando anuncio...',
+    'en': 'Loading ad...',
+    'ko': '광고 로딩 중...',
+  },
+  'pollDetail.watchAdEarned': {
+    'es': '¡Listo! Sumaste +{points} pts (modo prueba).',
+    'en': 'Done! You earned +{points} pts (test mode).',
+    'ko': '완료! +{points} pts를 받았어요 (테스트).',
+  },
+  'pollDetail.watchAdFailed': {
+    'es': 'No se pudo mostrar el anuncio. Intenta de nuevo.',
+    'en': "Couldn't show the ad. Try again.",
+    'ko': '광고를 표시하지 못했습니다. 다시 시도하세요.',
+  },
   'pollDetail.freeVoteMissionsBanner': {
     'es': 'Haz misiones y gana puntos para votar sin esperar',
     'en': 'Do missions and earn points to vote without waiting',

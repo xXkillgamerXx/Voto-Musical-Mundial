@@ -447,7 +447,7 @@ const shareMissionLink = async (mission) => {
 
   if (mission.type === 'share_twitter') {
     window.open(
-      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+      `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       '_blank',
       'noopener,noreferrer',
     )
@@ -604,73 +604,92 @@ onUnmounted(() => {
 
     <div
       v-if="missions.length"
-      class="missions-slider -mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0"
+      class="flex flex-col gap-3"
     >
-      <article
+      <button
         v-for="mission in missions"
         :key="mission.id || mission.titleKey"
-        class="relative min-w-[86%] snap-center overflow-hidden rounded-3xl border p-5 shadow-xl shadow-violet-950/25 sm:min-w-[48%] lg:min-w-0"
+        type="button"
+        class="mission-mini group rounded-2xl border-2 p-3.5 text-left shadow-[0_10px_28px_rgba(0,0,0,0.35)] transition hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
         :class="[
-          mission.featured && 'border-fuchsia-300/35 bg-fuchsia-500/10',
-          mission.done && 'border-emerald-300/35 bg-emerald-500/10',
-          !mission.featured && !mission.done && 'border-violet-300/10 bg-[#090b19]/85',
+          mission.featured && !mission.done && 'border-amber-300/45 bg-[#1a150c] shadow-amber-950/30 hover:border-amber-200/65',
+          mission.done && 'border-emerald-300/45 bg-[#0b2a22] shadow-emerald-950/30 hover:border-emerald-200/65',
+          !mission.featured && !mission.done && 'border-cyan-300/35 bg-[#12141f] shadow-cyan-950/25 hover:border-cyan-200/55',
+          selectedMission?.id === mission.id && 'ring-2 ring-cyan-300/50',
         ]"
+        @click="openMissionModal(mission)"
       >
-        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_0%,rgba(217,70,239,0.18),transparent_32%)]"></div>
+        <div class="flex items-start gap-3">
+          <span
+            class="grid size-12 shrink-0 place-items-center rounded-2xl border text-lg"
+            :class="mission.done
+              ? 'border-emerald-300/35 bg-emerald-400/15 text-emerald-200'
+              : mission.featured
+                ? 'border-amber-200/35 bg-amber-300/10 text-amber-100'
+                : 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100'"
+          >
+            <i
+              v-if="mission.done"
+              class="fa-solid fa-check"
+              aria-hidden="true"
+            ></i>
+            <i
+              v-else-if="isFontAwesomeIcon(mission.icon)"
+              :class="mission.icon"
+              aria-hidden="true"
+            ></i>
+            <span v-else class="text-xs font-black">{{ mission.icon }}</span>
+          </span>
 
-        <div class="relative">
-          <div class="flex items-start justify-between gap-4">
-            <span
-              class="grid size-12 place-items-center rounded-2xl border text-xl font-black"
-              :class="mission.done ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-200' : 'border-white/10 bg-white/5 text-fuchsia-200'"
-            >
-              <i
-                v-if="isFontAwesomeIcon(mission.icon)"
-                :class="mission.icon"
-                aria-hidden="true"
-              ></i>
-              <span v-else>{{ mission.icon }}</span>
-            </span>
-
-            <span
-              class="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide"
-              :class="mission.done ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/5 text-slate-300'"
-            >
-              {{ $t(mission.statusKey) }}
-            </span>
-          </div>
-
-          <h3 class="mt-5 text-lg font-black uppercase leading-tight">
-            {{ mission.title || $t(mission.titleKey) }}
-          </h3>
-          <p class="mt-2 text-sm leading-6 text-slate-400">
-            {{ mission.text || $t(mission.textKey) }}
-          </p>
-
-          <div class="mt-5 flex items-end justify-between gap-3">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-widest text-slate-500">{{ $t('common.labels.progress') }}</p>
-              <p class="mt-1 text-sm font-black text-white">{{ mission.progress }}</p>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-start gap-2">
+              <h3 class="min-w-0 flex-1 text-[15px] font-extrabold leading-snug text-white">
+                {{ mission.title || $t(mission.titleKey) }}
+              </h3>
+              <span
+                class="shrink-0 rounded-lg border px-2 py-1 text-xs font-black tabular-nums"
+                :class="mission.done
+                  ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-200'
+                  : mission.featured
+                    ? 'border-amber-200/30 bg-amber-300/15 text-amber-100'
+                    : 'border-cyan-300/30 bg-cyan-400/15 text-cyan-100'"
+              >
+                {{ mission.reward }}
+              </span>
             </div>
-            <p class="text-xl font-black text-fuchsia-200">{{ mission.reward }}</p>
+            <p
+              v-if="mission.text || mission.textKey"
+              class="mt-1 truncate text-xs font-semibold text-slate-400"
+            >
+              {{ mission.text || $t(mission.textKey) }}
+            </p>
           </div>
+        </div>
 
-          <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+        <div class="mt-3 flex items-center gap-2.5">
+          <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10">
             <div
-              class="h-full rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-500"
+              class="h-full rounded-full"
+              :class="mission.done
+                ? 'bg-emerald-400'
+                : mission.featured
+                  ? 'bg-amber-300'
+                  : 'bg-cyan-400'"
               :style="{ width: `${mission.percent}%` }"
             ></div>
           </div>
-
-          <button
-            type="button"
-            class="mt-5 min-h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black uppercase text-slate-100 transition hover:bg-white/10"
-            @click="openMissionModal(mission)"
-          >
-            {{ mission.done ? $t('common.status.completed') : $t('home.missions.doMission') }}
-          </button>
+          <span class="shrink-0 text-xs font-extrabold tabular-nums text-slate-300">
+            {{ mission.progress }}
+          </span>
+          <i
+            class="text-sm"
+            :class="mission.done
+              ? 'fa-solid fa-circle-check text-emerald-400'
+              : 'fa-solid fa-chevron-right text-white/40'"
+            aria-hidden="true"
+          ></i>
         </div>
-      </article>
+      </button>
     </div>
 
     <div
@@ -692,95 +711,117 @@ onUnmounted(() => {
     <div
       v-if="selectedMission"
       class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
+      @click.self="closeMissionModal"
     >
-      <article class="w-full max-w-lg overflow-hidden rounded-3xl border border-fuchsia-300/25 bg-[#090b19] p-5 shadow-2xl shadow-fuchsia-950/40">
-        <div class="flex items-start justify-between gap-4">
-          <span
-            class="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-xl font-black text-fuchsia-200"
-          >
-            <i
-              v-if="isFontAwesomeIcon(selectedMission.icon)"
-              :class="selectedMission.icon"
-              aria-hidden="true"
-            ></i>
-            <span v-else>{{ selectedMission.icon }}</span>
-          </span>
-          <button
-            type="button"
-            class="grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
-            aria-label="Cerrar"
-            @click="closeMissionModal"
-          >
-            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-          </button>
-        </div>
+      <article class="relative w-full max-w-lg overflow-hidden rounded-2xl border border-amber-200/25 bg-[#120f0a] p-0 shadow-2xl shadow-black/50">
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(251,191,36,0.16),transparent_36%),radial-gradient(circle_at_90%_100%,rgba(34,211,238,0.1),transparent_40%),linear-gradient(180deg,rgba(28,22,14,0.95),rgba(12,14,26,0.98))]"></div>
+        <div class="absolute inset-y-0 left-0 w-1.5 bg-linear-to-b from-amber-200 via-amber-400 to-cyan-400" aria-hidden="true"></div>
 
-        <p class="mt-5 text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
-          Gana puntos extra
-        </p>
-        <h3 class="mt-2 text-2xl font-black uppercase leading-tight text-white">
-          {{ selectedMission.title || $t(selectedMission.titleKey) }}
-        </h3>
-        <p class="mt-3 text-sm leading-6 text-slate-400">
-          {{ selectedMission.text || $t(selectedMission.textKey) }}
-        </p>
-        <p class="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-xs font-bold leading-5 text-cyan-100">
-          {{ missionValidationText(selectedMission) }}
-        </p>
-        <p
-          v-if="isReferralMission(selectedMission) && referralCode"
-          class="mt-3 break-all rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold leading-5 text-slate-300"
-        >
-          {{ referralUrl() }}
-        </p>
-        <p
-          v-if="actionMessage"
-          class="mt-3 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-xs font-bold leading-5 text-emerald-100"
-        >
-          {{ actionMessage }}
-        </p>
-
-        <div class="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div class="flex items-end justify-between gap-3">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-widest text-slate-500">{{ $t('common.labels.progress') }}</p>
-              <p class="mt-1 text-sm font-black text-white">{{ selectedMission.progress }}</p>
+        <div class="relative p-5 pl-6 sm:p-6 sm:pl-7">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex min-w-0 items-start gap-3">
+              <span
+                class="grid size-12 shrink-0 place-items-center rounded-xl border border-amber-200/25 bg-amber-300/10 text-xl font-black text-amber-100"
+              >
+                <i
+                  v-if="isFontAwesomeIcon(selectedMission.icon)"
+                  :class="selectedMission.icon"
+                  aria-hidden="true"
+                ></i>
+                <span v-else>{{ selectedMission.icon }}</span>
+              </span>
+              <div class="min-w-0">
+                <p class="text-[10px] font-black uppercase tracking-[0.28em] text-amber-200/90">
+                  {{ $t('home.missions.detailEyebrow') }}
+                </p>
+                <h3 class="mt-1 text-xl font-black uppercase leading-tight text-white sm:text-2xl">
+                  {{ selectedMission.title || $t(selectedMission.titleKey) }}
+                </h3>
+              </div>
             </div>
-            <p class="text-2xl font-black text-fuchsia-200">{{ selectedMission.reward }}</p>
-          </div>
-          <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-            <div
-              class="h-full rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-500"
-              :style="{ width: `${selectedMission.percent}%` }"
-            ></div>
-          </div>
-        </div>
-
-        <div class="mt-5 grid gap-3">
-          <button
-            type="button"
-            class="min-h-12 w-full rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
-            :disabled="missionActionInProgress"
-            @click="performMissionAction(selectedMission)"
-          >
-            {{ missionActionInProgress ? 'Validando...' : missionActionLabel(selectedMission) }}
-          </button>
-          <div class="grid gap-3" :class="isReferralMission(selectedMission) && referralCode ? 'sm:grid-cols-2' : ''">
-            <button
-              v-if="isReferralMission(selectedMission) && referralCode"
-              type="button"
-              class="min-h-12 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-5 text-sm font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
-              @click="copyReferralUrl"
-            >
-              Copiar link
-            </button>
             <button
               type="button"
-              class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
+              class="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+              aria-label="Cerrar"
               @click="closeMissionModal"
             >
-              Cerrar
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             </button>
+          </div>
+
+          <div class="mt-4 rounded-xl border border-white/10 bg-black/25 p-4">
+            <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">
+              {{ $t('home.missions.objective') }}
+            </p>
+            <p class="mt-2 whitespace-pre-line text-sm leading-6 text-slate-300">
+              {{ selectedMission.text || $t(selectedMission.textKey) }}
+            </p>
+          </div>
+
+          <p class="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-xs font-bold leading-5 text-cyan-100">
+            {{ missionValidationText(selectedMission) }}
+          </p>
+          <p
+            v-if="isReferralMission(selectedMission) && referralCode"
+            class="mt-3 break-all rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold leading-5 text-slate-300"
+          >
+            {{ referralUrl() }}
+          </p>
+          <p
+            v-if="actionMessage"
+            class="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-xs font-bold leading-5 text-emerald-100"
+          >
+            {{ actionMessage }}
+          </p>
+
+          <div class="mt-4 rounded-xl border border-amber-200/15 bg-amber-300/5 p-4">
+            <div class="flex items-end justify-between gap-3">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">{{ $t('common.labels.progress') }}</p>
+                <p class="mt-1 text-sm font-black text-white">{{ selectedMission.progress }}</p>
+              </div>
+              <p class="text-2xl font-black text-amber-100">{{ selectedMission.reward }}</p>
+            </div>
+            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                class="h-full rounded-full bg-linear-to-r from-amber-300 via-cyan-400 to-fuchsia-500"
+                :style="{ width: `${selectedMission.percent}%` }"
+              ></div>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-3">
+            <button
+              type="button"
+              class="min-h-12 w-full rounded-xl bg-linear-to-r from-amber-400 via-fuchsia-500 to-violet-500 px-5 text-sm font-black uppercase tracking-wide text-slate-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
+              :disabled="missionActionInProgress || selectedMission.done"
+              @click="performMissionAction(selectedMission)"
+            >
+              {{
+                selectedMission.done
+                  ? $t('common.status.completed')
+                  : missionActionInProgress
+                    ? 'Validando...'
+                    : missionActionLabel(selectedMission)
+              }}
+            </button>
+            <div class="grid gap-3" :class="isReferralMission(selectedMission) && referralCode ? 'sm:grid-cols-2' : ''">
+              <button
+                v-if="isReferralMission(selectedMission) && referralCode"
+                type="button"
+                class="min-h-12 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-5 text-sm font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
+                @click="copyReferralUrl"
+              >
+                Copiar link
+              </button>
+              <button
+                type="button"
+                class="min-h-12 rounded-xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
+                @click="closeMissionModal"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       </article>
@@ -846,11 +887,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.missions-slider {
-  scrollbar-width: none;
-}
-
-.missions-slider::-webkit-scrollbar {
-  display: none;
+.mission-mini {
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 40%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 11px,
+      rgba(255, 255, 255, 0.015) 11px,
+      rgba(255, 255, 255, 0.015) 12px
+    );
 }
 </style>

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/ads/admob_config.dart';
+import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/mission.dart';
@@ -19,6 +22,7 @@ class MissionsPage extends StatefulWidget {
 class _MissionsPageState extends State<MissionsPage> {
   late final MissionsApi _missionsApi;
   late Future<List<Mission>> _missionsFuture;
+  bool _watchingAd = false;
 
   @override
   void initState() {
@@ -31,6 +35,38 @@ class _MissionsPageState extends State<MissionsPage> {
     final future = _missionsApi.getMissions(forceRefresh: forceRefresh);
     setState(() => _missionsFuture = future);
     await future;
+  }
+
+  Future<void> _watchAdForPoints() async {
+    if (_watchingAd || !AdMobConfig.adsEnabled) return;
+    setState(() => _watchingAd = true);
+    final result = await RewardedAdService.show();
+    if (!mounted) return;
+    setState(() => _watchingAd = false);
+
+    if (result != RewardedAdResult.earned) {
+      if (result != RewardedAdResult.dismissed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('pollDetail.watchAdFailed'))),
+        );
+      }
+      return;
+    }
+
+    final bonus = AdMobConfig.testRewardPoints;
+    final user = widget.authService.session.user;
+    if (user != null && AdMobConfig.useTestAds) {
+      await widget.authService.session.updateUser(
+        user.copyWith(points: user.points + bonus),
+      );
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(trp('pollDetail.watchAdEarned', {'points': '$bonus'})),
+      ),
+    );
+    setState(() {});
   }
 
   @override
@@ -100,6 +136,37 @@ class _MissionsPageState extends State<MissionsPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 120),
             children: [
+              const BannerAdWidget(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+              ),
+              if (AdMobConfig.adsEnabled)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: OutlinedButton.icon(
+                    onPressed: _watchingAd ? null : _watchAdForPoints,
+                    icon: _watchingAd
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.play_circle_outline_rounded),
+                    label: Text(
+                      _watchingAd
+                          ? tr('pollDetail.watchAdLoading')
+                          : trp('pollDetail.watchAdForPoints', {
+                              'points': '${AdMobConfig.testRewardPoints}',
+                            }),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFDE68A),
+                      side: BorderSide(
+                        color: const Color(0xFFFDE68A).withValues(alpha: 0.45),
+                      ),
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                  ),
+                ),
               MissionsSection(
                 authService: widget.authService,
                 missions: snapshot.data!,

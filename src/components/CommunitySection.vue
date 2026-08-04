@@ -4,7 +4,7 @@ const communityLinks = [
     titleKey: 'home.community.startly.title',
     descriptionKey: 'home.community.startly.description',
     href: 'https://startlyapp.com/musicmundial',
-    icon: 'fa-solid fa-link',
+    image: '/startly-icon.png',
     labelKey: 'home.community.startly.label',
     visual: 'from-fuchsia-950 via-purple-900 to-slate-950',
   },
@@ -46,8 +46,15 @@ const communityLinks = [
         <div class="pointer-events-none absolute -bottom-20 left-10 size-64 rounded-full bg-cyan-400/10 blur-3xl"></div>
 
         <div class="relative flex items-center gap-5">
-          <span class="grid size-18 shrink-0 place-items-center rounded-3xl border border-white/15 bg-white/10 text-3xl text-white shadow-xl shadow-black/25 backdrop-blur">
-            <i :class="item.icon" aria-hidden="true"></i>
+          <span class="grid size-18 shrink-0 place-items-center rounded-3xl border border-white/15 bg-black/40 text-3xl text-white shadow-xl shadow-black/25 backdrop-blur">
+            <img
+              v-if="item.image"
+              :src="item.image"
+              alt=""
+              class="size-10 object-contain"
+              aria-hidden="true"
+            />
+            <i v-else :class="item.icon" aria-hidden="true"></i>
           </span>
 
           <span class="min-w-0">

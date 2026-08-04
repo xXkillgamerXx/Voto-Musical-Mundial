@@ -8,15 +8,17 @@ class CommunityLink {
     required this.description,
     required this.label,
     required this.url,
-    required this.icon,
     required this.gradient,
+    this.icon,
+    this.imageAsset,
   });
 
   final String title;
   final String description;
   final String label;
   final String url;
-  final IconData icon;
+  final IconData? icon;
+  final String? imageAsset;
   final List<Color> gradient;
 }
 
@@ -34,7 +36,7 @@ class CommunitySection extends StatelessWidget {
       description: tr('home.communityStartlyDescription'),
       label: tr('home.officialLink'),
       url: 'https://startlyapp.com/musicmundial',
-      icon: Icons.link_rounded,
+      imageAsset: 'assets/branding/startly-icon.png',
       gradient: const [
         Color(0xFF701A75),
         Color(0xFF581C87),
@@ -159,12 +161,22 @@ class _CommunityCard extends StatelessWidget {
                       height: 64,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(22),
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: link.imageAsset != null
+                            ? Colors.black.withValues(alpha: 0.45)
+                            : Colors.white.withValues(alpha: 0.1),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.15),
                         ),
                       ),
-                      child: Icon(link.icon, color: Colors.white, size: 28),
+                      child: link.imageAsset != null
+                          ? Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Image.asset(
+                                link.imageAsset!,
+                                fit: BoxFit.contain,
+                              ),
+                            )
+                          : Icon(link.icon, color: Colors.white, size: 28),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
