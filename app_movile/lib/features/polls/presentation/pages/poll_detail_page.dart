@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/ads/admob_config.dart';
+import '../../../../core/ads/ad_reward_gift.dart';
 import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/api/api_config.dart';
 import '../../../../core/api/api_exception.dart';
@@ -846,32 +847,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
                 const SizedBox(height: 14),
                 _VoteShareCard(onShare: _sharePoll),
                 if (AdMobConfig.adsEnabled) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    tr('pollDetail.watchAdHint'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(dialogContext, 'watchAd'),
-                    icon: const Icon(Icons.play_circle_outline_rounded),
-                    label: Text(
-                      trp('pollDetail.watchAdForPoints', {
-                        'points': '${AdMobConfig.testRewardPoints}',
-                      }),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFFDE68A),
-                      side: BorderSide(
-                        color: const Color(0xFFFDE68A).withValues(alpha: 0.5),
-                      ),
-                      minimumSize: const Size.fromHeight(46),
-                    ),
+                  const SizedBox(height: 10),
+                  _WatchAdCard(
+                    points: AdMobConfig.rewardedVideoPoints,
+                    onTap: () => Navigator.pop(dialogContext, 'watchAd'),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -912,19 +891,17 @@ class _PollDetailPageState extends State<PollDetailPage> {
       return;
     }
 
-    // Modo prueba: suma puntos locales. En producción hará falta endpoint backend.
-    final bonus = AdMobConfig.testRewardPoints;
-    final user = widget.authService.session.user;
-    if (user != null && AdMobConfig.useTestAds) {
-      await widget.authService.session.updateUser(
-        user.copyWith(points: user.points + bonus),
+    try {
+      await claimAndShowAdRewardGift(
+        context: context,
+        authService: widget.authService,
       );
+      if (mounted) setState(() {});
+    } on ApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } catch (_) {
+      if (mounted) _showMessage(tr('pollDetail.watchAdFailed'));
     }
-    if (!mounted) return;
-    _showMessage(
-      trp('pollDetail.watchAdEarned', {'points': '$bonus'}),
-    );
-    setState(() {});
   }
 
   String _formatFreeVoteWait(int remainingMs) {
@@ -1158,22 +1135,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
                   hint: tr('pollDetail.freeVoteMissionsShare'),
                 ),
                 if (AdMobConfig.adsEnabled) ...[
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(dialogContext, 'watchAd'),
-                    icon: const Icon(Icons.play_circle_outline_rounded),
-                    label: Text(
-                      trp('pollDetail.watchAdForPoints', {
-                        'points': '${AdMobConfig.testRewardPoints}',
-                      }),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFFDE68A),
-                      side: BorderSide(
-                        color: const Color(0xFFFDE68A).withValues(alpha: 0.5),
-                      ),
-                      minimumSize: const Size.fromHeight(46),
-                    ),
+                  const SizedBox(height: 10),
+                  _WatchAdCard(
+                    points: AdMobConfig.rewardedVideoPoints,
+                    onTap: () => Navigator.pop(dialogContext, 'watchAd'),
                   ),
                 ],
                 if (canFreeVoteNow) ...[
@@ -1473,10 +1438,18 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                 onSelected: _selectRound,
                               ),
                             ),
-                          const SliverToBoxAdapter(child: BannerAdWidget()),
+                          const SliverToBoxAdapter(
+                            child: BannerAdWidget(
+                              padding: EdgeInsets.fromLTRB(18, 8, 18, 4),
+                            ),
+                          ),
                           if (_selectingWinners)
                             const SliverToBoxAdapter(
                               child: _CountingVotesPanel(),
+                            )
+                          else if (_entries.isEmpty && _loading)
+                            const SliverToBoxAdapter(
+                              child: _ContestantListSkeleton(),
                             )
                           else if (_entries.isEmpty)
                       SliverToBoxAdapter(
@@ -1496,32 +1469,44 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     else if (_selectedRound?.type == 'versus')
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-                        sliver: SliverList.separated(
-                          itemCount: _versusGroups(_entries).length +
-                              (_versusGroups(_entries).isEmpty ? 0 : 1),
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 14),
-                          itemBuilder: (context, index) {
-                            final groups = _versusGroups(_entries);
-                            final insertAt = (groups.length / 2).ceil();
-                            if (groups.isNotEmpty && index == insertAt) {
-                              return _VoteShareCard(onShare: _sharePoll);
-                            }
-                            final groupIndex =
-                                index > insertAt ? index - 1 : index;
-                            final group = groups[groupIndex];
-                            return _VersusMatch(
-                              number: groupIndex + 1,
-                              entries: group,
-                              hideCounts: _hideCounts,
-                              votingOpen: _votingOpen,
-                              votingId: _votingContestantId,
-                              feedbackId: _voteFeedbackId,
-                              feedbackAmount: _voteFeedbackAmount,
-                              feedbackToken: _voteFeedbackToken,
-                              voteLabel: _voteButtonLabel,
-                              canVote: _canTapVoteButton,
-                              onVote: _showVoteSheet,
+                        sliver: Builder(
+                          builder: (context) {
+                            final slots = _pollFeedSlots(
+                              _versusGroups(_entries).length,
+                              includeShare: true,
+                              everyN: AdMobConfig.bannerEveryNVersus,
+                            );
+                            return SliverList.separated(
+                              itemCount: slots.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 14),
+                              itemBuilder: (context, index) {
+                                final slot = slots[index];
+                                if (slot.isBanner) {
+                                  return BannerAdWidget(
+                                    key: ValueKey('versus-banner-$index'),
+                                    padding: EdgeInsets.zero,
+                                  );
+                                }
+                                if (slot.isShare) {
+                                  return _VoteShareCard(onShare: _sharePoll);
+                                }
+                                final groups = _versusGroups(_entries);
+                                final group = groups[slot.entryIndex];
+                                return _VersusMatch(
+                                  number: slot.entryIndex + 1,
+                                  entries: group,
+                                  hideCounts: _hideCounts,
+                                  votingOpen: _votingOpen,
+                                  votingId: _votingContestantId,
+                                  feedbackId: _voteFeedbackId,
+                                  feedbackAmount: _voteFeedbackAmount,
+                                  feedbackToken: _voteFeedbackToken,
+                                  voteLabel: _voteButtonLabel,
+                                  canVote: _canTapVoteButton,
+                                  onVote: _showVoteSheet,
+                                );
+                              },
                             );
                           },
                         ),
@@ -1529,31 +1514,44 @@ class _PollDetailPageState extends State<PollDetailPage> {
                     else
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-                        sliver: SliverList.separated(
-                          itemCount: _entries.length +
-                              (_entries.isEmpty ? 0 : 1),
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (context, index) {
-                            final insertAt = (_entries.length / 2).ceil();
-                            if (_entries.isNotEmpty && index == insertAt) {
-                              return _VoteShareCard(onShare: _sharePoll);
-                            }
-                            final entryIndex =
-                                index > insertAt ? index - 1 : index;
-                            final entry = _entries[entryIndex];
-                            return _ContestantCard(
-                              entry: entry,
-                              hideCounts: _hideCounts,
-                              votingOpen: _votingOpen,
-                              voting: _votingContestantId == entry.contestantId,
-                              showFeedback:
-                                  _voteFeedbackId == entry.contestantId,
-                              feedbackAmount: _voteFeedbackAmount,
-                              feedbackToken: _voteFeedbackToken,
-                              voteLabel: _voteButtonLabel(entry),
-                              voteEnabled: _canTapVoteButton(entry),
-                              onVote: () => _showVoteSheet(entry),
+                        sliver: Builder(
+                          builder: (context) {
+                            final slots = _pollFeedSlots(
+                              _entries.length,
+                              includeShare: true,
+                              everyN: AdMobConfig.bannerEveryNContestants,
+                            );
+                            return SliverList.separated(
+                              itemCount: slots.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (context, index) {
+                                final slot = slots[index];
+                                if (slot.isBanner) {
+                                  return BannerAdWidget(
+                                    key: ValueKey('list-banner-$index'),
+                                    padding: EdgeInsets.zero,
+                                  );
+                                }
+                                if (slot.isShare) {
+                                  return _VoteShareCard(onShare: _sharePoll);
+                                }
+                                final entry = _entries[slot.entryIndex];
+                                return _ContestantCard(
+                                  entry: entry,
+                                  hideCounts: _hideCounts,
+                                  votingOpen: _votingOpen,
+                                  voting: _votingContestantId ==
+                                      entry.contestantId,
+                                  showFeedback:
+                                      _voteFeedbackId == entry.contestantId,
+                                  feedbackAmount: _voteFeedbackAmount,
+                                  feedbackToken: _voteFeedbackToken,
+                                  voteLabel: _voteButtonLabel(entry),
+                                  voteEnabled: _canTapVoteButton(entry),
+                                  onVote: () => _showVoteSheet(entry),
+                                );
+                              },
                             );
                           },
                         ),
@@ -2403,10 +2401,59 @@ class _VoteShareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _VoteOptionTile(
+      onTap: onShare,
+      accent: const Color(0xFF67E8F9),
+      // Similar al icono de compartir (caja + flecha hacia afuera).
+      icon: Icons.ios_share_rounded,
+      title: tr('pollDetail.share'),
+      subtitle: hint ?? tr('pollDetail.shareCardHint'),
+    );
+  }
+}
+
+class _WatchAdCard extends StatelessWidget {
+  const _WatchAdCard({
+    required this.points,
+    required this.onTap,
+  });
+
+  final int points;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _VoteOptionTile(
+      onTap: onTap,
+      accent: const Color(0xFFFBBF24),
+      icon: Icons.play_circle_fill_rounded,
+      title: trp('pollDetail.watchAdForPoints', {'points': '$points'}),
+      subtitle: tr('pollDetail.watchAdHint'),
+    );
+  }
+}
+
+class _VoteOptionTile extends StatelessWidget {
+  const _VoteOptionTile({
+    required this.onTap,
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final VoidCallback onTap;
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onShare,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2414,7 +2461,7 @@ class _VoteShareCard extends StatelessWidget {
             color: const Color(0xFF151725),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: const Color(0xFF67E8F9).withValues(alpha: 0.28),
+              color: accent.withValues(alpha: 0.28),
             ),
           ),
           child: Row(
@@ -2422,15 +2469,12 @@ class _VoteShareCard extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: const Color(0xFF67E8F9).withValues(alpha: 0.12),
+                  color: accent.withValues(alpha: 0.12),
                 ),
-                child: const Icon(
-                  Icons.ios_share_rounded,
-                  color: Color(0xFF67E8F9),
-                  size: 20,
-                ),
+                child: Icon(icon, color: accent, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2438,7 +2482,7 @@ class _VoteShareCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      tr('pollDetail.share'),
+                      title,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -2447,7 +2491,7 @@ class _VoteShareCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      hint ?? tr('pollDetail.shareCardHint'),
+                      subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -3482,20 +3526,122 @@ class _DetailSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return CustomScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      slivers: [
+        const SliverToBoxAdapter(
+          child: SkeletonBox(
+            height: 220,
+            borderRadius: BorderRadius.zero,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Center(
+                  child: SkeletonBox(
+                    height: 36,
+                    width: 200,
+                    borderRadius: BorderRadius.all(Radius.circular(999)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const SkeletonBox(
+                  height: 50,
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+                const SizedBox(height: 14),
+                const _ContestantCardSkeleton(),
+                const SizedBox(height: 10),
+                const _ContestantCardSkeleton(),
+                const SizedBox(height: 10),
+                const _ContestantCardSkeleton(),
+                const SizedBox(height: 12),
+                SkeletonBox(
+                  height: 64,
+                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  width: MediaQuery.sizeOf(context).width,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContestantListSkeleton extends StatelessWidget {
+  const _ContestantListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.all(18),
+      padding: EdgeInsets.fromLTRB(14, 4, 14, 8),
       child: Column(
         children: [
-          SkeletonBox(
-            height: 230,
-            borderRadius: BorderRadius.all(Radius.circular(24)),
+          _ContestantCardSkeleton(),
+          SizedBox(height: 10),
+          _ContestantCardSkeleton(),
+          SizedBox(height: 10),
+          _ContestantCardSkeleton(),
+          SizedBox(height: 10),
+          _ContestantCardSkeleton(),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContestantCardSkeleton extends StatelessWidget {
+  const _ContestantCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF090B19).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SkeletonBox(
+                height: 56,
+                width: 56,
+                borderRadius: BorderRadius.all(Radius.circular(16)),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(height: 16, width: 140),
+                    SizedBox(height: 8),
+                    SkeletonBox(height: 12, width: 90),
+                  ],
+                ),
+              ),
+              SkeletonBox(height: 18, width: 52),
+            ],
           ),
-          SizedBox(height: 16),
-          SkeletonBox(height: 86),
-          SizedBox(height: 12),
-          SkeletonBox(height: 110),
-          SizedBox(height: 12),
-          SkeletonBox(height: 110),
+          SizedBox(height: 14),
+          SkeletonBox(
+            height: 8,
+            borderRadius: BorderRadius.all(Radius.circular(999)),
+          ),
+          SizedBox(height: 14),
+          SkeletonBox(
+            height: 48,
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
         ],
       ),
     );
@@ -3557,6 +3703,53 @@ class _VoteEntry {
 
   String? get voteScope =>
       matchGroup > 0 ? 'match_$matchGroup' : null;
+}
+
+class _PollFeedSlot {
+  const _PollFeedSlot.entry(this.entryIndex)
+      : isBanner = false,
+        isShare = false;
+  const _PollFeedSlot.banner()
+      : entryIndex = -1,
+        isBanner = true,
+        isShare = false;
+  const _PollFeedSlot.share()
+      : entryIndex = -1,
+        isBanner = false,
+        isShare = true;
+
+  final int entryIndex;
+  final bool isBanner;
+  final bool isShare;
+}
+
+/// Contestant/versus cards + share cerca del inicio + banner every [everyN] items.
+List<_PollFeedSlot> _pollFeedSlots(
+  int entryCount, {
+  required bool includeShare,
+  int? everyN,
+}) {
+  if (entryCount <= 0) return const [];
+
+  final slots = <_PollFeedSlot>[];
+  final every = AdMobConfig.adsEnabled
+      ? (everyN ?? AdMobConfig.bannerEveryNContestants)
+      : 0;
+  // Después de la 2ª card (o la 1ª si solo hay una) para que se vea al votar.
+  final shareAfter = !includeShare
+      ? -1
+      : (entryCount >= 2 ? 1 : 0);
+
+  for (var i = 0; i < entryCount; i++) {
+    slots.add(_PollFeedSlot.entry(i));
+    if (i == shareAfter) {
+      slots.add(const _PollFeedSlot.share());
+    }
+    if (every > 0 && (i + 1) % every == 0 && i < entryCount - 1) {
+      slots.add(const _PollFeedSlot.banner());
+    }
+  }
+  return slots;
 }
 
 List<List<_VoteEntry>> _versusGroups(List<_VoteEntry> entries) {

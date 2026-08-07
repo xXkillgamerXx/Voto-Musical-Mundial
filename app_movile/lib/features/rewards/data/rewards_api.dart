@@ -120,6 +120,78 @@ class RewardsApi {
 
     return DailyRewardClaimResult.fromJson(payload as Map<String, dynamic>);
   }
+
+  Future<AdRewardStatus> getAdRewardStatus() async {
+    final payload = await _client.request(
+      '/rewards/ad-status',
+      token: _client.accessToken,
+    );
+    return AdRewardStatus.fromJson(payload as Map<String, dynamic>);
+  }
+
+  Future<AdRewardClaimResult> claimAdReward() async {
+    final payload = await _client.request(
+      '/rewards/ad-claim',
+      method: 'POST',
+      token: _client.accessToken,
+    );
+    return AdRewardClaimResult.fromJson(payload as Map<String, dynamic>);
+  }
+}
+
+class AdRewardStatus {
+  const AdRewardStatus({
+    required this.pointsPerClaim,
+    required this.dailyLimit,
+    required this.claimedToday,
+    required this.remainingToday,
+  });
+
+  final int pointsPerClaim;
+  final int dailyLimit;
+  final int claimedToday;
+  final int remainingToday;
+
+  factory AdRewardStatus.fromJson(Map<String, dynamic> json) {
+    return AdRewardStatus(
+      pointsPerClaim: _toInt(json['pointsPerClaim'], fallback: 5),
+      dailyLimit: _toInt(json['dailyLimit'], fallback: 5),
+      claimedToday: _toInt(json['claimedToday']),
+      remainingToday: _toInt(json['remainingToday']),
+    );
+  }
+}
+
+class AdRewardClaimResult {
+  const AdRewardClaimResult({
+    required this.pointsAwarded,
+    required this.pointsBefore,
+    required this.pointsAfter,
+    required this.claimedToday,
+    required this.remainingToday,
+    required this.userPoints,
+  });
+
+  final int pointsAwarded;
+  final int pointsBefore;
+  final int pointsAfter;
+  final int claimedToday;
+  final int remainingToday;
+  final int userPoints;
+
+  factory AdRewardClaimResult.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    return AdRewardClaimResult(
+      pointsAwarded: _toInt(json['pointsAwarded']),
+      pointsBefore: _toInt(json['pointsBefore']),
+      pointsAfter: _toInt(json['pointsAfter']),
+      claimedToday: _toInt(json['claimedToday']),
+      remainingToday: _toInt(json['remainingToday']),
+      userPoints: user is Map<String, dynamic>
+          ? _toInt(user['points'], fallback: _toInt(json['pointsAfter']))
+          : _toInt(json['pointsAfter']),
+    );
+  }
 }
 
 int _toInt(Object? value, {int fallback = 0}) {

@@ -40,6 +40,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Debug: App ID de prueba de Google (anuncios de test siempre cargan).
+        manifestPlaceholders["admobAppId"] =
+            "ca-app-pub-3940256099942544~3347511713"
     }
 
     signingConfigs {
@@ -58,7 +61,14 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            manifestPlaceholders["admobAppId"] =
+                "ca-app-pub-3940256099942544~3347511713"
+        }
         release {
+            // Producción: tu App ID real de AdMob.
+            manifestPlaceholders["admobAppId"] =
+                "ca-app-pub-6893073726792422~4091397597"
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {

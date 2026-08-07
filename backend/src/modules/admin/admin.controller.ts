@@ -15,6 +15,7 @@ import { RedisService } from '../redis/redis.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { DailyRewardsConfigService } from '../rewards/daily-rewards-config.service';
 import { ShareVoteBoostConfigService } from '../rewards/share-vote-boost-config.service';
+import { AppDownloadConfigService } from '../settings/app-download-config.service';
 import { PrivacyConfigService } from '../settings/privacy-config.service';
 import { TermsConfigService } from '../settings/terms-config.service';
 import { AdminPushService } from './admin-push.service';
@@ -60,6 +61,7 @@ export class AdminController {
     private readonly shareVoteBoostConfig: ShareVoteBoostConfigService,
     private readonly termsConfig: TermsConfigService,
     private readonly privacyConfig: PrivacyConfigService,
+    private readonly appDownloadConfig: AppDownloadConfigService,
     private readonly adminPush: AdminPushService,
     private readonly voteBotCampaigns: VoteBotCampaignService,
   ) {}
@@ -1061,6 +1063,16 @@ export class AdminController {
     @Body() body: { enabled?: boolean; multiplier?: number; durationMinutes?: number },
   ) {
     return this.shareVoteBoostConfig.updateConfig(body || {});
+  }
+
+  @Get('settings/app-download')
+  appDownloadSettings() {
+    return this.appDownloadConfig.getConfigPayload();
+  }
+
+  @Patch('settings/app-download')
+  updateAppDownloadSettings(@Body() body: { enabled?: boolean; playStoreUrl?: string }) {
+    return this.appDownloadConfig.updateConfig(body || {});
   }
 
   @Get('settings/terms')

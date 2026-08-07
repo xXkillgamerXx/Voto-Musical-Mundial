@@ -1,13 +1,16 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_service.dart';
 import 'admob_config.dart';
 
-/// Banner adaptativo. Si falla la carga, no ocupa espacio.
+/// Banner adaptativo con esquinas redondeadas. Si falla la carga, no ocupa espacio.
 class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({
-    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    this.padding = const EdgeInsets.symmetric(vertical: 4),
     super.key,
   });
 
@@ -20,23 +23,44 @@ class BannerAdWidget extends StatefulWidget {
 class _BannerAdWidgetState extends State<BannerAdWidget> {
   BannerAd? _banner;
   bool _loaded = false;
+  bool _loading = false;
+  int _attempt = 0;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _loadIfNeeded();
+    unawaited(_loadIfNeeded());
   }
 
-  Future<void> _loadIfNeeded() async {
-    if (_banner != null || !AdMobConfig.adsEnabled) return;
+  Future<void> _loadIfNeeded({bool force = false}) async {
+    if (!AdMobConfig.adsEnabled || _loading) return;
+    if (!force && (_banner != null || _loaded)) return;
     if (!AdService.isReady) {
       await AdService.initialize();
       if (!mounted || !AdService.isReady) return;
     }
 
-    final width = MediaQuery.sizeOf(context).width.truncate();
-    final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width);
-    if (!mounted || size == null) return;
+    _loading = true;
+    _attempt += 1;
+
+    final mediaWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPad = widget.padding.resolve(Directionality.of(context));
+    final width =
+        (mediaWidth - horizontalPad.horizontal).truncate().clamp(1, 9999);
+
+    // 1er intento: adaptive. Si falla / no fill → banner fijo 320x50.
+    AdSize? size;
+    if (_attempt <= 1) {
+      size = await AdSize.getAnchoredAdaptiveBannerAdSize(
+        Orientation.portrait,
+        width,
+      );
+    }
+    size ??= AdSize.banner;
+    if (!mounted) {
+      _loading = false;
+      return;
+    }
 
     final ad = BannerAd(
       size: size,
@@ -48,16 +72,34 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
             ad.dispose();
             return;
           }
-          setState(() => _loaded = true);
+          setState(() {
+            _banner = ad as BannerAd;
+            _loaded = true;
+            _loading = false;
+          });
         },
         onAdFailedToLoad: (ad, error) {
-          debugPrint('BannerAd failed: $error');
+          debugPrint(
+            'BannerAd failed (attempt $_attempt, '
+            '${AdMobConfig.bannerAdUnitId}): $error',
+          );
           ad.dispose();
-          if (mounted) {
-            setState(() {
-              _banner = null;
-              _loaded = false;
-            });
+          if (!mounted) {
+            _loading = false;
+            return;
+          }
+          setState(() {
+            _banner = null;
+            _loaded = false;
+            _loading = false;
+          });
+          // Reintento una vez con tamaño fijo (o tras breve espera si fue no-fill).
+          if (_attempt < 2) {
+            unawaited(
+              Future<void>.delayed(const Duration(seconds: 2), () {
+                if (mounted) unawaited(_loadIfNeeded(force: true));
+              }),
+            );
           }
         },
       ),
@@ -81,21 +123,12 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
     return Padding(
       padding: widget.padding,
-      child: Center(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SizedBox(
-              width: _banner!.size.width.toDouble(),
-              height: _banner!.size.height.toDouble(),
-              child: AdWidget(ad: _banner!),
-            ),
-          ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          width: double.infinity,
+          height: _banner!.size.height.toDouble(),
+          child: AdWidget(ad: _banner!),
         ),
       ),
     );

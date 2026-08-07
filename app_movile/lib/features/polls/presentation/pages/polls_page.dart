@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/ads/admob_config.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
@@ -126,9 +127,6 @@ class _PollsPageState extends State<PollsPage> {
             ],
           ),
         ),
-        const BannerAdWidget(
-          padding: EdgeInsets.fromLTRB(18, 8, 18, 4),
-        ),
         Expanded(
           child: FutureBuilder<_PollsData>(
             future: _pollsFuture,
@@ -183,10 +181,6 @@ class _PollsPageState extends State<PollsPage> {
                     else
                       ..._pollCards(data.openPolls, isOpen: true),
                     const SizedBox(height: 16),
-                    const BannerAdWidget(
-                      padding: EdgeInsets.symmetric(vertical: 4),
-                    ),
-                    const SizedBox(height: 16),
                     _PollsSectionHeader(
                       title: tr('catalog.pollsTabClosed'),
                       count: data.closedPolls.length,
@@ -212,6 +206,9 @@ class _PollsPageState extends State<PollsPage> {
 
   List<Widget> _pollCards(List<Poll> polls, {required bool isOpen}) {
     final children = <Widget>[];
+    final bannerEvery =
+        AdMobConfig.adsEnabled ? AdMobConfig.bannerEveryNPolls : 0;
+
     for (var i = 0; i < polls.length; i++) {
       if (i > 0) children.add(const SizedBox(height: 12));
       children.add(
@@ -221,6 +218,18 @@ class _PollsPageState extends State<PollsPage> {
           onTap: () => _openPoll(polls[i]),
         ),
       );
+
+      final isLast = i == polls.length - 1;
+      if (bannerEvery > 0 &&
+          !isLast &&
+          (i + 1) % bannerEvery == 0) {
+        children.add(
+          BannerAdWidget(
+            key: ValueKey('polls-banner-${isOpen ? 'open' : 'closed'}-$i'),
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+          ),
+        );
+      }
     }
     return children;
   }

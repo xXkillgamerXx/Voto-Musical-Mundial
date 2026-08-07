@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../../core/ads/admob_config.dart';
+import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/ads/interstitial_ad_service.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
@@ -28,12 +33,39 @@ class _ArtistsPageState extends State<ArtistsPage> {
     super.initState();
     _artistsApi = ArtistsApi(widget.authService.client);
     _artistsFuture = _artistsApi.getPopularityRanking(limit: 50);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_maybeShowInterstitial());
+    });
+  }
+
+  Future<void> _maybeShowInterstitial() async {
+    if (!mounted || !AdMobConfig.adsEnabled) return;
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    await InterstitialAdService.showIfAvailable();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  List<_ArtistsFeedSlot> _buildSlots(List<Artist> artists) {
+    if (artists.isEmpty) return const [];
+    final slots = <_ArtistsFeedSlot>[];
+    final bannerEvery =
+        AdMobConfig.adsEnabled ? AdMobConfig.bannerEveryNArtists : 0;
+
+    for (var i = 0; i < artists.length; i++) {
+      slots.add(_ArtistsFeedSlot.artist(i));
+      final n = i + 1;
+      final isLast = i == artists.length - 1;
+      if (bannerEvery > 0 && !isLast && n % bannerEvery == 0) {
+        slots.add(const _ArtistsFeedSlot.banner());
+      }
+    }
+    return slots;
   }
 
   @override
@@ -66,6 +98,8 @@ class _ArtistsPageState extends State<ArtistsPage> {
 
             return current.name.compareTo(next.name);
           });
+
+        final slots = _buildSlots(artists);
 
         return Container(
           margin: const EdgeInsets.fromLTRB(18, 0, 18, 0),
@@ -121,12 +155,18 @@ class _ArtistsPageState extends State<ArtistsPage> {
                 )
               else
                 SliverList.separated(
-                  itemCount: artists.length,
+                  itemCount: slots.length,
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 14),
                   itemBuilder: (context, index) {
-                    final artist = artists[index];
-
+                    final slot = slots[index];
+                    if (slot.isBanner) {
+                      return BannerAdWidget(
+                        key: ValueKey('artists-banner-$index'),
+                        padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+                      );
+                    }
+                    final artist = artists[slot.artistIndex];
                     return ArtistCard(
                       artist: artist,
                       onTap: () {
@@ -165,6 +205,16 @@ class _ArtistsPageState extends State<ArtistsPage> {
       artist.bio,
     ].join(' ').toLowerCase().contains(normalizedQuery);
   }
+}
+
+class _ArtistsFeedSlot {
+  const _ArtistsFeedSlot.artist(this.artistIndex) : isBanner = false;
+  const _ArtistsFeedSlot.banner()
+      : artistIndex = -1,
+        isBanner = true;
+
+  final int artistIndex;
+  final bool isBanner;
 }
 
 class _ArtistSearchField extends StatelessWidget {

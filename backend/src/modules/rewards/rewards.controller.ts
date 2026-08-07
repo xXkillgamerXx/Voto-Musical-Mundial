@@ -21,4 +21,16 @@ export class RewardsController {
   claimDaily(@CurrentUser() user: { id: bigint }) {
     return this.rewards.claimDaily(user.id);
   }
+
+  @Get('ad-status')
+  @UseGuards(JwtAuthGuard)
+  adStatus(@CurrentUser() user: { id: bigint }) {
+    return this.rewards.getAdRewardStatus(user.id);
+  }
+
+  @Post('ad-claim')
+  @UseGuards(JwtAuthGuard)
+  claimAd(@CurrentUser() user: { id: bigint }) {
+    return this.rewards.claimAdReward(user.id);
+  }
 }

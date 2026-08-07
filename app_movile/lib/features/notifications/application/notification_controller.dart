@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../auth/data/auth_service.dart';
 import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/storage/gift_notification_storage.dart';
+import '../../../core/storage/notifications_cache.dart';
 import '../data/app_notification.dart';
 import '../data/notification_display.dart';
 import '../data/notifications_api.dart';
@@ -23,6 +24,7 @@ class NotificationController extends ChangeNotifier {
 
   AppNotification? _giftNotification;
   bool _loading = false;
+  bool _hasFetched = false;
   String? _errorMessage;
   bool _pushEnabled = false;
   bool _initialized = false;
@@ -38,6 +40,7 @@ class NotificationController extends ChangeNotifier {
 
   AppNotification? get giftNotification => _giftNotification;
   bool get loading => _loading;
+  bool get hasFetched => _hasFetched;
   String? get errorMessage => _errorMessage;
   bool get pushEnabled => _pushEnabled;
 
@@ -56,12 +59,33 @@ class NotificationController extends ChangeNotifier {
     unawaited(
       PushNotificationService.instance.ensureTokenRegistered(authService),
     );
+    await _hydrateFromCache();
     _startRealtime();
     _pollTimer = Timer.periodic(
       _pollInterval,
       (_) => unawaited(refresh(forceGift: true)),
     );
     await refresh(forceGift: true);
+  }
+
+  Future<void> _hydrateFromCache() async {
+    final userId = authService.session.user?.id ?? '';
+    if (userId.isEmpty) return;
+
+    final cached = await NotificationsCache.read(userId);
+    if (cached.isEmpty) return;
+
+    _notifications
+      ..clear()
+      ..addAll(cached);
+    _hasFetched = true;
+    _notifySafely();
+  }
+
+  Future<void> _persistCache() async {
+    final userId = authService.session.user?.id ?? '';
+    if (userId.isEmpty) return;
+    await NotificationsCache.write(userId, _notifications);
   }
 
   void _startRealtime() {
@@ -161,12 +185,16 @@ class NotificationController extends ChangeNotifier {
     if (!authService.session.isSignedIn) {
       _notifications.clear();
       _giftNotification = null;
+      _hasFetched = true;
+      _loading = false;
       _notifySafely();
       return;
     }
 
+    final hasCachedItems = _notifications.isNotEmpty;
     final wasLoading = _loading;
-    if (!wasLoading) {
+    // Si ya hay cache, refresca en silencio (sin vaciar ni flash de vacío).
+    if (!wasLoading && !hasCachedItems) {
       _loading = true;
       _errorMessage = null;
       _notifySafely();
@@ -179,6 +207,9 @@ class NotificationController extends ChangeNotifier {
       _notifications
         ..clear()
         ..addAll(items);
+      _hasFetched = true;
+      _errorMessage = null;
+      unawaited(_persistCache());
 
       if (forceGift) {
         await _loadGiftNotification();
@@ -186,8 +217,12 @@ class NotificationController extends ChangeNotifier {
         await _loadGiftNotification();
       }
     } catch (_) {
-      _errorMessage = 'No se pudieron cargar las notificaciones.';
+      if (_notifications.isEmpty) {
+        _errorMessage = 'No se pudieron cargar las notificaciones.';
+      }
+      // Con cache: mantenemos lo anterior y no mostramos error bloqueante.
     } finally {
+      _hasFetched = true;
       if (!wasLoading) {
         _loading = false;
       }
@@ -239,6 +274,7 @@ class NotificationController extends ChangeNotifier {
     }
 
     await NotificationsApi(authService.client).markRead(notification.id);
+    unawaited(_persistCache());
   }
 
   Future<void> markAllRead() async {
@@ -259,6 +295,7 @@ class NotificationController extends ChangeNotifier {
     await Future.wait(
       unread.map((item) => NotificationsApi(authService.client).markRead(item.id)),
     );
+    unawaited(_persistCache());
   }
 
   Future<void> closeGift() async {

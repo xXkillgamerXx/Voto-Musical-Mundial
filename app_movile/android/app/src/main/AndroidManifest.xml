@@ -7,10 +7,10 @@
         android:label="Music Mundial VOTE"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- AdMob App ID (test). Reemplazar por el ID real de AdMob al publicar. -->
+        <!-- AdMob App ID: debug = test Google, release = producción. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>
+            android:value="${admobAppId}"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -118,6 +118,13 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="vmm_default" />
+        <!-- Fullscreen AdMob activity: evita ver el header de la app detrás del anuncio. -->
+        <activity
+            android:name="com.google.android.gms.ads.AdActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:theme="@style/AdMobFullscreenTheme"
+            tools:replace="android:configChanges,android:theme" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

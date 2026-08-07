@@ -210,13 +210,14 @@ const normalizeApiArtist = (artist) => {
     artist.image ||
     artist.imageUrl ||
     artist.photo ||
+    artist.photoUrl ||
     artist.photoURL ||
     artist.foto ||
     artist.banner ||
-    artist.photoUrl ||
     metadata.image ||
     metadata.imageUrl ||
     metadata.photo ||
+    metadata.photoUrl ||
     metadata.photoURL ||
     metadata.foto ||
     metadata.banner ||
@@ -441,6 +442,7 @@ const getArtistImage = (artist) =>
   artist?.image ||
   artist?.imageUrl ||
   artist?.photo ||
+  artist?.photoUrl ||
   artist?.photoURL ||
   artist?.foto ||
   artist?.banner ||
@@ -1467,6 +1469,15 @@ const finalWinnerArtists = computed(() => {
 });
 
 const finalWinnerEntries = computed(() => {
+  // El % del ganador debe ser sobre la ronda final, nunca sobre todas las fases.
+  const finalRoundContestants = finalResultContestants.value.length
+    ? finalResultContestants.value
+    : [];
+  const finalTotal = finalRoundContestants.reduce(
+    (sum, contestant) => sum + Number(contestant.totalVotes || 0),
+    0,
+  );
+
   const finalRound = rounds.value
     .filter((round) => round.status === "closed" && round.winnerIds?.length)
     .at(-1);
@@ -1474,64 +1485,60 @@ const finalWinnerEntries = computed(() => {
     ? poll.value.winnerIds
     : finalRound?.winnerIds || [];
 
-  if (!winnerIds.length && finalResultSourceContestants.value.length) {
-    const contestant = finalResultSourceContestants.value[0];
+  const buildEntry = (contestant, artistId) => {
+    const artist = resolveArtist(artistId, contestant?.artist);
     const votes = Number(contestant?.totalVotes || 0);
-    const percent = finalResultSourceTotalVotes.value
-      ? (votes / finalResultSourceTotalVotes.value) * 100
-      : 0;
+    const percent = finalTotal ? (votes / finalTotal) * 100 : 0;
 
-    return [
-      {
-        id: contestant.artistId || contestant.id,
-        artist: contestant.artist,
-        votes,
-        percent,
-        percentLabel: `${percent.toFixed(2)}%`,
-        percentWidth: `${Math.min(percent, 100)}%`,
-      },
-    ].filter((entry) => entry.artist);
+    return {
+      id: artistId,
+      artist,
+      votes,
+      percent,
+      percentLabel: `${percent.toFixed(2)}%`,
+      percentWidth: `${Math.min(Math.max(percent, 0), 100)}%`,
+    };
+  };
+
+  if (!finalRoundContestants.length) {
+    return [];
+  }
+
+  if (!winnerIds.length) {
+    const contestant = finalRoundContestants[0];
+    return [buildEntry(contestant, contestant.artistId || contestant.id)].filter(
+      (entry) => entry.artist,
+    );
   }
 
   return winnerIds
     .slice(0, 1)
     .map((artistId) => {
-      const contestant = finalResultSourceContestants.value.find(
-        (item) => item.artistId === artistId,
+      const contestant = finalRoundContestants.find(
+        (item) => String(item.artistId) === String(artistId),
       );
-      const artist = resolveArtist(artistId, contestant?.artist);
-      const votes = Number(contestant?.totalVotes || 0);
-      const percent = finalResultSourceTotalVotes.value
-        ? (votes / finalResultSourceTotalVotes.value) * 100
-        : 0;
-
-      return {
-        id: artistId,
-        artist,
-        votes,
-        percent,
-        percentLabel: `${percent.toFixed(2)}%`,
-        percentWidth: `${Math.min(percent, 100)}%`,
-      };
+      return buildEntry(contestant, artistId);
     })
     .filter((entry) => entry.artist);
 });
 
 const finalRankingEntries = computed(() => {
-  const winnerId = finalWinnerEntries.value[0]?.id || "";
-  const sourceContestants = finalOverallContestants.value.length
-    ? finalOverallContestants.value
+  const winnerId = String(finalWinnerEntries.value[0]?.id || "");
+  // Misma base que el ganador: solo ronda final (no totales de todas las fases).
+  const sourceContestants = finalResultContestants.value.length
+    ? finalResultContestants.value
     : finalResultSourceContestants.value;
-  const totalVotesForRanking = finalOverallContestants.value.length
-    ? finalOverallTotalVotes.value
-    : finalResultSourceTotalVotes.value;
+  const totalVotesForRanking = sourceContestants.reduce(
+    (sum, contestant) => sum + Number(contestant.totalVotes || 0),
+    0,
+  );
 
   return sourceContestants
     .slice()
     .sort((current, next) => {
       if (winnerId) {
-        if (current.artistId === winnerId) return -1;
-        if (next.artistId === winnerId) return 1;
+        if (String(current.artistId) === winnerId) return -1;
+        if (String(next.artistId) === winnerId) return 1;
       }
 
       return Number(next.totalVotes || 0) - Number(current.totalVotes || 0);
@@ -1564,8 +1571,13 @@ const shareFinalWinner = async (winner) => {
   shareMessage.value = "";
   errorMessage.value = "";
 
-  const title = `${winner.name} ganó ${poll.value?.title || "la votación"}`;
-  const text = `El ganador final es ${winner.name}.`;
+  const title = translate("polls.detail.shareFinalTitle", {
+    name: winner.name,
+    poll: poll.value?.title || translate("polls.detail.shareFinalPollFallback"),
+  });
+  const text = translate("polls.detail.shareFinalText", {
+    name: winner.name,
+  });
   const url = window.location.href;
 
   try {
@@ -2449,14 +2461,33 @@ const loadFinalResultContestants = async () => {
   }
 
   try {
-    const winnerIds = finalResultRound.value.winnerIds || [];
-    finalResultContestants.value = (await getRoundContestants(finalResultRound.value))
+    const winnerIds = (finalResultRound.value.winnerIds || []).map(String);
+    const payload = await getPollResults({
+      pollId: currentPollId.value,
+      roundId: finalResultRound.value.id,
+    });
+    const ranked = Array.isArray(payload?.results) ? payload.results : [];
+
+    finalResultContestants.value = ranked
+      .map((row) => ({
+        id: row.contestantId || row.id,
+        artistId: row.artistId,
+        artist:
+          normalizeApiArtist(row.artist) ||
+          getArtist(row.artistId) ||
+          getPollArtist(row.artistId),
+        votes: Number(row.votes || 0),
+        manualVotes: Number(row.manualVotes || 0),
+        totalVotes: Number(row.totalVotes || 0),
+      }))
       .filter((contestant) => contestant.artist)
       .sort((current, next) => {
-        const currentWinnerIndex = winnerIds.indexOf(current.artistId);
-        const nextWinnerIndex = winnerIds.indexOf(next.artistId);
-        const currentRank = currentWinnerIndex >= 0 ? currentWinnerIndex : Number.POSITIVE_INFINITY;
-        const nextRank = nextWinnerIndex >= 0 ? nextWinnerIndex : Number.POSITIVE_INFINITY;
+        const currentWinnerIndex = winnerIds.indexOf(String(current.artistId));
+        const nextWinnerIndex = winnerIds.indexOf(String(next.artistId));
+        const currentRank =
+          currentWinnerIndex >= 0 ? currentWinnerIndex : Number.POSITIVE_INFINITY;
+        const nextRank =
+          nextWinnerIndex >= 0 ? nextWinnerIndex : Number.POSITIVE_INFINITY;
 
         if (currentRank !== nextRank) {
           return currentRank - nextRank;
@@ -3763,35 +3794,35 @@ onUnmounted(() => {
           <p
             class="mt-6 text-xs font-black uppercase tracking-[0.32em] text-amber-200"
           >
-            Resultado final
+            {{ $t("polls.detail.finalResultEyebrow") }}
           </p>
           <h2 class="mt-3 text-4xl font-black text-white sm:text-6xl">
-            Ganador
+            {{ $t("polls.detail.finalResultTitle") }}
           </h2>
           <p
             class="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-300 sm:text-base"
           >
-            La votación terminó. Este es el artista ganador.
+            {{ $t("polls.detail.finalResultDescription") }}
           </p>
         </div>
 
-        <div class="relative mx-auto mt-10 max-w-3xl">
+        <div class="relative mx-auto mt-10 max-w-2xl">
           <article
             v-for="(winnerEntry, index) in finalWinnerEntries"
             :key="winnerEntry.id"
-            class="winner-card overflow-hidden rounded-4xl border border-amber-300/25 bg-slate-950/60 text-left shadow-2xl shadow-amber-950/25 md:grid md:grid-cols-[18rem_1fr]"
+            class="winner-card overflow-hidden rounded-4xl border border-amber-300/25 bg-slate-950/60 text-left shadow-2xl shadow-amber-950/25"
           >
             <span
-              class="relative grid min-h-72 place-items-center overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950 text-5xl font-black text-white"
+              class="relative grid aspect-[4/5] max-h-[28rem] w-full place-items-center overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950 text-5xl font-black text-white sm:aspect-[5/4] sm:max-h-[22rem]"
             >
               <img
                 v-if="getArtistImage(winnerEntry.artist)"
                 :src="getArtistImage(winnerEntry.artist)"
                 :alt="winnerEntry.artist.name"
-                class="absolute inset-0 size-full object-cover"
+                class="absolute inset-0 size-full object-cover object-center"
               />
               <span
-                class="absolute inset-0 bg-linear-to-t from-[#080a18]/85 via-transparent to-transparent"
+                class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/35 to-transparent"
               ></span>
               <span
                 v-if="!getArtistImage(winnerEntry.artist)"
@@ -3804,23 +3835,28 @@ onUnmounted(() => {
               >
                 #{{ index + 1 }}
               </span>
+              <span
+                class="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 p-6 sm:p-8"
+              >
+                <span
+                  class="text-xs font-black uppercase tracking-[0.28em] text-amber-200"
+                >
+                  {{ $t("polls.detail.winningArtist") }}
+                </span>
+                <span
+                  class="block text-4xl font-black leading-none text-white sm:text-5xl"
+                  >{{ winnerEntry.artist.name }}</span
+                >
+                <span class="text-sm font-bold uppercase text-amber-100/90">{{
+                  getArtistGroup(winnerEntry.artist) ||
+                  $t("polls.detail.finalWinnerFallback")
+                }}</span>
+              </span>
             </span>
 
-            <span class="flex flex-col justify-center p-6 sm:p-8">
+            <span class="flex flex-col p-6 pt-5 sm:p-8 sm:pt-6">
               <span
-                class="text-xs font-black uppercase tracking-[0.28em] text-amber-200"
-              >
-                Artista ganador
-              </span>
-              <span
-                class="mt-3 block text-4xl font-black leading-none text-white sm:text-5xl"
-                >{{ winnerEntry.artist.name }}</span
-              >
-              <span class="mt-3 text-base font-bold uppercase text-amber-100">{{
-                getArtistGroup(winnerEntry.artist) || "Ganador final"
-              }}</span>
-              <span
-                class="winner-stats mt-6 overflow-hidden rounded-3xl border border-amber-300/25 bg-amber-400/10 p-4"
+                class="winner-stats overflow-hidden rounded-3xl border border-amber-300/25 bg-amber-400/10 p-4"
               >
                 <span
                   class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
@@ -3846,7 +3882,7 @@ onUnmounted(() => {
                     <span
                       class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-200"
                     >
-                      Porcentaje
+                      {{ $t("polls.detail.percentage") }}
                     </span>
                     <span
                       class="winner-percent mt-2 block text-5xl font-black leading-none text-amber-100 sm:text-6xl"
@@ -3863,12 +3899,6 @@ onUnmounted(() => {
                     :style="{ width: winnerEntry.percentWidth }"
                   ></span>
                 </span>
-              </span>
-              <span
-                class="mt-5 rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm leading-6 text-slate-200"
-              >
-                Gracias por participar. Esta artista se queda con el primer
-                lugar de la votación.
               </span>
             </span>
           </article>
@@ -3923,7 +3953,7 @@ onUnmounted(() => {
         <p
           class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-200"
         >
-          Lugares finales
+          {{ $t("polls.detail.finalPlaces") }}
         </p>
         <div class="mt-4 space-y-3">
           <article
@@ -4060,7 +4090,7 @@ onUnmounted(() => {
                 winner.name
               }}</span>
               <span class="text-sm font-bold uppercase text-amber-100">{{
-                getArtistGroup(winner) || "Ganador de ronda"
+                getArtistGroup(winner) || $t("polls.detail.roundWinnerFallback")
               }}</span>
             </span>
           </article>
@@ -4112,7 +4142,7 @@ onUnmounted(() => {
           <p
             class="relative mt-8 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300"
           >
-            Conteo en proceso
+            {{ $t("polls.detail.countingInProgress") }}
           </p>
           <h2
             class="relative mx-auto mt-4 max-w-2xl text-4xl font-black text-white sm:text-6xl"
@@ -4122,8 +4152,7 @@ onUnmounted(() => {
           <p
             class="relative mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg"
           >
-            La votación terminó. Estamos revisando los resultados en tiempo real
-            y eligiendo a los ganadores. Espera un momento.
+            {{ $t("polls.detail.countingVotesDescription") }}
           </p>
 
           <div
@@ -4158,13 +4187,13 @@ onUnmounted(() => {
         <p
           class="text-xs font-black uppercase tracking-[0.28em] text-slate-400"
         >
-          Votación finalizada
+          {{ $t("polls.detail.pollFinished") }}
         </p>
         <h2 class="mt-3 text-3xl font-black text-white">
-          Ganadores pendientes
+          {{ $t("polls.detail.winnersPending") }}
         </h2>
         <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
-          El equipo todavía no publicó los ganadores finales.
+          {{ $t("polls.detail.winnersPendingDescription") }}
         </p>
       </section>
 
@@ -4488,7 +4517,7 @@ onUnmounted(() => {
             v-if="selectedRoundWinnerNames.length"
             class="mt-4 rounded-2xl border border-amber-300/20 bg-slate-950/35 px-4 py-3 text-sm font-black text-amber-100"
           >
-            Ganadores: {{ selectedRoundWinnerNames.join(", ") }}
+            {{ $t("polls.detail.winnersPrefix", { names: selectedRoundWinnerNames.join(", ") }) }}
           </p>
         </article>
 

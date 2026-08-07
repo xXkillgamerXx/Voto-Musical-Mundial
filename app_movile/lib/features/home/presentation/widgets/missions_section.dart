@@ -15,12 +15,16 @@ class MissionsSection extends StatefulWidget {
     required this.authService,
     required this.missions,
     required this.onMissionsChanged,
+    this.listHeader,
     super.key,
   });
 
   final AuthService authService;
   final List<Mission> missions;
   final VoidCallback onMissionsChanged;
+
+  /// Optional card shown as the first item in the missions list (e.g. watch ad).
+  final Widget? listHeader;
 
   @override
   State<MissionsSection> createState() => _MissionsSectionState();
@@ -77,6 +81,7 @@ class _MissionsSectionState extends State<MissionsSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 16),
           Text(
             tr('home.earnExtraPoints'),
             style: const TextStyle(
@@ -93,20 +98,26 @@ class _MissionsSectionState extends State<MissionsSection> {
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.w900,
-              height: 1.05,
+              height: 1.0,
             ),
           ),
-          const SizedBox(height: 16),
-          if (_visibleMissions.isEmpty)
+          const SizedBox(height: 10),
+          if (_visibleMissions.isEmpty && widget.listHeader == null)
             const _MissionsEmptyState()
           else
             ListView.separated(
               shrinkWrap: true,
+              padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: _visibleMissions.length,
+              itemCount:
+                  _visibleMissions.length + (widget.listHeader != null ? 1 : 0),
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final mission = _visibleMissions[index];
+                final header = widget.listHeader;
+                if (header != null && index == 0) return header;
+                final missionIndex =
+                    header != null ? index - 1 : index;
+                final mission = _visibleMissions[missionIndex];
                 return _MissionMiniCard(
                   mission: mission,
                   onTap: () => _openMissionSheet(mission),

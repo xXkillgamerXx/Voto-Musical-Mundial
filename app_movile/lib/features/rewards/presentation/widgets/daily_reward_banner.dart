@@ -29,7 +29,7 @@ class DailyRewardBanner extends StatelessWidget {
         );
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 15, 16, 0),
           child: Material(
             color: Colors.transparent,
             clipBehavior: Clip.antiAlias,

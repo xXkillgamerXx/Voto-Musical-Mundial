@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
+import '../../../../core/ads/ad_service.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/navigation/app_deep_link.dart';
 import '../../../../core/notifications/push_notification_service.dart';
@@ -292,6 +293,16 @@ class _SignedInPageState extends State<_SignedInPage> {
               notification: gift,
               authService: widget.authService,
               onClose: _notifications.closeGift,
+            );
+          },
+        ),
+        // Negro opaco detrás de interstitial/rewarded (AdActivity a veces es translucido).
+        ValueListenableBuilder<bool>(
+          valueListenable: AdService.fullscreenCover,
+          builder: (context, visible, _) {
+            if (!visible) return const SizedBox.shrink();
+            return const Positioned.fill(
+              child: ColoredBox(color: Color(0xFF000000)),
             );
           },
         ),

@@ -38,6 +38,16 @@ class AppNotification {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': type,
+      'payload': payload,
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      if (readAt != null) 'readAt': readAt!.toIso8601String(),
+    };
+  }
+
   static DateTime? _parseDate(dynamic value) {
     if (value == null) {
       return null;

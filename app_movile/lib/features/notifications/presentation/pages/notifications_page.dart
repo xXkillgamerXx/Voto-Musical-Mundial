@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
+import '../../../../core/widgets/skeleton_box.dart';
 import '../../application/notification_controller.dart';
 import '../../application/notification_deep_link.dart';
 import '../../data/app_notification.dart';
@@ -258,11 +259,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ),
             ),
             const SizedBox(height: 16),
-            if (controller.loading && items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
+            if ((controller.loading || !controller.hasFetched) &&
+                items.isEmpty)
+              const _NotificationsSkeletonList()
             else if (controller.errorMessage != null && items.isEmpty)
               _EmptyState(message: controller.errorMessage!)
             else if (items.isEmpty)
@@ -402,6 +401,54 @@ class _EmptyState extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NotificationsSkeletonList extends StatelessWidget {
+  const _NotificationsSkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(5, (index) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: index == 4 ? 0 : 12),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF090B19).withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBox(
+                  height: 44,
+                  width: 44,
+                  borderRadius: BorderRadius.all(Radius.circular(14)),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonBox(height: 15, width: 160),
+                      SizedBox(height: 8),
+                      SkeletonBox(height: 12, width: double.infinity),
+                      SizedBox(height: 6),
+                      SkeletonBox(height: 12, width: 200),
+                      SizedBox(height: 10),
+                      SkeletonBox(height: 10, width: 110),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 }

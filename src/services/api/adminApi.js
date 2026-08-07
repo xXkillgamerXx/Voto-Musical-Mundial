@@ -122,6 +122,10 @@ export const getAdminShareVoteBoost = () => adminRequest('/settings/share-vote-b
 export const updateAdminShareVoteBoost = (body) =>
   adminRequest('/settings/share-vote-boost', { method: 'PATCH', body })
 
+export const getAdminAppDownload = () => adminRequest('/settings/app-download')
+export const updateAdminAppDownload = (body) =>
+  adminRequest('/settings/app-download', { method: 'PATCH', body })
+
 export const getAdminTerms = () => adminRequest('/settings/terms')
 export const updateAdminTerms = (body) =>
   adminRequest('/settings/terms', { method: 'PATCH', body })

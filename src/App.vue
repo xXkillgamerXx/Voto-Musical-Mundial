@@ -4,6 +4,7 @@ import ActivePolls from './components/ActivePolls.vue'
 import AppFooter from './components/layout/AppFooter.vue'
 import AppNavbar from './components/layout/AppNavbar.vue'
 import BannerFeatures from './components/BannerFeatures.vue'
+import DownloadAppSection from './components/DownloadAppSection.vue'
 import HeroBanner from './components/HeroBanner.vue'
 import HomeAd from './components/HomeAd.vue'
 import MainCategories from './components/MainCategories.vue'
@@ -19,6 +20,7 @@ const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/Admi
 const CommunitySection = defineAsyncComponent(() => import('./components/CommunitySection.vue'))
 const CookieConsentBanner = defineAsyncComponent(() => import('./components/CookieConsentBanner.vue'))
 const DailyRewardModal = defineAsyncComponent(() => import('./components/DailyRewardModal.vue'))
+const DownloadAppModal = defineAsyncComponent(() => import('./components/DownloadAppModal.vue'))
 const GiftNotificationModal = defineAsyncComponent(() => import('./components/GiftNotificationModal.vue'))
 const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
 const LiveActivity = defineAsyncComponent(() => import('./components/LiveActivity.vue'))
@@ -315,6 +317,7 @@ onUnmounted(() => {
           </div>
         </section>
 
+        <DownloadAppSection />
         <ActivePolls />
         <MainCategories />
         <TopRanking />
@@ -330,6 +333,7 @@ onUnmounted(() => {
     <AppFooter v-if="!isPlainPage" />
     <DailyRewardModal v-if="shouldShowDailyRewardModal" />
     <GiftNotificationModal v-if="!isPlainPage" />
+    <DownloadAppModal v-if="!isPlainPage" />
     <CookieConsentBanner v-if="!isPlainPage" />
     <PushNotificationPrompt v-if="!isPlainPage" />
 

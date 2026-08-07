@@ -1,8 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import {
+  getAdminAppDownload,
   getAdminDailyRewards,
   getAdminShareVoteBoost,
+  updateAdminAppDownload,
   updateAdminDailyRewards,
   updateAdminShareVoteBoost,
 } from '../../services/api/adminApi'
@@ -17,6 +19,8 @@ const DEFAULT_DAYS = [
   { day: 7, points: 50 },
 ]
 
+const DEFAULT_PLAY_URL = 'https://play.google.com/store/apps/details?id=vote.musicmundial.com'
+
 const days = ref(DEFAULT_DAYS.map((entry) => ({ ...entry })))
 const shareBoost = ref({
   enabled: true,
@@ -24,13 +28,20 @@ const shareBoost = ref({
   durationMinutes: 10,
   oncePerDay: true,
 })
+const appDownload = ref({
+  enabled: true,
+  playStoreUrl: DEFAULT_PLAY_URL,
+})
 const isLoading = ref(true)
 const isSaving = ref(false)
 const isSavingShareBoost = ref(false)
+const isSavingAppDownload = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const shareBoostError = ref('')
 const shareBoostSuccess = ref('')
+const appDownloadError = ref('')
+const appDownloadSuccess = ref('')
 
 const weeklyTotal = computed(() =>
   days.value.reduce((total, entry) => total + Number(entry.points || 0), 0),
@@ -40,11 +51,13 @@ const loadSettings = async () => {
   isLoading.value = true
   errorMessage.value = ''
   shareBoostError.value = ''
+  appDownloadError.value = ''
 
   try {
-    const [rewardsPayload, boostPayload] = await Promise.all([
+    const [rewardsPayload, boostPayload, downloadPayload] = await Promise.all([
       getAdminDailyRewards(),
       getAdminShareVoteBoost(),
+      getAdminAppDownload(),
     ])
     days.value = (rewardsPayload?.days || DEFAULT_DAYS).map((entry) => ({
       day: Number(entry.day),
@@ -55,6 +68,10 @@ const loadSettings = async () => {
       multiplier: Math.max(2, Number(boostPayload?.multiplier || 2)),
       durationMinutes: Math.max(1, Number(boostPayload?.durationMinutes || 10)),
       oncePerDay: boostPayload?.oncePerDay !== false,
+    }
+    appDownload.value = {
+      enabled: downloadPayload?.enabled !== false,
+      playStoreUrl: String(downloadPayload?.playStoreUrl || DEFAULT_PLAY_URL).trim() || DEFAULT_PLAY_URL,
     }
   } catch (error) {
     errorMessage.value = error?.message || 'No se pudo cargar la configuracion de recompensas.'
@@ -117,6 +134,28 @@ const saveShareBoost = async () => {
     shareBoostError.value = error?.message || 'No se pudo guardar el boost por compartir.'
   } finally {
     isSavingShareBoost.value = false
+  }
+}
+
+const saveAppDownload = async () => {
+  isSavingAppDownload.value = true
+  appDownloadError.value = ''
+  appDownloadSuccess.value = ''
+
+  try {
+    const payload = await updateAdminAppDownload({
+      enabled: Boolean(appDownload.value.enabled),
+      playStoreUrl: String(appDownload.value.playStoreUrl || '').trim(),
+    })
+    appDownload.value = {
+      enabled: payload?.enabled !== false,
+      playStoreUrl: String(payload?.playStoreUrl || DEFAULT_PLAY_URL).trim() || DEFAULT_PLAY_URL,
+    }
+    appDownloadSuccess.value = 'Seccion de descarga de la app guardada correctamente.'
+  } catch (error) {
+    appDownloadError.value = error?.message || 'No se pudo guardar la URL de Google Play.'
+  } finally {
+    isSavingAppDownload.value = false
   }
 }
 
@@ -307,6 +346,68 @@ onMounted(loadSettings)
         @click="saveShareBoost"
       >
         {{ isSavingShareBoost ? 'Guardando...' : 'Guardar boost por compartir' }}
+      </button>
+    </article>
+
+    <article class="rounded-4xl border border-fuchsia-300/20 bg-fuchsia-500/8 p-5 sm:p-6">
+      <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
+        App movil
+      </p>
+      <h2 class="mt-2 text-2xl font-black text-white">
+        Descargar en Google Play
+      </h2>
+      <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+        Controla la seccion de descarga en la home. Pega aqui el enlace de tu ficha en Google Play
+        cuando este publicada. Si la desactivas, la seccion se oculta en la web.
+      </p>
+
+      <div v-if="!isLoading" class="mt-5 grid gap-4 lg:grid-cols-[220px_1fr]">
+        <label class="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
+          <span class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            Mostrar seccion
+          </span>
+          <button
+            type="button"
+            class="mt-3 min-h-12 w-full rounded-2xl border px-4 text-sm font-black uppercase transition"
+            :class="appDownload.enabled
+              ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100'
+              : 'border-white/10 bg-white/5 text-slate-300'"
+            @click="appDownload.enabled = !appDownload.enabled"
+          >
+            {{ appDownload.enabled ? 'Visible' : 'Oculta' }}
+          </button>
+        </label>
+
+        <label class="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
+          <span class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            URL de Google Play
+          </span>
+          <input
+            v-model="appDownload.playStoreUrl"
+            type="url"
+            placeholder="https://play.google.com/store/apps/details?id=vote.musicmundial.com"
+            class="mt-3 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-fuchsia-300/40"
+          />
+          <p class="mt-2 text-xs leading-5 text-slate-500">
+            Ejemplo: https://play.google.com/store/apps/details?id=vote.musicmundial.com
+          </p>
+        </label>
+      </div>
+
+      <p v-if="appDownloadError" class="mt-4 rounded-2xl border border-red-300/25 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100">
+        {{ appDownloadError }}
+      </p>
+      <p v-if="appDownloadSuccess" class="mt-4 rounded-2xl border border-emerald-300/25 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">
+        {{ appDownloadSuccess }}
+      </p>
+
+      <button
+        type="button"
+        class="mt-5 min-h-12 rounded-2xl bg-linear-to-r from-fuchsia-500 to-violet-500 px-6 text-sm font-black uppercase text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="isLoading || isSavingAppDownload"
+        @click="saveAppDownload"
+      >
+        {{ isSavingAppDownload ? 'Guardando...' : 'Guardar enlace de la app' }}
       </button>
     </article>
   </section>

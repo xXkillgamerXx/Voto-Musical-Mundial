@@ -429,7 +429,6 @@ class _HomePageState extends State<HomePage> {
                       widget.onNavigateToSection('Votaciones'),
                 ),
               ),
-              const SliverToBoxAdapter(child: BannerAdWidget()),
               SliverToBoxAdapter(
                 child: _MainCategoriesSection(
                   categories: data.categories,
@@ -463,6 +462,13 @@ class _HomePageState extends State<HomePage> {
                   onOpenArticle: _openExternalUrl,
                 ),
               ),
+              const SliverToBoxAdapter(child: SizedBox(height: 15)),
+              const SliverToBoxAdapter(
+                child: BannerAdWidget(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ),
+
               SliverToBoxAdapter(
                 child: DailyRewardBanner(authService: widget.authService),
               ),
@@ -484,23 +490,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _startHeroAutoplay(PageController controller, int slideCount) {
+  void _startHeroAutoplay(VoidCallback goNext, int slideCount) {
     _heroAutoplayTimer?.cancel();
     if (slideCount <= 1) {
       return;
     }
 
     _heroAutoplayTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!controller.hasClients) {
-        return;
-      }
-
-      final nextPage = (controller.page?.round() ?? 0) + 1;
-      controller.animateToPage(
-        nextPage % slideCount,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
-      );
+      goNext();
     });
   }
 }
@@ -542,6 +539,7 @@ class _HeroSlide {
     required this.hideVoteCounts,
     required this.contestantCount,
     required this.isEmpty,
+    this.bannerUrl = '',
   });
 
   final Poll? poll;
@@ -557,6 +555,7 @@ class _HeroSlide {
   final bool hideVoteCounts;
   final int contestantCount;
   final bool isEmpty;
+  final String bannerUrl;
 
   factory _HeroSlide.empty() {
     return _HeroSlide(
@@ -573,6 +572,7 @@ class _HeroSlide {
       hideVoteCounts: false,
       contestantCount: 0,
       isEmpty: true,
+      bannerUrl: '',
     );
   }
 
@@ -616,6 +616,7 @@ class _HeroSlide {
       hideVoteCounts: hideVoteCounts,
       contestantCount: contestantCount,
       isEmpty: false,
+      bannerUrl: resolvePollBanner(poll),
     );
   }
 }
@@ -657,8 +658,7 @@ class _HomeHeroBanner extends StatefulWidget {
   final List<_HeroSlide> slides;
   final ValueChanged<Poll?> onVoteTap;
   final VoidCallback onRankingTap;
-  final void Function(PageController controller, int slideCount)
-  onAutoplayReady;
+  final void Function(VoidCallback goNext, int slideCount) onAutoplayReady;
 
   @override
   State<_HomeHeroBanner> createState() => _HomeHeroBannerState();
@@ -666,7 +666,6 @@ class _HomeHeroBanner extends StatefulWidget {
 
 class _HomeHeroBannerState extends State<_HomeHeroBanner>
     with SingleTickerProviderStateMixin {
-  late final PageController _pageController;
   late final AnimationController _statsController;
   int _activeSlide = 0;
 
@@ -678,7 +677,6 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
     _statsController =
         AnimationController(
             vsync: this,
@@ -691,7 +689,7 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
           })
           ..forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.onAutoplayReady(_pageController, _bannerSlides.length);
+      widget.onAutoplayReady(_goNextSlide, _bannerSlides.length);
     });
   }
 
@@ -703,22 +701,36 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
       _statsController
         ..reset()
         ..forward();
-      widget.onAutoplayReady(_pageController, _bannerSlides.length);
+      widget.onAutoplayReady(_goNextSlide, _bannerSlides.length);
     }
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
     _statsController.dispose();
     super.dispose();
   }
 
-  void _onSlideChanged(int index) {
-    setState(() => _activeSlide = index);
+  void _goNextSlide() => _goToSlide(_activeSlide + 1);
+
+  void _goToSlide(int index) {
+    if (!mounted || _bannerSlides.isEmpty) return;
+    final next = index % _bannerSlides.length;
+    if (next == _activeSlide) return;
+    setState(() => _activeSlide = next);
     _statsController
       ..reset()
       ..forward();
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_bannerSlides.length <= 1) return;
+    final vx = details.primaryVelocity ?? 0;
+    if (vx < -200) {
+      _goToSlide(_activeSlide + 1);
+    } else if (vx > 200) {
+      _goToSlide(_activeSlide - 1 + _bannerSlides.length);
+    }
   }
 
   @override
@@ -730,7 +742,8 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
     final animatedProgress = slide.progress * eased;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+      margin: const EdgeInsets.fromLTRB(0, 10, 0, 8),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
@@ -752,229 +765,220 @@ class _HomeHeroBannerState extends State<_HomeHeroBanner>
       child: Stack(
         children: [
           Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: slide.bannerUrl.isEmpty
+                  ? const SizedBox.shrink(key: ValueKey('hero-no-banner'))
+                  : KeyedSubtree(
+                      key: ValueKey('hero-banner-${slide.bannerUrl}'),
+                      child: CachedNetworkImage(
+                        imageUrl: slide.bannerUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fadeInDuration: const Duration(milliseconds: 280),
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        placeholder: (_, __) => const SizedBox.shrink(),
+                      ),
+                    ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF030712).withValues(alpha: 0.55),
+                    const Color(0xFF0B0718).withValues(alpha: 0.82),
+                    const Color(0xFF030712).withValues(alpha: 0.96),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: const Alignment(-0.2, 0),
                   radius: 1.2,
                   colors: [
-                    const Color(0xFFD946EF).withValues(alpha: 0.22),
+                    const Color(0xFFD946EF).withValues(alpha: 0.18),
                     Colors.transparent,
                   ],
                 ),
               ),
             ),
           ),
-          SizedBox(
-            height: 520,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: _bannerSlides.length,
-              onPageChanged: _onSlideChanged,
-              itemBuilder: (context, index) {
-                final pageSlide = _bannerSlides[index];
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _HeroBadge(
-                            label: pageSlide.badge,
-                            background: const Color(0xFFFCD34D),
-                            foreground: const Color(0xFF0F172A),
-                          ),
-                          _HeroBadge(
-                            label: pageSlide.status,
-                            background: const Color(
-                              0xFF34D399,
-                            ).withValues(alpha: 0.15),
-                            foreground: const Color(0xFF6EE7B7),
-                          ),
-                        ],
+          GestureDetector(
+            onHorizontalDragEnd: _onHorizontalDragEnd,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _HeroBadge(
+                          label: slide.badge,
+                          background: const Color(0xFFFCD34D),
+                          foreground: const Color(0xFF0F172A),
+                        ),
+                        _HeroBadge(
+                          label: slide.status,
+                          background: const Color(
+                            0xFF34D399,
+                          ).withValues(alpha: 0.15),
+                          foreground: const Color(0xFF6EE7B7),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      slide.eyebrow.toUpperCase(),
+                      style: const TextStyle(
+                        color: Color(0xFFF0ABFC),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 3.2,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      slide.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05,
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      slide.description,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.45,
+                      ),
+                    ),
+                    if (!slide.isEmpty) ...[
                       const SizedBox(height: 16),
-                      Text(
-                        pageSlide.eyebrow.toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFFF0ABFC),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 3.2,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        pageSlide.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 34,
-                          fontWeight: FontWeight.w900,
-                          height: 1.05,
-                          letterSpacing: -0.6,
-                        ),
+                      Wrap(
+                        spacing: 20,
+                        runSpacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.end,
+                        children: [
+                          if (!slide.hideVoteCounts)
+                            _HeroStatBlock(
+                              label: tr('home.leaderVotes'),
+                              value: _formatNumber(animatedLeaderVotes),
+                              valueSize: 34,
+                            ),
+                          _HeroStatBlock(
+                            label: slide.hideVoteCounts
+                                ? tr('home.leading')
+                                : tr('home.participation'),
+                            value: '${animatedPercent.toStringAsFixed(2)}%',
+                            valueColor: const Color(0xFFF0ABFC),
+                            valueSize: 28,
+                          ),
+                          if (!slide.hideVoteCounts && slide.totalVotes > 0)
+                            _HeroStatBlock(
+                              label: tr('home.totalVotes'),
+                              value: _formatNumber(slide.totalVotes),
+                              valueSize: 20,
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        pageSlide.description,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.72),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          height: 1.5,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 8,
+                          value: animatedProgress / 100,
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFC084FC),
+                          ),
                         ),
                       ),
-                      if (!pageSlide.isEmpty) ...[
-                        const SizedBox(height: 22),
-                        Wrap(
-                          spacing: 20,
-                          runSpacing: 12,
-                          crossAxisAlignment: WrapCrossAlignment.end,
-                          children: [
-                            if (!pageSlide.hideVoteCounts)
-                              _HeroStatBlock(
-                                label: tr('home.leaderVotes'),
-                                value: _formatNumber(animatedLeaderVotes),
-                                valueSize: 34,
-                              ),
-                            _HeroStatBlock(
-                              label: pageSlide.hideVoteCounts
-                                  ? tr('home.leading')
-                                  : tr('home.participation'),
-                              value: '${animatedPercent.toStringAsFixed(2)}%',
-                              valueColor: const Color(0xFFF0ABFC),
-                              valueSize: 28,
-                            ),
-                            if (!pageSlide.hideVoteCounts &&
-                                pageSlide.totalVotes > 0)
-                              _HeroStatBlock(
-                                label: tr('home.totalVotes'),
-                                value: _formatNumber(pageSlide.totalVotes),
-                                valueSize: 20,
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            minHeight: 8,
-                            value: animatedProgress / 100,
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.1,
-                            ),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Color(0xFFC084FC),
-                            ),
-                          ),
-                        ),
-                        if (pageSlide.contestantCount > 0) ...[
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _HeroMiniStat(
-                                  label: pageSlide.hideVoteCounts
-                                      ? tr('home.participation')
-                                      : tr('home.leaderVotes'),
-                                  value: pageSlide.hideVoteCounts
-                                      ? '${pageSlide.percent.toStringAsFixed(2)}%'
-                                      : _formatNumber(pageSlide.leaderVotes),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _HeroMiniStat(
-                                  label: tr('home.participants'),
-                                  value: '${pageSlide.contestantCount}',
-                                ),
-                              ),
-                              if (!pageSlide.hideVoteCounts) ...[
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _HeroMiniStat(
-                                    label: tr('home.totalVotes'),
-                                    value: _formatNumber(pageSlide.totalVotes),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ],
-                      const Spacer(),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _GradientButton(
-                              label: pageSlide.isEmpty
-                                  ? tr('home.viewPolls')
-                                  : tr('home.voteNow'),
-                              onTap: () => widget.onVoteTap(pageSlide.poll),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: widget.onRankingTap,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFFE2E8F0),
-                                side: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.15),
-                                ),
-                                minimumSize: const Size.fromHeight(54),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                              ),
-                              child: Text(
-                                tr('home.viewRankings'),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_bannerSlides.length > 1) ...[
-                        const SizedBox(height: 18),
-                        Row(
-                          children: List.generate(_bannerSlides.length, (
-                            index,
-                          ) {
-                            final isActive = index == _activeSlide;
-                            return GestureDetector(
-                              onTap: () {
-                                _pageController.animateToPage(
-                                  index,
-                                  duration: const Duration(milliseconds: 280),
-                                  curve: Curves.easeOutCubic,
-                                );
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 220),
-                                margin: const EdgeInsets.only(right: 8),
-                                width: isActive ? 28 : 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(999),
-                                  color: isActive
-                                      ? const Color(0xFFF0ABFC)
-                                      : Colors.white.withValues(alpha: 0.25),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                      ],
                     ],
-                  ),
-                );
-              },
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _GradientButton(
+                            label: slide.isEmpty
+                                ? tr('home.viewPolls')
+                                : tr('home.voteNow'),
+                            onTap: () => widget.onVoteTap(slide.poll),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: widget.onRankingTap,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFE2E8F0),
+                              side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.15),
+                              ),
+                              minimumSize: const Size.fromHeight(54),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            child: Text(
+                              tr('home.viewRankings'),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_bannerSlides.length > 1) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: List.generate(_bannerSlides.length, (index) {
+                          final isActive = index == _activeSlide;
+                          return GestureDetector(
+                            onTap: () => _goToSlide(index),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              margin: const EdgeInsets.only(right: 8),
+                              width: isActive ? 28 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: isActive
+                                    ? const Color(0xFFF0ABFC)
+                                    : Colors.white.withValues(alpha: 0.25),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -1056,48 +1060,6 @@ class _HeroStatBlock extends StatelessWidget {
   }
 }
 
-class _HeroMiniStat extends StatelessWidget {
-  const _HeroMiniStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.45),
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ActivePollsSection extends StatelessWidget {
   const _ActivePollsSection({
     required this.openPolls,
@@ -1158,7 +1120,7 @@ class _ActivePollsSection extends StatelessWidget {
             _ActivePollsEmpty(onRankingTap: onRankingTap)
           else
             _PollsHorizontalCarousel(
-              height: 448,
+              height: 472,
               cardWidthFactor: 0.82,
               polls: openPolls,
               compact: false,
@@ -1494,54 +1456,57 @@ class _ActivePollCard extends StatelessWidget {
               ],
             ),
           ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, compact ? 14 : 18, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  poll.title.toUpperCase(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: compact ? 16 : 18,
-                    fontWeight: FontWeight.w900,
-                    height: 1.12,
-                  ),
-                ),
-                if (!compact) ...[
-                  const SizedBox(height: 4),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, compact ? 12 : 14, 20, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Text(
-                    isSelecting
-                        ? tr('home.countingVotes')
-                        : (poll.description.isNotEmpty
-                              ? poll.description
-                              : tr('home.whoLeadsPoll')),
+                    poll.title.toUpperCase(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
+                      color: Colors.white,
+                      fontSize: compact ? 16 : 18,
+                      fontWeight: FontWeight.w900,
+                      height: 1.12,
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _PollCountdown(poll: poll),
-                  const SizedBox(height: 14),
-                ] else ...[
-                  const SizedBox(height: 10),
+                  if (!compact) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      isSelecting
+                          ? tr('home.countingVotes')
+                          : (poll.description.isNotEmpty
+                                ? poll.description
+                                : tr('home.whoLeadsPoll')),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _PollCountdown(poll: poll),
+                    const SizedBox(height: 10),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                  ],
+                  const Spacer(),
+                  _GradientButton(
+                    label: isClosed
+                        ? tr('catalog.pollActionViewResults')
+                        : isSelecting
+                            ? tr('home.viewProcess')
+                            : tr('home.vote'),
+                    onTap: onVoteTap,
+                  ),
                 ],
-                _GradientButton(
-                  label: isClosed
-                      ? tr('catalog.pollActionViewResults')
-                      : isSelecting
-                          ? tr('home.viewProcess')
-                          : tr('home.vote'),
-                  onTap: onVoteTap,
-                ),
-              ],
+              ),
             ),
           ),
         ],

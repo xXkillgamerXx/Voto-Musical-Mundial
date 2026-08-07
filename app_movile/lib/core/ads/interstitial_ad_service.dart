@@ -6,21 +6,13 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_service.dart';
 import 'admob_config.dart';
 
-enum RewardedAdResult {
-  earned,
-  dismissed,
-  failed,
-  unavailable,
-}
+/// Interstitial full-screen. Se muestra de vez en cuando con cooldown.
+class InterstitialAdService {
+  InterstitialAdService._();
 
-/// Carga y muestra anuncios rewarded (video por puntos).
-class RewardedAdService {
-  RewardedAdService._();
-
-  static RewardedAd? _ad;
+  static InterstitialAd? _ad;
   static bool _loading = false;
-
-  static bool get isReady => _ad != null;
+  static DateTime? _lastShownAt;
 
   static Future<void> preload() async {
     if (!AdMobConfig.adsEnabled || _ad != null || _loading) return;
@@ -32,17 +24,17 @@ class RewardedAdService {
     _loading = true;
     final completer = Completer<void>();
 
-    await RewardedAd.load(
-      adUnitId: AdMobConfig.rewardedAdUnitId,
+    await InterstitialAd.load(
+      adUnitId: AdMobConfig.interstitialAdUnitId,
       request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
+      adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           _ad = ad;
           _loading = false;
           if (!completer.isCompleted) completer.complete();
         },
         onAdFailedToLoad: (error) {
-          debugPrint('RewardedAd failed to load: $error');
+          debugPrint('InterstitialAd failed to load: $error');
           _ad = null;
           _loading = false;
           if (!completer.isCompleted) completer.complete();
@@ -53,51 +45,50 @@ class RewardedAdService {
     await completer.future;
   }
 
-  static Future<RewardedAdResult> show() async {
-    if (!AdMobConfig.adsEnabled) return RewardedAdResult.unavailable;
+  static bool get _cooldownOk {
+    final last = _lastShownAt;
+    if (last == null) return true;
+    return DateTime.now().difference(last).inSeconds >=
+        AdMobConfig.interstitialCooldownSeconds;
+  }
+
+  /// Muestra interstitial si hay uno listo y pasó el cooldown.
+  static Future<bool> showIfAvailable() async {
+    if (!AdMobConfig.adsEnabled || !_cooldownOk) return false;
 
     if (_ad == null) {
       await preload();
     }
 
     final ad = _ad;
-    if (ad == null) return RewardedAdResult.unavailable;
+    if (ad == null) return false;
 
     _ad = null;
-    final completer = Completer<RewardedAdResult>();
-    var earned = false;
+    final completer = Completer<bool>();
 
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
         AdService.hideFullscreenCover();
         ad.dispose();
         unawaited(preload());
-        if (!completer.isCompleted) {
-          completer.complete(
-            earned ? RewardedAdResult.earned : RewardedAdResult.dismissed,
-          );
-        }
+        if (!completer.isCompleted) completer.complete(true);
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
-        debugPrint('RewardedAd failed to show: $error');
+        debugPrint('InterstitialAd failed to show: $error');
         AdService.hideFullscreenCover();
         ad.dispose();
         unawaited(preload());
-        if (!completer.isCompleted) {
-          completer.complete(RewardedAdResult.failed);
-        }
+        if (!completer.isCompleted) completer.complete(false);
       },
     );
 
+    // Cubre status bar / notch; evita que se vea el header de la app detrás.
     await ad.setImmersiveMode(true);
     AdService.showFullscreenCover();
+    // Dale un frame al overlay negro antes de abrir el AdActivity.
     await Future<void>.delayed(const Duration(milliseconds: 16));
-    await ad.show(
-      onUserEarnedReward: (ad, reward) {
-        earned = true;
-      },
-    );
-
+    _lastShownAt = DateTime.now();
+    await ad.show();
     return completer.future;
   }
 }

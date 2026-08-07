@@ -86,6 +86,16 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': 'Not now',
     'ko': '나중에',
   },
+  'pollDetail.watchAdMissionTitle': {
+    'es': 'Ver video',
+    'en': 'Watch video',
+    'ko': '영상 보기',
+  },
+  'pollDetail.watchAdMissionDescription': {
+    'es': 'Mira un anuncio corto y gana puntos extra.',
+    'en': 'Watch a short ad and earn extra points.',
+    'ko': '짧은 광고를 보고 추가 포인트를 받으세요.',
+  },
   'pollDetail.watchAdForPoints': {
     'es': 'Ver video (+{points} pts)',
     'en': 'Watch video (+{points} pts)',
@@ -102,9 +112,19 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'ko': '광고 로딩 중...',
   },
   'pollDetail.watchAdEarned': {
-    'es': '¡Listo! Sumaste +{points} pts (modo prueba).',
-    'en': 'Done! You earned +{points} pts (test mode).',
-    'ko': '완료! +{points} pts를 받았어요 (테스트).',
+    'es': '¡Listo! Sumaste +{points} pts.',
+    'en': 'Done! You earned +{points} pts.',
+    'ko': '완료! +{points} pts를 받았어요.',
+  },
+  'pollDetail.watchAdGiftSender': {
+    'es': 'Recompensa del anuncio',
+    'en': 'Ad reward',
+    'ko': '광고 보상',
+  },
+  'pollDetail.watchAdGiftMessage': {
+    'es': 'Miraste un video y ganaste {points} puntos de regalo.',
+    'en': 'You watched a video and earned {points} gift points.',
+    'ko': '영상을 보고 {points} 포인트 선물을 받았어요.',
   },
   'pollDetail.watchAdFailed': {
     'es': 'No se pudo mostrar el anuncio. Intenta de nuevo.',

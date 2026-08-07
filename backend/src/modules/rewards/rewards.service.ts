@@ -1,15 +1,86 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { dailyRewardPointsMap } from './daily-rewards.config';
 import { DailyRewardsConfigService } from './daily-rewards-config.service';
+
+/** Puntos por video rewarded (debe coincidir con AdMobConfig.rewardedVideoPoints). */
+const AD_REWARD_POINTS = 5;
+/** Máximo de videos rewarded reclamables por día UTC. */
+const AD_REWARD_DAILY_LIMIT = 5;
 
 @Injectable()
 export class RewardsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dailyRewardsConfig: DailyRewardsConfigService,
+    private readonly redis: RedisService,
   ) {}
+
+  private adRewardKey(userId: bigint, day = new Date().toISOString().slice(0, 10)) {
+    return `rewards:ad:${userId.toString()}:${day}`;
+  }
+
+  private secondsUntilUtcMidnight() {
+    const now = Date.now();
+    const tomorrow = Date.UTC(
+      new Date(now).getUTCFullYear(),
+      new Date(now).getUTCMonth(),
+      new Date(now).getUTCDate() + 1,
+    );
+    return Math.max(60, Math.ceil((tomorrow - now) / 1000));
+  }
+
+  async getAdRewardStatus(userId: bigint) {
+    const raw = await this.redis.client.get(this.adRewardKey(userId));
+    const claimed = Math.min(AD_REWARD_DAILY_LIMIT, Math.max(0, Number(raw || 0) || 0));
+    return {
+      pointsPerClaim: AD_REWARD_POINTS,
+      dailyLimit: AD_REWARD_DAILY_LIMIT,
+      claimedToday: claimed,
+      remainingToday: Math.max(0, AD_REWARD_DAILY_LIMIT - claimed),
+    };
+  }
+
+  async claimAdReward(userId: bigint) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    const key = this.adRewardKey(userId);
+    const claimed = await this.redis.client.incr(key);
+    if (claimed === 1) {
+      await this.redis.client.expire(key, this.secondsUntilUtcMidnight());
+    }
+
+    if (claimed > AD_REWARD_DAILY_LIMIT) {
+      await this.redis.client.decr(key);
+      throw new BadRequestException('Ya alcanzaste el límite de videos de hoy.');
+    }
+
+    const pointsBefore = Number(user.points || 0);
+    try {
+      const updatedUser = await this.prisma.user.update({
+        where: { id: userId },
+        data: { points: { increment: AD_REWARD_POINTS } },
+      });
+
+      return serialize({
+        pointsAwarded: AD_REWARD_POINTS,
+        pointsBefore,
+        pointsAfter: Number(updatedUser.points || 0),
+        dailyLimit: AD_REWARD_DAILY_LIMIT,
+        claimedToday: claimed,
+        remainingToday: Math.max(0, AD_REWARD_DAILY_LIMIT - claimed),
+        user: updatedUser,
+      });
+    } catch (error) {
+      await this.redis.client.decr(key);
+      throw error;
+    }
+  }
 
   async claimDaily(userId: bigint) {
     const today = new Date().toISOString().slice(0, 10);
