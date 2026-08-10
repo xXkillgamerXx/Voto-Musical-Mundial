@@ -11,6 +11,7 @@ import AdminPollContestantsView from '../components/AdminPollContestantsView.vue
 import AdminPollFormView from '../components/AdminPollFormView.vue'
 import AdminPollMonitorView from '../components/AdminPollMonitorView.vue'
 import AdminPollsView from '../components/AdminPollsView.vue'
+import AdminNotificationCampaignsView from '../components/AdminNotificationCampaignsView.vue'
 import AdminPushNotificationsView from '../components/AdminPushNotificationsView.vue'
 import AdminPollRoundView from '../components/AdminPollRoundView.vue'
 import AdminPollWinnersView from '../components/AdminPollWinnersView.vue'
@@ -39,6 +40,7 @@ const artistEditId = computed(() => currentPath.replace('/admin/artistas/editar/
 const isUsersView = computed(() => currentPath === '/admin/usuarios')
 const isMissionsView = computed(() => currentPath === '/admin/misiones')
 const isPushNotificationsView = computed(() => currentPath === '/admin/notificaciones')
+const isNotificationCampaignsView = computed(() => currentPath === '/admin/notificaciones-programadas')
 const isModerationView = computed(() => currentPath === '/admin/reportes')
 const isContentReportsView = computed(() => currentPath === '/admin/denuncias')
 const isSettingsView = computed(() => currentPath === '/admin/ajustes')
@@ -103,6 +105,10 @@ const pageTitle = computed(() => {
     return 'Notificaciones Push'
   }
 
+  if (isNotificationCampaignsView.value) {
+    return 'Notificaciones programadas'
+  }
+
   if (isModerationView.value) {
     return 'Reportes / Moderación'
   }
@@ -155,6 +161,7 @@ const navItems = [
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
   { label: 'Misiones', href: '/admin/misiones', icon: 'fa-solid fa-bullseye' },
   { label: 'Notificaciones', href: '/admin/notificaciones', icon: 'fa-solid fa-bell' },
+  { label: 'Programadas', href: '/admin/notificaciones-programadas', icon: 'fa-solid fa-clock-rotate-left' },
   { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
   { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved' },
   { label: 'Denuncias', href: '/admin/denuncias', icon: 'fa-solid fa-flag' },
@@ -379,6 +386,7 @@ onMounted(() => {
           <AdminArtistsView v-else-if="isArtistsView" />
           <AdminMissionsView v-else-if="isMissionsView" />
           <AdminPushNotificationsView v-else-if="isPushNotificationsView" />
+          <AdminNotificationCampaignsView v-else-if="isNotificationCampaignsView" />
           <AdminModerationView v-else-if="isModerationView" />
           <AdminContentReportsView v-else-if="isContentReportsView" />
           <AdminUsersView v-else-if="isUsersView" />

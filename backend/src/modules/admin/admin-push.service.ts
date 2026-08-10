@@ -120,6 +120,131 @@ export class AdminPushService {
     });
   }
 
+  /** FCM rechaza multicast de más de 500 tokens por request. */
+  private static readonly FCM_BATCH = 500;
+
+  private chunk<T>(items: T[], size: number) {
+    const groups: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+      groups.push(items.slice(index, index + size));
+    }
+    return groups;
+  }
+
+  /** Recorre toda la tabla por cursor para no toparse con el tope de 500 del broadcast anterior. */
+  async collectAllTokens(platform = 'all') {
+    const where = platform && platform !== 'all' ? { platform } : {};
+    const rows: Array<{ token: string; userId: bigint }> = [];
+    let cursor: bigint | undefined;
+
+    for (;;) {
+      const page = await this.prisma.pushToken.findMany({
+        where,
+        take: 1000,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: 'asc' },
+        select: { id: true, token: true, userId: true },
+      });
+
+      if (!page.length) {
+        break;
+      }
+
+      rows.push(...page.map((row) => ({ token: row.token, userId: row.userId })));
+      cursor = page[page.length - 1].id;
+
+      if (page.length < 1000) {
+        break;
+      }
+    }
+
+    return rows;
+  }
+
+  private isDeadTokenError(code?: string) {
+    return (
+      code === 'messaging/registration-token-not-registered' ||
+      code === 'messaging/invalid-registration-token' ||
+      code === 'messaging/invalid-argument'
+    );
+  }
+
+  private async pruneDeadTokens(tokens: string[]) {
+    if (!tokens.length) {
+      return;
+    }
+
+    try {
+      const removed = await this.prisma.pushToken.deleteMany({ where: { token: { in: tokens } } });
+      this.logger.log(`Tokens FCM inválidos eliminados: ${removed.count}`);
+    } catch (error) {
+      this.logger.warn(`No se pudieron limpiar tokens inválidos: ${(error as Error).message}`);
+    }
+  }
+
+  async dispatch(
+    tokens: string[],
+    payload: { title: string; body: string; url: string; type: string; extraData?: Record<string, string> },
+  ) {
+    this.initFirebaseAdmin();
+
+    let sent = 0;
+    let failed = 0;
+    const errors: Array<{ token: string; code: string; message: string }> = [];
+    const deadTokens: string[] = [];
+
+    for (const batch of this.chunk(tokens, AdminPushService.FCM_BATCH)) {
+      const response = await getMessaging().sendEachForMulticast(
+        this.buildMulticastMessage(batch, payload),
+      );
+
+      this.logPushFailures(batch, response);
+      sent += response.successCount;
+      failed += response.failureCount;
+
+      response.responses.forEach((item, index) => {
+        if (item.success) {
+          return;
+        }
+
+        const token = batch[index];
+        const code = item.error?.code || 'unknown';
+
+        if (this.isDeadTokenError(code)) {
+          deadTokens.push(token);
+        }
+
+        if (errors.length < 25) {
+          errors.push({
+            token: `${token.slice(0, 18)}...${token.slice(-8)}`,
+            code,
+            message: item.error?.message || 'No se pudo enviar.',
+          });
+        }
+      });
+    }
+
+    await this.pruneDeadTokens(deadTokens);
+
+    return { sent, failed, total: tokens.length, errors };
+  }
+
+  async createInAppNotifications(userIds: string[], type: string, payload: Record<string, unknown>) {
+    const unique = [...new Set(userIds.filter(Boolean))];
+
+    for (const batch of this.chunk(unique, 1000)) {
+      await this.prisma.notification.createMany({
+        data: batch.map((userId) => ({
+          userId: BigInt(userId),
+          type,
+          payload: payload as never,
+        })),
+      });
+    }
+
+    return unique.length;
+  }
+
   async sendGiftToUser(
     userId: bigint | string,
     payload: { title: string; body: string; amount?: string },
@@ -246,11 +371,7 @@ export class AdminPushService {
     let tokenRows: Array<{ token: string; userId: bigint | null }> = [];
 
     if (payload.sendToAll) {
-      tokenRows = await this.prisma.pushToken.findMany({
-        take: 500,
-        orderBy: { updatedAt: 'desc' },
-        select: { token: true, userId: true },
-      });
+      tokenRows = await this.collectAllTokens('all');
     } else if (userIds.length) {
       tokenRows = await this.prisma.pushToken.findMany({
         where: { userId: { in: userIds.map((id) => BigInt(id)) } },
@@ -266,48 +387,35 @@ export class AdminPushService {
     }
 
     try {
-      this.initFirebaseAdmin();
-      const response = await getMessaging().sendEachForMulticast(
-        this.buildMulticastMessage(tokens, {
-          title,
-          body,
-          url,
-          type: 'admin_push',
-          extraData: {
-            ...(titleEn ? { titleEn } : {}),
-            ...(bodyEn ? { bodyEn } : {}),
-          },
-        }),
-      );
+      const result = await this.dispatch(tokens, {
+        title,
+        body,
+        url,
+        type: 'admin_push',
+        extraData: {
+          ...(titleEn ? { titleEn } : {}),
+          ...(bodyEn ? { bodyEn } : {}),
+        },
+      });
 
-      this.logPushFailures(tokens, response);
-      this.logger.log(`Push admin: ${response.successCount}/${tokens.length} enviados`);
+      this.logger.log(`Push admin: ${result.sent}/${result.total} enviados`);
 
-      const notifiedUserIds = [
-        ...new Set(tokenRows.map((row) => row.userId?.toString()).filter((value): value is string => Boolean(value))),
-      ];
-      if (notifiedUserIds.length) {
-        await this.prisma.notification.createMany({
-          data: notifiedUserIds.map((userId) => ({
-            userId: BigInt(userId),
-            type: 'admin_push',
-            payload: { title, titleEn, message: body, messageEn: bodyEn, body, bodyEn, url },
-          })),
-        });
-      }
+      const notifiedUserIds = tokenRows
+        .map((row) => row.userId?.toString())
+        .filter((value): value is string => Boolean(value));
+      await this.createInAppNotifications(notifiedUserIds, 'admin_push', {
+        title,
+        titleEn,
+        message: body,
+        messageEn: bodyEn,
+        body,
+        bodyEn,
+        url,
+      });
 
       return {
-        ok: response.failureCount === 0,
-        sent: response.successCount,
-        failed: response.failureCount,
-        total: tokens.length,
-        errors: response.responses
-          .map((item, index) => item.success ? null : ({
-            token: `${tokens[index].slice(0, 18)}...${tokens[index].slice(-8)}`,
-            code: item.error?.code || 'unknown',
-            message: item.error?.message || 'No se pudo enviar.',
-          }))
-          .filter(Boolean),
+        ok: result.failed === 0,
+        ...result,
       };
     } catch (error) {
       throw new InternalServerErrorException(
@@ -358,45 +466,28 @@ export class AdminPushService {
     const url = String(payload.url || `/artista/${artist.slug || artist.id.toString()}`).trim();
 
     try {
-      this.initFirebaseAdmin();
-      const response = await getMessaging().sendEachForMulticast(
-        this.buildMulticastMessage(tokens, {
-          title,
-          body,
-          url,
-          type: 'artist_push',
-          extraData: {
-            artistId: artist.id.toString(),
-          },
-        }),
-      );
-
-      this.logPushFailures(tokens, response);
-
-      const followerUserIds = [...new Set(followers.map((follower) => follower.userId.toString()))];
-      await this.prisma.notification.createMany({
-        data: followerUserIds.map((userId) => ({
-          userId: BigInt(userId),
-          type: 'artist_push',
-          payload: { title, message: body, url, artistId: artist.id.toString(), artistName: artist.name },
-        })),
+      const result = await this.dispatch(tokens, {
+        title,
+        body,
+        url,
+        type: 'artist_push',
+        extraData: {
+          artistId: artist.id.toString(),
+        },
       });
 
+      await this.createInAppNotifications(
+        followers.map((follower) => follower.userId.toString()),
+        'artist_push',
+        { title, message: body, url, artistId: artist.id.toString(), artistName: artist.name },
+      );
+
       return {
-        ok: response.failureCount === 0,
+        ok: result.failed === 0,
         artistId: artist.id.toString(),
         artistName: artist.name,
         followers: followers.length,
-        sent: response.successCount,
-        failed: response.failureCount,
-        total: tokens.length,
-        errors: response.responses
-          .map((item, index) => item.success ? null : ({
-            token: `${tokens[index].slice(0, 18)}...${tokens[index].slice(-8)}`,
-            code: item.error?.code || 'unknown',
-            message: item.error?.message || 'No se pudo enviar.',
-          }))
-          .filter(Boolean),
+        ...result,
       };
     } catch (error) {
       throw new InternalServerErrorException(

@@ -15,6 +15,7 @@ export const adminFormRequest = (path, options = {}) =>
   })
 
 export const getAdminDashboard = () => adminRequest('/dashboard')
+export const getAdminOverview = (days = 30) => adminRequest(`/overview?days=${days}`)
 export const getAdminMetrics = () => adminRequest('/metrics')
 export const getAdminUsers = ({
   page = 1,
@@ -108,6 +109,16 @@ export const sendAdminPush = (body) =>
   adminRequest('/push/send', { method: 'POST', body })
 export const sendAdminArtistPush = (artistId, body) =>
   adminRequest(`/push/artists/${encodeURIComponent(artistId)}/followers`, { method: 'POST', body })
+
+export const getAdminNotificationCampaigns = () => adminRequest('/notification-campaigns')
+export const createAdminNotificationCampaign = (body) =>
+  adminRequest('/notification-campaigns', { method: 'POST', body })
+export const updateAdminNotificationCampaign = (id, body) =>
+  adminRequest(`/notification-campaigns/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const deleteAdminNotificationCampaign = (id) =>
+  adminRequest(`/notification-campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export const sendAdminNotificationCampaignNow = (id) =>
+  adminRequest(`/notification-campaigns/${encodeURIComponent(id)}/send-now`, { method: 'POST', body: {} })
 
 export const getAdminMissions = () => adminRequest('/missions')
 export const createAdminMission = (body) => adminRequest('/missions', { method: 'POST', body })

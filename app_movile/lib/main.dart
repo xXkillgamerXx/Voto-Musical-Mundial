@@ -7,6 +7,7 @@ import 'core/auth/auth_session.dart';
 import 'core/cache/response_cache.dart';
 import 'core/i18n/app_locale.dart';
 import 'core/i18n/i18n_registry.dart';
+import 'core/navigation/app_deep_link.dart';
 import 'features/auth/data/auth_service.dart';
 import 'firebase_options.dart';
 
@@ -19,6 +20,7 @@ Future<void> main() async {
 
   initI18n();
   await AppLocale.instance.load();
+  await AppDeepLinkService.instance.startReferralCapture();
 
   final authSession = AuthSession();
   await authSession.load();

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 
+import '../referrals/referral_storage.dart';
+
 /// Escucha links HTTPS (App Links) y el scheme `vmm://` para abrir pantallas.
 class AppDeepLinkService {
   AppDeepLinkService._();
@@ -11,6 +13,7 @@ class AppDeepLinkService {
 
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _subscription;
+  StreamSubscription<Uri>? _referralSubscription;
   void Function(Uri uri)? _handler;
   Uri? _pending;
 
@@ -47,6 +50,27 @@ class AppDeepLinkService {
 
     _pending = null;
     handler(uri);
+  }
+
+  /// El invitado abre el link sin sesión, así que el código de referido se
+  /// captura aparte: el handler de navegación solo arranca después del login.
+  Future<void> startReferralCapture() async {
+    try {
+      final initial = await _appLinks.getInitialLink();
+      if (initial != null) {
+        await ReferralStorage.captureFromUri(initial);
+      }
+    } catch (error) {
+      debugPrint('AppDeepLink referral: $error');
+    }
+
+    await _referralSubscription?.cancel();
+    _referralSubscription = _appLinks.uriLinkStream.listen(
+      (uri) => unawaited(ReferralStorage.captureFromUri(uri)),
+      onError: (Object error) {
+        debugPrint('AppDeepLink referral stream: $error');
+      },
+    );
   }
 
   /// Entrega un pending guardado (p. ej. tras login).

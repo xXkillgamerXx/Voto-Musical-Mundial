@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/referrals/referral_storage.dart';
 import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
@@ -23,6 +24,8 @@ class _RegisterPageState extends State<RegisterPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _referralController = TextEditingController();
+  bool _referralFromLink = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _acceptedTerms = false;
@@ -51,6 +54,24 @@ class _RegisterPageState extends State<RegisterPage> {
   static const _totalSteps = 3;
 
   @override
+  void initState() {
+    super.initState();
+    _loadPendingReferral();
+  }
+
+  Future<void> _loadPendingReferral() async {
+    final code = await ReferralStorage.read();
+    if (!mounted || code == null || _referralController.text.trim().isNotEmpty) {
+      return;
+    }
+
+    setState(() {
+      _referralController.text = code;
+      _referralFromLink = true;
+    });
+  }
+
+  @override
   void dispose() {
     _usernameController.dispose();
     _firstNameController.dispose();
@@ -59,6 +80,7 @@ class _RegisterPageState extends State<RegisterPage> {
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _referralController.dispose();
     super.dispose();
   }
 
@@ -175,6 +197,7 @@ class _RegisterPageState extends State<RegisterPage> {
         password: _passwordController.text,
         username: _normalizedUsername,
         displayName: _fullName,
+        referralCode: ReferralStorage.normalize(_referralController.text),
         metadata: {
           'firstName': _firstNameController.text.trim(),
           'lastName': _lastNameController.text.trim(),
@@ -187,6 +210,8 @@ class _RegisterPageState extends State<RegisterPage> {
           'phoneInternational': phoneInternational,
         },
       );
+
+      await ReferralStorage.clear();
 
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -274,6 +299,8 @@ class _RegisterPageState extends State<RegisterPage> {
         usernameController: _usernameController,
         firstNameController: _firstNameController,
         lastNameController: _lastNameController,
+        referralController: _referralController,
+        referralFromLink: _referralFromLink,
         enabled: !_isLoading,
       ),
       2 => _ContactStep(
@@ -396,6 +423,8 @@ class _ProfileStep extends StatelessWidget {
     required this.usernameController,
     required this.firstNameController,
     required this.lastNameController,
+    required this.referralController,
+    required this.referralFromLink,
     required this.enabled,
     super.key,
   });
@@ -403,10 +432,14 @@ class _ProfileStep extends StatelessWidget {
   final TextEditingController usernameController;
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
+  final TextEditingController referralController;
+  final bool referralFromLink;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Column(
       key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -445,6 +478,49 @@ class _ProfileStep extends StatelessWidget {
             prefixIcon: const Icon(Icons.person),
           ),
         ),
+        const SizedBox(height: 18),
+        AuthFieldLabel(tr('auth.referralLabel')),
+        const SizedBox(height: 10),
+        TextField(
+          controller: referralController,
+          enabled: enabled,
+          textCapitalization: TextCapitalization.none,
+          decoration: InputDecoration(
+            labelText: tr('auth.referralHint'),
+            prefixIcon: const Icon(Icons.card_giftcard_outlined),
+          ),
+        ),
+        if (referralFromLink) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.celebration_outlined, size: 18, color: colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    trp('auth.referralDetected', {
+                      'code': referralController.text.toUpperCase(),
+                    }),
+                    style: TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }

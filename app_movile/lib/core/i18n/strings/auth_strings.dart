@@ -134,6 +134,21 @@ const Map<String, Map<String, String>> authStrings = {
   },
   'auth.lastNameLabel': {'es': 'Apellido', 'en': 'Last name', 'ko': '성'},
   'auth.lastNameHint': {'es': 'Tu apellido', 'en': 'Your last name', 'ko': '성'},
+  'auth.referralLabel': {
+    'es': 'Código de invitación (opcional)',
+    'en': 'Invite code (optional)',
+    'ko': '초대 코드 (선택 사항)',
+  },
+  'auth.referralHint': {
+    'es': 'Código de quien te invitó',
+    'en': 'Code of who invited you',
+    'ko': '초대한 사람의 코드',
+  },
+  'auth.referralDetected': {
+    'es': 'Te invitó {code}. Ambos ganan puntos extra al registrarte.',
+    'en': 'You were invited by {code}. You both earn extra points.',
+    'ko': '{code}님이 초대했습니다. 두 사람 모두 추가 포인트를 받습니다.',
+  },
   'auth.emailLabel': {'es': 'Correo', 'en': 'Email', 'ko': '이메일'},
   'auth.countryLabel': {
     'es': 'País donde vives',

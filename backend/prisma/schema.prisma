@@ -421,6 +421,29 @@ model ContentReport {
   @@map("content_reports")
 }
 
+model NotificationCampaign {
+  id              BigInt    @id @default(autoincrement())
+  title           String
+  titleEn         String?   @map("title_en")
+  body            String
+  bodyEn          String?   @map("body_en")
+  url             String    @default("/")
+  platform        String    @default("all")
+  status          String    @default("paused")
+  intervalMinutes Int       @default(1440) @map("interval_minutes")
+  maxSends        Int?      @map("max_sends")
+  sentCount       Int       @default(0) @map("sent_count")
+  lastSentAt      DateTime? @map("last_sent_at")
+  nextRunAt       DateTime? @map("next_run_at")
+  lastResult      Json      @default("{}") @map("last_result")
+  createdBy       String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, nextRunAt])
+  @@map("notification_campaigns")
+}
+
 model PushToken {
   id        BigInt   @id @default(autoincrement())
   userId    BigInt   @map("user_id")

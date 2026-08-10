@@ -11,6 +11,7 @@ import '../../../auth/data/auth_service.dart';
 import '../../../rewards/data/rewards_api.dart';
 import '../../data/mission.dart';
 import '../../data/missions_api.dart';
+import '../widgets/invite_friends_card.dart';
 import '../widgets/missions_section.dart';
 
 class MissionsPage extends StatefulWidget {
@@ -182,6 +183,7 @@ class _MissionsPageState extends State<MissionsPage> {
               const BannerAdWidget(
                 padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
               ),
+              InviteFriendsCard(authService: widget.authService),
               MissionsSection(
                 authService: widget.authService,
                 missions: snapshot.data!,

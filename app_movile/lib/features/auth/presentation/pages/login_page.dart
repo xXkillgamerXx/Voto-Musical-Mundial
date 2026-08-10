@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/referrals/referral_storage.dart';
 import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
@@ -67,7 +68,9 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await widget.authService.signInWithGoogle();
+      final referralCode = await ReferralStorage.read();
+      await widget.authService.signInWithGoogle(referralCode: referralCode);
+      await ReferralStorage.clear();
     } catch (error) {
       if (!mounted) return;
       setState(() => _errorMessage = AuthService.friendlyError(error));

@@ -1,5 +1,39 @@
 /// Cadenas de la sección Inicio (home) y recompensas mostradas en el inicio.
 const Map<String, Map<String, String>> homeStrings = {
+  // Invitar amigos (referidos)
+  'referral.title': {
+    'es': 'Invita y gana puntos',
+    'en': 'Invite and earn points',
+    'ko': '초대하고 포인트 받기',
+  },
+  'referral.subtitle': {
+    'es': 'Comparte tu enlace: ganas 50 puntos por cada amigo que se registre y ellos también.',
+    'en': 'Share your link: you earn 50 points for every friend who signs up, and so do they.',
+    'ko': '링크를 공유하세요. 친구가 가입할 때마다 두 사람 모두 50포인트를 받습니다.',
+  },
+  'referral.yourCode': {
+    'es': 'Tu código',
+    'en': 'Your code',
+    'ko': '내 코드',
+  },
+  'referral.copy': {'es': 'Copiar enlace', 'en': 'Copy link', 'ko': '링크 복사'},
+  'referral.share': {'es': 'Compartir', 'en': 'Share', 'ko': '공유하기'},
+  'referral.copied': {
+    'es': 'Enlace copiado.',
+    'en': 'Link copied.',
+    'ko': '링크가 복사되었습니다.',
+  },
+  'referral.shareText': {
+    'es': 'Vota por tus artistas favoritos en Music Mundial y gana puntos conmigo:',
+    'en': 'Vote for your favorite artists on Music Mundial and earn points with me:',
+    'ko': 'Music Mundial에서 좋아하는 아티스트에게 투표하고 함께 포인트를 받으세요:',
+  },
+  'referral.stats': {
+    'es': '{count} invitados · {points} puntos ganados',
+    'en': '{count} invited · {points} points earned',
+    'ko': '초대 {count}명 · {points}포인트 획득',
+  },
+
   // Estado general del inicio
   'home.artistFallback': {'es': 'Artista', 'en': 'Artist', 'ko': '아티스트'},
   'home.loadError': {
