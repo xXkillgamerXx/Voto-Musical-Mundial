@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Music Mundial Certificate</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #050213;
+        font-family: Montserrat, system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      /* Dentro del modal (iframe): que ocupe todo el ancho sin centrado raro */
+      html.embedded,
+      html.embedded body {
+        height: auto;
+        min-height: 0;
+        background: transparent;
+      }
+      html.embedded body {
+        display: block;
+      }
+      .certificate {
+        position: relative;
+        width: 100%;
+        max-width: 520px;
+        line-height: 0;
+        overflow: hidden;
+        container-type: inline-size;
+        container-name: certificate;
+      }
+      html.embedded .certificate {
+        max-width: none;
+      }
+      .certificate img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .name,
+      .group,
+      .date {
+        position: absolute;
+        text-align: center;
+        margin: 0;
+        pointer-events: none;
+        text-transform: uppercase;
+        line-height: 1;
+      }
+      /* Escala con el ancho del certificado (igual en modal e impresión) */
+      .name {
+        left: 50%;
+        top: 33.5%;
+        width: 78%;
+        transform: translateX(-50%);
+        font-size: clamp(1.35rem, 9.2cqw, 3rem);
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        line-height: 0.95;
+        background: linear-gradient(180deg, #ffffff 0%, #b789f4 52%, #9889fb 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .group {
+        left: 50%;
+        top: 41.2%;
+        width: 78%;
+        transform: translateX(-50%);
+        font-size: clamp(0.85rem, 4.5cqw, 1.45rem);
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        background: linear-gradient(180deg, #a45de0 0%, #7953ca 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      /* Línea DATE abajo derecha */
+      .date {
+        left: 74%;
+        top: 81%;
+        width: 28%;
+        transform: translateX(-50%);
+        font-size: clamp(0.65rem, 2.8cqw, 0.92rem);
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="certificate" aria-label="Music Mundial Certificate">
+      <img src="/certificate-bg.png" alt="" width="819" height="1024" />
+      <p id="name" class="name">JUNGKOOK</p>
+      <p id="group" class="group">BTS</p>
+      <p id="date" class="date">AGOSTO 2026</p>
+    </div>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const setText = (id, value, fallback) => {
+        const el = document.getElementById(id);
+        const text = String(value || fallback || "").trim();
+        el.textContent = text ? text.toUpperCase() : "";
+        el.style.display = text ? "block" : "none";
+      };
+      const lang = params.get("lang") === "en" ? "en" : "es";
+      const fallbackDate = new Intl.DateTimeFormat(lang, {
+        month: "long",
+        year: "numeric",
+      })
+        .formatToParts(new Date())
+        .filter((part) => part.type === "month" || part.type === "year")
+        .map((part) => part.value)
+        .join(" ");
+      document.documentElement.lang = lang;
+      if (window.self !== window.top) {
+        document.documentElement.classList.add("embedded");
+      }
+      setText("name", params.get("name"), "JUNGKOOK");
+      setText("group", params.get("group"), "BTS");
+      setText("date", params.get("date"), fallbackDate);
+    </script>
+  </body>
+</html>

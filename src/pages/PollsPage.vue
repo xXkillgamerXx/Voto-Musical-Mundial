@@ -10,7 +10,9 @@ const { locale } = useI18n();
 const polls = ref([]);
 const isLoading = ref(true);
 const errorMessage = ref("");
-const selectedCategoryId = ref(new URLSearchParams(window.location.search).get("categoria") || "");
+const readCategoryFromUrl = () =>
+  new URLSearchParams(window.location.search).get("categoria") || "";
+const selectedCategoryId = ref(readCategoryFromUrl());
 let unsubscribePolls = null;
 
 const pollUrl = (poll) => buildPollUrl(poll, locale.value);
@@ -45,13 +47,29 @@ const formatDate = (value) => {
   }).format(date);
 };
 
+const pollMatchesCategory = (poll, categoryId) => {
+  if (!categoryId) return true;
+  const selected = String(categoryId).trim();
+  if (!selected) return true;
+
+  const id = String(poll?.categoryId || poll?.category?.id || "").trim();
+  if (id && id === selected) return true;
+
+  const name = String(poll?.categoryName || poll?.category?.name || "").trim();
+  if (name && (name === selected || name.toLowerCase() === selected.toLowerCase())) {
+    return true;
+  }
+
+  return false;
+};
+
 const visiblePolls = computed(() => {
   locale.value
 
   return polls.value
     .filter((poll) =>
       ["live", "selecting_winners", "closed"].includes(poll.status) &&
-      (!selectedCategoryId.value || poll.categoryId === selectedCategoryId.value),
+      pollMatchesCategory(poll, selectedCategoryId.value),
     )
     .map((poll) => applyPollLocale(poll, locale.value))
 });
@@ -61,8 +79,13 @@ const selectedCategoryName = computed(() => {
     return "";
   }
 
-  const match = polls.value.find((poll) => poll.categoryId === selectedCategoryId.value);
-  return applyPollLocale(match, locale.value)?.categoryName || "";
+  const match = polls.value.find((poll) =>
+    pollMatchesCategory(poll, selectedCategoryId.value),
+  );
+  if (!match) {
+    return selectedCategoryId.value;
+  }
+  return applyPollLocale(match, locale.value)?.categoryName || selectedCategoryId.value;
 });
 
 const openPolls = computed(() =>
@@ -75,9 +98,14 @@ const closedPolls = computed(() =>
   visiblePolls.value.filter((poll) => poll.status === "closed"),
 );
 
+const syncCategoryFromUrl = () => {
+  selectedCategoryId.value = readCategoryFromUrl();
+};
+
 const loadPolls = () => {
   isLoading.value = true;
   errorMessage.value = "";
+  syncCategoryFromUrl();
 
   unsubscribePolls = subscribePollsCached(
     null,
@@ -92,10 +120,14 @@ const loadPolls = () => {
   );
 };
 
-onMounted(loadPolls);
+onMounted(() => {
+  loadPolls();
+  window.addEventListener("popstate", syncCategoryFromUrl);
+});
 
 onUnmounted(() => {
   unsubscribePolls?.();
+  window.removeEventListener("popstate", syncCategoryFromUrl);
 });
 </script>
 
@@ -125,17 +157,17 @@ onUnmounted(() => {
     >
       <div>
         <p class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-200">
-          Categoria seleccionada
+          {{ $t("polls.list.categorySelected") }}
         </p>
         <h2 class="mt-1 text-xl font-black text-white">
-          {{ selectedCategoryName || "Votaciones relacionadas" }}
+          {{ selectedCategoryName || $t("polls.list.relatedPolls") }}
         </h2>
       </div>
       <a
         :href="pollsHref"
         class="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10 hover:text-white"
       >
-        Ver todas
+        {{ $t("polls.list.viewAll") }}
       </a>
     </div>
 
@@ -219,6 +251,24 @@ onUnmounted(() => {
             </div>
           </article>
         </div>
+
+        <article
+          v-else-if="selectedCategoryId"
+          class="rounded-3xl border border-fuchsia-300/20 bg-fuchsia-400/10 p-6 shadow-xl shadow-fuchsia-950/10"
+        >
+          <h3 class="text-xl font-black text-white">
+            {{ $t("polls.list.noCategoryTitle") }}
+          </h3>
+          <p class="mt-2 text-sm leading-6 text-slate-300">
+            {{ $t("polls.list.noCategoryDescription") }}
+          </p>
+          <a
+            :href="pollsHref"
+            class="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10 hover:text-white"
+          >
+            {{ $t("polls.list.viewAll") }}
+          </a>
+        </article>
 
         <article
           v-else
@@ -388,11 +438,26 @@ onUnmounted(() => {
             <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
           </div>
           <h3 class="relative mt-5 text-xl font-black uppercase text-white">
-            Historial en preparacion
+            {{
+              selectedCategoryId
+                ? $t("polls.list.noCategoryTitle")
+                : $t("polls.list.noClosed")
+            }}
           </h3>
           <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
-            Cuando finalice una votacion, sus resultados quedaran guardados aqui para consultar ganadores y posiciones.
+            {{
+              selectedCategoryId
+                ? $t("polls.list.noCategoryDescription")
+                : $t("polls.list.noClosed")
+            }}
           </p>
+          <a
+            v-if="selectedCategoryId"
+            :href="pollsHref"
+            class="relative mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10 hover:text-white"
+          >
+            {{ $t("polls.list.viewAll") }}
+          </a>
         </div>
       </section>
     </template>

@@ -144,7 +144,12 @@ class _ArtistsPageState extends State<ArtistsPage> {
                         },
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+              const SliverToBoxAdapter(
+                child: BannerAdWidget(
+                  padding: EdgeInsets.fromLTRB(0, 12, 0, 4),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 12)),
               if (artists.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,

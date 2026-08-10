@@ -2,6 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getAppDownloadConfig } from '../services/api/appDownloadApi'
+import {
+  getGooglePlayOpenUrl,
+  normalizePlayStoreWebUrl,
+} from '../utils/openGooglePlay'
 
 const DEFAULT_PLAY_URL =
   'https://play.google.com/store/apps/details?id=vote.musicmundial.com'
@@ -9,6 +13,10 @@ const DEFAULT_PLAY_URL =
 const { locale } = useI18n()
 const playStoreUrl = ref(DEFAULT_PLAY_URL)
 const showSection = ref(true)
+const firstOpenRewardEnabled = ref(true)
+const firstOpenRewardPoints = ref(15)
+
+const playOpenUrl = computed(() => getGooglePlayOpenUrl(playStoreUrl.value))
 
 const playBadgeSrc = computed(() =>
   String(locale.value || 'es').toLowerCase().startsWith('en')
@@ -27,7 +35,12 @@ onMounted(async () => {
     }
 
     const url = String(payload.playStoreUrl || '').trim()
-    if (url) playStoreUrl.value = url
+    if (url) playStoreUrl.value = normalizePlayStoreWebUrl(url)
+    firstOpenRewardEnabled.value = payload.firstOpenRewardEnabled !== false
+    firstOpenRewardPoints.value = Math.max(
+      0,
+      Math.floor(Number(payload.firstOpenRewardPoints ?? 15)),
+    )
     showSection.value = true
   } catch {
     showSection.value = true
@@ -87,6 +100,13 @@ onMounted(async () => {
           </p>
 
           <div class="mt-5 flex flex-wrap justify-center gap-2">
+            <span
+              v-if="firstOpenRewardEnabled && firstOpenRewardPoints > 0"
+              class="download-app__chip download-app__chip--bonus"
+            >
+              <i class="fa-solid fa-gift text-amber-300" aria-hidden="true"></i>
+              +{{ firstOpenRewardPoints }} pts
+            </span>
             <span class="download-app__chip">
               <i class="fa-solid fa-bolt text-amber-300" aria-hidden="true"></i>
               {{ $t('home.downloadApp.feature1') }}
@@ -102,9 +122,7 @@ onMounted(async () => {
           </div>
 
           <a
-            :href="playStoreUrl"
-            target="_blank"
-            rel="noreferrer"
+            :href="playOpenUrl"
             class="download-app__badge group mt-7 inline-flex focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300/70"
             :aria-label="$t('home.downloadApp.ctaAria')"
           >
@@ -205,6 +223,12 @@ onMounted(async () => {
   letter-spacing: 0.02em;
   color: rgba(248, 250, 252, 0.95);
   backdrop-filter: blur(8px);
+}
+
+.download-app__chip--bonus {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fef3c7;
 }
 
 .download-app__badge {

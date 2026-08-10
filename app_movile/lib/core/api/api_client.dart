@@ -76,6 +76,7 @@ class ApiClient {
       if (authToken != null && authToken.isNotEmpty) {
         req.headers['Authorization'] = 'Bearer $authToken';
       }
+      req.headers['X-Vmm-Client'] = 'mobile-app';
       req.files.add(
         await http.MultipartFile.fromPath(
           field,
@@ -194,6 +195,7 @@ class ApiClient {
     final uri = Uri.parse('$baseUrl$path');
     final headers = <String, String>{
       'Content-Type': 'application/json',
+      'X-Vmm-Client': 'mobile-app',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
 

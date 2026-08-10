@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { AppDownloadConfigService } from '../settings/app-download-config.service';
 import { dailyRewardPointsMap } from './daily-rewards.config';
 import { DailyRewardsConfigService } from './daily-rewards-config.service';
 
@@ -10,11 +11,14 @@ const AD_REWARD_POINTS = 5;
 /** Máximo de videos rewarded reclamables por día UTC. */
 const AD_REWARD_DAILY_LIMIT = 5;
 
+const APP_FIRST_OPEN_META_KEY = 'appFirstOpenRewardClaimedAt';
+
 @Injectable()
 export class RewardsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dailyRewardsConfig: DailyRewardsConfigService,
+    private readonly appDownloadConfig: AppDownloadConfigService,
     private readonly redis: RedisService,
   ) {}
 
@@ -80,6 +84,72 @@ export class RewardsService {
       await this.redis.client.decr(key);
       throw error;
     }
+  }
+
+  async claimAppFirstOpenReward(userId: bigint) {
+    const config = await this.appDownloadConfig.getConfig();
+    if (!config.firstOpenRewardEnabled || config.firstOpenRewardPoints <= 0) {
+      throw new BadRequestException('El bonus de la app no está activo.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    const metadata =
+      user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)
+        ? { ...(user.metadata as Record<string, unknown>) }
+        : {};
+
+    if (metadata[APP_FIRST_OPEN_META_KEY]) {
+      return serialize({
+        alreadyClaimed: true,
+        pointsAwarded: 0,
+        pointsBefore: Number(user.points || 0),
+        pointsAfter: Number(user.points || 0),
+        user,
+      });
+    }
+
+    const points = config.firstOpenRewardPoints;
+    const pointsBefore = Number(user.points || 0);
+    const claimedAt = new Date().toISOString();
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        points: { increment: points },
+        metadata: {
+          ...metadata,
+          [APP_FIRST_OPEN_META_KEY]: claimedAt,
+        } as any,
+      },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId,
+        type: 'app_first_open_reward',
+        payload: {
+          title: 'Bienvenido a la app',
+          message: `Entraste a la app por primera vez y ganaste ${points} puntos.`,
+          amount: points,
+          pointsBefore,
+          pointsAfter: Number(updatedUser.points || 0),
+          senderName: 'Music Mundial App',
+          url: '/notificaciones',
+        },
+      },
+    });
+
+    return serialize({
+      alreadyClaimed: false,
+      pointsAwarded: points,
+      pointsBefore,
+      pointsAfter: Number(updatedUser.points || 0),
+      user: updatedUser,
+    });
   }
 
   async claimDaily(userId: bigint) {

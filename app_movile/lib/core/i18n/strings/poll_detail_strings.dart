@@ -206,6 +206,46 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': 'Share this poll with your friends',
     'ko': '친구들과 이 투표를 공유하세요',
   },
+  'pollDetail.shareBannerTitle': {
+    'es': 'Comparte esta votación',
+    'en': 'Share this poll',
+    'ko': '이 투표 공유하기',
+  },
+  'pollDetail.shareBannerHint': {
+    'es': 'Resultados, actualizaciones y más apoyo para tu artista',
+    'en': 'Results, updates and more support for your artist',
+    'ko': '결과, 업데이트, 그리고 아티스트를 위한 더 많은 지지',
+  },
+  'pollDetail.shareBannerCta': {
+    'es': 'Compartir',
+    'en': 'Share',
+    'ko': '공유',
+  },
+  'pollDetail.followInstagramTitle': {
+    'es': 'Sigue a Music Mundial',
+    'en': 'Follow Music Mundial',
+    'ko': 'Music Mundial 팔로우',
+  },
+  'pollDetail.followInstagramHint': {
+    'es': 'Actualizaciones de votaciones, resultados y contenido exclusivo',
+    'en': 'Poll updates, results and exclusive content',
+    'ko': '투표 업데이트, 결과와 독점 콘텐츠',
+  },
+  'pollDetail.followInstagramCta': {
+    'es': 'Seguir',
+    'en': 'Follow',
+    'ko': '팔로우',
+  },
+  'pollDetail.followUsTitle': {
+    'es': 'Sigue a Music Mundial',
+    'en': 'Follow Music Mundial',
+    'ko': 'Music Mundial 팔로우',
+  },
+  'pollDetail.followUsSubtitle': {
+    'es': 'Nuevas votaciones, resultados en vivo y ganadores — primero en tus redes.',
+    'en': 'New polls, live results and winners — first on your feed.',
+    'ko': '새 투표, 실시간 결과와 우승자 — 피드에서 가장 먼저.',
+  },
   'pollDetail.liveVoting': {
     'es': 'VOTACIÓN EN VIVO',
     'en': 'LIVE VOTING',
@@ -457,5 +497,147 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'es': 'ESCRIBIR',
     'en': 'WRITE',
     'ko': '작성',
+  },
+
+  // Resultado final / ganadores
+  'pollDetail.finalTab': {
+    'es': 'Final',
+    'en': 'Final',
+    'ko': '결승',
+  },
+  'pollDetail.winnerTab': {
+    'es': 'GANADOR',
+    'en': 'WINNER',
+    'ko': '우승',
+  },
+  'pollDetail.finalResultEyebrow': {
+    'es': 'RESULTADO FINAL',
+    'en': 'FINAL RESULT',
+    'ko': '최종 결과',
+  },
+  'pollDetail.finalResultTitle': {
+    'es': 'Ganador',
+    'en': 'Winner',
+    'ko': '우승자',
+  },
+  'pollDetail.finalResultDescription': {
+    'es': 'La votación terminó. Este es el artista ganador.',
+    'en': 'The poll has ended. This is the winning artist.',
+    'ko': '투표가 종료되었습니다. 우승 아티스트입니다.',
+  },
+  'pollDetail.winningArtist': {
+    'es': 'ARTISTA GANADOR',
+    'en': 'WINNING ARTIST',
+    'ko': '우승 아티스트',
+  },
+  'pollDetail.wonWith': {
+    'es': 'GANÓ CON',
+    'en': 'WON WITH',
+    'ko': '득표',
+  },
+  'pollDetail.percentage': {
+    'es': 'PORCENTAJE',
+    'en': 'PERCENTAGE',
+    'ko': '비율',
+  },
+  'pollDetail.winnerBadge': {
+    'es': 'Ganador #{rank}',
+    'en': 'Winner #{rank}',
+    'ko': '우승 #{rank}',
+  },
+  'pollDetail.didNotWin': {
+    'es': 'No ganó',
+    'en': 'Did not win',
+    'ko': '탈락',
+  },
+  'pollDetail.viewHallOfFame': {
+    'es': 'Ver Salón de la fama',
+    'en': 'View Hall of Fame',
+    'ko': '명예의 전당 보기',
+  },
+  'pollDetail.viewCertificate': {
+    'es': 'Ver certificado',
+    'en': 'View certificate',
+    'ko': '인증서 보기',
+  },
+  'pollDetail.certificateEyebrow': {
+    'es': 'Certificado oficial',
+    'en': 'Official certificate',
+    'ko': '공식 인증서',
+  },
+  'pollDetail.certificateTitle': {
+    'es': 'Certificado de ganador',
+    'en': 'Winner certificate',
+    'ko': '우승 인증서',
+  },
+  'pollDetail.certificateDownload': {
+    'es': 'Descargar',
+    'en': 'Download',
+    'ko': '다운로드',
+  },
+  'pollDetail.certificateShare': {
+    'es': 'Compartir',
+    'en': 'Share',
+    'ko': '공유',
+  },
+  'pollDetail.certificateSaved': {
+    'es': 'Certificado guardado en tu galería.',
+    'en': 'Certificate saved to your gallery.',
+    'ko': '인증서가 갤러리에 저장되었습니다.',
+  },
+  'pollDetail.certificateDownloadError': {
+    'es': 'No se pudo descargar el certificado.',
+    'en': 'Could not download the certificate.',
+    'ko': '인증서를 다운로드하지 못했습니다.',
+  },
+  'pollDetail.certificateShareError': {
+    'es': 'No se pudo compartir la imagen del certificado.',
+    'en': 'Could not share the certificate image.',
+    'ko': '인증서 이미지를 공유하지 못했습니다.',
+  },
+  'pollDetail.shareWinner': {
+    'es': 'Compartir ganador',
+    'en': 'Share winner',
+    'ko': '우승자 공유',
+  },
+  'pollDetail.shareWinnerText': {
+    'es': 'El ganador final es {name}.',
+    'en': 'The final winner is {name}.',
+    'ko': '최종 우승자는 {name}입니다.',
+  },
+  'pollDetail.pollFinished': {
+    'es': 'VOTACIÓN FINALIZADA',
+    'en': 'POLL FINISHED',
+    'ko': '투표 종료',
+  },
+  'pollDetail.winnersPending': {
+    'es': 'Ganadores pendientes',
+    'en': 'Winners pending',
+    'ko': '우승자 대기 중',
+  },
+  'pollDetail.winnersPendingDescription': {
+    'es': 'El equipo todavía no publicó los ganadores finales.',
+    'en': 'The team has not published the final winners yet.',
+    'ko': '아직 최종 우승자가 공개되지 않았습니다.',
+  },
+  'pollDetail.wonBy': {
+    'es': 'Ganó: {name}',
+    'en': 'Won by: {name}',
+    'ko': '우승: {name}',
+  },
+  'pollDetail.finalPlaces': {
+    'es': 'Lugares finales',
+    'en': 'Final places',
+    'ko': '최종 순위',
+  },
+  'pollDetail.secondPlace': {
+    'es': '2.º lugar',
+    'en': '2nd place',
+    'ko': '2위',
+  },
+  'pollDetail.thirdPlace': {
+    'es': '3.º lugar',
+    'en': '3rd place',
+    'ko': '3위',
   },
 };

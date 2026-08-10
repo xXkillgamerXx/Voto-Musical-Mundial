@@ -137,6 +137,15 @@ class RewardsApi {
     );
     return AdRewardClaimResult.fromJson(payload as Map<String, dynamic>);
   }
+
+  Future<AppFirstOpenClaimResult> claimAppFirstOpenReward() async {
+    final payload = await _client.request(
+      '/rewards/app-first-open-claim',
+      method: 'POST',
+      token: _client.accessToken,
+    );
+    return AppFirstOpenClaimResult.fromJson(payload as Map<String, dynamic>);
+  }
 }
 
 class AdRewardStatus {
@@ -187,6 +196,35 @@ class AdRewardClaimResult {
       pointsAfter: _toInt(json['pointsAfter']),
       claimedToday: _toInt(json['claimedToday']),
       remainingToday: _toInt(json['remainingToday']),
+      userPoints: user is Map<String, dynamic>
+          ? _toInt(user['points'], fallback: _toInt(json['pointsAfter']))
+          : _toInt(json['pointsAfter']),
+    );
+  }
+}
+
+class AppFirstOpenClaimResult {
+  const AppFirstOpenClaimResult({
+    required this.alreadyClaimed,
+    required this.pointsAwarded,
+    required this.pointsBefore,
+    required this.pointsAfter,
+    required this.userPoints,
+  });
+
+  final bool alreadyClaimed;
+  final int pointsAwarded;
+  final int pointsBefore;
+  final int pointsAfter;
+  final int userPoints;
+
+  factory AppFirstOpenClaimResult.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    return AppFirstOpenClaimResult(
+      alreadyClaimed: json['alreadyClaimed'] == true,
+      pointsAwarded: _toInt(json['pointsAwarded']),
+      pointsBefore: _toInt(json['pointsBefore']),
+      pointsAfter: _toInt(json['pointsAfter']),
       userPoints: user is Map<String, dynamic>
           ? _toInt(user['points'], fallback: _toInt(json['pointsAfter']))
           : _toInt(json['pointsAfter']),

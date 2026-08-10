@@ -22,17 +22,17 @@ class AdMobConfig {
   /// Puntos al completar un video rewarded (UI de regalo).
   static const int rewardedVideoPoints = 5;
 
-  /// En lista estándar, inserta un banner cada N artistas.
-  static const int bannerEveryNContestants = 4;
+  /// En lista estándar: 0 = un solo banner fijo en la vista (no en el feed).
+  static const int bannerEveryNContestants = 0;
 
-  /// En rondas versus, inserta un banner cada N duelos.
-  static const int bannerEveryNVersus = 2;
+  /// En rondas versus: 0 = sin banners repetidos en el feed.
+  static const int bannerEveryNVersus = 0;
 
-  /// En Artistas: banner cada N cards.
-  static const int bannerEveryNArtists = 4;
+  /// En Artistas: 0 = un banner por pantalla (no cada N cards).
+  static const int bannerEveryNArtists = 0;
 
-  /// En Votaciones: banner cada N poll cards.
-  static const int bannerEveryNPolls = 4;
+  /// En Votaciones: 0 = un banner por pantalla.
+  static const int bannerEveryNPolls = 0;
 
   /// En Artistas: anuncio cuadrado (300x250) cada N cards.
   static const int squareEveryNArtists = 4;
@@ -65,7 +65,7 @@ class AdMobConfig {
 
   // Ad units reales (Android). iOS pendiente.
   static const String prodAndroidBannerId =
-      'ca-app-pub-6893073726792422/8526516377';
+      'ca-app-pub-6893073726792422/2624356965';
   static const String prodIosBannerId = '';
   static const String prodAndroidInterstitialId =
       'ca-app-pub-6893073726792422/5965987556';

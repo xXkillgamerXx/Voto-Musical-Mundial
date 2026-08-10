@@ -1071,7 +1071,16 @@ export class AdminController {
   }
 
   @Patch('settings/app-download')
-  updateAppDownloadSettings(@Body() body: { enabled?: boolean; playStoreUrl?: string }) {
+  updateAppDownloadSettings(
+    @Body()
+    body: {
+      enabled?: boolean;
+      playStoreUrl?: string;
+      firstOpenRewardEnabled?: boolean;
+      firstOpenRewardPoints?: number;
+      androidEntryMode?: 'off' | 'redirect' | 'modal';
+    },
+  ) {
     return this.appDownloadConfig.updateConfig(body || {});
   }
 

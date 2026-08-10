@@ -239,6 +239,16 @@ const Map<String, Map<String, String>> homeStrings = {
     'en': 'VIEW CATEGORY',
     'ko': '카테고리 보기',
   },
+  'home.categoryPollSingular': {
+    'es': '1 votación',
+    'en': '1 poll',
+    'ko': '투표 1개',
+  },
+  'home.categoryPollPlural': {
+    'es': '{count} votaciones',
+    'en': '{count} polls',
+    'ko': '투표 {count}개',
+  },
 
   // Actividad en tiempo real
   'home.realTime': {'es': 'EN TIEMPO REAL', 'en': 'IN REAL TIME', 'ko': '실시간'},

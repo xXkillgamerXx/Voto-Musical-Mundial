@@ -26,11 +26,14 @@ const shareBoost = ref({
   enabled: true,
   multiplier: 2,
   durationMinutes: 10,
-  oncePerDay: true,
+  oncePerDay: false,
 })
 const appDownload = ref({
   enabled: true,
   playStoreUrl: DEFAULT_PLAY_URL,
+  firstOpenRewardEnabled: true,
+  firstOpenRewardPoints: 15,
+  androidEntryMode: 'redirect',
 })
 const isLoading = ref(true)
 const isSaving = ref(false)
@@ -67,11 +70,21 @@ const loadSettings = async () => {
       enabled: boostPayload?.enabled !== false,
       multiplier: Math.max(2, Number(boostPayload?.multiplier || 2)),
       durationMinutes: Math.max(1, Number(boostPayload?.durationMinutes || 10)),
-      oncePerDay: boostPayload?.oncePerDay !== false,
+      oncePerDay: boostPayload?.oncePerDay === true,
     }
     appDownload.value = {
       enabled: downloadPayload?.enabled !== false,
       playStoreUrl: String(downloadPayload?.playStoreUrl || DEFAULT_PLAY_URL).trim() || DEFAULT_PLAY_URL,
+      firstOpenRewardEnabled: downloadPayload?.firstOpenRewardEnabled !== false,
+      firstOpenRewardPoints: Math.max(
+        0,
+        Math.floor(Number(downloadPayload?.firstOpenRewardPoints ?? 15)),
+      ),
+      androidEntryMode: ['off', 'redirect', 'modal'].includes(
+        String(downloadPayload?.androidEntryMode || ''),
+      )
+        ? String(downloadPayload.androidEntryMode)
+        : 'redirect',
     }
   } catch (error) {
     errorMessage.value = error?.message || 'No se pudo cargar la configuracion de recompensas.'
@@ -127,7 +140,7 @@ const saveShareBoost = async () => {
       enabled: payload?.enabled !== false,
       multiplier: Math.max(2, Number(payload?.multiplier || 2)),
       durationMinutes: Math.max(1, Number(payload?.durationMinutes || 10)),
-      oncePerDay: payload?.oncePerDay !== false,
+      oncePerDay: payload?.oncePerDay === true,
     }
     shareBoostSuccess.value = 'Boost por compartir guardado correctamente.'
   } catch (error) {
@@ -146,10 +159,26 @@ const saveAppDownload = async () => {
     const payload = await updateAdminAppDownload({
       enabled: Boolean(appDownload.value.enabled),
       playStoreUrl: String(appDownload.value.playStoreUrl || '').trim(),
+      firstOpenRewardEnabled: Boolean(appDownload.value.firstOpenRewardEnabled),
+      firstOpenRewardPoints: Math.max(
+        0,
+        Math.floor(Number(appDownload.value.firstOpenRewardPoints || 0)),
+      ),
+      androidEntryMode: appDownload.value.androidEntryMode,
     })
     appDownload.value = {
       enabled: payload?.enabled !== false,
       playStoreUrl: String(payload?.playStoreUrl || DEFAULT_PLAY_URL).trim() || DEFAULT_PLAY_URL,
+      firstOpenRewardEnabled: payload?.firstOpenRewardEnabled !== false,
+      firstOpenRewardPoints: Math.max(
+        0,
+        Math.floor(Number(payload?.firstOpenRewardPoints ?? 15)),
+      ),
+      androidEntryMode: ['off', 'redirect', 'modal'].includes(
+        String(payload?.androidEntryMode || ''),
+      )
+        ? String(payload.androidEntryMode)
+        : 'redirect',
     }
     appDownloadSuccess.value = 'Seccion de descarga de la app guardada correctamente.'
   } catch (error) {
@@ -258,7 +287,9 @@ onMounted(loadSettings)
       </h2>
       <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
         Si un fan comparte la votacion en redes (Facebook, WhatsApp, Telegram, X, Startly u otras),
-        todos sus votos valen x{{ shareBoost.multiplier }} durante el tiempo que configures aqui.
+        todos sus votos valen x{{ shareBoost.multiplier }} durante {{ shareBoost.durationMinutes }} minutos.
+        Cuando se acaba ese tiempo, puede volver a activarlo compartiendo otra vez
+        (salvo que tengas “1 vez al dia” activo).
       </p>
 
       <div v-if="!isLoading" class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -292,6 +323,10 @@ onMounted(loadSettings)
           >
             {{ shareBoost.oncePerDay ? 'Si, solo 1/dia' : 'Sin limite diario' }}
           </button>
+          <p class="mt-2 text-[11px] leading-4 text-slate-500">
+            Con “Sin limite diario”, al terminar los {{ shareBoost.durationMinutes }} min puede
+            volver a activar el x{{ shareBoost.multiplier }} compartiendo otra vez.
+          </p>
         </label>
 
         <label class="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
@@ -357,8 +392,8 @@ onMounted(loadSettings)
         Descargar en Google Play
       </h2>
       <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-        Controla la seccion de descarga en la home. Pega aqui el enlace de tu ficha en Google Play
-        cuando este publicada. Si la desactivas, la seccion se oculta en la web.
+        Controla la seccion de descarga en la home, el bonus de puntos al abrir la app
+        por primera vez, y que pasa cuando alguien entra a la web desde Android.
       </p>
 
       <div v-if="!isLoading" class="mt-5 grid gap-4 lg:grid-cols-[220px_1fr]">
@@ -390,6 +425,84 @@ onMounted(loadSettings)
           />
           <p class="mt-2 text-xs leading-5 text-slate-500">
             Ejemplo: https://play.google.com/store/apps/details?id=vote.musicmundial.com
+          </p>
+        </label>
+      </div>
+
+      <div v-if="!isLoading" class="mt-4 rounded-3xl border border-white/10 bg-slate-950/45 p-4">
+        <span class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+          Al entrar desde Android
+        </span>
+        <div class="mt-3 grid gap-2 sm:grid-cols-3">
+          <button
+            type="button"
+            class="min-h-12 rounded-2xl border px-3 text-sm font-black uppercase transition"
+            :class="appDownload.androidEntryMode === 'off'
+              ? 'border-slate-300/30 bg-white/10 text-white'
+              : 'border-white/10 bg-white/5 text-slate-400'"
+            @click="appDownload.androidEntryMode = 'off'"
+          >
+            No salir
+          </button>
+          <button
+            type="button"
+            class="min-h-12 rounded-2xl border px-3 text-sm font-black uppercase transition"
+            :class="appDownload.androidEntryMode === 'redirect'
+              ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100'
+              : 'border-white/10 bg-white/5 text-slate-400'"
+            @click="appDownload.androidEntryMode = 'redirect'"
+          >
+            Redirigir a Play
+          </button>
+          <button
+            type="button"
+            class="min-h-12 rounded-2xl border px-3 text-sm font-black uppercase transition"
+            :class="appDownload.androidEntryMode === 'modal'
+              ? 'border-fuchsia-300/35 bg-fuchsia-400/15 text-fuchsia-100'
+              : 'border-white/10 bg-white/5 text-slate-400'"
+            @click="appDownload.androidEntryMode = 'modal'"
+          >
+            Mostrar modal
+          </button>
+        </div>
+        <p class="mt-2 text-xs leading-5 text-slate-500">
+          Solo aplica en navegadores Android. “No salir” deja usar la web normal.
+          “Redirigir” manda a Google Play al entrar. “Modal” muestra un aviso para descargar.
+        </p>
+      </div>
+
+      <div v-if="!isLoading" class="mt-4 grid gap-4 lg:grid-cols-[220px_1fr]">
+        <label class="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
+          <span class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            Bonus primera vez
+          </span>
+          <button
+            type="button"
+            class="mt-3 min-h-12 w-full rounded-2xl border px-4 text-sm font-black uppercase transition"
+            :class="appDownload.firstOpenRewardEnabled
+              ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100'
+              : 'border-white/10 bg-white/5 text-slate-300'"
+            @click="appDownload.firstOpenRewardEnabled = !appDownload.firstOpenRewardEnabled"
+          >
+            {{ appDownload.firstOpenRewardEnabled ? 'Activo' : 'Apagado' }}
+          </button>
+        </label>
+
+        <label class="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
+          <span class="block text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+            Puntos al entrar a la app
+          </span>
+          <input
+            v-model.number="appDownload.firstOpenRewardPoints"
+            type="number"
+            min="0"
+            max="10000"
+            step="1"
+            class="mt-3 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-fuchsia-300/40"
+          />
+          <p class="mt-2 text-xs leading-5 text-slate-500">
+            Se otorgan 1 sola vez por cuenta cuando el usuario abre la app movil e inicia sesion.
+            Ejemplo: 15.
           </p>
         </label>
       </div>

@@ -30,12 +30,14 @@ class HomePage extends StatefulWidget {
     required this.authService,
     required this.onNavigateToSection,
     required this.onOpenNews,
+    required this.onOpenCategory,
     super.key,
   });
 
   final AuthService authService;
   final ValueChanged<String> onNavigateToSection;
   final VoidCallback onOpenNews;
+  final ValueChanged<PollCategoryItem> onOpenCategory;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -429,12 +431,15 @@ class _HomePageState extends State<HomePage> {
                       widget.onNavigateToSection('Votaciones'),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: _MainCategoriesSection(
-                  categories: data.categories,
-                  onViewAllTap: () => widget.onNavigateToSection('Votaciones'),
+              if (data.categories.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _MainCategoriesSection(
+                    categories: data.categories,
+                    onViewAllTap: () =>
+                        widget.onNavigateToSection('Votaciones'),
+                    onCategoryTap: widget.onOpenCategory,
+                  ),
                 ),
-              ),
               SliverToBoxAdapter(
                 child: _TopRankingSection(
                   artists: data.topWeekly,
@@ -2045,10 +2050,12 @@ class _MainCategoriesSection extends StatelessWidget {
   const _MainCategoriesSection({
     required this.categories,
     required this.onViewAllTap,
+    required this.onCategoryTap,
   });
 
   final List<PollCategoryItem> categories;
   final VoidCallback onViewAllTap;
+  final ValueChanged<PollCategoryItem> onCategoryTap;
 
   static const _gradients = [
     [Color(0xFF4C1D95), Color(0xFFC026D3), Color(0xFF312E81)],
@@ -2108,17 +2115,9 @@ class _MainCategoriesSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          if (categories.isEmpty)
-            _HomeEmptyPanel(
-              icon: Icons.layers_rounded,
-              iconColor: Color(0xFF67E8F9),
-              title: tr('home.categoriesPreparingTitle'),
-              description: tr('home.categoriesPreparingDescription'),
-            )
-          else
-            SizedBox(
-              height: 300,
-              child: ListView.separated(
+          SizedBox(
+            height: 318,
+            child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: categories.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 12),
@@ -2129,25 +2128,23 @@ class _MainCategoriesSection extends StatelessWidget {
 
                   return SizedBox(
                     width: MediaQuery.sizeOf(context).width * 0.52,
-                    child: Material(
-                      color: Colors.transparent,
-                      clipBehavior: Clip.antiAlias,
-                      borderRadius: BorderRadius.circular(20),
-                      child: InkWell(
-                        onTap: onViewAllTap,
-                        borderRadius: BorderRadius.circular(20),
-                        child: Ink(
-                          decoration: BoxDecoration(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onCategoryTap(category),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFF090B19,
+                          ).withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
                             color: const Color(
-                              0xFF090B19,
-                            ).withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: const Color(
-                                0xFF8B5CF6,
-                              ).withValues(alpha: 0.1),
-                            ),
+                              0xFF8B5CF6,
+                            ).withValues(alpha: 0.1),
                           ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -2226,6 +2223,21 @@ class _MainCategoriesSection extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(height: 6),
+                                    Text(
+                                      category.pollCount == 1
+                                          ? tr('home.categoryPollSingular')
+                                          : trp('home.categoryPollPlural', {
+                                              'count': '${category.pollCount}',
+                                            }),
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.55,
+                                        ),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
                                     Text(
                                       tr('home.viewCategory'),
                                       style: const TextStyle(

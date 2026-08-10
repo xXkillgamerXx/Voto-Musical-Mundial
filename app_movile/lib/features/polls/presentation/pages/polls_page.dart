@@ -7,6 +7,7 @@ import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../home/data/poll.dart';
+import '../../../home/data/poll_category.dart';
 import '../../../home/data/polls_api.dart';
 import 'poll_detail_page.dart';
 
@@ -18,9 +19,14 @@ class _PollsData {
 }
 
 class PollsPage extends StatefulWidget {
-  const PollsPage({required this.authService, super.key});
+  const PollsPage({
+    required this.authService,
+    this.categoryFilter,
+    super.key,
+  });
 
   final AuthService authService;
+  final ValueNotifier<PollsCategoryFilter?>? categoryFilter;
 
   @override
   State<PollsPage> createState() => _PollsPageState();
@@ -35,6 +41,10 @@ class _PollsPageState extends State<PollsPage> {
     super.initState();
     _pollsApi = PollsApi(widget.authService.client);
     _pollsFuture = _loadPolls();
+  }
+
+  void _clearCategoryFilter() {
+    widget.categoryFilter?.value = null;
   }
 
   Future<_PollsData> _loadPolls({bool forceRefresh = false}) async {
@@ -90,118 +100,223 @@ class _PollsPageState extends State<PollsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                tr('catalog.pollsEyebrow'),
-                style: const TextStyle(
-                  color: Color(0xFFF0ABFC),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2.4,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                tr('catalog.pollsTitle'),
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                tr('catalog.pollsSubtitle'),
-                style: const TextStyle(
-                  color: Color(0xFFB9B2D8),
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: FutureBuilder<_PollsData>(
-            future: _pollsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return RefreshIndicator(
-                  color: const Color(0xFFFF21C8),
-                  backgroundColor: const Color(0xFF120A2B),
-                  onRefresh: _refresh,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      const SizedBox(height: 80),
-                      _PollsStateMessage(
-                        icon: Icons.error_outline_rounded,
-                        title: tr('catalog.pollsLoadError'),
-                        subtitle: tr('catalog.pollsRetryHint'),
-                      ),
-                    ],
-                  ),
-                );
-              }
+    final filterListenable = widget.categoryFilter;
+    if (filterListenable == null) {
+      return _buildPollsBody(null);
+    }
 
-              if (!snapshot.hasData) {
-                return const Center(
-                  child: CircularProgressIndicator(color: Color(0xFFFF21C8)),
-                );
-              }
-
-              final data = snapshot.data!;
-              return RefreshIndicator(
-                color: const Color(0xFFFF21C8),
-                backgroundColor: const Color(0xFF120A2B),
-                onRefresh: _refresh,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
-                  children: [
-                    _PollsSectionHeader(
-                      title: tr('catalog.pollsTabOpen'),
-                      count: data.openPolls.length,
-                    ),
-                    const SizedBox(height: 12),
-                    if (data.openPolls.isEmpty)
-                      _PollsStateMessage(
-                        icon: Icons.how_to_vote_outlined,
-                        title: tr('catalog.pollsEmptyOpenTitle'),
-                        subtitle: tr('catalog.pollsEmptyOpenSubtitle'),
-                      )
-                    else
-                      ..._pollCards(data.openPolls, isOpen: true),
-                    const SizedBox(height: 16),
-                    _PollsSectionHeader(
-                      title: tr('catalog.pollsTabClosed'),
-                      count: data.closedPolls.length,
-                    ),
-                    const SizedBox(height: 12),
-                    if (data.closedPolls.isEmpty)
-                      _PollsStateMessage(
-                        icon: Icons.inventory_2_outlined,
-                        title: tr('catalog.pollsEmptyClosedTitle'),
-                        subtitle: tr('catalog.pollsEmptyClosedSubtitle'),
-                      )
-                    else
-                      ..._pollCards(data.closedPolls, isOpen: false),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return ValueListenableBuilder<PollsCategoryFilter?>(
+      valueListenable: filterListenable,
+      builder: (context, categoryFilter, _) => _buildPollsBody(categoryFilter),
     );
+  }
+
+  Widget _buildPollsBody(PollsCategoryFilter? categoryFilter) {
+    return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    tr('catalog.pollsEyebrow'),
+                    style: const TextStyle(
+                      color: Color(0xFFF0ABFC),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.4,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    tr('catalog.pollsTitle'),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    tr('catalog.pollsSubtitle'),
+                    style: const TextStyle(
+                      color: Color(0xFFB9B2D8),
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (categoryFilter != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD946EF).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: const Color(0xFFF0ABFC).withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  tr('catalog.pollsCategorySelected'),
+                                  style: const TextStyle(
+                                    color: Color(0xFFF5D0FE),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  categoryFilter.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _clearCategoryFilter,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.08),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.12),
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              tr('catalog.pollsViewAll'),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<_PollsData>(
+                future: _pollsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return RefreshIndicator(
+                      color: const Color(0xFFFF21C8),
+                      backgroundColor: const Color(0xFF120A2B),
+                      onRefresh: _refresh,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 80),
+                          _PollsStateMessage(
+                            icon: Icons.error_outline_rounded,
+                            title: tr('catalog.pollsLoadError'),
+                            subtitle: tr('catalog.pollsRetryHint'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  if (!snapshot.hasData) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFFF21C8),
+                      ),
+                    );
+                  }
+
+                  final data = snapshot.data!;
+                  final openPolls = categoryFilter == null
+                      ? data.openPolls
+                      : data.openPolls
+                          .where(categoryFilter.matches)
+                          .toList(growable: false);
+                  final closedPolls = categoryFilter == null
+                      ? data.closedPolls
+                      : data.closedPolls
+                          .where(categoryFilter.matches)
+                          .toList(growable: false);
+
+                  return RefreshIndicator(
+                    color: const Color(0xFFFF21C8),
+                    backgroundColor: const Color(0xFF120A2B),
+                    onRefresh: _refresh,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
+                      children: [
+                        const BannerAdWidget(
+                          padding: EdgeInsets.fromLTRB(0, 0, 0, 12),
+                        ),
+                        _PollsSectionHeader(
+                          title: tr('catalog.pollsTabOpen'),
+                          count: openPolls.length,
+                        ),
+                        const SizedBox(height: 12),
+                        if (openPolls.isEmpty)
+                          _PollsStateMessage(
+                            icon: Icons.how_to_vote_outlined,
+                            title: categoryFilter == null
+                                ? tr('catalog.pollsEmptyOpenTitle')
+                                : tr('catalog.pollsEmptyCategoryTitle'),
+                            subtitle: categoryFilter == null
+                                ? tr('catalog.pollsEmptyOpenSubtitle')
+                                : tr('catalog.pollsEmptyCategorySubtitle'),
+                          )
+                        else
+                          ..._pollCards(openPolls, isOpen: true),
+                        const SizedBox(height: 16),
+                        _PollsSectionHeader(
+                          title: tr('catalog.pollsTabClosed'),
+                          count: closedPolls.length,
+                        ),
+                        const SizedBox(height: 12),
+                        if (closedPolls.isEmpty)
+                          _PollsStateMessage(
+                            icon: Icons.inventory_2_outlined,
+                            title: categoryFilter == null
+                                ? tr('catalog.pollsEmptyClosedTitle')
+                                : tr('catalog.pollsEmptyCategoryTitle'),
+                            subtitle: categoryFilter == null
+                                ? tr('catalog.pollsEmptyClosedSubtitle')
+                                : tr('catalog.pollsEmptyCategorySubtitle'),
+                          )
+                        else
+                          ..._pollCards(closedPolls, isOpen: false),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
   }
 
   List<Widget> _pollCards(List<Poll> polls, {required bool isOpen}) {

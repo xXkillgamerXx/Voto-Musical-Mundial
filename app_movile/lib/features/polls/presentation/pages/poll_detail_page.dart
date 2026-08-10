@@ -16,13 +16,18 @@ import '../../../../core/widgets/skeleton_box.dart';
 import '../../../artists/data/artist.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../../home/data/missions_api.dart';
 import '../../../home/data/poll.dart';
 import '../../../home/data/polls_api.dart';
 import '../../../home/data/votes_api.dart';
 import '../../../home/presentation/pages/missions_page.dart';
 import '../../data/poll_realtime_service.dart';
+import '../widgets/follow_us_card.dart';
+import '../widgets/winner_certificate_modal.dart';
 import 'poll_comments_page.dart';
+
+const _finalResultTabId = '__final';
 
 class PollDetailPage extends StatefulWidget {
   const PollDetailPage({
@@ -82,6 +87,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
   Poll? _poll;
   PollResults? _results;
   String _selectedRoundId = '';
+  bool _viewingFinalResult = false;
+  /// Evita que el auto-final pise una ronda elegida por el usuario.
+  bool _userPickedRound = false;
   bool _loading = true;
   bool _refreshingResults = false;
   bool _resultsRefreshQueued = false;
@@ -207,7 +215,15 @@ class _PollDetailPageState extends State<PollDetailPage> {
     _pollsApi = PollsApi(widget.authService.client);
     _votesApi = VotesApi(widget.authService.client);
     _poll = widget.initialPoll;
-    _selectedRoundId = widget.initialPoll?.effectiveRoundId ?? '';
+    final initial = widget.initialPoll;
+    if (initial != null &&
+        initial.status == 'closed' &&
+        _winnerIdsFor(initial).isNotEmpty) {
+      _viewingFinalResult = true;
+      _selectedRoundId = _finalResultTabId;
+    } else {
+      _selectedRoundId = initial?.effectiveRoundId ?? '';
+    }
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
@@ -242,18 +258,43 @@ class _PollDetailPageState extends State<PollDetailPage> {
       unawaited(widget.authService.getMe());
       final poll = await _pollsApi.getPoll(widget.pollId, forceRefresh: force);
       var roundId = _selectedRoundId;
-      if (roundId.isEmpty || !poll.rounds.any((round) => round.id == roundId)) {
+      var viewingFinal = _viewingFinalResult;
+      final winnerIds = _winnerIdsFor(poll);
+      final finalRound = _finalWinnerRoundFor(poll);
+      // Al entrar a una cerrada con ganadores → tab Ganador.
+      if (poll.status == 'closed' &&
+          winnerIds.isNotEmpty &&
+          (!_userPickedRound ||
+              viewingFinal ||
+              roundId.isEmpty ||
+              roundId == _finalResultTabId)) {
+        viewingFinal = true;
+        if (finalRound != null) roundId = finalRound.id;
+      }
+      if (roundId == _finalResultTabId) {
+        viewingFinal = true;
+        roundId = finalRound?.id ?? poll.effectiveRoundId;
+      }
+      if (roundId.isEmpty ||
+          (!viewingFinal &&
+              !poll.rounds.any((round) => round.id == roundId))) {
         roundId = poll.effectiveRoundId;
       }
+      final resultsRoundId = viewingFinal && finalRound != null
+          ? finalRound.id
+          : (roundId.isEmpty ? null : roundId);
       final pollResults = await _pollsApi.getPollResults(
         poll.id,
-        roundId: roundId.isEmpty ? null : roundId,
+        roundId: resultsRoundId,
         forceRefresh: true,
       );
       if (!mounted) return;
       setState(() {
         _poll = poll;
-        _selectedRoundId = roundId;
+        _selectedRoundId = viewingFinal
+            ? _finalResultTabId
+            : roundId;
+        _viewingFinalResult = viewingFinal;
         _results = pollResults;
         _loading = false;
         _error = null;
@@ -292,8 +333,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   bool _isEventForSelectedRound(Map<String, dynamic> event) {
     final eventRoundId = '${event['roundId'] ?? ''}';
-    if (eventRoundId.isEmpty || _selectedRoundId.isEmpty) return true;
-    return eventRoundId == _selectedRoundId;
+    if (eventRoundId.isEmpty) return true;
+    final selected = _resultsRoundId;
+    if (selected.isEmpty) return true;
+    return eventRoundId == selected;
   }
 
   void _scheduleResultsRefresh() {
@@ -394,7 +437,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     try {
       final results = await _pollsApi.getPollResults(
         poll.id,
-        roundId: _selectedRoundId.isEmpty ? null : _selectedRoundId,
+        roundId: _resultsRoundId.isEmpty ? null : _resultsRoundId,
         forceRefresh: true,
       );
       if (mounted) setState(() => _results = results);
@@ -412,13 +455,173 @@ class _PollDetailPageState extends State<PollDetailPage> {
   PollRound? get _selectedRound {
     final poll = _poll;
     if (poll == null) return null;
+    if (_viewingFinalResult) return _finalWinnerRound;
     for (final round in poll.rounds) {
       if (round.id == _selectedRoundId) return round;
     }
     return null;
   }
 
+  String get _resultsRoundId {
+    if (_viewingFinalResult) {
+      return _finalWinnerRound?.id ?? '';
+    }
+    if (_selectedRoundId == _finalResultTabId) {
+      return _finalWinnerRound?.id ?? '';
+    }
+    return _selectedRoundId;
+  }
+
+  bool get _pollClosed => _poll?.status == 'closed';
+
+  List<String> get _activeWinnerIds {
+    final poll = _poll;
+    if (poll == null) return const [];
+    if (_viewingFinalResult) return _winnerIdsFor(poll);
+    final round = _selectedRound;
+    if (round != null &&
+        round.status == 'closed' &&
+        round.winnerIds.isNotEmpty) {
+      return round.winnerIds;
+    }
+    return const [];
+  }
+
+  bool get _hasRoundWinners => _activeWinnerIds.isNotEmpty;
+
+  bool get _hasFinalWinners {
+    final poll = _poll;
+    if (poll == null) return false;
+    return _winnerIdsFor(poll).isNotEmpty;
+  }
+
+  bool get _showWinnersPending =>
+      _pollClosed && !_hasFinalWinners && !_selectingWinners;
+
+  PollRound? get _finalWinnerRound => _finalWinnerRoundFor(_poll);
+
+  List<_VoteEntry> get _finalWinnerEntries {
+    final poll = _poll;
+    if (poll == null) return const [];
+    final winnerIds = _winnerIdsFor(poll);
+    final entries = _entries;
+    final total = entries.fold<int>(0, (sum, e) => sum + e.totalVotes);
+
+    _VoteEntry? matchFor(String artistId) {
+      for (final entry in entries) {
+        if (entry.artistId == artistId) return entry;
+      }
+      return null;
+    }
+
+    if (winnerIds.isEmpty) {
+      if (entries.isEmpty) return const [];
+      final top = entries.first;
+      final percent = total > 0 ? (top.totalVotes / total) * 100 : top.percent;
+      return [
+        _VoteEntry(
+          contestantId: top.contestantId,
+          artist: top.artist,
+          artistId: top.artistId,
+          totalVotes: top.totalVotes,
+          percent: percent,
+          rank: 1,
+          matchGroup: top.matchGroup,
+          matchOrder: top.matchOrder,
+        ),
+      ];
+    }
+
+    final winners = <_VoteEntry>[];
+    for (var i = 0; i < winnerIds.length; i++) {
+      final artistId = winnerIds[i];
+      final matched = matchFor(artistId);
+      if (matched == null) continue;
+      final percent =
+          total > 0 ? (matched.totalVotes / total) * 100 : matched.percent;
+      winners.add(
+        _VoteEntry(
+          contestantId: matched.contestantId,
+          artist: matched.artist,
+          artistId: matched.artistId,
+          totalVotes: matched.totalVotes,
+          percent: percent,
+          rank: i + 1,
+          matchGroup: matched.matchGroup,
+          matchOrder: matched.matchOrder,
+        ),
+      );
+    }
+    return winners;
+  }
+
+  /// Ranking final compacto (ganador primero, luego por votos).
+  List<_VoteEntry> get _finalRankingEntries {
+    final winners = _finalWinnerEntries;
+    final winnerId = winners.isNotEmpty ? winners.first.artistId : '';
+    final total = _entries.fold<int>(0, (sum, e) => sum + e.totalVotes);
+    final ranked = [..._entries]
+      ..sort((a, b) {
+        if (winnerId.isNotEmpty) {
+          if (a.artistId == winnerId) return -1;
+          if (b.artistId == winnerId) return 1;
+        }
+        return b.totalVotes.compareTo(a.totalVotes);
+      });
+
+    return [
+      for (var i = 0; i < ranked.length; i++)
+        _VoteEntry(
+          contestantId: ranked[i].contestantId,
+          artist: ranked[i].artist,
+          artistId: ranked[i].artistId,
+          totalVotes: ranked[i].totalVotes,
+          percent: total > 0
+              ? (ranked[i].totalVotes / total) * 100
+              : ranked[i].percent,
+          rank: i + 1,
+          matchGroup: ranked[i].matchGroup,
+          matchOrder: ranked[i].matchOrder,
+        ),
+    ];
+  }
+
+  static List<String> _winnerIdsFor(Poll? poll) {
+    if (poll == null) return const [];
+    if (poll.winnerIds.isNotEmpty) return poll.winnerIds;
+    for (var i = poll.rounds.length - 1; i >= 0; i--) {
+      final round = poll.rounds[i];
+      if (round.status == 'closed' && round.winnerIds.isNotEmpty) {
+        return round.winnerIds;
+      }
+    }
+    return const [];
+  }
+
+  static PollRound? _finalWinnerRoundFor(Poll? poll) {
+    if (poll == null) return null;
+    for (var i = poll.rounds.length - 1; i >= 0; i--) {
+      final round = poll.rounds[i];
+      if (round.status == 'closed' && round.winnerIds.isNotEmpty) {
+        return round;
+      }
+    }
+    for (var i = poll.rounds.length - 1; i >= 0; i--) {
+      if (poll.rounds[i].status == 'closed') return poll.rounds[i];
+    }
+    return poll.rounds.isNotEmpty ? poll.rounds.last : null;
+  }
+
+  int? _winnerRankFor(_VoteEntry entry) {
+    if (!_hasRoundWinners) return null;
+    final ids = _activeWinnerIds;
+    final index = ids.indexOf(entry.artistId);
+    if (index < 0) return null;
+    return index + 1;
+  }
+
   bool get _votingOpen {
+    if (_viewingFinalResult) return false;
     final poll = _poll;
     if (poll == null || poll.status != 'live') return false;
     final round = _selectedRound;
@@ -432,7 +635,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   bool get _selectingWinners {
     final poll = _poll;
-    final round = _selectedRound;
+    final round = _viewingFinalResult ? null : _selectedRound;
     return poll?.status == 'selecting_winners' ||
         round?.status == 'selecting_winners';
   }
@@ -459,9 +662,10 @@ class _PollDetailPageState extends State<PollDetailPage> {
     final poll = _poll;
     if (poll == null) return const [];
 
+    final roundId = _resultsRoundId;
     final contestants = poll.contestants.where((contestant) {
-      if (_selectedRoundId.isEmpty) return contestant.roundId.isEmpty;
-      return contestant.roundId == _selectedRoundId;
+      if (roundId.isEmpty) return contestant.roundId.isEmpty;
+      return contestant.roundId == roundId;
     }).toList();
     final resultByContestant = {
       for (final result in _results?.results ?? const <PollResultRow>[])
@@ -469,9 +673,13 @@ class _PollDetailPageState extends State<PollDetailPage> {
     };
     final entries = contestants.map((contestant) {
       final result = resultByContestant[contestant.id];
+      final artist = result?.artist ?? contestant.artist;
       return _VoteEntry(
         contestantId: contestant.id,
-        artist: result?.artist ?? contestant.artist,
+        artist: artist,
+        artistId: contestant.artistId.isNotEmpty
+            ? contestant.artistId
+            : (artist?.id ?? result?.artistId ?? ''),
         totalVotes: result?.totalVotes ?? contestant.totalVotes,
         percent: result?.percent ?? 0,
         rank: result?.rank ?? 0,
@@ -486,6 +694,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
           (result) => _VoteEntry(
             contestantId: result.contestantId,
             artist: result.artist,
+            artistId: result.artistId,
             totalVotes: result.totalVotes,
             percent: result.percent,
             rank: result.rank,
@@ -496,7 +705,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
       );
     }
     entries.sort((a, b) {
-      if (_selectedRound?.type == 'versus') {
+      if (_selectedRound?.type == 'versus' && !_viewingFinalResult) {
         final group = a.matchGroup.compareTo(b.matchGroup);
         return group != 0 ? group : a.matchOrder.compareTo(b.matchOrder);
       }
@@ -506,14 +715,31 @@ class _PollDetailPageState extends State<PollDetailPage> {
   }
 
   Future<void> _selectRound(PollRound round) async {
-    if (_selectedRoundId == round.id) return;
+    if (!_viewingFinalResult && _selectedRoundId == round.id) return;
     setState(() {
+      _userPickedRound = true;
+      _viewingFinalResult = false;
       _selectedRoundId = round.id;
       _results = null;
       _freeVoteUntilByScope.clear();
     });
     await _loadResults();
     unawaited(_refreshFreeVoteStatus());
+  }
+
+  Future<void> _selectFinalResult() async {
+    final round = _finalWinnerRound;
+    if (_viewingFinalResult) return;
+    setState(() {
+      _userPickedRound = false;
+      _viewingFinalResult = true;
+      _selectedRoundId = _finalResultTabId;
+      _results = null;
+      _freeVoteUntilByScope.clear();
+    });
+    if (round != null) {
+      await _loadResults();
+    }
   }
 
   Future<void> _showVoteSheet(_VoteEntry entry) async {
@@ -1291,6 +1517,39 @@ class _PollDetailPageState extends State<PollDetailPage> {
     );
   }
 
+  Future<void> _shareWinner(_VoteEntry winner) async {
+    final poll = _poll;
+    if (poll == null) return;
+    final name = winner.artist?.name ?? tr('pollDetail.artist');
+    final slug = poll.slug.trim().isNotEmpty ? poll.slug.trim() : poll.id;
+    final url = '${ApiConfig.uploadsOrigin}/votacion/${poll.year}/$slug';
+    await SharePlus.instance.share(
+      ShareParams(
+        text: '${trp('pollDetail.shareWinnerText', {'name': name})}\n$url',
+        subject: poll.title,
+        title: poll.title,
+      ),
+    );
+  }
+
+  Future<void> _openWinnerCertificate(_VoteEntry winner) async {
+    final artist = winner.artist;
+    final date = formatWinnerCertificateDate(_poll?.endAt ?? _poll?.updatedAt);
+    await showWinnerCertificateModal(
+      context,
+      name: artist?.name ?? tr('pollDetail.artist'),
+      group: artist?.group ?? '',
+      date: date,
+    );
+  }
+
+  Future<void> _openHallOfFame() {
+    return HallOfFameScreen.open(
+      context,
+      authService: widget.authService,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final poll = _poll;
@@ -1430,12 +1689,15 @@ class _PollDetailPageState extends State<PollDetailPage> {
                               pinned: true,
                               delegate: _CountdownHeaderDelegate(state: this),
                             ),
-                          if (poll.rounds.isNotEmpty)
+                          if (poll.rounds.isNotEmpty || _hasFinalWinners)
                             SliverToBoxAdapter(
                               child: _RoundTabs(
                                 rounds: poll.rounds,
                                 selectedId: _selectedRoundId,
+                                showFinal: _hasFinalWinners,
+                                viewingFinal: _viewingFinalResult,
                                 onSelected: _selectRound,
+                                onFinalSelected: _selectFinalResult,
                               ),
                             ),
                           const SliverToBoxAdapter(
@@ -1446,6 +1708,22 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           if (_selectingWinners)
                             const SliverToBoxAdapter(
                               child: _CountingVotesPanel(),
+                            )
+                          else if (_viewingFinalResult &&
+                              _finalRankingEntries.isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: _FinalWinnerPanel(
+                                ranking: _finalRankingEntries,
+                                winners: _finalWinnerEntries,
+                                hideCounts: _hideCounts,
+                                onHallOfFame: _openHallOfFame,
+                                onCertificate: _openWinnerCertificate,
+                                onShare: _shareWinner,
+                              ),
+                            )
+                          else if (_showWinnersPending)
+                            const SliverToBoxAdapter(
+                              child: _WinnersPendingPanel(),
                             )
                           else if (_entries.isEmpty && _loading)
                             const SliverToBoxAdapter(
@@ -1466,7 +1744,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           ),
                         ),
                       )
-                    else if (_selectedRound?.type == 'versus')
+                    else if (_selectedRound?.type == 'versus' &&
+                        _votingOpen)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
                         sliver: Builder(
@@ -1491,6 +1770,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                 if (slot.isShare) {
                                   return _VoteShareCard(onShare: _sharePoll);
                                 }
+                                if (slot.isInstagram) {
+                                  return const FollowInstagramBanner();
+                                }
                                 final groups = _versusGroups(_entries);
                                 final group = groups[slot.entryIndex];
                                 return _VersusMatch(
@@ -1502,6 +1784,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                   feedbackId: _voteFeedbackId,
                                   feedbackAmount: _voteFeedbackAmount,
                                   feedbackToken: _voteFeedbackToken,
+                                  winnerRankFor: _winnerRankFor,
+                                  hasRoundWinners: _hasRoundWinners,
                                   voteLabel: _voteButtonLabel,
                                   canVote: _canTapVoteButton,
                                   onVote: _showVoteSheet,
@@ -1536,6 +1820,9 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                 if (slot.isShare) {
                                   return _VoteShareCard(onShare: _sharePoll);
                                 }
+                                if (slot.isInstagram) {
+                                  return const FollowInstagramBanner();
+                                }
                                 final entry = _entries[slot.entryIndex];
                                 return _ContestantCard(
                                   entry: entry,
@@ -1547,6 +1834,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
                                       _voteFeedbackId == entry.contestantId,
                                   feedbackAmount: _voteFeedbackAmount,
                                   feedbackToken: _voteFeedbackToken,
+                                  winnerRank: _winnerRankFor(entry),
+                                  hasRoundWinners: _hasRoundWinners,
                                   voteLabel: _voteButtonLabel(entry),
                                   voteEnabled: _canTapVoteButton(entry),
                                   onVote: () => _showVoteSheet(entry),
@@ -1562,6 +1851,15 @@ class _PollDetailPageState extends State<PollDetailPage> {
                         authService: widget.authService,
                         pollTitle: poll.title,
                       ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                      sliver: SliverToBoxAdapter(
+                        child: _VoteShareCard(onShare: _sharePoll),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(
+                      child: FollowUsCard(),
                     ),
                     SliverToBoxAdapter(
                       child: SizedBox(height: bottomClearance),
@@ -2040,14 +2338,21 @@ class _RoundTabs extends StatelessWidget {
     required this.rounds,
     required this.selectedId,
     required this.onSelected,
+    this.showFinal = false,
+    this.viewingFinal = false,
+    this.onFinalSelected,
   });
 
   final List<PollRound> rounds;
   final String selectedId;
   final ValueChanged<PollRound> onSelected;
+  final bool showFinal;
+  final bool viewingFinal;
+  final VoidCallback? onFinalSelected;
 
   @override
   Widget build(BuildContext context) {
+    final itemCount = rounds.length + (showFinal ? 1 : 0);
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
       child: SizedBox(
@@ -2055,11 +2360,22 @@ class _RoundTabs extends StatelessWidget {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          itemCount: rounds.length,
+          itemCount: itemCount,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (_, index) {
+            if (showFinal && index == rounds.length) {
+              return _roundChip(
+                label: tr('pollDetail.finalTab'),
+                status: tr('pollDetail.winnerTab'),
+                selected: viewingFinal || selectedId == _finalResultTabId,
+                live: false,
+                accentSelected: true,
+                onTap: onFinalSelected,
+              );
+            }
             final round = rounds[index];
-            final selected = round.id == selectedId;
+            final selected =
+                !viewingFinal && round.id == selectedId;
             final live = round.status == 'live';
             final label = round.title.isEmpty
                 ? trp('pollDetail.round', {'number': index + 1})
@@ -2069,60 +2385,93 @@ class _RoundTabs extends StatelessWidget {
                 : round.status == 'closed'
                     ? tr('pollDetail.closed')
                     : tr('pollDetail.upcoming');
-            return Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => onSelected(round),
-                borderRadius: BorderRadius.circular(20),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? const Color(0xFF245073)
-                        : const Color(0xFF2A1248),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: selected
-                          ? const Color(0xFF67E8F9)
-                          : Colors.white.withValues(alpha: 0.1),
-                      width: selected ? 1.4 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          color: selected
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.85),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        status,
-                        style: TextStyle(
-                          color: live
-                              ? const Color(0xFF67E8F9)
-                              : const Color(0xFF9F8BB8),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            return _roundChip(
+              label: label,
+              status: status,
+              selected: selected,
+              live: live,
+              onTap: () => onSelected(round),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _roundChip({
+    required String label,
+    required String status,
+    required bool selected,
+    required bool live,
+    bool accentSelected = false,
+    VoidCallback? onTap,
+  }) {
+    final selectedBorder = accentSelected
+        ? const Color(0xFFFBBF24)
+        : const Color(0xFF67E8F9);
+    final selectedBg = accentSelected
+        ? const Color(0xFF3A2A12)
+        : const Color(0xFF245073);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: selected ? selectedBg : const Color(0xFF2A1248),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? selectedBorder
+                  : Colors.white.withValues(alpha: 0.1),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (accentSelected) ...[
+                Icon(
+                  Icons.emoji_events_rounded,
+                  size: 14,
+                  color: selected
+                      ? const Color(0xFFFBBF24)
+                      : const Color(0xFF9F8BB8),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.85),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                status,
+                style: TextStyle(
+                  color: live
+                      ? const Color(0xFF67E8F9)
+                      : accentSelected
+                          ? const Color(0xFFFBBF24)
+                          : const Color(0xFF9F8BB8),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2278,6 +2627,661 @@ class _ProcessingDot extends StatelessWidget {
   }
 }
 
+class _WinnersPendingPanel extends StatelessWidget {
+  const _WinnersPendingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+      padding: const EdgeInsets.fromLTRB(22, 30, 22, 28),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(27),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        color: Colors.white.withValues(alpha: 0.05),
+      ),
+      child: Column(
+        children: [
+          Text(
+            tr('pollDetail.pollFinished'),
+            style: const TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2.2,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            tr('pollDetail.winnersPending'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            tr('pollDetail.winnersPendingDescription'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 13,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FinalWinnerPanel extends StatelessWidget {
+  const _FinalWinnerPanel({
+    required this.ranking,
+    required this.winners,
+    required this.hideCounts,
+    required this.onHallOfFame,
+    required this.onCertificate,
+    required this.onShare,
+  });
+
+  final List<_VoteEntry> ranking;
+  final List<_VoteEntry> winners;
+  final bool hideCounts;
+  final VoidCallback onHallOfFame;
+  final ValueChanged<_VoteEntry> onCertificate;
+  final ValueChanged<_VoteEntry> onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = winners.isNotEmpty
+        ? winners.first
+        : (ranking.isNotEmpty ? ranking.first : null);
+    final others = ranking.where((e) => e.artistId != top?.artistId).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (top != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: const Color(0xFFFBBF24).withValues(alpha: 0.3),
+                ),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF2A1A08),
+                    Color(0xFF080A18),
+                    Color(0xFF1A0A2A),
+                  ],
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0xFFFBBF24).withValues(alpha: 0.35),
+                      ),
+                      color: const Color(0xFFFBBF24).withValues(alpha: 0.12),
+                    ),
+                    child: const Text('♛', style: TextStyle(fontSize: 30)),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    tr('pollDetail.finalResultEyebrow'),
+                    style: const TextStyle(
+                      color: Color(0xFFFDE68A),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    tr('pollDetail.finalResultTitle'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _FinalWinnerCard(winner: top, hideCounts: hideCounts),
+            const SizedBox(height: 12),
+            _WinnerActionButton(
+              icon: Icons.workspace_premium_rounded,
+              label: tr('pollDetail.viewCertificate'),
+              filled: true,
+              onTap: () => onCertificate(top),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _WinnerActionButton(
+                    icon: Icons.emoji_events_rounded,
+                    label: tr('pollDetail.viewHallOfFame'),
+                    filled: false,
+                    onTap: onHallOfFame,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _WinnerActionButton(
+                    icon: Icons.share_rounded,
+                    label: tr('pollDetail.shareWinner'),
+                    filled: false,
+                    onTap: () => onShare(top),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (others.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              tr('pollDetail.finalPlaces'),
+              style: const TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < others.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _FinalRankCard(
+                entry: others[i],
+                hideCounts: hideCounts,
+                place: others[i].rank,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FinalWinnerCard extends StatelessWidget {
+  const _FinalWinnerCard({
+    required this.winner,
+    required this.hideCounts,
+  });
+
+  final _VoteEntry winner;
+  final bool hideCounts;
+
+  @override
+  Widget build(BuildContext context) {
+    final artist = winner.artist;
+    final imageUrl = artist == null
+        ? ''
+        : resolveArtistMediaUrl(
+            artist.banner.isNotEmpty ? artist.banner : artist.image,
+          );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(26),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(
+            color: const Color(0xFFFBBF24).withValues(alpha: 0.28),
+          ),
+          color: const Color(0xFF0B0D1A),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 5 / 4,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (imageUrl.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => const ColoredBox(
+                        color: Color(0xFF1E1633),
+                      ),
+                    )
+                  else
+                    Container(
+                      alignment: Alignment.center,
+                      color: const Color(0xFF1E1633),
+                      child: Text(
+                        (artist?.name.isNotEmpty == true)
+                            ? artist!.name.substring(0, 1).toUpperCase()
+                            : 'A',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 48,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Color(0xCC080A18),
+                          Color(0xFF080A18),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 14,
+                    top: 14,
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color:
+                              const Color(0xFFFBBF24).withValues(alpha: 0.35),
+                        ),
+                        color: const Color(0xFFFBBF24).withValues(alpha: 0.18),
+                      ),
+                      child: const Text(
+                        '#1',
+                        style: TextStyle(
+                          color: Color(0xFFFEF3C7),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          tr('pollDetail.winningArtist'),
+                          style: const TextStyle(
+                            color: Color(0xFFFDE68A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          artist?.name ?? tr('pollDetail.artist'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            height: 1.05,
+                          ),
+                        ),
+                        if ((artist?.group ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            artist!.group.toUpperCase(),
+                            style: const TextStyle(
+                              color: Color(0xFFFDE68A),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFFFBBF24).withValues(alpha: 0.25),
+                  ),
+                  color: const Color(0xFFFBBF24).withValues(alpha: 0.08),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (!hideCounts)
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  tr('pollDetail.wonWith'),
+                                  style: const TextStyle(
+                                    color: Color(0xFFFDE68A),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatNumber(winner.totalVotes),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: hideCounts
+                                ? CrossAxisAlignment.start
+                                : CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                tr('pollDetail.percentage'),
+                                style: const TextStyle(
+                                  color: Color(0xFFF0ABFC),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${winner.percent.toStringAsFixed(2)}%',
+                                style: const TextStyle(
+                                  color: Color(0xFFFEF3C7),
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: (winner.percent / 100).clamp(0.0, 1.0),
+                        minHeight: 10,
+                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        valueColor: const AlwaysStoppedAnimation(
+                          Color(0xFFFBBF24),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FinalRankCard extends StatelessWidget {
+  const _FinalRankCard({
+    required this.entry,
+    required this.hideCounts,
+    required this.place,
+  });
+
+  final _VoteEntry entry;
+  final bool hideCounts;
+  final int place;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = _placeTone(place);
+    final artist = entry.artist;
+    final badgeLabel = place == 1
+        ? trp('pollDetail.winnerBadge', {'rank': '1'})
+        : place == 2
+            ? tr('pollDetail.secondPlace')
+            : place == 3
+                ? tr('pollDetail.thirdPlace')
+                : tr('pollDetail.didNotWin');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: tone.bg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: tone.border),
+        boxShadow: place <= 2
+            ? [
+                BoxShadow(
+                  color: tone.glow.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: Text(
+              '#$place',
+              style: TextStyle(
+                color: tone.rank,
+                fontSize: place == 1 ? 18 : 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(1.5),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(colors: tone.avatarRing),
+            ),
+            child: artist != null
+                ? ArtistAvatar(artist: artist, size: 48, radius: 14)
+                : const SizedBox(width: 48, height: 48),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  artist?.name ?? tr('pollDetail.artist'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                _WinnerChip(label: badgeLabel, isWinner: place == 1, tone: place),
+                if (!hideCounts) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    trp('pollDetail.votesLower', {
+                      'count': _formatNumber(entry.totalVotes),
+                    }),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Text(
+            '${entry.percent.toStringAsFixed(2)}%',
+            style: TextStyle(
+              color: tone.rank,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceTone {
+  const _PlaceTone({
+    required this.bg,
+    required this.border,
+    required this.rank,
+    required this.glow,
+    required this.avatarRing,
+  });
+
+  final Color bg;
+  final Color border;
+  final Color rank;
+  final Color glow;
+  final List<Color> avatarRing;
+}
+
+_PlaceTone _placeTone(int place) {
+  switch (place) {
+    case 1:
+      return const _PlaceTone(
+        bg: Color(0xFF2A1F0A),
+        border: Color(0x99FBBF24),
+        rank: Color(0xFFFDE68A),
+        glow: Color(0xFFFBBF24),
+        avatarRing: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
+      );
+    case 2:
+      return const _PlaceTone(
+        bg: Color(0xFF1A1E28),
+        border: Color(0x99CBD5E1),
+        rank: Color(0xFFE2E8F0),
+        glow: Color(0xFF94A3B8),
+        avatarRing: [Color(0xFFE2E8F0), Color(0xFF94A3B8)],
+      );
+    case 3:
+      return const _PlaceTone(
+        bg: Color(0xFF24180F),
+        border: Color(0x99FB923C),
+        rank: Color(0xFFFDBA74),
+        glow: Color(0xFFFB923C),
+        avatarRing: [Color(0xFFFB923C), Color(0xFFEA580C)],
+      );
+    default:
+      return const _PlaceTone(
+        bg: Color(0xFF21112F),
+        border: Color(0x22FFFFFF),
+        rank: Color(0xFFF0ABFC),
+        glow: Color(0x00000000),
+        avatarRing: [Color(0xFF67E8F9), Color(0xFFD946EF)],
+      );
+  }
+}
+
+class _WinnerActionButton extends StatelessWidget {
+  const _WinnerActionButton({
+    required this.icon,
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: filled
+                ? const LinearGradient(
+                    colors: [
+                      Color(0xFFFBBF24),
+                      Color(0xFFEC4899),
+                      Color(0xFFD946EF),
+                    ],
+                  )
+                : null,
+            color: filled ? null : const Color(0xFF151022),
+            border: Border.all(
+              color: filled
+                  ? Colors.transparent
+                  : Colors.white.withValues(alpha: 0.14),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: Colors.white, size: 16),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    height: 1.15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ModalArtistCard extends StatelessWidget {
   const _ModalArtistCard({required this.entry});
 
@@ -2404,7 +3408,6 @@ class _VoteShareCard extends StatelessWidget {
     return _VoteOptionTile(
       onTap: onShare,
       accent: const Color(0xFF67E8F9),
-      // Similar al icono de compartir (caja + flecha hacia afuera).
       icon: Icons.ios_share_rounded,
       title: tr('pollDetail.share'),
       subtitle: hint ?? tr('pollDetail.shareCardHint'),
@@ -2527,6 +3530,8 @@ class _ContestantCard extends StatelessWidget {
     required this.voteLabel,
     required this.voteEnabled,
     required this.onVote,
+    this.winnerRank,
+    this.hasRoundWinners = false,
   });
 
   final _VoteEntry entry;
@@ -2539,28 +3544,39 @@ class _ContestantCard extends StatelessWidget {
   final String voteLabel;
   final bool voteEnabled;
   final VoidCallback onVote;
+  final int? winnerRank;
+  final bool hasRoundWinners;
 
   @override
   Widget build(BuildContext context) {
     final artist = entry.artist;
+    final place = winnerRank ?? 0;
+    final isWinner = place == 1;
+    final tone = hasRoundWinners && place > 0 ? _placeTone(place) : null;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 420),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
       decoration: BoxDecoration(
         color: showFeedback
             ? const Color(0xFF1A2F2A)
-            : const Color(0xFF21112F),
-        borderRadius: BorderRadius.circular(24),
+            : tone?.bg ?? const Color(0xFF21112F),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: showFeedback
               ? const Color(0xFF34D399).withValues(alpha: 0.55)
-              : Colors.white.withValues(alpha: 0.08),
+              : tone?.border ?? Colors.white.withValues(alpha: 0.08),
         ),
         boxShadow: [
           if (showFeedback)
             BoxShadow(
               color: const Color(0xFF22D3EE).withValues(alpha: 0.28),
               blurRadius: 28,
+              spreadRadius: 1,
+            )
+          else if (tone != null && place <= 2)
+            BoxShadow(
+              color: tone.glow.withValues(alpha: 0.18),
+              blurRadius: 16,
               spreadRadius: 1,
             )
           else
@@ -2583,37 +3599,39 @@ class _ContestantCard extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(2),
+                    padding: const EdgeInsets.all(1.5),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(23),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF67E8F9), Color(0xFFD946EF)],
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        colors: tone?.avatarRing ??
+                            const [Color(0xFF67E8F9), Color(0xFFD946EF)],
                       ),
                     ),
                     child: artist != null
-                        ? ArtistAvatar(artist: artist, size: 76, radius: 21)
-                        : const SizedBox(width: 76, height: 76),
+                        ? ArtistAvatar(artist: artist, size: 52, radius: 14)
+                        : const SizedBox(width: 52, height: 52),
                   ),
                   Positioned(
-                    left: -9,
-                    top: -7,
+                    left: -7,
+                    top: -5,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 4,
+                        horizontal: 6,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF120A27),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: tone?.border ??
+                              Colors.white.withValues(alpha: 0.2),
                         ),
                       ),
                       child: Text(
                         '#${entry.rank > 0 ? entry.rank : '-'}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
+                        style: TextStyle(
+                          color: tone?.rank ?? Colors.white,
+                          fontSize: 11,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -2621,18 +3639,39 @@ class _ContestantCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      artist?.name ?? tr('pollDetail.artist'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          artist?.name ?? tr('pollDetail.artist'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (hasRoundWinners)
+                          _WinnerChip(
+                            label: place == 1
+                                ? trp('pollDetail.winnerBadge', {
+                                    'rank': '$place',
+                                  })
+                                : place == 2
+                                    ? tr('pollDetail.secondPlace')
+                                    : place == 3
+                                        ? tr('pollDetail.thirdPlace')
+                                        : tr('pollDetail.didNotWin'),
+                            isWinner: isWinner,
+                            tone: place,
+                          ),
+                      ],
                     ),
                     if ((artist?.group ?? '').isNotEmpty)
                       Text(
@@ -2662,9 +3701,9 @@ class _ContestantCard extends StatelessWidget {
                       ),
                     Text(
                       '${entry.percent.toStringAsFixed(2)}%',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 23,
+                      style: TextStyle(
+                        color: tone?.rank ?? Colors.white,
+                        fontSize: 20,
                         fontWeight: FontWeight.w900,
                         height: 1.05,
                       ),
@@ -3018,6 +4057,8 @@ class _VersusMatch extends StatelessWidget {
     required this.voteLabel,
     required this.canVote,
     required this.onVote,
+    required this.winnerRankFor,
+    this.hasRoundWinners = false,
   });
 
   final int number;
@@ -3031,6 +4072,8 @@ class _VersusMatch extends StatelessWidget {
   final String Function(_VoteEntry entry) voteLabel;
   final bool Function(_VoteEntry entry) canVote;
   final ValueChanged<_VoteEntry> onVote;
+  final int? Function(_VoteEntry entry) winnerRankFor;
+  final bool hasRoundWinners;
 
   @override
   Widget build(BuildContext context) {
@@ -3080,6 +4123,7 @@ class _VersusMatch extends StatelessWidget {
                         entry: entries[i],
                         label: '${tr('pollDetail.option')} ${String.fromCharCode(65 + i)}',
                         showFeedback: feedbackId == entries[i].contestantId,
+                        isWinner: winnerRankFor(entries[i]) != null,
                       ),
                     ),
                   ],
@@ -3105,6 +4149,8 @@ class _VersusMatch extends StatelessWidget {
                     feedbackToken: feedbackToken,
                     voteLabel: voteLabel(entries[i]),
                     voteEnabled: canVote(entries[i]),
+                    winnerRank: winnerRankFor(entries[i]),
+                    hasRoundWinners: hasRoundWinners,
                     onVote: () => onVote(entries[i]),
                   ),
                 ),
@@ -3180,11 +4226,13 @@ class _VersusImage extends StatelessWidget {
     required this.entry,
     required this.label,
     required this.showFeedback,
+    this.isWinner = false,
   });
 
   final _VoteEntry entry;
   final String label;
   final bool showFeedback;
+  final bool isWinner;
 
   @override
   Widget build(BuildContext context) {
@@ -3203,8 +4251,10 @@ class _VersusImage extends StatelessWidget {
           border: Border.all(
             color: showFeedback
                 ? const Color(0xFF34D399).withValues(alpha: 0.7)
-                : Colors.white.withValues(alpha: 0.1),
-            width: showFeedback ? 2 : 1,
+                : isWinner
+                    ? const Color(0xFFFBBF24).withValues(alpha: 0.75)
+                    : Colors.white.withValues(alpha: 0.1),
+            width: showFeedback || isWinner ? 2 : 1,
           ),
           boxShadow: showFeedback
               ? [
@@ -3214,7 +4264,15 @@ class _VersusImage extends StatelessWidget {
                     spreadRadius: 1,
                   ),
                 ]
-              : null,
+              : isWinner
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFFFBBF24).withValues(alpha: 0.28),
+                        blurRadius: 20,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
@@ -3226,8 +4284,9 @@ class _VersusImage extends StatelessWidget {
                   color: const Color(0xFF1A0B2E),
                   child: Center(
                     child: Text(
-                      (artist?.name.characters.firstOrNull ?? 'A')
-                          .toUpperCase(),
+                      (artist?.name.isNotEmpty == true)
+                          ? artist!.name.substring(0, 1).toUpperCase()
+                          : 'A',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 34,
@@ -3282,6 +4341,32 @@ class _VersusImage extends StatelessWidget {
                   ),
                 ),
               ),
+              if (isWinner)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFBBF24).withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.emoji_events_rounded, size: 11, color: Color(0xFF1A1200)),
+                        SizedBox(width: 3),
+                        Text(
+                          '♛',
+                          style: TextStyle(fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -3302,6 +4387,8 @@ class _VersusInfo extends StatelessWidget {
     required this.voteLabel,
     required this.voteEnabled,
     required this.onVote,
+    this.winnerRank,
+    this.hasRoundWinners = false,
   });
 
   final _VoteEntry entry;
@@ -3314,17 +4401,37 @@ class _VersusInfo extends StatelessWidget {
   final String voteLabel;
   final bool voteEnabled;
   final VoidCallback onVote;
+  final int? winnerRank;
+  final bool hasRoundWinners;
 
   @override
   Widget build(BuildContext context) {
     final artist = entry.artist;
     final group = artist?.group ?? '';
+    final isWinner = winnerRank != null;
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (hasRoundWinners) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _WinnerChip(
+                  label: winnerRank == 1
+                      ? trp('pollDetail.winnerBadge', {'rank': '$winnerRank'})
+                      : winnerRank == 2
+                          ? tr('pollDetail.secondPlace')
+                          : winnerRank == 3
+                              ? tr('pollDetail.thirdPlace')
+                              : tr('pollDetail.didNotWin'),
+                  isWinner: winnerRank == 1,
+                  tone: winnerRank ?? 0,
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -3333,8 +4440,10 @@ class _VersusInfo extends StatelessWidget {
                     artist?.name ?? tr('pollDetail.artist'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: isWinner
+                          ? const Color(0xFFFEF3C7)
+                          : Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
@@ -3346,7 +4455,9 @@ class _VersusInfo extends StatelessWidget {
                   style: TextStyle(
                     color: showFeedback
                         ? const Color(0xFF6EE7B7)
-                        : const Color(0xFF67E8F9),
+                        : isWinner
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFF67E8F9),
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
@@ -3682,10 +4793,46 @@ class _DetailError extends StatelessWidget {
   }
 }
 
+class _WinnerChip extends StatelessWidget {
+  const _WinnerChip({
+    required this.label,
+    required this.isWinner,
+    this.tone = 0,
+  });
+
+  final String label;
+  final bool isWinner;
+  final int tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final place = tone > 0 ? tone : (isWinner ? 1 : 0);
+    final colors = _placeTone(place <= 0 ? 99 : place);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: colors.border),
+        color: colors.bg.withValues(alpha: place > 0 && place <= 3 ? 0.55 : 0.35),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: place > 0 && place <= 3 ? colors.rank : const Color(0xFF94A3B8),
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
 class _VoteEntry {
   const _VoteEntry({
     required this.contestantId,
     required this.artist,
+    required this.artistId,
     required this.totalVotes,
     required this.percent,
     required this.rank,
@@ -3695,6 +4842,7 @@ class _VoteEntry {
 
   final String contestantId;
   final Artist? artist;
+  final String artistId;
   final int totalVotes;
   final double percent;
   final int rank;
@@ -3708,22 +4856,31 @@ class _VoteEntry {
 class _PollFeedSlot {
   const _PollFeedSlot.entry(this.entryIndex)
       : isBanner = false,
-        isShare = false;
+        isShare = false,
+        isInstagram = false;
   const _PollFeedSlot.banner()
       : entryIndex = -1,
         isBanner = true,
-        isShare = false;
+        isShare = false,
+        isInstagram = false;
   const _PollFeedSlot.share()
       : entryIndex = -1,
         isBanner = false,
-        isShare = true;
+        isShare = true,
+        isInstagram = false;
+  const _PollFeedSlot.instagram()
+      : entryIndex = -1,
+        isBanner = false,
+        isShare = false,
+        isInstagram = true;
 
   final int entryIndex;
   final bool isBanner;
   final bool isShare;
+  final bool isInstagram;
 }
 
-/// Contestant/versus cards + share cerca del inicio + banner every [everyN] items.
+/// Contestant/versus + Compartir / Instagram cada 2 cards + banner AdMob.
 List<_PollFeedSlot> _pollFeedSlots(
   int entryCount, {
   required bool includeShare,
@@ -3735,15 +4892,20 @@ List<_PollFeedSlot> _pollFeedSlots(
   final every = AdMobConfig.adsEnabled
       ? (everyN ?? AdMobConfig.bannerEveryNContestants)
       : 0;
-  // Después de la 2ª card (o la 1ª si solo hay una) para que se vea al votar.
-  final shareAfter = !includeShare
-      ? -1
-      : (entryCount >= 2 ? 1 : 0);
+  // Tras el 2º, 4º, 6º...: Compartir → Instagram → Compartir → Instagram...
+  var promoIndex = 0;
 
   for (var i = 0; i < entryCount; i++) {
     slots.add(_PollFeedSlot.entry(i));
-    if (i == shareAfter) {
-      slots.add(const _PollFeedSlot.share());
+    final shouldInsertPromo =
+        includeShare && (entryCount == 1 ? i == 0 : i % 2 == 1);
+    if (shouldInsertPromo) {
+      if (promoIndex.isEven) {
+        slots.add(const _PollFeedSlot.share());
+      } else {
+        slots.add(const _PollFeedSlot.instagram());
+      }
+      promoIndex++;
     }
     if (every > 0 && (i + 1) % every == 0 && i < entryCount - 1) {
       slots.add(const _PollFeedSlot.banner());

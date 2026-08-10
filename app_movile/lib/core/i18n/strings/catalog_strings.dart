@@ -59,6 +59,26 @@ const Map<String, Map<String, String>> catalogStrings = {
     'en': 'When a poll ends, its results will remain here.',
     'ko': '투표가 종료되면 결과가 여기에 남습니다.',
   },
+  'catalog.pollsCategorySelected': {
+    'es': 'CATEGORÍA SELECCIONADA',
+    'en': 'SELECTED CATEGORY',
+    'ko': '선택한 카테고리',
+  },
+  'catalog.pollsViewAll': {
+    'es': 'Ver todas',
+    'en': 'View all',
+    'ko': '전체 보기',
+  },
+  'catalog.pollsEmptyCategoryTitle': {
+    'es': 'Sin votaciones en esta categoría',
+    'en': 'No polls in this category',
+    'ko': '이 카테고리에 투표가 없습니다',
+  },
+  'catalog.pollsEmptyCategorySubtitle': {
+    'es': 'Prueba otra categoría o mira todas las votaciones.',
+    'en': 'Try another category or view all polls.',
+    'ko': '다른 카테고리를 보거나 전체 투표를 확인하세요.',
+  },
   'catalog.pollFallbackTitle': {'es': 'Votación', 'en': 'Poll', 'ko': '투표'},
   'catalog.pollActionViewProcess': {
     'es': 'Ver proceso',
@@ -199,6 +219,21 @@ const Map<String, Map<String, String>> catalogStrings = {
     'es': 'Sin logros todavía',
     'en': 'No achievements yet',
     'ko': '아직 업적이 없습니다',
+  },
+  'catalog.profileCurrentSupport': {
+    'es': 'Apoyo actual',
+    'en': 'Current support',
+    'ko': '현재 지지율',
+  },
+  'catalog.profileWinnerBadge': {
+    'es': 'GANADOR',
+    'en': 'WINNER',
+    'ko': '우승',
+  },
+  'catalog.profileVotesCount': {
+    'es': '{count} votos',
+    'en': '{count} votes',
+    'ko': '{count}표',
   },
   'catalog.profileNoRoundsEyebrow': {
     'es': 'SIN RONDAS REGISTRADAS',

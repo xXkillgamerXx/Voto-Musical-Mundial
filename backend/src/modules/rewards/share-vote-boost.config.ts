@@ -11,7 +11,9 @@ export const DEFAULT_SHARE_VOTE_BOOST: ShareVoteBoostConfig = {
   enabled: true,
   multiplier: 2,
   durationMinutes: 10,
-  oncePerDay: true,
+  // After the timed boost ends, sharing can activate it again.
+  // Admin can still enable "1 vez al dia" if needed.
+  oncePerDay: false,
 };
 
 export const normalizeShareVoteBoostConfig = (raw: unknown): ShareVoteBoostConfig => {

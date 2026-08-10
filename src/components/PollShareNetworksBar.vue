@@ -28,21 +28,9 @@ defineProps({
     type: String,
     default: '',
   },
-  facebookDraft: {
-    type: String,
-    default: '',
-  },
-  facebookHint: {
-    type: String,
-    default: '',
-  },
-  facebookCopyLabel: {
-    type: String,
-    default: '',
-  },
 })
 
-defineEmits(['share', 'copy-facebook'])
+defineEmits(['share'])
 </script>
 
 <template>
@@ -129,24 +117,5 @@ defineEmits(['share', 'copy-facebook'])
     >
       {{ message }}
     </p>
-
-    <div
-      v-if="facebookDraft"
-      class="mt-2 rounded-2xl border border-blue-300/25 bg-slate-950/55 p-2.5 text-left"
-    >
-      <p class="text-[10px] font-black uppercase tracking-wide text-blue-200">
-        {{ facebookHint }}
-      </p>
-      <p class="mt-1 whitespace-pre-wrap break-words text-[11px] font-bold leading-5 text-slate-100">
-        {{ facebookDraft }}
-      </p>
-      <button
-        type="button"
-        class="mt-2 min-h-8 w-full rounded-xl border border-blue-300/30 bg-blue-500/20 text-[10px] font-black uppercase tracking-wide text-blue-100"
-        @click="$emit('copy-facebook')"
-      >
-        {{ facebookCopyLabel }}
-      </button>
-    </div>
   </div>
 </template>

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/i18n/tr.dart';
 import '../../data/auth_service.dart';
@@ -75,11 +78,59 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _handleRootBack() async {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF120A2B),
+          title: Text(
+            tr('misc.exitAppTitle'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          content: Text(
+            tr('misc.exitAppConfirm'),
+            style: const TextStyle(
+              color: Color(0xFFD8D3F7),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(tr('misc.exitAppCancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(tr('misc.exitAppYes')),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldExit == true && mounted) {
+      SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return AuthScaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(_handleRootBack());
+      },
+      child: AuthScaffold(
       title: tr('auth.loginTitle'),
       subtitle: tr('auth.loginSubtitle'),
       footer: Wrap(
@@ -209,6 +260,7 @@ class _LoginPageState extends State<LoginPage> {
             isLoading: _isLoading,
           ),
         ],
+      ),
       ),
     );
   }

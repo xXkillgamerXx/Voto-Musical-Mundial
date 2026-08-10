@@ -4,6 +4,7 @@ import { i18n, translate } from "../i18n";
 import { applyPollLocale, pollUrl as buildPollUrl } from "../utils/pollLocale";
 import {
   applyShareMeta,
+  getPublicShareOrigin,
   resolvePollShareImage,
   shareWithOptionalImage,
 } from "../utils/shareMeta";
@@ -24,6 +25,8 @@ import {
   getShareVoteBoost,
 } from "../services/api/votesApi";
 import { getMissions } from "../services/api/missionsApi";
+import { getAppDownloadConfig } from "../services/api/appDownloadApi";
+import { openGooglePlay } from "../utils/openGooglePlay";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
 import {
   loadContestantMetadata,
@@ -47,6 +50,9 @@ const EmbedAd = defineAsyncComponent(() => import("../components/EmbedAd.vue"));
 const PollComments = defineAsyncComponent(() => import("../components/PollComments.vue"));
 const PollShareNetworksBar = defineAsyncComponent(
   () => import("../components/PollShareNetworksBar.vue"),
+);
+const WinnerCertificateModal = defineAsyncComponent(
+  () => import("../components/WinnerCertificateModal.vue"),
 );
 
 const hallOfFameHref = computed(() => routePath("hallOfFame", i18n.global.locale.value));
@@ -80,18 +86,23 @@ const isVoting = ref("");
 const errorMessage = ref("");
 const anonymousCooldownNotice = ref("");
 const shareMessage = ref("");
+const certificateModal = ref({
+  open: false,
+  name: "",
+  group: "",
+  date: "",
+});
 const shareBoostConfig = ref({
   enabled: true,
   multiplier: 2,
   durationMinutes: 10,
-  oncePerDay: true,
+  oncePerDay: false,
 });
 const shareBoostActive = ref(null);
 const shareBoostClaimedToday = ref(false);
 const shareBoostCanClaim = ref(true);
 const isClaimingShareBoost = ref(false);
 const shareBoostMessage = ref("");
-const facebookShareDraft = ref("");
 const now = ref(Date.now());
 const STARTLY_SHARE_URL = "https://startlyapp.com/musicmundial";
 const selectedRoundId = ref("");
@@ -111,6 +122,14 @@ const pendingAnonymousVoteFeedback = ref(null);
 const anonymousVoteSuccessToast = ref(null);
 const missionsPrompt = ref(null);
 const pendingMissionsCount = ref(null);
+const DEFAULT_PLAY_STORE_URL =
+  "https://play.google.com/store/apps/details?id=vote.musicmundial.com";
+const appDownloadPrompt = ref({
+  enabled: true,
+  playStoreUrl: DEFAULT_PLAY_STORE_URL,
+  firstOpenRewardEnabled: true,
+  firstOpenRewardPoints: 15,
+});
 const roundDetailSection = ref(null);
 const showSecondarySections = ref(false);
 
@@ -1250,7 +1269,41 @@ const refreshPendingMissionsCount = async () => {
 
 const closeMissionsPrompt = () => {
   missionsPrompt.value = null;
-  facebookShareDraft.value = "";
+};
+
+const loadAppDownloadPromptConfig = async () => {
+  try {
+    const payload = await getAppDownloadConfig();
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    if (payload.enabled === false || payload.visible === false) {
+      appDownloadPrompt.value = {
+        enabled: false,
+        playStoreUrl: DEFAULT_PLAY_STORE_URL,
+        firstOpenRewardEnabled: false,
+        firstOpenRewardPoints: 0,
+      };
+      return;
+    }
+    const url = String(payload.playStoreUrl || "").trim();
+    appDownloadPrompt.value = {
+      enabled: true,
+      playStoreUrl: url || DEFAULT_PLAY_STORE_URL,
+      firstOpenRewardEnabled: payload.firstOpenRewardEnabled !== false,
+      firstOpenRewardPoints: Math.max(
+        0,
+        Math.floor(Number(payload.firstOpenRewardPoints ?? 15)),
+      ),
+    };
+  } catch {
+    appDownloadPrompt.value = {
+      enabled: true,
+      playStoreUrl: DEFAULT_PLAY_STORE_URL,
+      firstOpenRewardEnabled: true,
+      firstOpenRewardPoints: 15,
+    };
+  }
 };
 
 const openMissionsPrompt = async (contestant) => {
@@ -1261,7 +1314,10 @@ const openMissionsPrompt = async (contestant) => {
   window.clearTimeout(missionsPromptTimer);
   const voteScope = getAnonymousVoteScope(contestant);
   const status = anonymousVoteStatusForScope(voteScope);
-  await refreshPendingMissionsCount();
+  await Promise.all([
+    refreshPendingMissionsCount(),
+    loadAppDownloadPromptConfig(),
+  ]);
   missionsPrompt.value = {
     contestant,
     voteScope,
@@ -1300,6 +1356,36 @@ const goToMissionsFromPrompt = () => {
 
   window.history.pushState({}, "", nextUrl);
   window.dispatchEvent(new PopStateEvent("popstate"));
+};
+
+const showMissionsPromptDownloadCta = computed(
+  () =>
+    Boolean(appDownloadPrompt.value.enabled) &&
+    Number(pendingMissionsCount.value || 0) <= 0,
+);
+
+const showFreeVoteDownloadCta = computed(
+  () =>
+    Boolean(appDownloadPrompt.value.enabled) &&
+    Boolean(isAnonymousVotingFlow.value) &&
+    Boolean(isLoggedOutOfPoints.value),
+);
+
+const openAppDownload = () => {
+  const url =
+    String(appDownloadPrompt.value.playStoreUrl || "").trim() ||
+    DEFAULT_PLAY_STORE_URL;
+  openGooglePlay(url);
+};
+
+const openAppDownloadFromPrompt = () => {
+  closeMissionsPrompt();
+  openAppDownload();
+};
+
+const openAppDownloadFromVoteModal = () => {
+  closeVoteModal();
+  openAppDownload();
 };
 
 const missionsPromptRemainingMs = computed(() => {
@@ -1600,6 +1686,49 @@ const shareFinalWinner = async (winner) => {
   }
 };
 
+const formatCertificateDate = (value) => {
+  const raw = value?.toDate?.() || (value ? new Date(value) : new Date());
+  const date = Number.isNaN(raw.getTime()) ? new Date() : raw;
+  const locale = i18n.global.locale.value === "en" ? "en" : "es";
+  const parts = new Intl.DateTimeFormat(locale, {
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const month = parts.find((part) => part.type === "month")?.value || "";
+  const year = parts.find((part) => part.type === "year")?.value || "";
+  return `${month} ${year}`.trim();
+};
+
+const openWinnerCertificate = (winnerEntry) => {
+  const artist = winnerEntry?.artist || winnerEntry || {};
+  certificateModal.value = {
+    open: true,
+    name: artist.name || translate("polls.detail.voteFallback"),
+    group: getArtistGroup(artist),
+    date: formatCertificateDate(poll.value?.endAt || poll.value?.updatedAt),
+  };
+};
+
+const closeWinnerCertificate = () => {
+  certificateModal.value = {
+    ...certificateModal.value,
+    open: false,
+  };
+};
+
+watch(
+  () => i18n.global.locale.value,
+  () => {
+    if (!certificateModal.value.open) {
+      return;
+    }
+    certificateModal.value = {
+      ...certificateModal.value,
+      date: formatCertificateDate(poll.value?.endAt || poll.value?.updatedAt),
+    };
+  },
+);
+
 const buildSharePayload = () => {
   const pollTitle = poll.value?.title || translate("polls.detail.sharePoll");
   const year = Number(poll.value?.year || routeYear) || new Date().getFullYear();
@@ -1621,7 +1750,8 @@ const buildSharePayload = () => {
   const path = poll.value
     ? buildPollUrl(poll.value, i18n.global.locale.value)
     : window.location.pathname;
-  const url = `${window.location.origin}${path}${window.location.search || ""}`;
+  // Facebook / redes no pueden leer localhost: siempre URL pública.
+  const url = `${getPublicShareOrigin()}${path}${window.location.search || ""}`;
   const imageUrl = resolvePollShareImage(poll.value);
   return { title, text, url, imageUrl };
 };
@@ -1671,20 +1801,35 @@ const applyShareBoostPayload = (payload) => {
     enabled: payload.enabled !== false,
     multiplier: Math.max(2, Number(payload.multiplier || 2)),
     durationMinutes: Math.max(1, Number(payload.durationMinutes || 10)),
-    oncePerDay: payload.oncePerDay !== false,
+    oncePerDay: payload.oncePerDay === true,
   };
   shareBoostClaimedToday.value = Boolean(payload.claimedToday);
   shareBoostCanClaim.value =
     payload.canClaim !== undefined
       ? Boolean(payload.canClaim)
-      : !shareBoostClaimedToday.value;
-  if (payload.active?.endsAt) {
+      : !(shareBoostConfig.value.oncePerDay && shareBoostClaimedToday.value);
+  if (payload.active?.endsAt && Number(payload.active.endsAt) > Date.now()) {
     shareBoostActive.value = {
       multiplier: Math.max(2, Number(payload.active.multiplier || payload.multiplier || 2)),
       endsAt: Number(payload.active.endsAt),
     };
   } else {
     shareBoostActive.value = null;
+  }
+};
+
+const releaseShareBoostIfExpired = () => {
+  const endsAt = Number(shareBoostActive.value?.endsAt || 0);
+  if (!endsAt || endsAt > Date.now()) {
+    return;
+  }
+  // Terminó el tiempo del x2: se puede volver a activar (salvo 1 vez al día).
+  shareBoostActive.value = null;
+  if (!shareBoostConfig.value.oncePerDay) {
+    shareBoostCanClaim.value = shareBoostConfig.value.enabled;
+    shareBoostClaimedToday.value = false;
+  } else {
+    shareBoostCanClaim.value = !shareBoostClaimedToday.value;
   }
 };
 
@@ -1702,12 +1847,13 @@ const claimShareBoostAfterShare = async (platform) => {
   if (!shareBoostConfig.value.enabled || isClaimingShareBoost.value) {
     return;
   }
+  // Ya lo usó hoy (si oncePerDay) o no puede reclamar: no spamear el aviso
+  // en cada share. El boost tiene duración; el contador/hint ya lo indica.
   if (!shareBoostCanClaim.value && !isShareBoostLive.value) {
-    shareBoostMessage.value = translate("polls.detail.shareBoostAlreadyUsed");
     return;
   }
+  // Mientras el x2 está activo (tiene tiempo restante), no reiniciar ni avisar.
   if (isShareBoostLive.value) {
-    // Keep current countdown; do not restart.
     return;
   }
 
@@ -1744,42 +1890,30 @@ const sharePollOnNetwork = async (platform) => {
 
   try {
     if (platform === "facebook") {
-      // Facebook blocks autofill text and often opens an empty share_channel.
-      // Copy the full message and open Facebook so the fan can paste it.
-      const draft = `${text}\n${url}`;
-      facebookShareDraft.value = draft;
-      try {
-        await navigator.clipboard.writeText(draft);
-      } catch {
-        // Draft stays visible so the fan can copy manually.
-      }
-      shareBoostMessage.value = translate("polls.detail.shareFacebookCopied");
-      window.open("https://www.facebook.com/", "_blank", "noopener,noreferrer");
+      // sharer.php con URL pública + quote para que no abra "Crear publicación" vacío.
+      const facebookShareUrl =
+        `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}` +
+        `&quote=${encodeURIComponent(text)}`;
+      window.open(facebookShareUrl, "_blank", "noopener,noreferrer");
     } else if (platform === "whatsapp") {
-      facebookShareDraft.value = "";
       window.open(`https://wa.me/?text=${encodedText}`, "_blank", "noopener,noreferrer");
     } else if (platform === "telegram") {
-      facebookShareDraft.value = "";
       window.open(
         `https://t.me/share/url?url=${encodedUrl}&text=${encodeURIComponent(text)}`,
         "_blank",
         "noopener,noreferrer",
       );
     } else if (platform === "twitter") {
-      facebookShareDraft.value = "";
       window.open(
         `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodedUrl}`,
         "_blank",
         "noopener,noreferrer",
       );
     } else if (platform === "startly") {
-      facebookShareDraft.value = "";
       window.open(STARTLY_SHARE_URL, "_blank", "noopener,noreferrer");
     } else if (navigator.share) {
-      facebookShareDraft.value = "";
       await navigator.share({ title, text, url });
     } else {
-      facebookShareDraft.value = "";
       await navigator.clipboard.writeText(`${text}\n${url}`);
       shareMessage.value = translate("polls.detail.sharePollCopied");
       window.setTimeout(() => {
@@ -1793,16 +1927,6 @@ const sharePollOnNetwork = async (platform) => {
       return;
     }
     errorMessage.value = translate("polls.detail.sharePollError");
-  }
-};
-
-const copyFacebookShareDraft = async () => {
-  if (!facebookShareDraft.value) return;
-  try {
-    await navigator.clipboard.writeText(facebookShareDraft.value);
-    shareBoostMessage.value = translate("polls.detail.shareFacebookCopied");
-  } catch {
-    shareBoostMessage.value = translate("polls.detail.sharePollError");
   }
 };
 
@@ -2778,7 +2902,6 @@ const closeVoteModal = () => {
   voteModalContestant.value = null;
   voteAmount.value = 1;
   shareBoostMessage.value = "";
-  facebookShareDraft.value = "";
 };
 
 const resetVisibleTurnstile = () => {
@@ -2865,6 +2988,7 @@ const openVoteModal = (contestant) => {
     voteModalContestant.value = contestant;
     voteAmount.value = 1;
     loadShareVoteBoost();
+    loadAppDownloadPromptConfig();
     return;
   }
 
@@ -2889,6 +3013,7 @@ const openVoteModal = (contestant) => {
   voteModalContestant.value = contestant;
   voteAmount.value = 1;
   loadShareVoteBoost();
+  loadAppDownloadPromptConfig();
 };
 
 const setVoteAmountToMax = () => {
@@ -3319,6 +3444,7 @@ onMounted(() => {
   unsubscribeAuth = onStoredAuthChange(syncAuth);
   clockTimer = window.setInterval(() => {
     now.value = Date.now();
+    releaseShareBoostIfExpired();
   }, 1000);
   document.addEventListener("visibilitychange", handleAnonymousVisibilityRefresh);
   window.addEventListener("focus", handleAnonymousVisibilityRefresh);
@@ -3912,7 +4038,7 @@ onUnmounted(() => {
               class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_50%,rgba(251,191,36,0.22),transparent_30%),radial-gradient(circle_at_82%_40%,rgba(217,70,239,0.24),transparent_32%)]"
             ></span>
             <span
-              class="relative flex flex-col items-stretch gap-3 sm:flex-row"
+              class="relative flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap"
             >
               <a
                 :href="hallOfFameHref"
@@ -3925,6 +4051,18 @@ onUnmounted(() => {
                 </span>
                 <span>{{ $t("polls.detail.viewHallOfFame") }}</span>
               </a>
+              <button
+                type="button"
+                class="group inline-flex min-h-16 flex-1 items-center justify-center gap-3 rounded-3xl border border-fuchsia-300/30 bg-fuchsia-500/15 px-5 py-3 text-center text-sm font-black uppercase leading-tight tracking-wide text-fuchsia-100 shadow-lg shadow-fuchsia-950/25 transition hover:-translate-y-0.5 hover:bg-fuchsia-500/25"
+                @click="openWinnerCertificate(winnerEntry)"
+              >
+                <span
+                  class="grid size-9 shrink-0 place-items-center rounded-2xl bg-white/10 text-base"
+                >
+                  <i class="fa-solid fa-certificate" aria-hidden="true"></i>
+                </span>
+                <span>{{ $t("polls.detail.viewCertificate") }}</span>
+              </button>
               <button
                 type="button"
                 class="group inline-flex min-h-16 flex-1 items-center justify-center gap-3 rounded-3xl border border-white/15 bg-slate-950/55 px-5 py-3 text-center text-sm font-black uppercase leading-tight tracking-wide text-white shadow-lg shadow-slate-950/25 transition hover:-translate-y-0.5 hover:border-fuchsia-200/35 hover:bg-white/12"
@@ -4816,6 +4954,14 @@ onUnmounted(() => {
       :poll-id="currentPollId"
     />
 
+    <WinnerCertificateModal
+      :open="certificateModal.open"
+      :name="certificateModal.name"
+      :group="certificateModal.group"
+      :date="certificateModal.date"
+      @close="closeWinnerCertificate"
+    />
+
     <div v-if="!isEmbeddedPage && showSecondarySections" class="mt-12 border-t border-white/10 pt-4">
       <ActivePolls :exclude-poll-id="currentPollId" />
     </div>
@@ -4987,15 +5133,64 @@ onUnmounted(() => {
                   :multiplier="shareBoostMultiplier"
                   :remaining-label="shareBoostRemainingLabel"
                   :title="$t('polls.detail.shareForDoubleTitle', { multiplier: shareBoostConfig.multiplier })"
-                  :hint="shareBoostConfig.oncePerDay && shareBoostClaimedToday ? $t('polls.detail.shareBoostAlreadyUsed') : $t('polls.detail.shareForDoubleHint', { minutes: shareBoostConfig.durationMinutes, multiplier: shareBoostConfig.multiplier })"
+                  :hint="shareBoostConfig.oncePerDay && shareBoostClaimedToday
+                    ? $t('polls.detail.shareBoostAlreadyUsed', { multiplier: shareBoostConfig.multiplier })
+                    : $t('polls.detail.shareForDoubleHint', { minutes: shareBoostConfig.durationMinutes, multiplier: shareBoostConfig.multiplier })"
                   :claiming="isClaimingShareBoost"
                   :message="shareBoostMessage || shareMessage"
-                  :facebook-draft="facebookShareDraft"
-                  :facebook-hint="$t('polls.detail.shareFacebookDraftHint')"
-                  :facebook-copy-label="$t('polls.detail.shareFacebookCopyAgain')"
                   @share="sharePollOnNetwork"
-                  @copy-facebook="copyFacebookShareDraft"
                 />
+
+                <button
+                  v-if="showFreeVoteDownloadCta"
+                  type="button"
+                  class="group relative mt-1 flex w-full items-center gap-3 overflow-hidden rounded-[1.35rem] border border-fuchsia-300/45 bg-linear-to-r from-[#3b0a58] via-[#1d0b33] to-[#0d0820] px-3 py-3 text-left shadow-[0_0_28px_rgba(217,70,239,0.28)] transition hover:border-fuchsia-200/60 hover:shadow-[0_0_36px_rgba(217,70,239,0.4)]"
+                  @click="openAppDownloadFromVoteModal"
+                >
+                  <span
+                    class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_40%,rgba(236,72,153,0.35),transparent_45%),radial-gradient(circle_at_90%_70%,rgba(34,211,238,0.16),transparent_40%)]"
+                    aria-hidden="true"
+                  ></span>
+                  <span class="relative shrink-0">
+                    <span
+                      class="absolute -inset-1 rounded-[1.1rem] bg-fuchsia-400/25 blur-md"
+                      aria-hidden="true"
+                    ></span>
+                    <img
+                      src="/app-download-phone.png"
+                      alt=""
+                      class="relative h-[4.5rem] w-auto drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]"
+                      width="72"
+                      height="72"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span class="relative min-w-0 flex-1">
+                    <span
+                      v-if="appDownloadPrompt.firstOpenRewardEnabled && appDownloadPrompt.firstOpenRewardPoints > 0"
+                      class="mb-1 inline-flex rounded-full border border-amber-300/35 bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-100"
+                    >
+                      +{{ appDownloadPrompt.firstOpenRewardPoints }} pts
+                    </span>
+                    <span class="block text-[13px] font-black uppercase tracking-wide text-white">{{
+                      $t("polls.detail.freeVoteMissionsDownloadGo")
+                    }}</span>
+                    <span class="mt-0.5 block text-[11px] font-semibold leading-4 text-fuchsia-100/80">{{
+                      appDownloadPrompt.firstOpenRewardEnabled &&
+                      appDownloadPrompt.firstOpenRewardPoints > 0
+                        ? $t("polls.detail.freeVoteMissionsDownloadHintPoints", {
+                            points: appDownloadPrompt.firstOpenRewardPoints,
+                          })
+                        : $t("polls.detail.freeVoteMissionsDownloadHint")
+                    }}</span>
+                  </span>
+                  <span
+                    class="relative grid size-9 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-base text-white/80 transition group-hover:bg-white/18 group-hover:text-white"
+                    aria-hidden="true"
+                  >
+                    ›
+                  </span>
+                </button>
 
                 <label
                   v-if="!isAnonymousVotingFlow"
@@ -5304,7 +5499,11 @@ onUnmounted(() => {
             {{ $t("polls.detail.freeVoteMissionsTitle") }}
           </h2>
           <p class="mt-2 text-center text-sm font-semibold leading-6 text-white/75">
-            {{ $t("polls.detail.freeVoteMissionsBody") }}
+            {{
+              showMissionsPromptDownloadCta
+                ? $t("polls.detail.freeVoteMissionsDownloadBody")
+                : $t("polls.detail.freeVoteMissionsBody")
+            }}
           </p>
 
           <div
@@ -5341,6 +5540,12 @@ onUnmounted(() => {
               })
             }}
           </p>
+          <p
+            v-else-if="showMissionsPromptDownloadCta"
+            class="mt-3 text-center text-sm font-extrabold text-fuchsia-200"
+          >
+            {{ $t("polls.detail.freeVoteMissionsDownloadHint") }}
+          </p>
 
           <PollShareNetworksBar
             v-if="shareBoostConfig.enabled"
@@ -5352,11 +5557,7 @@ onUnmounted(() => {
             :hint="$t('polls.detail.freeVoteMissionsShare')"
             :claiming="isClaimingShareBoost"
             :message="shareBoostMessage"
-            :facebook-draft="facebookShareDraft"
-            :facebook-hint="$t('polls.detail.shareFacebookDraftHint')"
-            :facebook-copy-label="$t('polls.detail.shareFacebookCopyAgain')"
             @share="sharePollOnNetwork"
-            @copy-facebook="copyFacebookShareDraft"
           />
           <button
             v-else
@@ -5375,6 +5576,57 @@ onUnmounted(() => {
           </button>
 
           <button
+            v-if="showMissionsPromptDownloadCta"
+            type="button"
+            class="group relative mt-3 flex w-full items-center gap-3 overflow-hidden rounded-[1.35rem] border border-fuchsia-300/45 bg-linear-to-r from-[#3b0a58] via-[#1d0b33] to-[#0d0820] px-3 py-3 text-left shadow-[0_0_28px_rgba(217,70,239,0.28)] transition hover:border-fuchsia-200/60 hover:shadow-[0_0_36px_rgba(217,70,239,0.4)]"
+            @click="openAppDownloadFromPrompt"
+          >
+            <span
+              class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_40%,rgba(236,72,153,0.35),transparent_45%),radial-gradient(circle_at_90%_70%,rgba(34,211,238,0.16),transparent_40%)]"
+              aria-hidden="true"
+            ></span>
+            <span class="relative shrink-0">
+              <span
+                class="absolute -inset-1 rounded-[1.1rem] bg-fuchsia-400/25 blur-md"
+                aria-hidden="true"
+              ></span>
+              <img
+                src="/app-download-phone.png"
+                alt=""
+                class="relative h-[4.5rem] w-auto drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]"
+                width="72"
+                height="72"
+                aria-hidden="true"
+              />
+            </span>
+            <span class="relative min-w-0 flex-1">
+              <span
+                v-if="appDownloadPrompt.firstOpenRewardEnabled && appDownloadPrompt.firstOpenRewardPoints > 0"
+                class="mb-1 inline-flex rounded-full border border-amber-300/35 bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-100"
+              >
+                +{{ appDownloadPrompt.firstOpenRewardPoints }} pts
+              </span>
+              <span class="block text-[13px] font-black uppercase tracking-wide text-white">{{
+                $t("polls.detail.freeVoteMissionsDownloadGo")
+              }}</span>
+              <span class="mt-0.5 block text-[11px] font-semibold leading-4 text-fuchsia-100/80">{{
+                appDownloadPrompt.firstOpenRewardEnabled &&
+                appDownloadPrompt.firstOpenRewardPoints > 0
+                  ? $t("polls.detail.freeVoteMissionsDownloadHintPoints", {
+                      points: appDownloadPrompt.firstOpenRewardPoints,
+                    })
+                  : $t("polls.detail.freeVoteMissionsDownloadHint")
+              }}</span>
+            </span>
+            <span
+              class="relative grid size-9 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-base text-white/80 transition group-hover:bg-white/18 group-hover:text-white"
+              aria-hidden="true"
+            >
+              ›
+            </span>
+          </button>
+          <button
+            v-else
             type="button"
             class="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
             @click="goToMissionsFromPrompt"

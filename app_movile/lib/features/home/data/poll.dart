@@ -130,6 +130,7 @@ class Poll {
     required this.rounds,
     required this.contestants,
     required this.config,
+    required this.winnerIds,
     this.activeEndAt,
     this.endAt,
     this.updatedAt,
@@ -156,6 +157,7 @@ class Poll {
   final List<PollRound> rounds;
   final List<PollContestant> contestants;
   final Map<String, dynamic> config;
+  final List<String> winnerIds;
   final DateTime? activeEndAt;
   final DateTime? endAt;
   final DateTime? updatedAt;
@@ -270,13 +272,13 @@ class Poll {
     final categoryName = useEnCategory && categoryNameEn.isNotEmpty
         ? categoryNameEn
         : categoryNameEs;
-    final categoryId = category is Map<String, dynamic>
-        ? _stringValue([category['id']])
-        : _stringValue([
-            json['categoryId'],
-            metadata['categoryId'],
-            categoryName,
-          ]);
+    final categoryId = _stringValue([
+      if (category is Map<String, dynamic>) category['id'],
+      json['categoryId'],
+      metadata['categoryId'],
+      if (category is Map<String, dynamic>) category['name'],
+      categoryNameEs,
+    ]);
     final categoryIcon = category is Map<String, dynamic>
         ? _stringValue([category['icon']])
         : _stringValue([metadata['categoryIcon'], json['categoryIcon']]);
@@ -361,6 +363,9 @@ class Poll {
       rounds: rounds,
       contestants: contestants,
       config: config,
+      winnerIds: _stringList(
+        config['winnerIds'] ?? metadata['winnerIds'] ?? json['winnerIds'],
+      ),
       activeEndAt: _parseDate(json['activeEndAt'] ?? metadata['activeEndAt']),
       endAt: _parseDate(
         json['endsAt'] ??

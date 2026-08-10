@@ -1,5 +1,6 @@
 const DEFAULT_OG_IMAGE = 'https://vote.musicmundial.com/web-app-manifest-512x512.png'
 const TWITTER_SITE = '@MusicMundial'
+export const PUBLIC_SHARE_ORIGIN = 'https://vote.musicmundial.com'
 
 const ensureMeta = (attr, key, content) => {
   if (!content || typeof document === 'undefined') {
@@ -23,18 +24,39 @@ const guessImageType = (imageUrl) => {
   return ''
 }
 
-export const toAbsoluteUrl = (value, base = typeof window !== 'undefined' ? window.location.origin : '') => {
+/** Origin used for social shares (Facebook cannot scrape localhost). */
+export const getPublicShareOrigin = () => {
+  if (typeof window === 'undefined') {
+    return PUBLIC_SHARE_ORIGIN
+  }
+  const origin = String(window.location.origin || '').replace(/\/$/, '')
+  if (!origin || /localhost|127\.0\.0\.1/i.test(origin)) {
+    return PUBLIC_SHARE_ORIGIN
+  }
+  return origin
+}
+
+export const toAbsoluteUrl = (value, base = getPublicShareOrigin()) => {
   const raw = String(value || '').trim()
   if (!raw) {
     return ''
   }
   if (/^https?:\/\//i.test(raw)) {
+    // Rewrite localhost absolute URLs to the public share origin.
+    try {
+      const parsed = new URL(raw)
+      if (/localhost|127\.0\.0\.1/i.test(parsed.hostname)) {
+        return `${getPublicShareOrigin()}${parsed.pathname}${parsed.search}${parsed.hash}`
+      }
+    } catch {
+      // keep as-is
+    }
     return raw
   }
   if (raw.startsWith('//')) {
     return `https:${raw}`
   }
-  const origin = String(base || '').replace(/\/$/, '')
+  const origin = String(base || getPublicShareOrigin()).replace(/\/$/, '')
   return `${origin}${raw.startsWith('/') ? '' : '/'}${raw}`
 }
 

@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../hall_of_fame/data/hall_of_fame_api.dart';
+import '../../../home/data/polls_api.dart';
+import '../../../polls/presentation/pages/poll_detail_page.dart';
 import '../../data/artist.dart';
 import '../../data/artists_api.dart';
 import '../widgets/artist_avatar.dart';
@@ -29,6 +32,7 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
   bool _isLoadingFollowStatus = true;
   String _errorMessage = '';
   late final ArtistsApi _artistsApi;
+  late Future<List<HallOfFameEntry>> _winsFuture;
 
   bool get _isSignedIn => widget.authService.session.isSignedIn;
 
@@ -37,6 +41,9 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
     super.initState();
     _followersCount = widget.artist.followersCount;
     _artistsApi = ArtistsApi(widget.authService.client);
+    _winsFuture = HallOfFameApi(
+      PollsApi(widget.authService.client),
+    ).loadWinsForArtist(widget.artist.id, artist: widget.artist);
     _loadFollowStatus();
   }
 
@@ -169,7 +176,18 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
                             const SizedBox(height: 16),
                             _InfoPanel(artist: widget.artist),
                             const SizedBox(height: 12),
-                            _AchievementsPanel(artist: widget.artist),
+                            FutureBuilder<List<HallOfFameEntry>>(
+                              future: _winsFuture,
+                              builder: (context, snapshot) {
+                                final wins =
+                                    snapshot.data ?? const <HallOfFameEntry>[];
+                                return _AchievementsHeader(
+                                  loading: snapshot.connectionState ==
+                                      ConnectionState.waiting,
+                                  winCount: wins.length,
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -179,8 +197,47 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
                 ColoredBox(
                   color: const Color(0xFF090B19).withValues(alpha: 0.9),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-                    child: _EmptyVotesPanel(artistName: widget.artist.name),
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                    child: FutureBuilder<List<HallOfFameEntry>>(
+                      future: _winsFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xFFFBBF24),
+                              ),
+                            ),
+                          );
+                        }
+                        final wins =
+                            snapshot.data ?? const <HallOfFameEntry>[];
+                        if (wins.isEmpty) {
+                          return _EmptyVotesPanel(
+                            artistName: widget.artist.name,
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var i = 0; i < wins.length; i++) ...[
+                              if (i > 0) const SizedBox(height: 12),
+                              _AchievementCard(
+                                entry: wins[i],
+                                onTap: () => PollDetailPage.open(
+                                  context,
+                                  authService: widget.authService,
+                                  pollId: wins[i].poll.id,
+                                  initialPoll: wins[i].poll,
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
@@ -737,10 +794,14 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
-class _AchievementsPanel extends StatelessWidget {
-  const _AchievementsPanel({required this.artist});
+class _AchievementsHeader extends StatelessWidget {
+  const _AchievementsHeader({
+    required this.loading,
+    required this.winCount,
+  });
 
-  final Artist artist;
+  final bool loading;
+  final int winCount;
 
   @override
   Widget build(BuildContext context) {
@@ -757,33 +818,256 @@ class _AchievementsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            tr('catalog.profileAchievements'),
-            style: const TextStyle(
-              color: Color(0xFFFCD34D),
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2.2,
-            ),
+          Row(
+            children: [
+              const Icon(
+                Icons.emoji_events_rounded,
+                color: Color(0xFFFCD34D),
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                tr('catalog.profileAchievements'),
+                style: const TextStyle(
+                  color: Color(0xFFFCD34D),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2.2,
+                ),
+              ),
+              if (winCount > 0) ...[
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFBBF24).withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: const Color(0xFFFBBF24).withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    tr('catalog.profileWinnerBadge'),
+                    style: const TextStyle(
+                      color: Color(0xFFFEF3C7),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            child: Text(
+          const SizedBox(height: 10),
+          if (loading)
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: Color(0xFFFBBF24),
+              backgroundColor: Color(0x33FBBF24),
+            )
+          else if (winCount == 0)
+            Text(
               tr('catalog.profileNoAchievements'),
               style: const TextStyle(
                 color: Color(0xFF94A3B8),
                 fontSize: 12,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
+              ),
+            )
+          else
+            Text(
+              trp('catalog.hofWinnersCount', {'count': '$winCount'}),
+              style: const TextStyle(
+                color: Color(0xFFFDE68A),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
               ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class _AchievementCard extends StatelessWidget {
+  const _AchievementCard({
+    required this.entry,
+    required this.onTap,
+  });
+
+  final HallOfFameEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusLabel = entry.status == 'closed'
+        ? tr('catalog.statusClosed')
+        : entry.status.toUpperCase();
+    final percent = entry.percent.clamp(0, 100).toDouble();
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF090B19).withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: const Color(0xFF8B5CF6).withValues(alpha: 0.18),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    statusLabel,
+                    style: const TextStyle(
+                      color: Color(0xFFF0ABFC),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFBBF24).withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: const Color(0xFFFBBF24).withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('♛', style: TextStyle(fontSize: 10)),
+                        const SizedBox(width: 4),
+                        Text(
+                          tr('catalog.profileWinnerBadge'),
+                          style: const TextStyle(
+                            color: Color(0xFFFEF3C7),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                entry.displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  height: 1.15,
+                ),
+              ),
+              if (entry.year != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${entry.year}',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Text(
+                    tr('catalog.profileCurrentSupport'),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${percent.toStringAsFixed(2)}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: SizedBox(
+                  height: 8,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ColoredBox(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: (percent / 100).clamp(0.0, 1.0),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFFFDE68A),
+                                  Color(0xFFEC4899),
+                                  Color(0xFFD946EF),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                trp('catalog.profileVotesCount', {
+                  'count': _formatProfileCount(entry.votes),
+                }),
+                style: const TextStyle(
+                  color: Color(0xFFA5F3FC),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

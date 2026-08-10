@@ -26,6 +26,26 @@ const Map<String, Map<String, String>> miscStrings = {
     'en': "You're all caught up.",
     'ko': '모든 알림을 확인했어요.',
   },
+  'misc.exitAppTitle': {
+    'es': 'Salir de la app',
+    'en': 'Leave the app',
+    'ko': '앱 종료',
+  },
+  'misc.exitAppConfirm': {
+    'es': '¿Seguro que quieres salir de la app?',
+    'en': 'Are you sure you want to leave the app?',
+    'ko': '앱을 종료하시겠습니까?',
+  },
+  'misc.exitAppYes': {
+    'es': 'Sí, salir',
+    'en': 'Yes, leave',
+    'ko': '네, 종료',
+  },
+  'misc.exitAppCancel': {
+    'es': 'Cancelar',
+    'en': 'Cancel',
+    'ko': '취소',
+  },
   'misc.markAllRead': {
     'es': 'Marcar todo como leído',
     'en': 'Mark all as read',
@@ -40,6 +60,16 @@ const Map<String, Map<String, String>> miscStrings = {
     'es': 'Recibe regalos, misiones y avisos aunque no tengas la app abierta.',
     'en': "Get gifts, missions and alerts even when the app isn't open.",
     'ko': '앱을 열지 않아도 선물, 미션, 알림을 받아보세요.',
+  },
+  'appFirstOpen.giftSender': {
+    'es': 'Bonus de la app',
+    'en': 'App bonus',
+    'ko': '앱 보너스',
+  },
+  'appFirstOpen.giftMessage': {
+    'es': 'Entraste a la app por primera vez y ganaste {points} puntos.',
+    'en': 'You opened the app for the first time and earned {points} points.',
+    'ko': '앱을 처음 열어 {points} 포인트를 받았어요.',
   },
   'misc.enablePushButton': {
     'es': 'ACTIVAR PUSH',

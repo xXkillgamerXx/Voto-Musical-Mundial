@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
@@ -8,10 +9,12 @@ import '../../../../core/ads/ad_service.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/navigation/app_deep_link.dart';
 import '../../../../core/notifications/push_notification_service.dart';
+import '../../../../core/rewards/app_first_open_reward.dart';
 import '../../../../core/storage/daily_reward_storage.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../artists/presentation/pages/artists_page.dart';
 import '../../../artists/presentation/pages/ranking_popularity_page.dart';
+import '../../../home/data/poll_category.dart';
 import '../../../home/presentation/pages/home_page.dart';
 import '../../../home/presentation/pages/missions_page.dart';
 import '../../../home/presentation/pages/news_page.dart';
@@ -90,8 +93,11 @@ class _SignedInPageState extends State<_SignedInPage> {
   late final NotificationController _notifications;
   final GlobalKey<NavigatorState> _shellNavigatorKey =
       GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String _selectedSection = 'Inicio';
   bool _dailyRewardPromptChecked = false;
+  final ValueNotifier<PollsCategoryFilter?> _pollsCategoryFilter =
+      ValueNotifier<PollsCategoryFilter?>(null);
 
   static const _tabSections = [
     'Inicio',
@@ -116,11 +122,20 @@ class _SignedInPageState extends State<_SignedInPage> {
     _notifications = NotificationController(widget.authService);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_notifications.initialize());
+      unawaited(_maybeClaimAppFirstOpen());
       unawaited(_maybeShowDailyReward());
       unawaited(_notifications.enablePush());
       PushNotificationService.instance.bindOpenHandler(_handlePushOpened);
       unawaited(_startDeepLinks());
     });
+  }
+
+  Future<void> _maybeClaimAppFirstOpen() async {
+    if (!mounted) return;
+    await maybeClaimAppFirstOpenReward(
+      context: context,
+      authService: widget.authService,
+    );
   }
 
   Future<void> _startDeepLinks() async {
@@ -199,18 +214,166 @@ class _SignedInPageState extends State<_SignedInPage> {
     unawaited(AppDeepLinkService.instance.stop());
     PushNotificationService.instance.unbindOpenHandler();
     _notifications.dispose();
+    _pollsCategoryFilter.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  Future<bool> _confirmExitApp() async {
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: const Color(0xFFC084FC).withValues(alpha: 0.35),
+              ),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF1A1035),
+                  Color(0xFF0B0818),
+                ],
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.18),
+                    border: Border.all(
+                      color: const Color(0xFFC084FC).withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFE9D5FF),
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  tr('misc.exitAppTitle'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  tr('misc.exitAppConfirm'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFD8D3F7),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () =>
+                            Navigator.of(dialogContext).pop(false),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFC084FC),
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: Text(tr('misc.exitAppCancel')),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () =>
+                            Navigator.of(dialogContext).pop(true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF21C8),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        child: Text(tr('misc.exitAppYes')),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return shouldExit == true;
+  }
+
+  Future<void> _handleRootBack() async {
+    final scaffold = _scaffoldKey.currentState;
+    if (scaffold?.isDrawerOpen == true) {
+      scaffold!.closeDrawer();
+      return;
+    }
+
+    final nav = _shellNavigator;
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+      return;
+    }
+
+    if (_selectedSection != 'Inicio') {
+      _selectSection('Inicio');
+      return;
+    }
+
+    final shouldExit = await _confirmExitApp();
+    if (shouldExit && mounted) {
+      SystemNavigator.pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
 
-    return Stack(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(_handleRootBack());
+      },
+      child: Stack(
       children: [
         _HomeBackground(
           child: Scaffold(
+            key: _scaffoldKey,
             extendBody: true,
             backgroundColor: Colors.transparent,
             drawer: _HomeMenuDrawer(
@@ -307,6 +470,7 @@ class _SignedInPageState extends State<_SignedInPage> {
           },
         ),
       ],
+      ),
     );
   }
 
@@ -331,10 +495,14 @@ class _SignedInPageState extends State<_SignedInPage> {
     );
   }
 
-  void _selectSection(String section) {
+  void _selectSection(String section, {bool clearPollsCategory = true}) {
     if (section == 'Ranking Popularity') {
       _openRankingPopularity();
       return;
+    }
+
+    if (clearPollsCategory && section == 'Votaciones') {
+      _pollsCategoryFilter.value = null;
     }
 
     // Al cambiar de pestaña, vuelve al root del shell para que se vea el tab.
@@ -344,10 +512,24 @@ class _SignedInPageState extends State<_SignedInPage> {
 
     setState(() => _selectedSection = section);
 
-    if (tabIndex != -1 && _pageController.hasClients) {
-      // Salto directo: evita el frame en blanco del animateToPage.
-      _pageController.jumpToPage(tabIndex);
+    void jumpToTab() {
+      if (tabIndex != -1 && _pageController.hasClients) {
+        _pageController.jumpToPage(tabIndex);
+      }
     }
+
+    jumpToTab();
+    if (tabIndex != -1 && !_pageController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => jumpToTab());
+    }
+  }
+
+  void _openPollsCategory(PollCategoryItem category) {
+    _pollsCategoryFilter.value = PollsCategoryFilter(
+      id: category.id,
+      name: category.name,
+    );
+    _selectSection('Votaciones', clearPollsCategory: false);
   }
 
   void _openRankingPopularity() {
@@ -402,13 +584,17 @@ class _SignedInPageState extends State<_SignedInPage> {
                         child: HomePage(
                           authService: widget.authService,
                           onNavigateToSection: _selectSection,
+                          onOpenCategory: _openPollsCategory,
                           onOpenNews: () => _pushInShell(
                             NewsScreen(authService: widget.authService),
                           ),
                         ),
                       ),
                       KeepAlivePanel(
-                        child: PollsPage(authService: widget.authService),
+                        child: PollsPage(
+                          authService: widget.authService,
+                          categoryFilter: _pollsCategoryFilter,
+                        ),
                       ),
                       KeepAlivePanel(
                         child: ArtistsPage(authService: widget.authService),

@@ -253,13 +253,16 @@ export class VotesService {
     const active = await this.getActiveShareBoost(identity);
     if (active) {
       // Already running: do not restart the timer on every share click.
+      const claimedToday = config.oncePerDay
+        ? await this.hasClaimedShareBoostToday(identity)
+        : false;
       return {
         ok: true,
         enabled: true,
         multiplier: config.multiplier,
         durationMinutes: config.durationMinutes,
         oncePerDay: config.oncePerDay,
-        claimedToday: true,
+        claimedToday,
         canClaim: false,
         platform: normalizedPlatform,
         alreadyActive: true,

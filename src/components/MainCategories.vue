@@ -14,6 +14,7 @@ const dragState = ref({
   startX: 0,
   scrollLeft: 0,
   hasMoved: false,
+  pointerId: null,
 });
 const suppressCategoryClickUntil = ref(0);
 
@@ -36,25 +37,37 @@ const fallbackIcons = [
 ];
 const isFontAwesomeIcon = (icon) => String(icon || "").startsWith("fa-");
 const categoryHref = (categoryId) =>
-  `/votaciones?categoria=${encodeURIComponent(categoryId)}`;
+  `${routePath("polls", locale.value)}?categoria=${encodeURIComponent(categoryId)}`;
 const wait = (milliseconds) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
   });
+
+const navigateInternal = (href) => {
+  const url = new URL(href, window.location.origin);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next === current) return;
+
+  window.history.pushState({}, "", next);
+  window.scrollTo({ top: 0, behavior: "instant" });
+  // Dispara el router SPA de App.vue
+  window.dispatchEvent(new PopStateEvent("popstate"));
+};
 
 const startCategoryDrag = (event) => {
   if (event.pointerType !== "mouse" || event.button !== 0) {
     return;
   }
 
+  // No capturar aún: si el usuario solo hace click, el enlace debe funcionar.
   dragState.value = {
     isDragging: true,
     startX: event.pageX,
     scrollLeft: event.currentTarget.scrollLeft,
     hasMoved: false,
+    pointerId: event.pointerId,
   };
-  event.currentTarget.classList.add("is-dragging");
-  event.currentTarget.setPointerCapture?.(event.pointerId);
 };
 
 const moveCategoryDrag = (event) => {
@@ -62,38 +75,64 @@ const moveCategoryDrag = (event) => {
     return;
   }
 
-  event.preventDefault();
   const distance = event.pageX - dragState.value.startX;
-
-  if (Math.abs(distance) > 5) {
-    dragState.value.hasMoved = true;
+  if (Math.abs(distance) <= 10) {
+    return;
   }
 
+  if (!dragState.value.hasMoved) {
+    dragState.value.hasMoved = true;
+    event.currentTarget.classList.add("is-dragging");
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      // ignore
+    }
+  }
+
+  event.preventDefault();
   event.currentTarget.scrollLeft = dragState.value.scrollLeft - distance;
 };
 
 const stopCategoryDrag = (event) => {
-  event.currentTarget?.classList.remove("is-dragging");
-  event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  const target = event.currentTarget;
+  target?.classList.remove("is-dragging");
 
   if (dragState.value.hasMoved) {
-    suppressCategoryClickUntil.value = Date.now() + 250;
+    suppressCategoryClickUntil.value = Date.now() + 300;
+    try {
+      target?.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // ignore
+    }
   }
 
-  dragState.value.isDragging = false;
-
-  window.setTimeout(() => {
-    dragState.value.hasMoved = false;
-  }, 250);
+  dragState.value = {
+    isDragging: false,
+    startX: 0,
+    scrollLeft: 0,
+    hasMoved: false,
+    pointerId: null,
+  };
 };
 
-const preventClickAfterDrag = (event) => {
-  if (!dragState.value.hasMoved && Date.now() > suppressCategoryClickUntil.value) {
+const onCategoryClick = (event, href) => {
+  // Tras un drag real, bloquea el click fantasma.
+  if (Date.now() < suppressCategoryClickUntil.value) {
+    event.preventDefault();
+    event.stopPropagation();
     return;
   }
 
   event.preventDefault();
   event.stopPropagation();
+  navigateInternal(href);
+};
+
+const onViewAllClick = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  navigateInternal(pollsHref.value);
 };
 
 const categories = computed(() => {
@@ -105,40 +144,70 @@ const categories = computed(() => {
     id: category.id,
     title: applyCategoryLocale(category, locale.value).name || t("homeCategories.fallbackName"),
     action: t("homeCategories.viewCategory"),
+    pollCountLabel:
+      Number(category.pollCount || 0) === 1
+        ? t("homeCategories.pollSingular")
+        : t("homeCategories.pollPlural", { count: Number(category.pollCount || 0) }),
     href: categoryHref(category.id),
     icon: category.icon || fallbackIcons[index % fallbackIcons.length],
     visual: category.visual || fallbackVisuals[index % fallbackVisuals.length],
   }));
 });
 
+const hasCategories = computed(() => categories.value.length > 0);
+const showCategoriesSection = computed(
+  () => isLoadingCategories.value || hasCategories.value,
+);
+
 onMounted(() => {
   const skeletonDelay = wait(700);
   getPolls(100)
     .then((pollRows) => {
       const categoriesById = new Map();
+      const pollCounts = new Map();
 
       pollRows.forEach((poll) => {
-        const categoryId = poll.categoryId || poll.category?.id || poll.categoryName || poll.category;
-        const categoryName = poll.category?.name || poll.categoryName || poll.category || "";
-
-        if (!categoryId || categoriesById.has(String(categoryId))) {
+        const status = String(poll.status || "");
+        if (!["live", "selecting_winners", "closed"].includes(status)) {
           return;
         }
 
-        categoriesById.set(String(categoryId), {
-          id: String(categoryId),
+        const categoryId = String(
+          poll.categoryId || poll.category?.id || poll.categoryName || "",
+        ).trim();
+        const categoryName = poll.category?.name || poll.categoryName || "";
+
+        if (!categoryId) {
+          return;
+        }
+
+        pollCounts.set(categoryId, (pollCounts.get(categoryId) || 0) + 1);
+
+        if (categoriesById.has(categoryId)) {
+          return;
+        }
+
+        categoriesById.set(categoryId, {
+          id: categoryId,
           name: categoryName || t("homeCategories.fallbackName"),
           nameEn: poll.category?.nameEn || poll.category?.metadata?.nameEn || poll.categoryNameEn || "",
           year: poll.year || poll.category?.year || poll.category?.metadata?.year,
           icon: poll.category?.icon || poll.category?.metadata?.icon || poll.config?.categoryIcon || "",
           visual: poll.category?.visual || poll.category?.metadata?.visual || poll.config?.categoryVisual || "",
           metadata: poll.category?.metadata || {},
+          pollCount: 0,
         });
       });
 
       const categoryRows = [...categoriesById.values()]
+        .map((category) => ({
+          ...category,
+          pollCount: pollCounts.get(category.id) || 0,
+        }))
+        .filter((category) => Number(category.pollCount) > 0)
         .sort(
           (current, next) =>
+            Number(next.pollCount || 0) - Number(current.pollCount || 0) ||
             Number(next.year || 0) - Number(current.year || 0) ||
             String(current.name || "").localeCompare(String(next.name || "")),
         );
@@ -156,6 +225,7 @@ onMounted(() => {
 
 <template>
   <section
+    v-if="showCategoriesSection"
     class="main-categories-surface mx-auto max-w-352 px-4 py-6 sm:px-6 lg:py-8"
   >
     <div class="mb-5 flex items-end justify-between gap-4">
@@ -168,8 +238,10 @@ onMounted(() => {
         </h2>
       </div>
       <a
+        v-if="hasCategories"
         :href="pollsHref"
         class="text-xs font-black uppercase tracking-wide text-violet-300 hover:text-white"
+        @click="onViewAllClick"
       >
         {{ $t("homeCategories.viewAll") }}
       </a>
@@ -223,7 +295,7 @@ onMounted(() => {
           :href="category.href"
           class="block"
           draggable="false"
-          @click="preventClickAfterDrag"
+          @click="onCategoryClick($event, category.href)"
           @dragstart.prevent
         >
         <div
@@ -283,6 +355,9 @@ onMounted(() => {
           <h3 class="text-sm font-black uppercase leading-tight text-white">
             {{ category.title }}
           </h3>
+          <p class="mt-1 text-[11px] font-bold text-white/55">
+            {{ category.pollCountLabel }}
+          </p>
           <span
             class="mt-2 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300 transition group-hover:text-white"
           >
@@ -349,7 +424,7 @@ onMounted(() => {
           :href="category.href"
           class="block"
           draggable="false"
-          @click="preventClickAfterDrag"
+          @click="onCategoryClick($event, category.href)"
           @dragstart.prevent
         >
         <div
@@ -409,6 +484,9 @@ onMounted(() => {
           <h3 class="text-sm font-black uppercase leading-tight text-white">
             {{ category.title }}
           </h3>
+          <p class="mt-1 text-[11px] font-bold text-white/55">
+            {{ category.pollCountLabel }}
+          </p>
           <span
             class="mt-2 inline-flex text-xs font-black uppercase tracking-wide text-fuchsia-300 transition group-hover:text-white"
           >
@@ -417,22 +495,6 @@ onMounted(() => {
         </div>
         </a>
       </article>
-    </div>
-
-    <div
-      v-if="!isLoadingCategories && !categories.length"
-      class="relative overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-fuchsia-950/15"
-    >
-      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(217,70,239,0.22),transparent_34%),radial-gradient(circle_at_15%_80%,rgba(34,211,238,0.12),transparent_30%)]"></div>
-      <div class="relative mx-auto grid size-16 place-items-center rounded-3xl border border-cyan-200/20 bg-cyan-300/10 text-2xl text-cyan-200 shadow-lg shadow-cyan-950/20">
-        <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
-      </div>
-      <h3 class="relative mt-5 text-xl font-black uppercase text-white">
-        {{ $t("homeCategories.emptyTitle") }}
-      </h3>
-      <p class="relative mx-auto mt-2 max-w-xl text-sm font-bold leading-6 text-slate-400">
-        {{ $t("homeCategories.emptyDescription") }}
-      </p>
     </div>
   </section>
 </template>

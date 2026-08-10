@@ -44,6 +44,8 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Necesitamos acceso a tus fotos para que puedas elegir tu foto de perfil y banner.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Guardamos el certificado del ganador en tu galería cuando lo descargas.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Necesitamos acceso a la cámara para que puedas tomar tu foto de perfil.</string>
 	<key>UIApplicationSceneManifest</key>
