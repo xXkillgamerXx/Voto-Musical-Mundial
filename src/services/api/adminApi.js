@@ -40,6 +40,11 @@ export const getAdminUsers = ({
   return adminRequest(`/users?${params.toString()}`)
 }
 export const updateAdminUser = (id, body) => adminRequest(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const getAdminUserProfile = (id) => adminRequest(`/users/${encodeURIComponent(id)}/profile`)
+export const getAdminUserActivity = (id, limit = 120) =>
+  adminRequest(`/users/${encodeURIComponent(id)}/activity?limit=${limit}`)
+export const getAdminUserActivityDays = (id, days = 90) =>
+  adminRequest(`/users/${encodeURIComponent(id)}/activity-days?days=${days}`)
 export const uploadAdminImage = (type, file) => {
   const formData = new FormData()
   formData.append('file', file)
@@ -84,6 +89,25 @@ export const getAdminBotCampaign = (campaignId) =>
   adminRequest(`/bot-campaigns/${encodeURIComponent(campaignId)}`)
 export const cancelAdminBotCampaign = (campaignId) =>
   adminRequest(`/bot-campaigns/${encodeURIComponent(campaignId)}/cancel`, {
+    method: 'POST',
+    body: {},
+  })
+export const createAdminCommentBotCampaign = (pollId, body) =>
+  adminRequest(`/polls/${encodeURIComponent(pollId)}/comment-bot-campaigns`, {
+    method: 'POST',
+    body,
+  })
+export const getAdminCommentBotCampaigns = (pollId) =>
+  adminRequest(`/polls/${encodeURIComponent(pollId)}/comment-bot-campaigns`)
+export const getAdminCommentBotCampaign = (campaignId) =>
+  adminRequest(`/comment-bot-campaigns/${encodeURIComponent(campaignId)}`)
+export const cancelAdminCommentBotCampaign = (campaignId) =>
+  adminRequest(`/comment-bot-campaigns/${encodeURIComponent(campaignId)}/cancel`, {
+    method: 'POST',
+    body: {},
+  })
+export const deleteAdminCommentBotComments = (campaignId) =>
+  adminRequest(`/comment-bot-campaigns/${encodeURIComponent(campaignId)}/delete-comments`, {
     method: 'POST',
     body: {},
   })

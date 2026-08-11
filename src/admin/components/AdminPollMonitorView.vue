@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import AdminCommentBotPanel from './AdminCommentBotPanel.vue'
 import {
   adjustAdminContestantVotes,
   cancelAdminBotCampaign,
@@ -1950,12 +1951,14 @@ onUnmounted(() => {
               v-if="!userVoteLeaders.length"
               class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400"
             >
-              {{ $t('admin.monitor.emptyVotingUsers') }}
-            </p>
-          </div>
-        </article>
-      </div>
+            {{ $t('admin.monitor.emptyVotingUsers') }}
+          </p>
+        </div>
+      </article>
+    </div>
     </section>
+
+    <AdminCommentBotPanel :poll-id="props.pollId" />
 
     <Teleport to="body">
       <div

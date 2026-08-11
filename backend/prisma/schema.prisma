@@ -44,6 +44,7 @@ model User {
   dailyRewardStreak          Int              @default(0) @map("daily_reward_streak")
   dailyRewardStreakDay       Int              @default(0) @map("daily_reward_streak_day")
   lastDailyRewardClaimDate   String?          @map("last_daily_reward_claim_date")
+  lastSeenAt                 DateTime?        @map("last_seen_at")
   metadata                   Json             @default("{}")
   createdAt                  DateTime         @default(now()) @map("created_at")
   updatedAt                  DateTime         @updatedAt @map("updated_at")
@@ -63,8 +64,25 @@ model User {
   followingArtists           ArtistFollower[]
   missionCompletions         MissionCompletion[]
   referralCodes              ReferralCode[]
+  activityDays               UserActivityDay[]
 
   @@map("users")
+}
+
+/// Un registro por usuario y día con actividad, para saber quién entra a diario.
+model UserActivityDay {
+  id          BigInt   @id @default(autoincrement())
+  userId      BigInt   @map("user_id")
+  day         String
+  hits        Int      @default(1)
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([day])
+  @@map("user_activity_days")
 }
 
 model Artist {
@@ -142,6 +160,7 @@ model Poll {
   contestants    Contestant[]
   voteLedger     VoteLedger[]
   voteBotCampaigns VoteBotCampaign[]
+  commentBotCampaigns CommentBotCampaign[]
   comments       Comment[]
   commentLocks   CommentLock[]
   contentReports ContentReport[]
@@ -219,6 +238,7 @@ model VoteLedger {
 
   @@index([pollId, roundId, createdAt])
   @@index([contestantId, createdAt])
+  @@index([userId, createdAt])
   @@map("vote_ledger")
 }
 
@@ -332,21 +352,47 @@ model DailyReward {
 }
 
 model Comment {
-  id          BigInt   @id @default(autoincrement())
-  pollId      BigInt   @map("poll_id")
-  userId      BigInt?  @map("user_id")
-  displayName String   @map("display_name")
-  photoUrl    String?  @map("photo_url")
-  text        String
-  gif         Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-  deletedAt   DateTime? @map("deleted_at")
+  id            BigInt   @id @default(autoincrement())
+  pollId        BigInt   @map("poll_id")
+  userId        BigInt?  @map("user_id")
+  displayName   String   @map("display_name")
+  photoUrl      String?  @map("photo_url")
+  text          String
+  gif           Json?
+  botCampaignId BigInt?  @map("bot_campaign_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  deletedAt     DateTime? @map("deleted_at")
 
-  poll        Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  poll          Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([pollId, createdAt])
+  @@index([botCampaignId])
+  @@index([userId, createdAt])
   @@map("comments")
+}
+
+model CommentBotCampaign {
+  id              BigInt   @id @default(autoincrement())
+  pollId          BigInt   @map("poll_id")
+  totalComments   Int      @map("total_comments")
+  botsCount       Int      @map("bots_count")
+  durationSeconds Int      @map("duration_seconds")
+  appliedCount    Int      @default(0) @map("applied_count")
+  status          String   @default("running")
+  botNames        Json     @default("[]") @map("bot_names")
+  messages        Json     @default("[]")
+  createdBy       String?  @map("created_by")
+  startedAt       DateTime @default(now()) @map("started_at")
+  endsAt          DateTime @map("ends_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  poll            Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@index([status, endsAt])
+  @@index([pollId, status])
+  @@map("comment_bot_campaigns")
 }
 
 model CommentLock {

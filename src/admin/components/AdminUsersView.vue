@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { translate } from '../../i18n'
 import { getAdminUsers, updateAdminUser } from '../../services/api/adminApi'
+import AdminUserActivityModal from './AdminUserActivityModal.vue'
+
+const activityUserId = ref('')
 
 const users = ref([])
 const searchInput = ref('')
@@ -335,7 +338,15 @@ onMounted(() => loadUsers())
           >
             <span>
               <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.user') }}</span>
-              <span class="font-black text-white">{{ user.name || user.displayName || user.username || $t('admin.common.noName') }}</span>
+              <button
+                type="button"
+                class="flex items-center gap-2 text-left font-black text-white transition hover:text-fuchsia-200"
+                title="Ver actividad"
+                @click="activityUserId = String(user.id)"
+              >
+                {{ user.name || user.displayName || user.username || $t('admin.common.noName') }}
+                <i class="fa-solid fa-clock-rotate-left text-xs text-slate-500" aria-hidden="true"></i>
+              </button>
               <span class="mt-1 block text-[11px] font-bold text-slate-500">#{{ user.id }}</span>
             </span>
             <span class="min-w-0">
@@ -435,5 +446,7 @@ onMounted(() => loadUsers())
         </div>
       </article>
     </div>
+
+    <AdminUserActivityModal :user-id="activityUserId" @close="activityUserId = ''" />
   </section>
 </template>
