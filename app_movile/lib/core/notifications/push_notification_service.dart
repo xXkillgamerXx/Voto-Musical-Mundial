@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/notifications/data/notifications_api.dart';
 import '../../firebase_options.dart';
+import '../i18n/app_locale.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -34,6 +35,13 @@ class PushNotificationService {
   /// Se dispara al recibir push en foreground (para refrescar la bandeja).
   VoidCallback? onForegroundMessage;
 
+  /// Banner in-app cuando llega un push con la app abierta (como en la web).
+  void Function({
+    required String title,
+    required String body,
+    required Map<String, dynamic> data,
+  })? onInAppBanner;
+
   /// Regalo en foreground.
   void Function(Map<String, dynamic> data)? onGiftPush;
 
@@ -53,7 +61,15 @@ class PushNotificationService {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    const initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: darwinSettings,
+    );
     await _localNotifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
@@ -73,6 +89,13 @@ class PushNotificationService {
           >()
           ?.createNotificationChannel(channel);
     }
+
+    // En iOS, FCM no muestra alert nativo en foreground salvo que lo pidamos.
+    await _messaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -263,39 +286,79 @@ class PushNotificationService {
   }
 
   void _handleForegroundMessage(RemoteMessage message) {
-    final dataType = message.data['type'] ?? '';
+    final data = Map<String, dynamic>.from(message.data);
+    final dataType = '${data['type'] ?? ''}';
+    final title =
+        (message.notification?.title ?? data['title'] ?? '').toString().trim();
+    final body = (message.notification?.body ??
+            data['body'] ??
+            data['message'] ??
+            '')
+        .toString()
+        .trim();
+
     _log(
-      'Push foreground: type=$dataType id=${message.messageId} title=${message.notification?.title ?? message.data['title']}',
+      'Push foreground: type=$dataType id=${message.messageId} title=$title',
     );
 
     if (dataType == 'admin_points_gift') {
-      onGiftPush?.call(Map<String, dynamic>.from(message.data));
+      onGiftPush?.call(data);
     }
 
     onForegroundMessage?.call();
 
-    final title = message.notification?.title ?? message.data['title'];
-    final body = message.notification?.body ?? message.data['body'];
-    if (title == null && body == null) {
-      return;
-    }
+    if (title.isNotEmpty || body.isNotEmpty) {
+      final useEn = AppLocale.instance.isEnglish;
+      final localizedTitle = useEn
+          ? _firstNonEmpty([data['titleEn'], title])
+          : _firstNonEmpty([title, data['titleEn']]);
+      final localizedBody = useEn
+          ? _firstNonEmpty([
+              data['bodyEn'],
+              data['messageEn'],
+              body,
+            ])
+          : _firstNonEmpty([body, data['bodyEn'], data['messageEn']]);
 
-    final payload = jsonEncode(message.data);
+      // Banner dentro de la app (equivalente al toast de la web).
+      onInAppBanner?.call(
+        title: localizedTitle.isNotEmpty
+            ? localizedTitle
+            : 'Music Mundial VOTE',
+        body: localizedBody.isNotEmpty ? localizedBody : localizedTitle,
+        data: data,
+      );
 
-    _localNotifications.show(
-      message.hashCode,
-      title,
-      body,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'vmm_default',
-          'Music Mundial VOTE',
-          importance: Importance.high,
-          priority: Priority.high,
+      final payload = jsonEncode(data);
+
+      _localNotifications.show(
+        message.hashCode,
+        localizedTitle.isEmpty ? null : localizedTitle,
+        localizedBody.isEmpty ? null : localizedBody,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'vmm_default',
+            'Music Mundial VOTE',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
-      ),
-      payload: payload,
-    );
+        payload: payload,
+      );
+    }
+  }
+
+  String _firstNonEmpty(List<Object?> values) {
+    for (final value in values) {
+      final text = '${value ?? ''}'.trim();
+      if (text.isNotEmpty) return text;
+    }
+    return '';
   }
 
   void _handleLocalNotificationResponse(NotificationResponse response) {

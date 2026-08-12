@@ -1,20 +1,28 @@
 <script setup>
 const communityLinks = [
   {
+    titleKey: 'home.community.instagram.title',
+    descriptionKey: 'home.community.instagram.description',
+    href: 'https://www.instagram.com/musicmundial_awards/',
+    icon: 'fa-brands fa-instagram',
+    labelKey: 'home.community.instagram.label',
+    visual: 'from-fuchsia-950 via-rose-900 to-slate-950',
+  },
+  {
+    titleKey: 'home.community.tiktok.title',
+    descriptionKey: 'home.community.tiktok.description',
+    href: 'https://www.tiktok.com/@musicmundial_awards',
+    icon: 'fa-brands fa-tiktok',
+    labelKey: 'home.community.tiktok.label',
+    visual: 'from-slate-950 via-cyan-950 to-black',
+  },
+  {
     titleKey: 'home.community.startly.title',
     descriptionKey: 'home.community.startly.description',
     href: 'https://startlyapp.com/musicmundial',
     image: '/startly-icon.png',
     labelKey: 'home.community.startly.label',
     visual: 'from-fuchsia-950 via-purple-900 to-slate-950',
-  },
-  {
-    titleKey: 'home.community.x.title',
-    descriptionKey: 'home.community.x.description',
-    href: 'https://x.com/MusicMundial',
-    icon: 'fa-brands fa-x-twitter',
-    labelKey: 'home.community.x.label',
-    visual: 'from-slate-950 via-violet-950 to-black',
   },
 ]
 </script>
@@ -32,7 +40,7 @@ const communityLinks = [
       </div>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-2">
+    <div class="grid gap-4 lg:grid-cols-3">
       <a
         v-for="item in communityLinks"
         :key="item.href"

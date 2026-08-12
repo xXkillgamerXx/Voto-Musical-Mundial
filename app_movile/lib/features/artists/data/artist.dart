@@ -67,14 +67,16 @@ class Artist {
       followersCount * 10 + totalVotes,
     );
 
+    final resolvedImage = image.isNotEmpty ? image : banner;
+
     return Artist(
       id: '${json['id'] ?? ''}',
       name: _stringValue([json['name']]).ifEmpty('Artista'),
       group: _stringValue([json['group'], json['fandom'], metadata['group'], metadata['fandom']]),
       country: _stringValue([json['country'], metadata['country']]),
       role: _stringValue([json['role'], json['genre'], metadata['role'], metadata['genre']]),
-      image: image,
-      banner: banner.isEmpty ? image : banner,
+      image: resolvedImage,
+      banner: banner.isEmpty ? resolvedImage : banner,
       bio: () {
         final bioEs = _stringValue([json['bio'], metadata['bio']]);
         final bioEn = _stringValue([json['bioEn'], metadata['bioEn']]);

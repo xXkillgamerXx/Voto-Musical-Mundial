@@ -32,6 +32,30 @@ class CommunitySection extends StatelessWidget {
 
   static List<CommunityLink> get _links => [
     CommunityLink(
+      title: tr('home.communityInstagramTitle'),
+      description: tr('home.communityInstagramDescription'),
+      label: tr('home.communityInstagramLabel'),
+      url: 'https://www.instagram.com/musicmundial_awards/',
+      icon: Icons.camera_alt_rounded,
+      gradient: const [
+        Color(0xFF831843),
+        Color(0xFF7C3AED),
+        Color(0xFF020617),
+      ],
+    ),
+    CommunityLink(
+      title: tr('home.communityTiktokTitle'),
+      description: tr('home.communityTiktokDescription'),
+      label: tr('home.communityTiktokLabel'),
+      url: 'https://www.tiktok.com/@musicmundial_awards',
+      icon: Icons.music_note_rounded,
+      gradient: const [
+        Color(0xFF020617),
+        Color(0xFF0E7490),
+        Color(0xFF000000),
+      ],
+    ),
+    CommunityLink(
       title: tr('home.communityStartlyTitle'),
       description: tr('home.communityStartlyDescription'),
       label: tr('home.officialLink'),
@@ -41,18 +65,6 @@ class CommunitySection extends StatelessWidget {
         Color(0xFF701A75),
         Color(0xFF581C87),
         Color(0xFF020617),
-      ],
-    ),
-    CommunityLink(
-      title: tr('home.communityXTitle'),
-      description: tr('home.communityXDescription'),
-      label: tr('home.communityXFollowers'),
-      url: 'https://x.com/MusicMundial',
-      icon: Icons.tag_rounded,
-      gradient: const [
-        Color(0xFF020617),
-        Color(0xFF2E1065),
-        Color(0xFF000000),
       ],
     ),
   ];

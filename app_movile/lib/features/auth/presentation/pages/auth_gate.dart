@@ -22,6 +22,7 @@ import '../../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../../notifications/application/notification_controller.dart';
 import '../../../notifications/application/notification_deep_link.dart';
 import '../../../notifications/presentation/pages/notifications_page.dart';
+import '../../../notifications/presentation/widgets/foreground_push_banner.dart';
 import '../../../notifications/presentation/widgets/gift_notification_modal.dart';
 import '../../../notifications/presentation/widgets/notifications_bell.dart';
 import '../../../polls/presentation/pages/polls_page.dart';
@@ -289,12 +290,16 @@ class _SignedInPageState extends State<_SignedInPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: TextButton(
+                      child: OutlinedButton(
                         onPressed: () =>
                             Navigator.of(dialogContext).pop(false),
-                        style: TextButton.styleFrom(
+                        style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFFC084FC),
                           minimumSize: const Size.fromHeight(50),
+                          side: const BorderSide(
+                            color: Color(0xFFC084FC),
+                            width: 1.5,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -456,6 +461,25 @@ class _SignedInPageState extends State<_SignedInPage> {
               notification: gift,
               authService: widget.authService,
               onClose: _notifications.closeGift,
+            );
+          },
+        ),
+        ListenableBuilder(
+          listenable: _notifications,
+          builder: (context, _) {
+            final banner = _notifications.foregroundBanner;
+            if (banner == null) {
+              return const SizedBox.shrink();
+            }
+
+            return ForegroundPushBannerToast(
+              banner: banner,
+              onDismiss: _notifications.clearForegroundBanner,
+              onOpen: () {
+                final data = Map<String, dynamic>.from(banner.data);
+                _notifications.clearForegroundBanner();
+                _handlePushOpened(data);
+              },
             );
           },
         ),

@@ -18,7 +18,6 @@ const recentVotes = ref([])
 const now = ref(Date.now())
 const isLiveConnected = ref(false)
 const pulseIds = ref([])
-const statPulse = ref({ fans: false, activity: false, polls: false })
 
 let unsubscribeArtists = null
 let unsubscribeLivePolls = null
@@ -204,13 +203,6 @@ const triggerPulse = (id) => {
   }, 2800)
 }
 
-const triggerStatPulse = (key) => {
-  statPulse.value = { ...statPulse.value, [key]: true }
-  window.setTimeout(() => {
-    statPulse.value = { ...statPulse.value, [key]: false }
-  }, 650)
-}
-
 const pushVote = (vote) => {
   if (!acceptsVote(vote)) {
     return
@@ -305,58 +297,6 @@ const activities = computed(() => {
       visual: visualOptions[index % visualOptions.length],
     }
   })
-})
-
-const activeUsers = computed(() =>
-  new Set(
-    recentVotes.value
-      .map((vote) => vote.userId || vote.userDisplayName || vote.username)
-      .filter(Boolean),
-  ).size,
-)
-
-const votesPerMinute = computed(() =>
-  recentVotes.value.filter((vote) => {
-    const voteTime = vote.createdAt?.toMillis?.()
-    return voteTime && now.value - voteTime <= 60000
-  }).length,
-)
-
-const activePollsCount = computed(() =>
-  new Set(recentVotes.value.map((vote) => vote.pollId).filter(Boolean)).size,
-)
-
-const liveStats = computed(() => [
-  {
-    key: 'fans',
-    labelKey: 'widgets.activity.activeFans',
-    value: activeUsers.value.toLocaleString('es'),
-    icon: 'fa-solid fa-users',
-  },
-  {
-    key: 'activity',
-    labelKey: 'widgets.activity.votesPerMinute',
-    value: votesPerMinute.value.toLocaleString('es'),
-    icon: 'fa-solid fa-bolt',
-  },
-  {
-    key: 'polls',
-    labelKey: 'widgets.activity.activePolls',
-    value: activePollsCount.value.toLocaleString('es'),
-    icon: 'fa-solid fa-check-to-slot',
-  },
-])
-
-watch(activeUsers, (next, prev) => {
-  if (next !== prev) triggerStatPulse('fans')
-})
-
-watch(votesPerMinute, (next, prev) => {
-  if (next !== prev) triggerStatPulse('activity')
-})
-
-watch(activePollsCount, (next, prev) => {
-  if (next !== prev) triggerStatPulse('polls')
 })
 
 const loadRecentActivity = async () => {
@@ -504,19 +444,6 @@ onUnmounted(() => {
             </p>
           </div>
         </div>
-
-        <div class="grid grid-cols-3 gap-2">
-          <div
-            v-for="stat in liveStats"
-            :key="stat.labelKey"
-            class="rounded-2xl border border-white/10 bg-white/6 px-3 py-3 text-center shadow-inner shadow-black/20 transition"
-            :class="{ 'live-stat-bump': statPulse[stat.key] }"
-          >
-            <i class="text-sm text-fuchsia-200" :class="stat.icon" aria-hidden="true"></i>
-            <p class="mt-1 text-lg font-black text-white">{{ stat.value }}</p>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">{{ $t(stat.labelKey) }}</p>
-          </div>
-        </div>
       </div>
 
       <TransitionGroup
@@ -655,10 +582,6 @@ onUnmounted(() => {
   animation: live-card-pulse 2.8s ease-out;
 }
 
-.live-stat-bump {
-  animation: live-stat-bump 0.65s ease;
-}
-
 .live-activity-enter-active {
   transition:
     opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
@@ -734,20 +657,6 @@ onUnmounted(() => {
 
   100% {
     box-shadow: 0 0 0 0 rgba(217, 70, 239, 0);
-  }
-}
-
-@keyframes live-stat-bump {
-  0% {
-    transform: scale(1);
-  }
-
-  35% {
-    transform: scale(1.06);
-  }
-
-  100% {
-    transform: scale(1);
   }
 }
 </style>

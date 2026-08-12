@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
@@ -95,25 +96,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
     await widget.controller.markRead(notification);
     if (!mounted) return;
 
-    // Si el destino es otra pestaña principal, cerramos la bandeja primero.
     final url = '${notification.payload['url'] ?? ''}'.trim();
     final path = url.contains('://')
         ? (Uri.tryParse(url)?.path ?? url)
         : url;
+    final type = notification.type;
     final isTabDestination = path == '/votaciones' ||
         path == '/artistas' ||
         path == '/misiones' ||
         path == '/' ||
-        path.isEmpty;
+        path.isEmpty ||
+        (type == 'admin_push' && (path.isEmpty || path == '/'));
 
-    if (isTabDestination &&
-        notification.type != 'admin_points_gift' &&
-        notification.type != 'artist_push' &&
-        Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
+    final shouldCloseInbox = isTabDestination &&
+        type != 'admin_points_gift' &&
+        type != 'artist_push' &&
+        Navigator.of(context).canPop();
 
-    if (!mounted) return;
+    // IMPORTANTE: navegar ANTES de hacer pop. Si se cierra la bandeja primero,
+    // este State se destruye (mounted=false) y nunca llega a cambiar de pestaña.
     await NotificationDeepLink.openFromNotification(
       context,
       authService: widget.controller.authService,
@@ -122,6 +123,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
       onSelectSection: widget.onSelectSection,
       fromInbox: true,
     );
+
+    if (shouldCloseInbox && mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   String _formatDate(DateTime? value) {
@@ -154,7 +159,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: Listenable.merge([widget.controller, AppLocale.instance]),
       builder: (context, _) {
         final controller = widget.controller;
         final items = controller.visibleNotifications;

@@ -1,16 +1,33 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/i18n/app_locale.dart';
 import '../../../core/i18n/tr.dart';
 import 'app_notification.dart';
 
 const _hiddenNotificationTypes = {'daily_reward_claimed'};
 
+String _pickLocalized(
+  Map<String, dynamic> payload,
+  List<String> esKeys,
+  List<String> enKeys,
+) {
+  final useEn = AppLocale.instance.isEnglish;
+  final keys = useEn ? [...enKeys, ...esKeys] : [...esKeys, ...enKeys];
+
+  for (final key in keys) {
+    final value = payload[key];
+    if (value != null && '$value'.trim().isNotEmpty) {
+      return '$value'.trim();
+    }
+  }
+  return '';
+}
+
 String notificationTitle(AppNotification notification) {
   final payload = notification.payload;
-
-  final explicit = payload['title'];
-  if (explicit != null && '$explicit'.trim().isNotEmpty) {
-    return '$explicit'.trim();
+  final localized = _pickLocalized(payload, ['title'], ['titleEn']);
+  if (localized.isNotEmpty) {
+    return localized;
   }
 
   switch (notification.type) {
@@ -37,9 +54,13 @@ String notificationTitle(AppNotification notification) {
 
 String notificationBody(AppNotification notification) {
   final payload = notification.payload;
-  final explicit = payload['message'] ?? payload['body'] ?? payload['description'];
-  if (explicit != null && '$explicit'.trim().isNotEmpty) {
-    return '$explicit'.trim();
+  final localized = _pickLocalized(
+    payload,
+    ['message', 'body', 'description'],
+    ['messageEn', 'bodyEn'],
+  );
+  if (localized.isNotEmpty) {
+    return localized;
   }
 
   switch (notification.type) {

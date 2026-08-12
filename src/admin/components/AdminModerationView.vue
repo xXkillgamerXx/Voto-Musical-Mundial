@@ -263,23 +263,41 @@ onMounted(loadAll)
           <div
             v-for="row in ipActivity"
             :key="row.ipHash"
-            class="grid gap-3 border-t border-white/10 px-4 py-3 text-sm text-slate-200 lg:grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr_0.9fr] lg:items-center"
+            class="grid gap-3 border-t border-white/10 px-4 py-4 text-sm text-slate-200 lg:grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr_0.9fr] lg:items-center lg:py-3"
           >
-            <span class="font-mono text-xs text-slate-300" :title="row.ipHash">{{ row.ipShort }}</span>
-            <span class="font-black text-white">{{ formatNumber(row.totalVotes) }}</span>
-            <span :class="row.distinctAnon >= 4 ? 'font-black text-amber-200' : ''">{{ formatNumber(row.distinctAnon) }}</span>
-            <span>{{ formatNumber(row.distinctUsers) }}</span>
             <span>
+              <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">IP</span>
+              <span class="font-mono text-xs text-slate-300" :title="row.ipHash">{{ row.ipShort }}</span>
+            </span>
+            <div class="grid grid-cols-3 gap-3 lg:contents">
+              <span>
+                <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Votos</span>
+                <span class="font-black text-white">{{ formatNumber(row.totalVotes) }}</span>
+              </span>
+              <span>
+                <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Anon</span>
+                <span :class="row.distinctAnon >= 4 ? 'font-black text-amber-200' : ''">{{ formatNumber(row.distinctAnon) }}</span>
+              </span>
+              <span>
+                <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Users</span>
+                <span>{{ formatNumber(row.distinctUsers) }}</span>
+              </span>
+            </div>
+            <span>
+              <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Riesgo</span>
               <span class="rounded-full border px-2 py-1 text-[10px] font-black uppercase" :class="riskMeta[row.risk]?.classes">
                 {{ riskMeta[row.risk]?.label || row.risk }}
               </span>
             </span>
-            <span class="text-xs text-slate-400">{{ formatDate(row.lastVoteAt) }}</span>
             <span>
+              <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Ultimo</span>
+              <span class="text-xs text-slate-400">{{ formatDate(row.lastVoteAt) }}</span>
+            </span>
+            <span class="pt-1 lg:pt-0">
               <button
                 v-if="!row.blocked"
                 type="button"
-                class="rounded-full border border-red-300/30 bg-red-500/10 px-3 py-1.5 text-xs font-black text-red-200 transition hover:bg-red-500/20 disabled:opacity-50"
+                class="inline-flex min-h-10 w-full items-center justify-center rounded-full border border-red-300/30 bg-red-500/10 px-3 py-1.5 text-xs font-black text-red-200 transition hover:bg-red-500/20 disabled:opacity-50 lg:w-auto"
                 :disabled="busyKey === `ip:${row.ipHash}`"
                 @click="blockIp(row)"
               >
@@ -288,7 +306,7 @@ onMounted(loadAll)
               <button
                 v-else
                 type="button"
-                class="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-black text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                class="inline-flex min-h-10 w-full items-center justify-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-black text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50 lg:w-auto"
                 :disabled="busyKey === `ip:${row.ipHash}`"
                 @click="unblockIp(row.ipHash)"
               >

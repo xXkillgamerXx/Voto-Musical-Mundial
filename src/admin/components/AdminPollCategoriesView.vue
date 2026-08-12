@@ -390,86 +390,134 @@ onMounted(async () => {
     </article>
 
     <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
-      <div class="flex items-center justify-between gap-4">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.24em] text-amber-300">
             {{ $t('admin.categories.hallOfFame') }}
           </p>
           <h3 class="mt-2 text-2xl font-black text-white">{{ $t('admin.categories.title') }}</h3>
         </div>
-        <div class="flex flex-wrap justify-end gap-3">
+        <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
           <button
             type="button"
-            class="inline-flex min-h-10 items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
+            class="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01] sm:w-auto"
             @click="openCreateForm"
           >
             {{ $t('admin.categories.createTitle') }}
           </button>
-          <span class="inline-flex min-h-10 items-center rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-widest text-slate-300">
+          <span class="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-widest text-slate-300">
             {{ $t('admin.categories.count', { count: categories.length }) }}
           </span>
         </div>
       </div>
 
       <div class="mt-5 overflow-hidden rounded-3xl border border-white/10 bg-slate-950/45">
-        <table class="min-w-full text-left">
-          <thead class="bg-white/5 text-xs font-black uppercase tracking-widest text-slate-400">
-            <tr>
-              <th class="px-4 py-4">{{ $t('admin.categories.eyebrow') }}</th>
-              <th class="px-4 py-4">{{ $t('admin.categories.visual') }}</th>
-              <th class="px-4 py-4">{{ $t('admin.categories.year') }}</th>
-              <th class="px-4 py-4 text-right">{{ $t('admin.categories.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-white/10">
-            <tr
-              v-for="category in categories"
-              :key="category.id"
-              class="text-sm text-slate-300 transition hover:bg-white/3"
+        <div class="divide-y divide-white/10 md:hidden">
+          <article
+            v-for="category in categories"
+            :key="`mobile-${category.id}`"
+            class="flex items-start gap-3 p-4"
+          >
+            <span
+              class="inline-grid size-11 shrink-0 place-items-center rounded-2xl bg-linear-to-br text-lg"
+              :class="category.visual || visualOptions[0].value"
             >
-              <td class="px-4 py-4">
-                <p class="font-black text-white">{{ category.name }}</p>
-              </td>
-              <td class="px-4 py-4">
-                <span
-                  class="inline-grid size-11 place-items-center rounded-2xl bg-linear-to-br text-lg"
-                  :class="category.visual || visualOptions[0].value"
+              <i
+                v-if="isFontAwesomeIcon(category.icon || iconOptions[0].value)"
+                :class="category.icon || iconOptions[0].value"
+                aria-hidden="true"
+              ></i>
+              <span v-else>{{ category.icon || '✦' }}</span>
+            </span>
+            <div class="min-w-0 flex-1">
+              <p class="font-black text-white">{{ category.name }}</p>
+              <p class="mt-1 text-xs font-bold text-slate-400">{{ category.year }}</p>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                  @click="editCategory(category)"
                 >
-                  <i
-                    v-if="isFontAwesomeIcon(category.icon || iconOptions[0].value)"
-                    :class="category.icon || iconOptions[0].value"
-                    aria-hidden="true"
-                  ></i>
-                  <span v-else>{{ category.icon || '✦' }}</span>
-                </span>
-              </td>
-              <td class="px-4 py-4">{{ category.year }}</td>
-              <td class="px-4 py-4">
-                <div class="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
-                    @click="editCategory(category)"
+                  {{ $t('admin.common.edit') }}
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-red-300/25 bg-red-500/10 px-3 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                  @click="removeCategory(category)"
+                >
+                  {{ $t('admin.common.delete') }}
+                </button>
+              </div>
+            </div>
+          </article>
+          <div
+            v-if="!categories.length"
+            class="px-4 py-10 text-center text-sm font-bold text-slate-400"
+          >
+            {{ $t('admin.categories.empty') }}
+          </div>
+        </div>
+
+        <div class="hidden overflow-x-auto md:block">
+          <table class="min-w-full text-left">
+            <thead class="bg-white/5 text-xs font-black uppercase tracking-widest text-slate-400">
+              <tr>
+                <th class="px-4 py-4">{{ $t('admin.categories.eyebrow') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.categories.visual') }}</th>
+                <th class="px-4 py-4">{{ $t('admin.categories.year') }}</th>
+                <th class="px-4 py-4 text-right">{{ $t('admin.categories.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/10">
+              <tr
+                v-for="category in categories"
+                :key="category.id"
+                class="text-sm text-slate-300 transition hover:bg-white/3"
+              >
+                <td class="px-4 py-4">
+                  <p class="font-black text-white">{{ category.name }}</p>
+                </td>
+                <td class="px-4 py-4">
+                  <span
+                    class="inline-grid size-11 place-items-center rounded-2xl bg-linear-to-br text-lg"
+                    :class="category.visual || visualOptions[0].value"
                   >
-                    {{ $t('admin.common.edit') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
-                    @click="removeCategory(category)"
-                  >
-                    {{ $t('admin.common.delete') }}
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!categories.length">
-              <td colspan="4" class="px-4 py-10 text-center text-sm font-bold text-slate-400">
-                {{ $t('admin.categories.empty') }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                    <i
+                      v-if="isFontAwesomeIcon(category.icon || iconOptions[0].value)"
+                      :class="category.icon || iconOptions[0].value"
+                      aria-hidden="true"
+                    ></i>
+                    <span v-else>{{ category.icon || '✦' }}</span>
+                  </span>
+                </td>
+                <td class="px-4 py-4">{{ category.year }}</td>
+                <td class="px-4 py-4">
+                  <div class="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      class="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                      @click="editCategory(category)"
+                    >
+                      {{ $t('admin.common.edit') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-full border border-red-300/25 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                      @click="removeCategory(category)"
+                    >
+                      {{ $t('admin.common.delete') }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!categories.length">
+                <td colspan="4" class="px-4 py-10 text-center text-sm font-bold text-slate-400">
+                  {{ $t('admin.categories.empty') }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </article>
   </section>

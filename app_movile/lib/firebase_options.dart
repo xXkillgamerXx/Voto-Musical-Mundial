@@ -22,33 +22,36 @@ class DefaultFirebaseOptions {
     }
   }
 
+  /// Package real de la app: vote.musicmundial.com
+  /// (antes apuntaba por error a com.votomusicamundial.app).
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBSyjidw1cmZRaQQCp07WaY63Pjaetdtno',
-    appId: '1:927668152816:android:80b38e4c249a2737acd535',
+    appId: '1:927668152816:android:2a3ef0b105f99f09acd535',
     messagingSenderId: '927668152816',
     projectId: 'votos-3420a',
     storageBucket: 'votos-3420a.firebasestorage.app',
     databaseURL: 'https://votos-3420a-default-rtdb.firebaseio.com',
   );
 
+  /// Bundle real: vote.musicmundial.com (GoogleService-Info.plist).
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBSyjidw1cmZRaQQCp07WaY63Pjaetdtno',
-    appId: '1:927668152816:ios:b0edf446a080ae98acd535',
+    apiKey: 'AIzaSyAeB9zQgJ41ED8xveo9L0PiFGXXz1F3sOk',
+    appId: '1:927668152816:ios:39ce9efc464c1e0eacd535',
     messagingSenderId: '927668152816',
     projectId: 'votos-3420a',
     storageBucket: 'votos-3420a.firebasestorage.app',
     databaseURL: 'https://votos-3420a-default-rtdb.firebaseio.com',
-    iosBundleId: 'com.votomusicamundial.app',
+    iosBundleId: 'vote.musicmundial.com',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBSyjidw1cmZRaQQCp07WaY63Pjaetdtno',
-    appId: '1:927668152816:ios:b0edf446a080ae98acd535',
+    apiKey: 'AIzaSyAeB9zQgJ41ED8xveo9L0PiFGXXz1F3sOk',
+    appId: '1:927668152816:ios:39ce9efc464c1e0eacd535',
     messagingSenderId: '927668152816',
     projectId: 'votos-3420a',
     storageBucket: 'votos-3420a.firebasestorage.app',
     databaseURL: 'https://votos-3420a-default-rtdb.firebaseio.com',
-    iosBundleId: 'com.votomusicamundial.app',
+    iosBundleId: 'vote.musicmundial.com',
   );
 
   static const FirebaseOptions web = FirebaseOptions(

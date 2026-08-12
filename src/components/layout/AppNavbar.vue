@@ -428,7 +428,10 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <div v-if="isMenuOpen" class="border-t border-white/10 px-4 pb-4 lg:hidden">
+    <div
+      v-if="isMenuOpen"
+      class="mobile-nav-panel max-h-[calc(100dvh-4.75rem)] overflow-y-auto overscroll-contain border-t border-white/10 px-4 pb-5 lg:hidden"
+    >
       <div
         class="mx-auto max-w-352 rounded-3xl border border-white/10 bg-white/5 p-3 shadow-2xl shadow-violet-950/30"
       >
@@ -575,6 +578,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.mobile-nav-panel {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
 .points-chip {
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
 }

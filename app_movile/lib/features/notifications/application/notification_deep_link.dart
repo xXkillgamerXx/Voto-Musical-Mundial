@@ -67,6 +67,12 @@ class NotificationDeepLink {
       return;
     }
 
+    // Avisos admin sin URL concreta: lleva a votaciones (más útil que "nada").
+    if ((path == null || path.isEmpty || path == '/') && type == 'admin_push') {
+      onSelectSection?.call('Votaciones');
+      return;
+    }
+
     if (path == null || path.isEmpty || path == '/') {
       onSelectSection?.call('Inicio');
       return;

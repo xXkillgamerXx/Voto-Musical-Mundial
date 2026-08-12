@@ -94,7 +94,8 @@ export default {
     privacy: 'Privacy policy',
     contact: 'Contact us',
     voteRules: 'Voting rules',
-    musicMundialX: 'Music Mundial on X',
+    musicMundialInstagram: 'Instagram @musicmundial_awards',
+    musicMundialTiktok: 'TikTok @musicmundial_awards',
     startlyCommunity: 'Startly community',
     musicMundialFeed: 'Music Mundial feed',
     communityDescription: 'Connect with the community, check news, and follow official updates.',
@@ -160,10 +161,15 @@ export default {
       eyebrow: 'Community',
       title: 'Music Mundial',
       open: 'Open community',
-      x: {
-        title: 'Music Mundial on X',
-        description: 'Follow news, polls, KPOP trends, and community updates.',
-        label: '43.5K followers',
+      instagram: {
+        title: 'Instagram Awards',
+        description: 'Follow @musicmundial_awards for votes, announcements and community moments.',
+        label: '@musicmundial_awards',
+      },
+      tiktok: {
+        title: 'TikTok Awards',
+        description: 'Clips, challenges and Music Mundial Awards updates on TikTok.',
+        label: '@musicmundial_awards',
       },
       startly: {
         title: 'Startly community',
@@ -1043,6 +1049,9 @@ export default {
       administrativePanel: 'Administrative panel',
       viewWeb: 'View website',
       notifications: 'Notifications',
+      openMenu: 'Open menu',
+      closeMenu: 'Close menu',
+      navigation: 'Admin panel navigation',
     },
     common: {
       user: 'User',

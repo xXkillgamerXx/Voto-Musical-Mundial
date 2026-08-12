@@ -454,7 +454,6 @@ class _HomePageState extends State<HomePage> {
                   builder: (context, _) {
                     return _LiveActivitySection(
                       feed: _liveActivityFeed,
-                      livePollCount: data.livePollIds.length,
                       onUserTap: _openUserProfile,
                     );
                   },
@@ -2268,20 +2267,15 @@ class _MainCategoriesSection extends StatelessWidget {
 class _LiveActivitySection extends StatelessWidget {
   const _LiveActivitySection({
     required this.feed,
-    required this.livePollCount,
     required this.onUserTap,
   });
 
   final LiveActivityFeed feed;
-  final int livePollCount;
   final ValueChanged<String> onUserTap;
 
   @override
   Widget build(BuildContext context) {
     final activities = feed.activities;
-    final activeFans = feed.activeFans;
-    final votesPerMinute = feed.votesPerMinute;
-    final activePolls = feed.activePolls > 0 ? feed.activePolls : livePollCount;
     final isConnected = feed.isConnected;
 
     return Padding(
@@ -2413,28 +2407,6 @@ class _LiveActivitySection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                _LiveStatChip(
-                  icon: Icons.groups_rounded,
-                  value: _formatNumber(activeFans),
-                  label: tr('home.activeFans'),
-                ),
-                const SizedBox(width: 8),
-                _LiveStatChip(
-                  icon: Icons.bolt_rounded,
-                  value: _formatNumber(votesPerMinute),
-                  label: tr('home.activityPerMin'),
-                ),
-                const SizedBox(width: 8),
-                _LiveStatChip(
-                  icon: Icons.how_to_vote_rounded,
-                  value: _formatNumber(activePolls),
-                  label: tr('home.polls'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
             if (activities.isEmpty)
               _HomeEmptyPanel(
                 icon: Icons.person_search_rounded,
@@ -2455,58 +2427,6 @@ class _LiveActivitySection extends StatelessWidget {
                       ),
                     ),
                   ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LiveStatChip extends StatelessWidget {
-  const _LiveStatChip({
-    required this.icon,
-    required this.value,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 16, color: const Color(0xFFF5D0FE)),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              label.toUpperCase(),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-              ),
-            ),
           ],
         ),
       ),
@@ -2902,7 +2822,7 @@ class _TopRankingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = resolveArtistMediaUrl(entry.artist.image);
+    final imageUrl = resolveArtistAvatarUrl(entry.artist);
     final cardHeight = entry.featured ? 430.0 : 390.0;
     final photoHeight = entry.featured ? 300.0 : 250.0;
 

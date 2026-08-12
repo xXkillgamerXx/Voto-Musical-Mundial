@@ -488,21 +488,37 @@ const Map<String, Map<String, String>> homeStrings = {
     'ko': 'Music Mundial 허브에서 링크, 소식, 추천 콘텐츠를 만나보세요.',
   },
   'home.officialLink': {'es': 'Link oficial', 'en': 'Official link', 'ko': '공식 링크'},
-  'home.communityXTitle': {
-    'es': 'Music Mundial en X',
-    'en': 'Music Mundial on X',
-    'ko': 'X의 Music Mundial',
+  'home.communityInstagramTitle': {
+    'es': 'Instagram Awards',
+    'en': 'Instagram Awards',
+    'ko': 'Instagram Awards',
   },
-  'home.communityXDescription': {
+  'home.communityInstagramDescription': {
     'es':
-        'Sigue noticias, votaciones, tendencias KPOP y actualizaciones de la comunidad.',
-    'en': 'Follow news, polls, KPOP trends and community updates.',
-    'ko': '뉴스, 투표, KPOP 트렌드, 커뮤니티 소식을 팔로우하세요.',
+        'Sigue @musicmundial_awards para votaciones, anuncios y momentos de la comunidad.',
+    'en':
+        'Follow @musicmundial_awards for votes, announcements and community moments.',
+    'ko': '@musicmundial_awards를 팔로우하고 투표와 소식을 받아보세요.',
   },
-  'home.communityXFollowers': {
-    'es': '43.5K seguidores',
-    'en': '43.5K followers',
-    'ko': '팔로워 43.5K',
+  'home.communityInstagramLabel': {
+    'es': '@musicmundial_awards',
+    'en': '@musicmundial_awards',
+    'ko': '@musicmundial_awards',
+  },
+  'home.communityTiktokTitle': {
+    'es': 'TikTok Awards',
+    'en': 'TikTok Awards',
+    'ko': 'TikTok Awards',
+  },
+  'home.communityTiktokDescription': {
+    'es': 'Clips, retos y novedades de Music Mundial Awards en TikTok.',
+    'en': 'Clips, challenges and Music Mundial Awards updates on TikTok.',
+    'ko': 'TikTok에서 Music Mundial Awards 클립과 소식을 확인하세요.',
+  },
+  'home.communityTiktokLabel': {
+    'es': '@musicmundial_awards',
+    'en': '@musicmundial_awards',
+    'ko': '@musicmundial_awards',
   },
   'home.openCommunity': {
     'es': 'ABRIR COMUNIDAD',

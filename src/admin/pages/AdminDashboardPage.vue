@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminContentReportsView from '../components/AdminContentReportsView.vue'
@@ -143,6 +143,7 @@ const isCheckingAccess = ref(true)
 const hasAdminAccess = ref(false)
 const currentUser = ref(null)
 const avatarImageFailed = ref(false)
+const isMobileNavOpen = ref(false)
 
 const userName = computed(() => currentUser.value?.displayName || 'Admin')
 const userEmail = computed(() => currentUser.value?.email || '')
@@ -177,12 +178,32 @@ const handleAvatarError = () => {
   avatarImageFailed.value = true
 }
 
+const closeMobileNav = () => {
+  isMobileNavOpen.value = false
+}
+
+const toggleMobileNav = () => {
+  isMobileNavOpen.value = !isMobileNavOpen.value
+}
+
 const handleLogout = async () => {
   logout()
   window.location.href = '/'
 }
 
+const handleEscapeKey = (event) => {
+  if (event.key === 'Escape') {
+    closeMobileNav()
+  }
+}
+
+watch(isMobileNavOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
 onMounted(() => {
+  window.addEventListener('keydown', handleEscapeKey)
+
   const authState = getCurrentApiAuth()
   currentUser.value = authState?.user || null
   avatarImageFailed.value = false
@@ -204,6 +225,11 @@ onMounted(() => {
     .finally(() => {
       isCheckingAccess.value = false
     })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscapeKey)
+  document.body.style.overflow = ''
 })
 </script>
 
@@ -245,44 +271,70 @@ onMounted(() => {
     </div>
 
     <div v-else class="relative z-10 flex min-h-screen">
-      <aside class="fixed inset-y-0 left-0 z-30 hidden h-screen w-72 shrink-0 flex-col overflow-hidden border-r border-white/10 bg-slate-950/65 p-5 backdrop-blur-xl lg:flex">
-        <a href="/" class="flex items-center gap-3">
-          <span class="grid size-12 place-items-center rounded-2xl bg-white/10">
-            <img src="/logo-votos.png" alt="Votos Musica Mundial" class="size-10 object-contain" />
-          </span>
-          <span>
-            <span class="block text-sm font-black uppercase leading-none">
-              Votos Mundial
-            </span>
-            <span class="mt-1 block text-[10px] font-bold uppercase tracking-[0.26em] text-fuchsia-300">
-              {{ $t('admin.page.adminPanel') }}
-            </span>
-          </span>
-        </a>
+      <div
+        v-if="isMobileNavOpen"
+        class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden"
+        @click="closeMobileNav"
+      ></div>
 
-        <nav class="mt-8 flex-1 space-y-2">
+      <aside
+        class="fixed inset-y-0 left-0 z-50 flex h-[100dvh] w-[min(18.5rem,88vw)] shrink-0 flex-col overflow-hidden border-r border-white/10 bg-slate-950/95 p-4 backdrop-blur-xl transition-transform duration-300 ease-out sm:w-72 sm:p-5 lg:translate-x-0"
+        :class="[
+          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full max-lg:pointer-events-none lg:translate-x-0',
+        ]"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <a href="/" class="flex min-w-0 items-center gap-3" @click="closeMobileNav">
+            <span class="grid size-11 shrink-0 place-items-center rounded-2xl bg-white/10 sm:size-12">
+              <img src="/logo-votos.png" alt="Votos Musica Mundial" class="size-9 object-contain sm:size-10" />
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-black uppercase leading-none">
+                Votos Mundial
+              </span>
+              <span class="mt-1 block text-[10px] font-bold uppercase tracking-[0.26em] text-fuchsia-300">
+                {{ $t('admin.page.adminPanel') }}
+              </span>
+            </span>
+          </a>
+
+          <button
+            type="button"
+            class="grid size-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 lg:hidden"
+            :aria-label="$t('admin.page.closeMenu')"
+            @click="closeMobileNav"
+          >
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <nav
+          class="mt-6 flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1"
+          :aria-label="$t('admin.page.navigation')"
+        >
           <a
             v-for="item in navItems"
             :key="item.label"
             :href="item.href"
-            class="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-black transition"
+            class="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-black transition sm:px-4 sm:py-3"
             :class="
               isActiveItem(item)
                 ? 'bg-fuchsia-400/15 text-white ring-1 ring-fuchsia-300/30'
                 : 'text-slate-400 hover:bg-white/8 hover:text-white'
             "
+            @click="closeMobileNav"
           >
-            <i class="w-5 text-center" :class="item.icon" aria-hidden="true"></i>
-            {{ item.label }}
+            <i class="w-5 shrink-0 text-center" :class="item.icon" aria-hidden="true"></i>
+            <span class="truncate">{{ item.label }}</span>
           </a>
         </nav>
 
-        <div class="mt-6 rounded-3xl border border-white/10 bg-white/5 p-3">
+        <div class="mt-4 shrink-0 rounded-3xl border border-white/10 bg-white/5 p-3">
           <div class="flex items-center gap-3">
             <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-sm font-black text-white">
               <img
                 v-if="shouldShowAvatarImage"
-                :src="currentUser.photoURL"
+                :src="currentUser.photoUrl || currentUser.photoURL"
                 alt=""
                 class="size-full object-cover"
                 referrerpolicy="no-referrer"
@@ -300,6 +352,7 @@ onMounted(() => {
             <a
               href="/"
               class="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black text-slate-100 transition hover:bg-white/10"
+              @click="closeMobileNav"
             >
               <i class="fa-solid fa-globe" aria-hidden="true"></i>
               {{ $t('admin.page.goToWeb') }}
@@ -316,22 +369,34 @@ onMounted(() => {
         </div>
       </aside>
 
-      <div class="flex min-w-0 flex-1 flex-col lg:ml-72">
-        <header class="sticky top-0 z-20 border-b border-white/10 bg-[#050713]/80 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p class="text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">
-                {{ $t('admin.page.administrativePanel') }}
-              </p>
-              <h1 class="mt-1 text-3xl font-black leading-tight sm:text-4xl">
-                {{ pageTitle }}
-              </h1>
+      <div class="flex min-w-0 flex-1 flex-col overflow-x-hidden lg:ml-72">
+        <header class="sticky top-0 z-20 border-b border-white/10 bg-[#050713]/90 px-3 py-3 backdrop-blur-xl sm:px-6 sm:py-4 lg:px-8">
+          <div class="flex items-start gap-3 sm:items-center sm:justify-between">
+            <div class="flex min-w-0 flex-1 items-start gap-3">
+              <button
+                type="button"
+                class="mt-0.5 grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 transition hover:bg-white/10 lg:hidden"
+                :aria-label="isMobileNavOpen ? $t('admin.page.closeMenu') : $t('admin.page.openMenu')"
+                :aria-expanded="isMobileNavOpen"
+                @click="toggleMobileNav"
+              >
+                <i class="fa-solid" :class="isMobileNavOpen ? 'fa-xmark' : 'fa-bars'" aria-hidden="true"></i>
+              </button>
+
+              <div class="min-w-0">
+                <p class="text-[10px] font-black uppercase tracking-[0.28em] text-fuchsia-300 sm:text-xs sm:tracking-[0.3em]">
+                  {{ $t('admin.page.administrativePanel') }}
+                </p>
+                <h1 class="mt-1 truncate text-2xl font-black leading-tight sm:text-3xl lg:text-4xl">
+                  {{ pageTitle }}
+                </h1>
+              </div>
             </div>
 
-            <div class="flex items-center gap-3">
+            <div class="flex shrink-0 items-center gap-2 sm:gap-3">
               <a
                 href="/"
-                class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
+                class="hidden rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white sm:inline-flex"
               >
                 {{ $t('admin.page.viewWeb') }}
               </a>
@@ -346,7 +411,7 @@ onMounted(() => {
           </div>
         </header>
 
-        <main class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main class="min-w-0 flex-1 overflow-x-hidden px-3 py-5 sm:px-6 sm:py-6 lg:px-8">
           <AdminPollFormView
             v-if="isPollCreateView"
           />

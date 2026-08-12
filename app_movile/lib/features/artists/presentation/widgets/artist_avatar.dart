@@ -12,6 +12,12 @@ String resolveArtistBanner(Artist artist) {
   return banner.isNotEmpty ? banner : defaultArtistBanner;
 }
 
+/// Foto de avatar: perfil si existe; si no, banner (como en la web).
+String resolveArtistAvatarUrl(Artist artist) {
+  final raw = artist.image.isNotEmpty ? artist.image : artist.banner;
+  return resolveArtistMediaUrl(raw);
+}
+
 String resolveArtistMediaUrl(String url) {
   if (url.isEmpty) {
     return '';
@@ -43,7 +49,7 @@ class ArtistAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = resolveArtistMediaUrl(artist.image);
+    final imageUrl = resolveArtistAvatarUrl(artist);
 
     return Container(
       width: size,

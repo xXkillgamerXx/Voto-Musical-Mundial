@@ -22,9 +22,14 @@ const legalLinks = computed(() => [
 
 const socialLinks = [
   {
-    titleKey: 'footer.musicMundialX',
-    icon: 'fa-brands fa-x-twitter',
-    href: 'https://x.com/MusicMundial',
+    titleKey: 'footer.musicMundialInstagram',
+    icon: 'fa-brands fa-instagram',
+    href: 'https://www.instagram.com/musicmundial_awards/',
+  },
+  {
+    titleKey: 'footer.musicMundialTiktok',
+    icon: 'fa-brands fa-tiktok',
+    href: 'https://www.tiktok.com/@musicmundial_awards',
   },
   {
     titleKey: 'footer.startlyCommunity',

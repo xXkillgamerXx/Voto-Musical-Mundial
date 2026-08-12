@@ -23,12 +23,14 @@ class NotificationController extends ChangeNotifier {
   final UserRealtimeService _realtime = UserRealtimeService();
 
   AppNotification? _giftNotification;
+  ForegroundPushBanner? _foregroundBanner;
   bool _loading = false;
   bool _hasFetched = false;
   String? _errorMessage;
   bool _pushEnabled = false;
   bool _initialized = false;
   Timer? _pollTimer;
+  Timer? _bannerTimer;
 
   List<AppNotification> get notifications => List.unmodifiable(_notifications);
 
@@ -39,6 +41,7 @@ class NotificationController extends ChangeNotifier {
       visibleNotifications.where((item) => item.isUnread).length;
 
   AppNotification? get giftNotification => _giftNotification;
+  ForegroundPushBanner? get foregroundBanner => _foregroundBanner;
   bool get loading => _loading;
   bool get hasFetched => _hasFetched;
   String? get errorMessage => _errorMessage;
@@ -54,6 +57,13 @@ class NotificationController extends ChangeNotifier {
         () => unawaited(refresh(forceGift: true));
     PushNotificationService.instance.onGiftPush = (data) {
       unawaited(_handleGiftPush(data));
+    };
+    PushNotificationService.instance.onInAppBanner = ({
+      required title,
+      required body,
+      required data,
+    }) {
+      showForegroundBanner(title: title, body: body, data: data);
     };
     await PushNotificationService.instance.initialize();
     unawaited(
@@ -331,11 +341,42 @@ class NotificationController extends ChangeNotifier {
   Future<bool> enablePush() async {
     final enabled = await PushNotificationService.instance
         .requestPermissionAndRegister(authService);
-    final registered = await PushNotificationService.instance
-        .ensureTokenRegistered(authService);
-    _pushEnabled = enabled || registered;
+    // Solo consideramos push "activo" si el permiso fue concedido.
+    // Antes: enabled || registered hacía que con permiso denegado
+    // se ocultara el CTA de activar notificaciones.
+    _pushEnabled = enabled;
     _notifySafely();
     return _pushEnabled;
+  }
+
+  void showForegroundBanner({
+    required String title,
+    required String body,
+    Map<String, dynamic> data = const {},
+  }) {
+    // Los regalos ya tienen su modal propio; no duplicar banner.
+    if ('${data['type'] ?? ''}' == 'admin_points_gift') {
+      return;
+    }
+
+    _bannerTimer?.cancel();
+    _foregroundBanner = ForegroundPushBanner(
+      title: title,
+      body: body,
+      data: data,
+    );
+    _notifySafely();
+    _bannerTimer = Timer(const Duration(seconds: 6), clearForegroundBanner);
+  }
+
+  void clearForegroundBanner() {
+    _bannerTimer?.cancel();
+    _bannerTimer = null;
+    if (_foregroundBanner == null) {
+      return;
+    }
+    _foregroundBanner = null;
+    _notifySafely();
   }
 
   bool _notifyScheduled = false;
@@ -363,9 +404,23 @@ class NotificationController extends ChangeNotifier {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _bannerTimer?.cancel();
     _realtime.dispose();
     PushNotificationService.instance.onForegroundMessage = null;
     PushNotificationService.instance.onGiftPush = null;
+    PushNotificationService.instance.onInAppBanner = null;
     super.dispose();
   }
+}
+
+class ForegroundPushBanner {
+  const ForegroundPushBanner({
+    required this.title,
+    required this.body,
+    this.data = const {},
+  });
+
+  final String title;
+  final String body;
+  final Map<String, dynamic> data;
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Enlaces oficiales de Music Mundial (app + sitio).
+/// Enlaces oficiales de Music Mundial Awards (app + sitio).
 class MusicMundialSocial {
   const MusicMundialSocial({
     required this.id,
@@ -22,9 +22,9 @@ class MusicMundialSocial {
 }
 
 abstract final class MusicMundialSocials {
-  static const instagramUrl = 'https://www.instagram.com/musicmundial/';
-  static const xUrl = 'https://x.com/MusicMundial';
-  static const facebookUrl = 'https://www.facebook.com/MusicMundialEN';
+  static const instagramUrl =
+      'https://www.instagram.com/musicmundial_awards/';
+  static const tiktokUrl = 'https://www.tiktok.com/@musicmundial_awards';
   static const startlyUrl = 'https://startlyapp.com/musicmundial';
   static const websiteUrl = 'https://www.musicmundial.com/';
   static const feedUrl = 'https://www.musicmundial.com/en/feed/';
@@ -33,26 +33,18 @@ abstract final class MusicMundialSocials {
     MusicMundialSocial(
       id: 'instagram',
       name: 'Instagram',
-      handle: '@musicmundial',
+      handle: '@musicmundial_awards',
       url: instagramUrl,
       accent: Color(0xFFE1306C),
       icon: Icons.camera_alt_rounded,
     ),
     MusicMundialSocial(
-      id: 'x',
-      name: 'X',
-      handle: '@MusicMundial',
-      url: xUrl,
-      accent: Color(0xFFE7E9EA),
-      icon: Icons.alternate_email_rounded,
-    ),
-    MusicMundialSocial(
-      id: 'facebook',
-      name: 'Facebook',
-      handle: 'MusicMundialEN',
-      url: facebookUrl,
-      accent: Color(0xFF1877F2),
-      icon: Icons.facebook_rounded,
+      id: 'tiktok',
+      name: 'TikTok',
+      handle: '@musicmundial_awards',
+      url: tiktokUrl,
+      accent: Color(0xFF25F4EE),
+      icon: Icons.music_note_rounded,
     ),
     MusicMundialSocial(
       id: 'startly',

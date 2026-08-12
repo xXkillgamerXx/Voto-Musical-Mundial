@@ -117,7 +117,7 @@ onMounted(loadUsers)
         </div>
         <button
           type="button"
-          class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
+          class="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white sm:w-auto"
           @click="loadUsers"
         >
           Actualizar tokens

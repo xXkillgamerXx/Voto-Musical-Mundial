@@ -1308,7 +1308,7 @@ onUnmounted(() => {
         <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
           {{ $t('admin.monitor.panel') }}
         </p>
-        <h2 class="mt-2 text-3xl font-black text-white">
+        <h2 class="mt-2 break-words text-2xl font-black text-white sm:text-3xl">
           {{ poll?.title || $t('admin.monitor.defaultPoll') }}
         </h2>
         <p class="mt-2 text-sm text-slate-400">
@@ -1360,8 +1360,8 @@ onUnmounted(() => {
           <p class="text-xs font-black uppercase tracking-[0.28em] text-slate-300">
             Paso actual
           </p>
-          <h3 class="mt-2 flex items-center gap-3 text-2xl font-black text-white">
-            <span class="grid size-9 place-items-center rounded-2xl border border-white/15 bg-black/30 text-base">
+          <h3 class="mt-2 flex items-start gap-3 text-xl font-black text-white sm:items-center sm:text-2xl">
+            <span class="grid size-9 shrink-0 place-items-center rounded-2xl border border-white/15 bg-black/30 text-base">
               <i
                 class="fa-solid"
                 :class="{
@@ -1373,7 +1373,7 @@ onUnmounted(() => {
                 aria-hidden="true"
               ></i>
             </span>
-            {{ guidedStep.label }}
+            <span class="min-w-0">{{ guidedStep.label }}</span>
           </h3>
           <p class="mt-2 max-w-2xl text-sm font-bold leading-6 text-slate-300">
             {{ guidedStep.hint }}
@@ -1383,7 +1383,7 @@ onUnmounted(() => {
         <button
           v-if="guidedStep.action"
           type="button"
-          class="inline-flex min-h-13 shrink-0 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70"
+          class="inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:min-h-13"
           :disabled="Boolean(guidedLoading)"
           @click="runGuidedAction"
         >

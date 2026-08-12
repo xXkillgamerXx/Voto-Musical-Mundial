@@ -124,9 +124,9 @@ onMounted(loadPolls)
           <p class="text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
             {{ $t('admin.polls.eyebrow') }}
           </p>
-          <h2 class="mt-2 text-3xl font-black text-white">
-            {{ $t('admin.polls.listTitle') }}
-          </h2>
+        <h2 class="mt-2 text-2xl font-black text-white sm:text-3xl">
+          {{ $t('admin.polls.listTitle') }}
+        </h2>
           <p class="mt-2 text-sm text-slate-400">
             {{ $t('admin.polls.listDescription') }}
           </p>
@@ -134,7 +134,7 @@ onMounted(loadPolls)
 
         <a
           href="/admin/votaciones/crear"
-          class="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
+          class="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] sm:w-auto"
         >
           <i class="fa-solid fa-plus mr-2" aria-hidden="true"></i>
           {{ $t('admin.polls.create') }}
@@ -162,7 +162,104 @@ onMounted(loadPolls)
       </div>
 
       <div v-else class="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-slate-950/45">
-        <div class="overflow-x-auto">
+        <div class="divide-y divide-white/10 md:hidden">
+          <article
+            v-for="poll in polls"
+            :key="`mobile-${poll.id}`"
+            class="space-y-4 p-4"
+          >
+            <div class="flex items-start gap-3">
+              <span class="grid h-16 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl bg-linear-to-br from-violet-500 to-fuchsia-500 text-white">
+                <img
+                  v-if="poll.banner"
+                  :src="poll.banner"
+                  :alt="poll.title"
+                  class="size-full object-cover"
+                />
+                <i v-else class="fa-solid fa-image" aria-hidden="true"></i>
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="font-black text-white">{{ poll.title }}</p>
+                <p class="mt-1 line-clamp-2 text-xs text-slate-500">
+                  {{ poll.description || $t('admin.polls.noDescription') }}
+                </p>
+                <span class="mt-2 inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300">
+                  {{ statusLabel(poll.status) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-100">
+                {{ pollRoundsCount(poll) }} rondas
+              </span>
+              <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-100">
+                {{ pollContestantsCount(poll) }} participantes
+              </span>
+            </div>
+
+            <p
+              v-if="pollLiveRound(poll)"
+              class="text-xs font-bold text-emerald-200"
+            >
+              En vivo: {{ pollLiveRound(poll).title || 'Ronda actual' }}
+            </p>
+            <p class="text-xs text-slate-500">
+              Actualizada: {{ formatShortDate(poll.updatedAt || poll.createdAt) }}
+            </p>
+
+            <div class="grid grid-cols-2 gap-2">
+              <a
+                :href="`/admin/votaciones/${poll.id}`"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 text-xs font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                {{ $t('admin.polls.manage') }}
+              </a>
+              <a
+                :href="`/admin/votaciones/editar/${poll.id}`"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                {{ $t('admin.common.edit') }}
+              </a>
+              <button
+                type="button"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border px-3 text-xs font-black transition disabled:opacity-60"
+                :class="isCountdownHidden(poll)
+                  ? 'border-amber-300/30 bg-amber-400/15 text-amber-100 hover:bg-amber-400/25'
+                  : 'border-violet-300/25 bg-violet-400/10 text-violet-100 hover:bg-violet-400/20'"
+                :disabled="togglingCountdownId === String(poll.id)"
+                @click="toggleCountdown(poll)"
+              >
+                {{ isCountdownHidden(poll) ? $t('admin.polls.showCountdown') : $t('admin.polls.hideCountdown') }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex min-h-10 items-center justify-center rounded-2xl border border-red-300/25 bg-red-500/10 px-3 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                @click="openDeleteModal(poll)"
+              >
+                {{ $t('admin.common.delete') }}
+              </button>
+            </div>
+          </article>
+
+          <div
+            v-if="!polls.length"
+            class="px-4 py-10 text-center"
+          >
+            <p class="text-lg font-black text-white">{{ $t('admin.polls.empty') }}</p>
+            <p class="mt-2 text-sm text-slate-400">
+              {{ $t('admin.polls.emptyDescription') }}
+            </p>
+            <a
+              href="/admin/votaciones/crear"
+              class="mt-5 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-black uppercase tracking-wide text-white"
+            >
+              {{ $t('admin.polls.create') }}
+            </a>
+          </div>
+        </div>
+
+        <div class="hidden overflow-x-auto md:block">
           <table class="min-w-full text-left">
             <thead class="bg-white/5 text-xs font-black uppercase tracking-widest text-slate-400">
               <tr>
