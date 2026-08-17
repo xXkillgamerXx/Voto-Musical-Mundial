@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/ads/admob_config.dart';
 import '../../../../core/ads/ad_reward_gift.dart';
+import '../../../../core/ads/native_ad_widget.dart';
 import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/api/api_config.dart';
 import '../../../../core/api/api_exception.dart';
@@ -216,9 +217,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
     _votesApi = VotesApi(widget.authService.client);
     _poll = widget.initialPoll;
     final initial = widget.initialPoll;
-    if (initial != null &&
-        initial.status == 'closed' &&
-        _winnerIdsFor(initial).isNotEmpty) {
+    if (_hasFinalWinnersFor(initial)) {
       _viewingFinalResult = true;
       _selectedRoundId = _finalResultTabId;
     } else {
@@ -259,11 +258,14 @@ class _PollDetailPageState extends State<PollDetailPage> {
       final poll = await _pollsApi.getPoll(widget.pollId, forceRefresh: force);
       var roundId = _selectedRoundId;
       var viewingFinal = _viewingFinalResult;
-      final winnerIds = _winnerIdsFor(poll);
       final finalRound = _finalWinnerRoundFor(poll);
-      // Al entrar a una cerrada con ganadores → tab Ganador.
-      if (poll.status == 'closed' &&
-          winnerIds.isNotEmpty &&
+      final hasFinal = _hasFinalWinnersFor(poll);
+      if (!hasFinal) {
+        viewingFinal = false;
+        if (roundId == _finalResultTabId) roundId = poll.effectiveRoundId;
+      }
+      // Al entrar a una cerrada con ronda final → tab Ganador.
+      if (hasFinal &&
           (!_userPickedRound ||
               viewingFinal ||
               roundId.isEmpty ||
@@ -271,7 +273,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
         viewingFinal = true;
         if (finalRound != null) roundId = finalRound.id;
       }
-      if (roundId == _finalResultTabId) {
+      if (hasFinal && roundId == _finalResultTabId) {
         viewingFinal = true;
         roundId = finalRound?.id ?? poll.effectiveRoundId;
       }
@@ -489,11 +491,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   bool get _hasRoundWinners => _activeWinnerIds.isNotEmpty;
 
-  bool get _hasFinalWinners {
-    final poll = _poll;
-    if (poll == null) return false;
-    return _winnerIdsFor(poll).isNotEmpty;
-  }
+  bool get _hasFinalWinners => _hasFinalWinnersFor(_poll);
 
   bool get _showWinnersPending =>
       _pollClosed && !_hasFinalWinners && !_selectingWinners;
@@ -588,6 +586,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   static List<String> _winnerIdsFor(Poll? poll) {
     if (poll == null) return const [];
+    // Ganadores oficiales del poll solo cuando la votación ya cerró.
+    // Si no, una ronda previa cerrada se mostraría como "ganador final".
+    if (poll.status != 'closed' && poll.status != 'selecting_winners') {
+      return const [];
+    }
     if (poll.winnerIds.isNotEmpty) return poll.winnerIds;
     for (var i = poll.rounds.length - 1; i >= 0; i--) {
       final round = poll.rounds[i];
@@ -598,6 +601,8 @@ class _PollDetailPageState extends State<PollDetailPage> {
     return const [];
   }
 
+  /// Solo rondas cerradas cuentan como ronda final (igual que la web).
+  /// Sin ronda cerrada no existe ronda final y no debe mostrarse el tab.
   static PollRound? _finalWinnerRoundFor(Poll? poll) {
     if (poll == null) return null;
     for (var i = poll.rounds.length - 1; i >= 0; i--) {
@@ -609,7 +614,18 @@ class _PollDetailPageState extends State<PollDetailPage> {
     for (var i = poll.rounds.length - 1; i >= 0; i--) {
       if (poll.rounds[i].status == 'closed') return poll.rounds[i];
     }
-    return poll.rounds.isNotEmpty ? poll.rounds.last : null;
+    return null;
+  }
+
+  /// Réplica de `isClosed && finalWinnerEntries.length` de la web.
+  static bool _hasFinalWinnersFor(Poll? poll) {
+    if (poll == null || poll.status != 'closed') return false;
+    final finalRound = _finalWinnerRoundFor(poll);
+    if (finalRound == null) return false;
+    if (_winnerIdsFor(poll).isNotEmpty) return true;
+    return poll.contestants.any(
+      (contestant) => contestant.roundId == finalRound.id,
+    );
   }
 
   int? _winnerRankFor(_VoteEntry entry) {
@@ -711,7 +727,35 @@ class _PollDetailPageState extends State<PollDetailPage> {
       }
       return b.totalVotes.compareTo(a.totalVotes);
     });
-    return entries;
+
+    if (_selectedRound?.type == 'versus' && !_viewingFinalResult) {
+      return _withVersusMatchPercents(entries);
+    }
+
+    final displayedTotal = entries.fold<int>(0, (sum, e) => sum + e.totalVotes);
+    if (displayedTotal <= 0) return entries;
+    return [
+      for (final entry in entries)
+        entry.copyWith(percent: (entry.totalVotes / displayedTotal) * 100),
+    ];
+  }
+
+  /// En versus el % es contra el duelo (como la web), no contra toda la ronda.
+  List<_VoteEntry> _withVersusMatchPercents(List<_VoteEntry> entries) {
+    final grouped = _versusGroups(entries);
+    final byContestant = <String, _VoteEntry>{};
+    for (final group in grouped) {
+      final total = group.fold<int>(0, (sum, e) => sum + e.totalVotes);
+      for (final entry in group) {
+        byContestant[entry.contestantId] = entry.copyWith(
+          percent: total <= 0 ? 0 : (entry.totalVotes / total) * 100,
+        );
+      }
+    }
+    return [
+      for (final entry in entries)
+        byContestant[entry.contestantId] ?? entry,
+    ];
   }
 
   Future<void> _selectRound(PollRound round) async {
@@ -728,6 +772,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
   }
 
   Future<void> _selectFinalResult() async {
+    if (!_hasFinalWinners) return;
     final round = _finalWinnerRound;
     if (_viewingFinalResult) return;
     setState(() {
@@ -1745,7 +1790,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
                         ),
                       )
                     else if (_selectedRound?.type == 'versus' &&
-                        _votingOpen)
+                        !_viewingFinalResult)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
                         sliver: Builder(
@@ -1845,6 +1890,11 @@ class _PollDetailPageState extends State<PollDetailPage> {
                           },
                         ),
                       ),
+                    const SliverToBoxAdapter(
+                      child: NativeAdWidget(
+                        padding: EdgeInsets.fromLTRB(18, 12, 18, 8),
+                      ),
+                    ),
                     SliverToBoxAdapter(
                       child: PollCommentsEntry(
                         pollId: widget.pollId,
@@ -4851,6 +4901,19 @@ class _VoteEntry {
 
   String? get voteScope =>
       matchGroup > 0 ? 'match_$matchGroup' : null;
+
+  _VoteEntry copyWith({double? percent}) {
+    return _VoteEntry(
+      contestantId: contestantId,
+      artist: artist,
+      artistId: artistId,
+      totalVotes: totalVotes,
+      percent: percent ?? this.percent,
+      rank: rank,
+      matchGroup: matchGroup,
+      matchOrder: matchOrder,
+    );
+  }
 }
 
 class _PollFeedSlot {

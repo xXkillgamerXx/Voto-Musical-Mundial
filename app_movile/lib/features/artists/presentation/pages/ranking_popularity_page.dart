@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/ads/native_ad_widget.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/artist.dart';
 import '../../data/artists_api.dart';
@@ -87,6 +88,11 @@ class _RankingPopularityPageState extends State<RankingPopularityPage> {
               ),
             ),
             const SliverToBoxAdapter(child: BannerAdWidget()),
+            const SliverToBoxAdapter(
+              child: NativeAdWidget(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              ),
+            ),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

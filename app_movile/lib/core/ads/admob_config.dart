@@ -37,6 +37,22 @@ class AdMobConfig {
   /// En Artistas: anuncio cuadrado (300x250) cada N cards.
   static const int squareEveryNArtists = 4;
 
+  /// Nativo avanzado en listas de Artistas (0 = off).
+  /// Regla segura: cada 4–6 ítems + máximo ~2–3 visibles.
+  static const int nativeEveryNArtists = 5;
+
+  /// Nativo avanzado en listas de Votaciones (0 = off).
+  static const int nativeEveryNPolls = 4;
+
+  /// Nativo en noticias (0 = off).
+  static const int nativeEveryNNews = 5;
+
+  /// factoryId registrado en MainActivity (Android).
+  static const String nativeFactoryId = 'listNative';
+
+  /// Altura del nativo in-feed (media + CTA).
+  static const double nativeAdHeight = 340;
+
   /// Segundos mínimos entre interstitials.
   static const int interstitialCooldownSeconds = 90;
 
@@ -74,6 +90,34 @@ class AdMobConfig {
       'ca-app-pub-6893073726792422/6238998458';
   static const String prodIosRewardedId = '';
 
+  // Native Advanced de prueba oficiales.
+  static const String testAndroidNativeId =
+      'ca-app-pub-3940256099942544/2247696110';
+  static const String testIosNativeId =
+      'ca-app-pub-3940256099942544/3986624511';
+
+  // Native Advanced reales. Pega aquí el ID de AdMob (Android).
+  static const String prodAndroidNativeId =
+      'ca-app-pub-6893073726792422/6177043411';
+  static const String prodIosNativeId = '';
+
+  // App Open de prueba oficiales.
+  static const String testAndroidAppOpenId =
+      'ca-app-pub-3940256099942544/9257395921';
+  static const String testIosAppOpenId =
+      'ca-app-pub-3940256099942544/5575463023';
+
+  // App Open reales.
+  static const String prodAndroidAppOpenId =
+      'ca-app-pub-6893073726792422/2145661036';
+  static const String prodIosAppOpenId = '';
+
+  /// Segundos mínimos entre App Open (evita saturar al cambiar de app).
+  static const int appOpenCooldownSeconds = 180;
+
+  /// Segundos mínimos en background antes de mostrar App Open al volver.
+  static const int appOpenMinBackgroundSeconds = 15;
+
   static bool get adsEnabled {
     if (hideAds) return false;
     if (kIsWeb) return false;
@@ -81,7 +125,9 @@ class AdMobConfig {
     if (useTestAds) return true;
     return bannerAdUnitId.isNotEmpty ||
         rewardedAdUnitId.isNotEmpty ||
-        interstitialAdUnitId.isNotEmpty;
+        interstitialAdUnitId.isNotEmpty ||
+        nativeAdUnitId.isNotEmpty ||
+        appOpenAdUnitId.isNotEmpty;
   }
 
   static String get bannerAdUnitId {
@@ -120,5 +166,37 @@ class AdMobConfig {
       return Platform.isIOS ? testIosRewardedId : testAndroidRewardedId;
     }
     return prod;
+  }
+
+  static String get nativeAdUnitId {
+    if (useTestAds || kDebugMode) {
+      return Platform.isIOS ? testIosNativeId : testAndroidNativeId;
+    }
+    return Platform.isIOS ? prodIosNativeId : prodAndroidNativeId;
+  }
+
+  static String get appOpenAdUnitId {
+    if (useTestAds || kDebugMode) {
+      return Platform.isIOS ? testIosAppOpenId : testAndroidAppOpenId;
+    }
+    final prod = Platform.isIOS ? prodIosAppOpenId : prodAndroidAppOpenId;
+    if (prod.isEmpty) {
+      return Platform.isIOS ? testIosAppOpenId : testAndroidAppOpenId;
+    }
+    return prod;
+  }
+
+  /// Solo activo en debug (test) o cuando ya pegaste el ID real de producción.
+  static bool get nativeAdsEnabled {
+    if (!adsEnabled || kIsWeb) return false;
+    if (useTestAds || kDebugMode) return true;
+    return nativeAdUnitId.isNotEmpty;
+  }
+
+  static bool get appOpenAdsEnabled {
+    if (!adsEnabled || kIsWeb) return false;
+    if (useTestAds || kDebugMode) return true;
+    final prod = Platform.isIOS ? prodIosAppOpenId : prodAndroidAppOpenId;
+    return prod.isNotEmpty;
   }
 }

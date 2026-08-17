@@ -9,6 +9,7 @@ import '../../../artists/presentation/pages/artist_profile_page.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/ads/native_ad_widget.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
 import '../../../users/presentation/pages/user_profile_page.dart';
@@ -429,6 +430,11 @@ class _HomePageState extends State<HomePage> {
                       widget.onNavigateToSection('Ranking Popularity'),
                   onViewAllTap: () =>
                       widget.onNavigateToSection('Votaciones'),
+                ),
+              ),
+              const SliverToBoxAdapter(
+                child: NativeAdWidget(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
                 ),
               ),
               if (data.categories.isNotEmpty)

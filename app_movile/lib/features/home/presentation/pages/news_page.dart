@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/ads/admob_config.dart';
+import '../../../../core/ads/native_ad_widget.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
@@ -302,10 +304,17 @@ class _NewsPageState extends State<NewsPage> {
             )
           else ...[
             SliverList.separated(
-              itemCount: _items.length,
+              itemCount: _newsSlots.length,
               separatorBuilder: (_, _) => const SizedBox(height: 14),
               itemBuilder: (context, index) {
-                final item = _items[index];
+                final slot = _newsSlots[index];
+                if (slot.isNative) {
+                  return NativeAdWidget(
+                    key: ValueKey('news-native-$index'),
+                    padding: EdgeInsets.zero,
+                  );
+                }
+                final item = _items[slot.newsIndex];
                 return NewsCard(
                   item: item,
                   onTap: () => _openArticle(item.link),
@@ -328,6 +337,37 @@ class _NewsPageState extends State<NewsPage> {
       ),
     );
   }
+
+  List<_NewsFeedSlot> get _newsSlots {
+    if (_items.isEmpty) return const [];
+    final slots = <_NewsFeedSlot>[];
+    final every =
+        AdMobConfig.nativeAdsEnabled ? AdMobConfig.nativeEveryNNews : 0;
+    var nativeCount = 0;
+
+    for (var i = 0; i < _items.length; i++) {
+      slots.add(_NewsFeedSlot.news(i));
+      final n = i + 1;
+      if (every > 0 && i < _items.length - 1 && n % every == 0) {
+        slots.add(const _NewsFeedSlot.native());
+        nativeCount++;
+      }
+    }
+    if (every > 0 && nativeCount == 0) {
+      slots.insert(1, const _NewsFeedSlot.native());
+    }
+    return slots;
+  }
+}
+
+class _NewsFeedSlot {
+  const _NewsFeedSlot.news(this.newsIndex) : isNative = false;
+  const _NewsFeedSlot.native()
+      : newsIndex = -1,
+        isNative = true;
+
+  final int newsIndex;
+  final bool isNative;
 }
 
 class _NewsSearchField extends StatelessWidget {

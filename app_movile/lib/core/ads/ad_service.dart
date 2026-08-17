@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'admob_config.dart';
+import 'app_open_ad_service.dart';
 import 'interstitial_ad_service.dart';
 import 'rewarded_ad_service.dart';
 
@@ -32,6 +33,7 @@ class AdService {
       _initialized = true;
       unawaited(RewardedAdService.preload());
       unawaited(InterstitialAdService.preload());
+      unawaited(AppOpenAdService.preload());
     } catch (error, stack) {
       debugPrint('AdMob init failed: $error\n$stack');
     }

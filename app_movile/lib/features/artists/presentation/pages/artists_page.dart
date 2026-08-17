@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/ads/admob_config.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/ads/interstitial_ad_service.dart';
+import '../../../../core/ads/native_ad_widget.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
@@ -56,14 +57,26 @@ class _ArtistsPageState extends State<ArtistsPage> {
     final slots = <_ArtistsFeedSlot>[];
     final bannerEvery =
         AdMobConfig.adsEnabled ? AdMobConfig.bannerEveryNArtists : 0;
+    final nativeEvery =
+        AdMobConfig.nativeAdsEnabled ? AdMobConfig.nativeEveryNArtists : 0;
+    var nativeCount = 0;
 
     for (var i = 0; i < artists.length; i++) {
       slots.add(_ArtistsFeedSlot.artist(i));
       final n = i + 1;
       final isLast = i == artists.length - 1;
-      if (bannerEvery > 0 && !isLast && n % bannerEvery == 0) {
+      if (isLast) continue;
+      if (nativeEvery > 0 && n % nativeEvery == 0) {
+        slots.add(const _ArtistsFeedSlot.native());
+        nativeCount++;
+      } else if (bannerEvery > 0 && n % bannerEvery == 0) {
         slots.add(const _ArtistsFeedSlot.banner());
       }
+    }
+
+    // Con pocas cards nunca llega al "cada N": garantiza al menos 1 nativo.
+    if (nativeEvery > 0 && nativeCount == 0) {
+      slots.insert(1, const _ArtistsFeedSlot.native());
     }
     return slots;
   }
@@ -165,6 +178,12 @@ class _ArtistsPageState extends State<ArtistsPage> {
                       const SizedBox(height: 14),
                   itemBuilder: (context, index) {
                     final slot = slots[index];
+                    if (slot.isNative) {
+                      return NativeAdWidget(
+                        key: ValueKey('artists-native-$index'),
+                        padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
+                      );
+                    }
                     if (slot.isBanner) {
                       return BannerAdWidget(
                         key: ValueKey('artists-banner-$index'),
@@ -213,13 +232,21 @@ class _ArtistsPageState extends State<ArtistsPage> {
 }
 
 class _ArtistsFeedSlot {
-  const _ArtistsFeedSlot.artist(this.artistIndex) : isBanner = false;
+  const _ArtistsFeedSlot.artist(this.artistIndex)
+      : isBanner = false,
+        isNative = false;
   const _ArtistsFeedSlot.banner()
       : artistIndex = -1,
-        isBanner = true;
+        isBanner = true,
+        isNative = false;
+  const _ArtistsFeedSlot.native()
+      : artistIndex = -1,
+        isBanner = false,
+        isNative = true;
 
   final int artistIndex;
   final bool isBanner;
+  final bool isNative;
 }
 
 class _ArtistSearchField extends StatelessWidget {

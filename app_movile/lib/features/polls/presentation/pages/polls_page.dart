@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/ads/admob_config.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
+import '../../../../core/ads/native_ad_widget.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../home/data/poll.dart';
@@ -323,6 +324,9 @@ class _PollsPageState extends State<PollsPage> {
     final children = <Widget>[];
     final bannerEvery =
         AdMobConfig.adsEnabled ? AdMobConfig.bannerEveryNPolls : 0;
+    final nativeEvery =
+        AdMobConfig.nativeAdsEnabled ? AdMobConfig.nativeEveryNPolls : 0;
+    var nativeCount = 0;
 
     for (var i = 0; i < polls.length; i++) {
       if (i > 0) children.add(const SizedBox(height: 12));
@@ -335,9 +339,18 @@ class _PollsPageState extends State<PollsPage> {
       );
 
       final isLast = i == polls.length - 1;
-      if (bannerEvery > 0 &&
-          !isLast &&
-          (i + 1) % bannerEvery == 0) {
+      if (isLast) continue;
+
+      final n = i + 1;
+      if (nativeEvery > 0 && n % nativeEvery == 0) {
+        children.add(
+          NativeAdWidget(
+            key: ValueKey('polls-native-${isOpen ? 'open' : 'closed'}-$i'),
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+          ),
+        );
+        nativeCount++;
+      } else if (bannerEvery > 0 && n % bannerEvery == 0) {
         children.add(
           BannerAdWidget(
             key: ValueKey('polls-banner-${isOpen ? 'open' : 'closed'}-$i'),
@@ -345,6 +358,19 @@ class _PollsPageState extends State<PollsPage> {
           ),
         );
       }
+    }
+
+    // Con pocas votaciones: al menos 1 nativo después de la primera.
+    if (nativeEvery > 0 && nativeCount == 0 && polls.isNotEmpty) {
+      children.insert(
+        1,
+        NativeAdWidget(
+          key: ValueKey('polls-native-${isOpen ? 'open' : 'closed'}-min'),
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+        ),
+      );
+      // Espacio visual entre card y anuncio.
+      children.insert(1, const SizedBox(height: 12));
     }
     return children;
   }
