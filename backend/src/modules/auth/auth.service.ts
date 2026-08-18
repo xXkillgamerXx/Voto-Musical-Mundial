@@ -1,10 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, TokenInfo } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnonymousTokenDto } from './dto/anonymous-token.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
@@ -30,6 +37,8 @@ const usernameFromEmail = (email: string) =>
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -252,11 +261,16 @@ export class AuthService {
   }
 
   private async googlePayloadFromCredential(client: OAuth2Client, clientId: string, credential: string) {
-    const ticket = await client.verifyIdToken({
-      idToken: credential,
-      audience: clientId,
-    });
-    return ticket.getPayload();
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: credential,
+        audience: clientId,
+      });
+      return ticket.getPayload();
+    } catch (error) {
+      this.logger.warn(`verifyIdToken fallo: ${(error as Error)?.message}`);
+      throw new UnauthorizedException('El token de Google no es valido o ya expiro.');
+    }
   }
 
   private async googlePayloadFromAccessToken(client: OAuth2Client, clientId: string, accessToken: string) {
@@ -264,14 +278,29 @@ export class AuthService {
       throw new UnauthorizedException('No se recibio token de Google.');
     }
 
-    const tokenInfo = await client.getTokenInfo(accessToken);
+    let tokenInfo: TokenInfo;
+    try {
+      tokenInfo = await client.getTokenInfo(accessToken);
+    } catch (error) {
+      this.logger.warn(`getTokenInfo fallo: ${(error as Error)?.message}`);
+      throw new UnauthorizedException('El token de Google no es valido o ya expiro.');
+    }
+
     if (tokenInfo.aud !== clientId) {
+      this.logger.warn(`Token emitido para otro client_id: ${tokenInfo.aud}`);
       throw new UnauthorizedException('Token de Google invalido para esta aplicacion.');
     }
 
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    let response: Response;
+    try {
+      response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+    } catch (error) {
+      this.logger.error(`No se pudo contactar con Google: ${(error as Error)?.message}`);
+      throw new ServiceUnavailableException('No se pudo contactar con Google. Reintenta en unos segundos.');
+    }
+
     if (!response.ok) {
       throw new UnauthorizedException('No se pudo leer el perfil de Google.');
     }
