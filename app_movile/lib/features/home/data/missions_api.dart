@@ -1,5 +1,3 @@
-import 'dart:ui' show PlatformDispatcher;
-
 import '../../../core/api/api_client.dart';
 import 'mission.dart';
 
@@ -14,14 +12,11 @@ class MissionsApi {
   Future<List<Mission>> getMissions({bool forceRefresh = false}) async {
     try {
       final token = _client.accessToken;
-      final lang = PlatformDispatcher.instance.locale.languageCode
-              .toLowerCase()
-              .startsWith('en')
-          ? 'en'
-          : 'es';
-      final basePath =
-          token != null && token.isNotEmpty ? '/missions/me' : '/missions';
-      final path = '$basePath?lang=$lang';
+      // Sin `lang`: la respuesta trae los dos idiomas y `Mission` elige al
+      // pintar, así el caché sirve para cualquier idioma.
+      final path = token != null && token.isNotEmpty
+          ? '/missions/me'
+          : '/missions';
       final payload = await _client.cachedRequest(
         path,
         ttl: token != null && token.isNotEmpty ? _authTtl : _publicTtl,

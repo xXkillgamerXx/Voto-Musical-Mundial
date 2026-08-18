@@ -1,4 +1,4 @@
-import 'dart:ui' show PlatformDispatcher;
+import '../../../core/i18n/localized_content.dart';
 
 class Artist {
   const Artist({
@@ -9,11 +9,12 @@ class Artist {
     required this.role,
     required this.image,
     required this.banner,
-    required this.bio,
     required this.slug,
     required this.followersCount,
     required this.popularityScore,
     required this.totalVotes,
+    this.bioEs = '',
+    this.bioEn = '',
   });
 
   final String id;
@@ -23,11 +24,14 @@ class Artist {
   final String role;
   final String image;
   final String banner;
-  final String bio;
+  final String bioEs;
+  final String bioEn;
   final String slug;
   final int followersCount;
   final int popularityScore;
   final int totalVotes;
+
+  String get bio => localizedContent(bioEs, bioEn);
 
   factory Artist.fromJson(Map<String, dynamic> json) {
     final metadata = json['metadata'] is Map<String, dynamic>
@@ -77,14 +81,8 @@ class Artist {
       role: _stringValue([json['role'], json['genre'], metadata['role'], metadata['genre']]),
       image: resolvedImage,
       banner: banner.isEmpty ? resolvedImage : banner,
-      bio: () {
-        final bioEs = _stringValue([json['bio'], metadata['bio']]);
-        final bioEn = _stringValue([json['bioEn'], metadata['bioEn']]);
-        final useEn =
-            PlatformDispatcher.instance.locale.languageCode.toLowerCase() ==
-            'en';
-        return useEn && bioEn.isNotEmpty ? bioEn : bioEs;
-      }(),
+      bioEs: _stringValue([json['bio'], metadata['bio']]),
+      bioEn: _stringValue([json['bioEn'], metadata['bioEn']]),
       slug: _stringValue([json['slug'], metadata['slug']]),
       followersCount: followersCount,
       popularityScore: popularityScore,

@@ -1,13 +1,13 @@
-import 'dart:ui' show PlatformDispatcher;
-
 import '../../artists/data/artist.dart';
 import '../../artists/presentation/widgets/artist_avatar.dart';
+import '../../../core/i18n/localized_content.dart';
 import '../../../core/utils/strip_html.dart';
 
 class PollRound {
   const PollRound({
     required this.id,
-    required this.title,
+    required this.titleEs,
+    required this.titleEn,
     required this.type,
     required this.status,
     required this.config,
@@ -19,7 +19,8 @@ class PollRound {
   });
 
   final String id;
-  final String title;
+  final String titleEs;
+  final String titleEn;
   final String type;
   final String status;
   final Map<String, dynamic> config;
@@ -28,6 +29,8 @@ class PollRound {
   final DateTime? startAt;
   final bool hideVoteCounts;
   final bool hideCountdown;
+
+  String get title => localizedContent(titleEs, titleEn);
 
   int? get configuredCostPerVote {
     final voting = config['voting'];
@@ -39,14 +42,18 @@ class PollRound {
   factory PollRound.fromJson(Map<String, dynamic> json) {
     final config = _mapValue(json['config']);
     final metadata = _mapValue(json['metadata']);
-    final titleEs = _stringValue([json['title'], metadata['title'], config['title']]);
-    final titleEn = _stringValue([json['titleEn'], config['titleEn'], metadata['titleEn']]);
-    final useEn =
-        PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
-
     return PollRound(
       id: '${json['id'] ?? ''}',
-      title: useEn && titleEn.isNotEmpty ? titleEn : titleEs,
+      titleEs: _stringValue([
+        json['title'],
+        metadata['title'],
+        config['title'],
+      ]),
+      titleEn: _stringValue([
+        json['titleEn'],
+        config['titleEn'],
+        metadata['titleEn'],
+      ]),
       type: _stringValue([json['type'], metadata['type']]).ifEmpty('standard'),
       status: _stringValue([json['status']]),
       config: config,
@@ -114,11 +121,14 @@ class Poll {
   const Poll({
     required this.id,
     required this.slug,
-    required this.title,
-    required this.description,
+    required this.titleEs,
+    required this.titleEn,
+    required this.descriptionEs,
+    required this.descriptionEn,
     required this.status,
     required this.banner,
-    required this.categoryName,
+    required this.categoryNameEs,
+    required this.categoryNameEn,
     required this.categoryId,
     required this.categoryIcon,
     required this.year,
@@ -140,11 +150,14 @@ class Poll {
 
   final String id;
   final String slug;
-  final String title;
-  final String description;
+  final String titleEs;
+  final String titleEn;
+  final String descriptionEs;
+  final String descriptionEn;
   final String status;
   final String banner;
-  final String categoryName;
+  final String categoryNameEs;
+  final String categoryNameEn;
   final String categoryId;
   final String categoryIcon;
   final int year;
@@ -162,6 +175,15 @@ class Poll {
   final DateTime? endAt;
   final DateTime? updatedAt;
   final DateTime? createdAt;
+
+  String get title => localizedContent(
+    titleEs,
+    titleEn,
+  ).ifEmpty(localizedContent('Votación', 'Poll'));
+
+  String get description => localizedContent(descriptionEs, descriptionEn);
+
+  String get categoryName => localizedContent(categoryNameEs, categoryNameEn);
 
   String get effectiveRoundId {
     if (activeRoundId.isNotEmpty) {
@@ -267,11 +289,6 @@ class Poll {
     final categoryNameEn = category is Map<String, dynamic>
         ? _stringValue([category['nameEn'], categoryMeta['nameEn']])
         : _stringValue([json['categoryNameEn'], metadata['categoryNameEn']]);
-    final useEnCategory =
-        PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
-    final categoryName = useEnCategory && categoryNameEn.isNotEmpty
-        ? categoryNameEn
-        : categoryNameEs;
     final categoryId = _stringValue([
       if (category is Map<String, dynamic>) category['id'],
       json['categoryId'],
@@ -325,23 +342,14 @@ class Poll {
     return Poll(
       id: '${json['id'] ?? ''}',
       slug: _stringValue([json['slug'], metadata['slug']]),
-      title: _localizedPollText(
-        json,
-        metadata,
-        'title',
-        'titleEn',
-        'Votación',
-      ),
-      description: _localizedPollText(
-        json,
-        metadata,
-        'description',
-        'descriptionEn',
-        '',
-      ),
+      titleEs: _pollText(json, metadata, 'title'),
+      titleEn: _pollText(json, metadata, 'titleEn'),
+      descriptionEs: _pollText(json, metadata, 'description'),
+      descriptionEn: _pollText(json, metadata, 'descriptionEn'),
       status: _stringValue([json['status']]),
       banner: banner,
-      categoryName: categoryName,
+      categoryNameEs: categoryNameEs,
+      categoryNameEn: categoryNameEn,
       categoryId: categoryId,
       categoryIcon: categoryIcon,
       year: _intValue(metadata['year'] ?? json['year'], DateTime.now().year),
@@ -461,23 +469,12 @@ String resolvePollBanner(Poll poll) {
   return resolveArtistMediaUrl(poll.banner);
 }
 
-String _localizedPollText(
+String _pollText(
   Map<String, dynamic> json,
   Map<String, dynamic> metadata,
-  String esKey,
-  String enKey,
-  String fallback,
+  String key,
 ) {
-  final esValue = _stringValue([json[esKey], metadata[esKey]]);
-  final enValue = _stringValue([json[enKey], metadata[enKey]]);
-  final useEn =
-      PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
-
-  if (useEn && enValue.isNotEmpty) {
-    return stripHtml(enValue);
-  }
-
-  return stripHtml(esValue.isEmpty ? fallback : esValue);
+  return stripHtml(_stringValue([json[key], metadata[key]]));
 }
 
 String _stringValue(List<Object?> values) {

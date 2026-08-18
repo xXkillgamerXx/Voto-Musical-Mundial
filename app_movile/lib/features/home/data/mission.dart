@@ -1,12 +1,13 @@
-import 'dart:ui' show PlatformDispatcher;
-
+import '../../../core/i18n/localized_content.dart';
 import '../../../core/utils/strip_html.dart';
 
 class Mission {
   const Mission({
     required this.id,
-    required this.title,
-    required this.description,
+    required this.titleEs,
+    required this.titleEn,
+    required this.descriptionEs,
+    required this.descriptionEn,
     required this.type,
     required this.icon,
     required this.actionUrl,
@@ -19,8 +20,10 @@ class Mission {
   });
 
   final String id;
-  final String title;
-  final String description;
+  final String titleEs;
+  final String titleEn;
+  final String descriptionEs;
+  final String descriptionEn;
   final String type;
   final String icon;
   final String? actionUrl;
@@ -30,6 +33,10 @@ class Mission {
   final bool featured;
   final String? completedAt;
   final String? rewardedAt;
+
+  String get title => localizedContent(titleEs, titleEn);
+
+  String get description => localizedContent(descriptionEs, descriptionEn);
 
   /// Completa solo si el progreso alcanzó el objetivo.
   /// Así no sale COMPLETADA con 0/3 por un completedAt/rewardedAt viejo.
@@ -56,20 +63,17 @@ class Mission {
     final metaMap = metadata is Map
         ? Map<String, dynamic>.from(metadata)
         : <String, dynamic>{};
-    final titleEs = '${json['title'] ?? json['titleEs'] ?? 'Misión'}'.trim();
-    final descriptionEs =
-        '${json['description'] ?? json['descriptionEs'] ?? ''}'.trim();
-    final titleEn = '${json['titleEn'] ?? metaMap['titleEn'] ?? ''}'.trim();
-    final descriptionEn =
-        '${json['descriptionEn'] ?? metaMap['descriptionEn'] ?? ''}'.trim();
-    final useEn =
-        PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en';
-
     return Mission(
       id: '${json['id'] ?? ''}',
-      title: stripHtml(useEn && titleEn.isNotEmpty ? titleEn : titleEs),
-      description: stripHtml(
-        useEn && descriptionEn.isNotEmpty ? descriptionEn : descriptionEs,
+      titleEs: stripHtml(
+        '${json['titleEs'] ?? json['title'] ?? 'Misión'}'.trim(),
+      ),
+      titleEn: stripHtml('${json['titleEn'] ?? metaMap['titleEn'] ?? ''}'.trim()),
+      descriptionEs: stripHtml(
+        '${json['descriptionEs'] ?? json['description'] ?? ''}'.trim(),
+      ),
+      descriptionEn: stripHtml(
+        '${json['descriptionEn'] ?? metaMap['descriptionEn'] ?? ''}'.trim(),
       ),
       type: '${json['type'] ?? 'manual'}',
       icon: '${json['icon'] ?? 'fa-solid fa-bolt'}',
@@ -90,8 +94,10 @@ class Mission {
   }) {
     return Mission(
       id: id,
-      title: title,
-      description: description,
+      titleEs: titleEs,
+      titleEn: titleEn,
+      descriptionEs: descriptionEs,
+      descriptionEn: descriptionEn,
       type: type,
       icon: icon,
       actionUrl: actionUrl,

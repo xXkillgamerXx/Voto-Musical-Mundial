@@ -96,7 +96,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
         role: '',
         image: followed.artistImage,
         banner: followed.artistImage,
-        bio: '',
         slug: followed.artistSlug,
         followersCount: 0,
         popularityScore: 0,
