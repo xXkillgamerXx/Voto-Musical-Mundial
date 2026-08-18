@@ -105,6 +105,7 @@ const refreshBotNamePreview = (botsCount = botCampaignForm.value.botsCount) => {
 }
 const roundForm = ref({
   title: '',
+  titleEn: '',
   type: 'list',
   endAt: '',
 })
@@ -1161,6 +1162,7 @@ const createRound = async () => {
     const endAt = toApiDate(roundForm.value.endAt)
     const round = await createAdminRound(props.pollId, {
       title: roundForm.value.title.trim(),
+      titleEn: roundForm.value.titleEn.trim(),
       type: roundForm.value.type === 'versus' ? 'versus' : 'standard',
       endAt,
       endsAt: endAt,
@@ -1183,6 +1185,7 @@ const createRound = async () => {
 
     roundForm.value = {
       title: '',
+      titleEn: '',
       type: 'list',
       endAt: '',
     }
@@ -2037,12 +2040,22 @@ onUnmounted(() => {
 
           <div class="mt-5 space-y-4">
             <label class="block">
-              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.monitor.roundName') }}</span>
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.monitor.roundName') }} (ES)</span>
               <input
                 v-model="roundForm.title"
                 type="text"
                 class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
                 :placeholder="$t('admin.monitor.roundNamePlaceholder')"
+              />
+            </label>
+
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-slate-400">{{ $t('admin.monitor.roundName') }} (EN)</span>
+              <input
+                v-model="roundForm.titleEn"
+                type="text"
+                class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/40"
+                :placeholder="$t('admin.monitor.roundNameEnPlaceholder')"
               />
             </label>
 
