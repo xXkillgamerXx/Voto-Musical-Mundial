@@ -3709,15 +3709,11 @@ class _ContestantCard extends StatelessWidget {
                         ),
                         if (hasRoundWinners)
                           _WinnerChip(
-                            label: place == 1
+                            label: isWinner
                                 ? trp('pollDetail.winnerBadge', {
                                     'rank': '$place',
                                   })
-                                : place == 2
-                                    ? tr('pollDetail.secondPlace')
-                                    : place == 3
-                                        ? tr('pollDetail.thirdPlace')
-                                        : tr('pollDetail.didNotWin'),
+                                : tr('pollDetail.didNotWin'),
                             isWinner: isWinner,
                             tone: place,
                           ),
@@ -3789,13 +3785,15 @@ class _ContestantCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 13),
-          _VoteGradientButton(
-            enabled: voteEnabled && !voting,
-            loading: voting,
-            label: voteLabel,
-            onTap: onVote,
-          ),
+          if (votingOpen) ...[
+            const SizedBox(height: 13),
+            _VoteGradientButton(
+              enabled: voteEnabled && !voting,
+              loading: voting,
+              label: voteLabel,
+              onTap: onVote,
+            ),
+          ],
         ],
       ),
           if (showFeedback)
@@ -4469,14 +4467,10 @@ class _VersusInfo extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: _WinnerChip(
-                  label: winnerRank == 1
-                      ? trp('pollDetail.winnerBadge', {'rank': '$winnerRank'})
-                      : winnerRank == 2
-                          ? tr('pollDetail.secondPlace')
-                          : winnerRank == 3
-                              ? tr('pollDetail.thirdPlace')
-                              : tr('pollDetail.didNotWin'),
-                  isWinner: winnerRank == 1,
+                  label: isWinner
+                      ? tr('pollDetail.duelWinner')
+                      : tr('pollDetail.didNotWin'),
+                  isWinner: isWinner,
                   tone: winnerRank ?? 0,
                 ),
               ),
@@ -4571,13 +4565,15 @@ class _VersusInfo extends StatelessWidget {
                 },
               ),
             ),
-            const SizedBox(height: 10),
-            _VoteGradientButton(
-              enabled: voteEnabled && !voting,
-              loading: voting,
-              label: voteLabel,
-              onTap: onVote,
-            ),
+            if (votingOpen) ...[
+              const SizedBox(height: 10),
+              _VoteGradientButton(
+                enabled: voteEnabled && !voting,
+                loading: voting,
+                label: voteLabel,
+                onTap: onVote,
+              ),
+            ],
           ],
         ),
         if (showFeedback)

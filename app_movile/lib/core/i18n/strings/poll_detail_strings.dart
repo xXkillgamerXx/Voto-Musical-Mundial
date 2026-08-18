@@ -545,6 +545,11 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': 'Winner #{rank}',
     'ko': '우승 #{rank}',
   },
+  'pollDetail.duelWinner': {
+    'es': 'Ganador del duelo',
+    'en': 'Duel winner',
+    'ko': '대결 승자',
+  },
   'pollDetail.didNotWin': {
     'es': 'No ganó',
     'en': 'Did not win',

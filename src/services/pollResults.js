@@ -45,8 +45,12 @@ const normalizeContestant = (contestant) => {
   };
 };
 
+// La API serializa los votos como strings, asi que hay que convertir cada
+// operando antes de sumar o "75732" + "0" termina siendo 757320.
 export const normalizeContestantVotes = (contestant) =>
-  Number(contestant.totalVotes ?? (contestant.votes || 0) + (contestant.manualVotes || 0));
+  contestant?.totalVotes === undefined || contestant?.totalVotes === null
+    ? Number(contestant?.votes || 0) + Number(contestant?.manualVotes || 0)
+    : Number(contestant.totalVotes);
 
 export const loadContestantMetadata = async (_db, pollId, roundId) => {
   const poll = await getPoll(pollId);

@@ -294,7 +294,10 @@ const getUserAvatar = (user) => user?.photoURL || user?.avatar || user?.image ||
 const rankedContestants = computed(() =>
   contestants.value
     .map((contestant) => {
-      const totalVotes = Number(contestant.totalVotes ?? ((contestant.votes || 0) + (contestant.manualVotes || 0)))
+      const totalVotes = Number(
+        contestant.totalVotes ??
+          Number(contestant.votes || 0) + Number(contestant.manualVotes || 0),
+      )
       return {
         ...contestant,
         artist: getArtist(contestant.artistId),
@@ -372,7 +375,10 @@ const activeRoundRanking = computed(() =>
 )
 
 const totalActiveRoundVotes = computed(() =>
-  activeRoundRanking.value.reduce((total, contestant) => total + contestant.totalVotes, 0),
+  activeRoundRanking.value.reduce(
+    (total, contestant) => total + Number(contestant.totalVotes || 0),
+    0,
+  ),
 )
 
 const recentRoundVotes = computed(() =>

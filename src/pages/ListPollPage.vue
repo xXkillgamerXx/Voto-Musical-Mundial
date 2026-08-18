@@ -31,6 +31,7 @@ import { subscribePollRealtime } from "../services/api/realtimeApi";
 import {
   loadContestantMetadata,
   mergeContestantsWithPublicResults,
+  normalizeContestantVotes,
   subscribePublicResults,
 } from "../services/pollResults";
 import {
@@ -474,10 +475,7 @@ const getOptimisticVoteTotal = (artistId) =>
 
 const serverVoteTotalForArtist = (artistId, rows = activeRoundContestantRows.value) => {
   const contestant = rows.find((item) => getContestantArtistId(item) === artistId);
-  return Number(
-    contestant?.totalVotes ??
-      (contestant?.votes || 0) + (contestant?.manualVotes || 0),
-  );
+  return normalizeContestantVotes(contestant || {});
 };
 
 const reconcileOptimisticVoteTotals = (rows = activeRoundContestantRows.value) => {
@@ -566,10 +564,7 @@ const rankedContestants = computed(() =>
   activeRoundContestantRows.value
     .map((contestant) => {
       const artistId = contestant.artistId || contestant.id;
-      const serverTotalVotes = Number(
-        contestant.totalVotes ??
-          (contestant.votes || 0) + (contestant.manualVotes || 0),
-      );
+      const serverTotalVotes = normalizeContestantVotes(contestant);
       const totalVotes = Math.max(
         serverTotalVotes,
         getOptimisticVoteTotal(artistId),
@@ -588,12 +583,8 @@ const activeContestants = computed(() =>
   activeRoundContestantRows.value
     .map((contestant, index) => {
       const artistId = contestant.artistId || contestant.id;
-      const serverTotalVotes = Number(
-        contestant.totalVotes ??
-          (contestant.votes || 0) + (contestant.manualVotes || 0),
-      );
       const totalVotes = Math.max(
-        serverTotalVotes,
+        normalizeContestantVotes(contestant),
         getOptimisticVoteTotal(artistId),
       );
       return {
@@ -621,8 +612,51 @@ const activeContestants = computed(() =>
     }),
 );
 
+// Al abrir una ronda cerrada seguimos mostrando duelos si esa ronda es versus,
+// para que el % sea contra el duelo y no contra toda la fase.
+const displayedRound = computed(() =>
+  isViewingSelectedClosedRound.value
+    ? selectedRoundStep.value
+    : activeRound.value,
+);
+
+const displayedRoundType = computed(() => displayedRound.value?.type || "");
+
+const versusSourceContestants = computed(() => {
+  if (!isViewingSelectedClosedRound.value) {
+    return activeContestants.value;
+  }
+
+  return selectedRoundContestants.value
+    .map((contestant, index) => {
+      const artistId = contestant.artistId || contestant.id;
+
+      return {
+        ...contestant,
+        order: Number(contestant.order ?? index),
+        matchGroup: Number(contestant.matchGroup || 0),
+        matchOrder: Number(contestant.matchOrder ?? index),
+        artist: resolveArtist(artistId, contestant.artist),
+        artistId,
+        totalVotes: normalizeContestantVotes(contestant),
+      };
+    })
+    .sort((current, next) => {
+      if (current.matchGroup !== next.matchGroup) {
+        return current.matchGroup - next.matchGroup;
+      }
+
+      if (current.matchOrder !== next.matchOrder) {
+        return current.matchOrder - next.matchOrder;
+      }
+
+      return current.order - next.order;
+    });
+});
+
 const versusMatches = computed(() => {
-  const manualGroups = activeContestants.value.reduce((groups, contestant) => {
+  const roundId = displayedRound.value?.id || "round";
+  const manualGroups = versusSourceContestants.value.reduce((groups, contestant) => {
     if (!contestant.matchGroup) {
       return groups;
     }
@@ -637,7 +671,7 @@ const versusMatches = computed(() => {
     return [...manualGroups.entries()]
       .sort(([currentGroup], [nextGroup]) => currentGroup - nextGroup)
       .map(([groupNumber, contestants]) => ({
-        id: `${activeRound.value?.id || "round"}-${groupNumber}`,
+        id: `${roundId}-${groupNumber}`,
         groupNumber,
         title: translate("polls.detail.duelTitle", { number: groupNumber }),
         contestants: contestants.sort(
@@ -648,14 +682,18 @@ const versusMatches = computed(() => {
 
   const matches = [];
 
-  for (let index = 0; index < activeContestants.value.length; index += 2) {
+  for (
+    let index = 0;
+    index < versusSourceContestants.value.length;
+    index += 2
+  ) {
     const groupNumber = Math.floor(index / 2) + 1;
 
     matches.push({
-      id: `${activeRound.value?.id || "round"}-${index}`,
+      id: `${roundId}-${index}`,
       groupNumber,
       title: translate("polls.detail.duelTitle", { number: groupNumber }),
-      contestants: activeContestants.value.slice(index, index + 2),
+      contestants: versusSourceContestants.value.slice(index, index + 2),
     });
   }
 
@@ -676,14 +714,14 @@ const displayedVersusMatches = computed(() => {
 
 const totalVotes = computed(() =>
   rankedContestants.value.reduce(
-    (total, contestant) => total + contestant.totalVotes,
+    (total, contestant) => total + Number(contestant.totalVotes || 0),
     0,
   ),
 );
 
 const finalResultTotalVotes = computed(() =>
   finalResultContestants.value.reduce(
-    (total, contestant) => total + contestant.totalVotes,
+    (total, contestant) => total + Number(contestant.totalVotes || 0),
     0,
   ),
 );
@@ -757,28 +795,62 @@ const versusFeedItems = computed(() =>
 
 const displayedTotalVotes = computed(() =>
   displayedContestants.value.reduce(
-    (total, contestant) => total + contestant.totalVotes,
+    (total, contestant) => total + Number(contestant.totalVotes || 0),
     0,
   ),
 );
 
-const displayVoteCountFor = (contestant) => {
-  const artistId = getContestantArtistId(contestant);
-  const animatedCount = animatedVoteCounts.value[artistId];
+const isActiveRoundContestant = (contestant) => {
+  const activeRoundId = activeRound.value?.id ? String(activeRound.value.id) : "";
+  const contestantRoundId = String(contestant?.roundId || "");
 
-  return Math.max(
-    0,
-    Math.round(Number(animatedCount ?? contestant?.totalVotes ?? 0)),
+  if (!activeRoundId) {
+    return !contestantRoundId;
+  }
+
+  return (
+    contestantRoundId === activeRoundId ||
+    String(contestant?.firebaseId || "") === activeRoundId
   );
 };
 
-const displayTotalVotes = computed(() =>
-  Math.max(
+// Los contadores animados se llenan con la ronda en vivo y van por artista, no
+// por contestant. Un artista que compite en varias fases arrastraria los votos
+// de la ronda activa a una ronda cerrada y el % saldria absurdo.
+const displayVoteCountFor = (contestant) => {
+  const serverVotes = Math.max(0, Math.round(Number(contestant?.totalVotes ?? 0)));
+
+  if (!isActiveRoundContestant(contestant)) {
+    return serverVotes;
+  }
+
+  const animatedCount =
+    animatedVoteCounts.value[getContestantArtistId(contestant)];
+
+  return animatedCount === undefined
+    ? serverVotes
+    : Math.max(0, Math.round(Number(animatedCount)));
+};
+
+const isViewingLiveContestants = computed(
+  () => !isViewingSelectedClosedRound.value && !isViewingFinalResult.value,
+);
+
+const displayTotalVotes = computed(() => {
+  const animatedTotal = isViewingLiveContestants.value
+    ? animatedDisplayedTotalVotes.value
+    : null;
+
+  return Math.max(
     0,
-    Math.round(
-      Number(animatedDisplayedTotalVotes.value ?? displayedTotalVotes.value),
-    ),
-  ),
+    Math.round(Number(animatedTotal ?? displayedTotalVotes.value)),
+  );
+});
+
+const isLoadingDisplayedContestants = computed(() =>
+  isViewingSelectedClosedRound.value
+    ? isLoadingSelectedRound.value
+    : isLoadingContestants.value,
 );
 
 const shouldShowVoteButtons = computed(
@@ -790,7 +862,7 @@ const shouldShowVoteButtons = computed(
 );
 const hideVoteCounts = computed(() =>
   Boolean(
-    activeRound.value?.hideVoteCounts ??
+    displayedRound.value?.hideVoteCounts ??
       poll.value?.hideVoteCounts ??
       false,
   ),
@@ -2401,7 +2473,25 @@ const getRoundContestants = async (round) => {
     return [];
   }
 
-  return (await loadContestantMetadata(db, selectedPollId, round.id))
+  const baseContestants = await loadContestantMetadata(
+    db,
+    selectedPollId,
+    round.id,
+  );
+  let rows = baseContestants;
+
+  // Los totales del poll no incluyen los votos que siguen en Redis; el endpoint
+  // de resultados si, y es el mismo que consume la app.
+  try {
+    rows = mergeContestantsWithPublicResults(
+      baseContestants,
+      await getPollResults({ pollId: selectedPollId, roundId: round.id }),
+    );
+  } catch {
+    // Sin resultados en vivo nos quedamos con los totales del poll.
+  }
+
+  return rows
     .map((contestant) => ({
       ...contestant,
       artist: contestant.artist || getArtist(contestant.artistId || contestant.id),
@@ -4336,15 +4426,11 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-else-if="
-          activeRound?.type === 'versus' &&
-          !isViewingSelectedClosedRound &&
-          !isViewingFinalResult
-        "
+        v-else-if="displayedRoundType === 'versus' && !isViewingFinalResult"
         class="poll-state-panel space-y-6"
         :class="!isEmbeddedPage && 'mt-8'"
       >
-        <template v-if="!isLoadingContestants">
+        <template v-if="!isLoadingDisplayedContestants">
           <template
             v-for="(feedItem, feedIndex) in versusFeedItems"
             :key="feedItem.id"
@@ -4503,6 +4589,21 @@ onUnmounted(() => {
                           $t("polls.detail.soloist")
                         }}
                       </p>
+                      <span
+                        v-if="hasRoundWinners"
+                        class="mt-2 inline-flex rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest sm:px-3 sm:py-1.5 sm:text-[11px]"
+                        :class="
+                          isContestantWinner(contestant)
+                            ? winnerToneClasses(contestant, 'badge')
+                            : 'border border-white/10 bg-white/5 text-slate-500'
+                        "
+                      >
+                        {{
+                          isContestantWinner(contestant)
+                            ? $t("polls.detail.duelWinner")
+                            : $t("polls.detail.didNotWin")
+                        }}
+                      </span>
                     </div>
                     <p
                       class="embed-percent shrink-0 font-black text-cyan-100"
@@ -4571,6 +4672,7 @@ onUnmounted(() => {
                 </div>
 
                 <button
+                  v-if="!isViewingSelectedClosedRound"
                   type="button"
                   class="flex items-center justify-center rounded-2xl font-black uppercase tracking-wide transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   :class="[
@@ -4596,7 +4698,7 @@ onUnmounted(() => {
           </template>
         </template>
 
-        <template v-if="isLoadingContestants">
+        <template v-if="isLoadingDisplayedContestants">
           <article
             v-for="index in 2"
             :key="`versus-skeleton-${index}`"

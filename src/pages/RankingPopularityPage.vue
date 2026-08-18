@@ -81,7 +81,10 @@ const maxPopularityScore = computed(() =>
 );
 
 const totalChartVotes = computed(() =>
-  rankedArtists.value.reduce((total, artist) => total + artist.totalVotes, 0),
+  rankedArtists.value.reduce(
+    (total, artist) => total + Number(artist.totalVotes || 0),
+    0,
+  ),
 );
 
 const formatNumber = (value) => Number(value || 0).toLocaleString(locale.value);

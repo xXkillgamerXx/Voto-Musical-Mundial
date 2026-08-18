@@ -402,6 +402,7 @@ export default {
       voteUnit: '{count} voto',
       soloist: 'Solista',
       winnerBadge: 'Ganador #{rank}',
+      duelWinner: 'Ganador del duelo',
       didNotWin: 'No ganó',
       wonWith: 'Ganó con',
       confirmVotes: 'Confirmar votos',

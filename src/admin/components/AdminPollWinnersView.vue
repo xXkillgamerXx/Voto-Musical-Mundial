@@ -37,7 +37,10 @@ const rankedContestants = computed(() =>
     .map((contestant) => ({
       ...contestant,
       artist: getArtist(contestant.artistId),
-      totalVotes: Number(contestant.totalVotes ?? ((contestant.votes || 0) + (contestant.manualVotes || 0))),
+      totalVotes: Number(
+        contestant.totalVotes ??
+          Number(contestant.votes || 0) + Number(contestant.manualVotes || 0),
+      ),
     }))
     .sort((current, next) => next.totalVotes - current.totalVotes),
 )
