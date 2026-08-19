@@ -223,9 +223,11 @@ const Map<String, Map<String, String>> authStrings = {
     'ko': '로그인으로 돌아가기',
   },
   'auth.resetPending': {
-    'es': 'Reset de password pendiente de API propia.',
-    'en': 'Password reset pending our own API.',
-    'ko': '비밀번호 재설정은 자체 API 연동 대기 중입니다.',
+    'es':
+        'Si hay una cuenta con ese correo, te enviaremos un enlace para recuperar tu contraseña.',
+    'en':
+        'If an account exists for that email, we will send you a link to recover your password.',
+    'ko': '해당 이메일로 계정이 있으면 비밀번호를 재설정할 링크를 보내드립니다.',
   },
 
   // Terms & conditions

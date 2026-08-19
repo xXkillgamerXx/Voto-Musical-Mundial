@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
-  const ForgotPasswordPage({this.initialEmail = '', super.key});
+  const ForgotPasswordPage({
+    required this.authService,
+    this.initialEmail = '',
+    super.key,
+  });
 
+  final AuthService authService;
   final String initialEmail;
 
   @override
@@ -47,10 +53,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     setState(() => _isLoading = true);
 
     try {
+      await widget.authService.requestPasswordReset(email: email);
       if (!mounted) return;
-      setState(
-        () => _successMessage = tr('auth.resetPending'),
-      );
+      setState(() => _successMessage = tr('auth.resetPending'));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(error));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

@@ -6,6 +6,7 @@ import { ArtistsModule } from './modules/artists/artists.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { HealthModule } from './modules/health/health.module';
+import { MailModule } from './modules/mail/mail.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 import { MissionsModule } from './modules/missions/missions.module';
@@ -27,6 +28,7 @@ import { WorkersModule } from './workers/workers.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     RedisModule,
+    MailModule,
     MetricsModule,
     HealthModule,
     AdminModule,

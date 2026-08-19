@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { RedisThrottleGuard } from '../../common/throttle.guard';
 import { Throttle } from '../../common/throttle.decorator';
 import { CurrentUser } from './current-user.decorator';
 import { AnonymousTokenDto } from './dto/anonymous-token.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthService } from './auth.service';
 
@@ -25,6 +27,24 @@ export class AuthController {
   @Throttle({ name: 'auth-login', limit: 20, windowSec: 60 })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  @Post('forgot-password')
+  @Throttle({ name: 'auth-forgot-password', limit: 8, windowSec: 3600 })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @Throttle({ name: 'auth-reset-password', limit: 10, windowSec: 3600 })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto);
+  }
+
+  @Get('reset-password')
+  @Throttle({ name: 'auth-reset-password-check', limit: 30, windowSec: 60 })
+  checkResetToken(@Query('token') token: string) {
+    return this.auth.checkResetToken(token);
   }
 
   @Post('google')

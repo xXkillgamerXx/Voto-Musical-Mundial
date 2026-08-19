@@ -11,6 +11,7 @@ export const STATIC_ROUTES = {
   notifications: { es: '/notificaciones', en: '/notifications' },
   profile: { es: '/perfil', en: '/profile' },
   register: { es: '/registro', en: '/register' },
+  resetPassword: { es: '/recuperar-contrasena', en: '/reset-password' },
   terms: { es: '/terminos-y-condiciones', en: '/terms-and-conditions' },
   privacy: { es: '/politica-de-privacidad', en: '/privacy-policy' },
 }

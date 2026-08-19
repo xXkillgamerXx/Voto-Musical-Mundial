@@ -45,6 +45,7 @@ import {
   renderTurnstileWidget,
   resetTurnstileWidget,
 } from "../services/turnstile";
+import InFeedAd from "../components/InFeedAd.vue";
 
 const ActivePolls = defineAsyncComponent(() => import("../components/ActivePolls.vue"));
 const EmbedAd = defineAsyncComponent(() => import("../components/EmbedAd.vue"));
@@ -757,13 +758,15 @@ const displayedContestants = computed(() =>
     : rankedContestants.value,
 );
 
-const buildFeedWithShare = (rows, idPrefix) => {
+const buildFeedWithShare = (rows, idPrefix, { adEveryN = 0, maxAds = 2 } = {}) => {
   if (!rows.length) {
     return [];
   }
 
   const insertAt = Math.ceil(rows.length / 2);
   const items = [];
+  let adsInserted = 0;
+  const allowAds = adEveryN > 0 && !isEmbeddedPage.value;
 
   rows.forEach((row, index) => {
     if (index === insertAt) {
@@ -776,21 +779,44 @@ const buildFeedWithShare = (rows, idPrefix) => {
       row,
       index,
     });
+
+    const isLast = index === rows.length - 1;
+    const hitCadence = adEveryN > 0 && (index + 1) % adEveryN === 0;
+    if (allowAds && hitCadence && adsInserted < maxAds && !isLast) {
+      adsInserted += 1;
+      items.push({ type: "ad", id: `${idPrefix}-ad-${index}` });
+    }
   });
 
   if (insertAt >= rows.length) {
     items.push({ type: "share", id: `${idPrefix}-share` });
   }
 
+  if (allowAds && adsInserted === 0) {
+    const firstRowIndex = items.findIndex((item) => item.type === "row");
+    if (firstRowIndex >= 0) {
+      items.splice(firstRowIndex + 1, 0, {
+        type: "ad",
+        id: `${idPrefix}-ad-first`,
+      });
+    }
+  }
+
   return items;
 };
 
 const contestantFeedItems = computed(() =>
-  buildFeedWithShare(displayedContestants.value, "contestant"),
+  buildFeedWithShare(displayedContestants.value, "contestant", {
+    adEveryN: 4,
+    maxAds: 2,
+  }),
 );
 
 const versusFeedItems = computed(() =>
-  buildFeedWithShare(displayedVersusMatches.value, "versus"),
+  buildFeedWithShare(displayedVersusMatches.value, "versus", {
+    adEveryN: 2,
+    maxAds: 2,
+  }),
 );
 
 const displayedTotalVotes = computed(() =>
@@ -4445,6 +4471,7 @@ onUnmounted(() => {
               :claiming="isClaimingShareBoost"
               @share="sharePollOnNetwork"
             />
+            <InFeedAd v-else-if="feedItem.type === 'ad'" />
             <article
               v-else
               class="rounded-4xl border border-white/10 bg-white/5"
@@ -4880,6 +4907,7 @@ onUnmounted(() => {
               :claiming="isClaimingShareBoost"
               @share="sharePollOnNetwork"
             />
+            <InFeedAd v-else-if="feedItem.type === 'ad'" />
             <article
               v-else
               :data-artist-id="getContestantArtistId(feedItem.row)"

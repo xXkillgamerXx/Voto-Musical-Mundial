@@ -50,10 +50,6 @@ export class PresenceService {
           create: { userId, day, hits: 1, firstSeenAt: now, lastSeenAt: now },
           update: { hits: { increment: 1 }, lastSeenAt: now },
         }),
-        this.prisma.user.update({
-          where: { id: userId },
-          data: { lastSeenAt: now },
-        }),
       ]);
     } catch (error) {
       this.logger.debug(`No se pudo registrar presencia: ${(error as Error).message}`);

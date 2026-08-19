@@ -44,7 +44,6 @@ model User {
   dailyRewardStreak          Int              @default(0) @map("daily_reward_streak")
   dailyRewardStreakDay       Int              @default(0) @map("daily_reward_streak_day")
   lastDailyRewardClaimDate   String?          @map("last_daily_reward_claim_date")
-  lastSeenAt                 DateTime?        @map("last_seen_at")
   metadata                   Json             @default("{}")
   createdAt                  DateTime         @default(now()) @map("created_at")
   updatedAt                  DateTime         @updatedAt @map("updated_at")

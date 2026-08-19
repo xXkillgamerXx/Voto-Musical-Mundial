@@ -1039,14 +1039,14 @@ class _DrawerHeader extends StatelessWidget {
             children: [
               Image.asset(
                 'assets/icons/logo-votos.png',
-                width: 78,
+                width: 70,
                 height: 56,
                 fit: BoxFit.contain,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 5),
               const Expanded(
                 child: Text(
-                  'VOTOS MUSICA\nMUNDIAL',
+                  'MUSIC MUNDIAL VOTE',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,

@@ -106,7 +106,7 @@ export class UserActivityService {
         referralPoints: user.referralPoints,
         dailyRewardStreak: user.dailyRewardStreak,
         lastDailyRewardClaimDate: user.lastDailyRewardClaimDate,
-        lastSeenAt: user.lastSeenAt,
+        lastSeenAt: null,
         createdAt: user.createdAt,
         referredBy: user.referredBy
           ? {

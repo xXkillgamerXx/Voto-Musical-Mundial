@@ -117,7 +117,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'VOTOS MUSICA MUNDIAL',
+          'MUSIC MUNDIAL VOTE',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontSize: 20,
@@ -128,7 +128,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 5),
         Text(
-          tr('auth.brandTagline'),
+          'CERTIFIED COMPETITION',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: colorScheme.onSurfaceVariant,

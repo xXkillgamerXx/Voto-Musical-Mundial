@@ -36,6 +36,7 @@ const PollsPage = defineAsyncComponent(() => import('./pages/PollsPage.vue'))
 const PushNotificationPrompt = defineAsyncComponent(() => import('./components/PushNotificationPrompt.vue'))
 const RankingPopularityPage = defineAsyncComponent(() => import('./pages/RankingPopularityPage.vue'))
 const RegisterPage = defineAsyncComponent(() => import('./pages/RegisterPage.vue'))
+const ResetPasswordPage = defineAsyncComponent(() => import('./pages/ResetPasswordPage.vue'))
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
 const PrivacyPage = defineAsyncComponent(() => import('./pages/PrivacyPage.vue'))
 const UserProfilePage = defineAsyncComponent(() => import('./pages/UserProfilePage.vue'))
@@ -51,6 +52,7 @@ let loadingToken = 0
 const prefetchedRoutes = new Set()
 const canonicalPath = computed(() => toCanonicalPath(currentPath.value))
 const isRegisterPage = computed(() => matchStaticRoute(currentPath.value, 'register'))
+const isResetPasswordPage = computed(() => matchStaticRoute(currentPath.value, 'resetPassword'))
 const isTermsPage = computed(() => matchStaticRoute(currentPath.value, 'terms'))
 const isPrivacyPage = computed(() => matchStaticRoute(currentPath.value, 'privacy'))
 const isPollsPage = computed(() => matchStaticRoute(currentPath.value, 'polls'))
@@ -72,7 +74,7 @@ const isEmbeddedPage = computed(() => {
   const params = new URLSearchParams(window.location.search)
   return params.get('embed') === '1' || params.get('embed') === 'true'
 })
-const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVersusEmbedPage.value || isAdminPage.value)
+const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isResetPasswordPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldForceEmbedDarkTheme = computed(() => isEmbeddedPage.value || isVersusEmbedPage.value)
 const shouldShowDailyRewardModal = computed(
   () => !isPlainPage.value && !isTermsPage.value && !isPrivacyPage.value,
@@ -294,6 +296,7 @@ onUnmounted(() => {
       :class="!isPlainPage && 'pt-20 sm:pt-24'"
     >
       <RegisterPage v-if="isRegisterPage" />
+      <ResetPasswordPage v-else-if="isResetPasswordPage" />
       <TermsPage v-else-if="isTermsPage" />
       <PrivacyPage v-else-if="isPrivacyPage" />
       <PollsPage v-else-if="isPollsPage" />

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -10,14 +11,18 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { OAuth2Client, TokenInfo } from 'google-auth-library';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { AnonymousTokenDto } from './dto/anonymous-token.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtPayload, VoteIdentity } from './auth.types';
 
 const REFERRAL_SIGNUP_POINTS = 50;
@@ -43,6 +48,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly redis: RedisService,
+    private readonly mail: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -149,8 +156,111 @@ export class AuthService {
     return this.authResponse(user);
   }
 
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const email = dto.email.toLowerCase().trim();
+    const generic = { ok: true as const };
+    const user = await this.prisma.user.findFirst({
+      where: { email },
+      select: { id: true, email: true, displayName: true, username: true },
+    });
+
+    if (!user?.email) {
+      return generic;
+    }
+
+    if (!this.mail.isConfigured()) {
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new ServiceUnavailableException(
+          'Falta configurar SMTP_HOST / SMTP_USER / SMTP_PASS en backend/.env para enviar el correo.',
+        );
+      }
+      this.logger.warn('forgot-password: SMTP no configurado');
+      return generic;
+    }
+
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const tokenKey = `password-reset:${tokenHash}`;
+    const userKey = `password-reset-user:${user.id.toString()}`;
+    const previousHash = await this.redis.client.get(userKey);
+    if (previousHash) {
+      await this.redis.client.del(`password-reset:${previousHash}`);
+    }
+    await this.redis.client.set(tokenKey, user.id.toString(), 'EX', 60 * 60);
+    await this.redis.client.set(userKey, tokenHash, 'EX', 60 * 60);
+
+    const origin = String(this.config.get('APP_ORIGIN') || 'http://localhost:5173')
+      .split(',')[0]
+      .trim()
+      .replace(/\/$/, '');
+    const locale = dto.locale === 'en' ? 'en' : 'es';
+    const resetPath = locale === 'en' ? '/reset-password' : '/recuperar-contrasena';
+    const resetUrl = `${origin}${resetPath}?token=${token}`;
+
+    try {
+      await this.mail.sendPasswordReset({
+        to: user.email,
+        name: user.displayName || user.username || '',
+        resetUrl,
+        locale,
+      });
+    } catch (error) {
+      this.logger.error(`No se pudo enviar reset a ${user.email}: ${(error as Error).message}`);
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new ServiceUnavailableException(`No se pudo enviar el correo: ${(error as Error).message}`);
+      }
+    }
+
+    return generic;
+  }
+
+  async checkResetToken(token: string) {
+    const value = String(token || '').trim();
+    if (!/^[a-f0-9]{64}$/.test(value)) {
+      return { valid: false };
+    }
+
+    const tokenHash = createHash('sha256').update(value).digest('hex');
+    const userId = await this.redis.client.get(`password-reset:${tokenHash}`);
+    return { valid: Boolean(userId) };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const tokenHash = createHash('sha256').update(dto.token.trim()).digest('hex');
+    const userId = await this.redis.client.get(`password-reset:${tokenHash}`);
+    if (!userId) {
+      throw new BadRequestException('El enlace no es valido o ya vencio. Pide uno nuevo.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: BigInt(userId) },
+      data: { passwordHash: await bcrypt.hash(dto.password, 12) },
+    });
+    await this.redis.client.del(`password-reset:${tokenHash}`);
+    await this.redis.client.del(`password-reset-user:${userId}`);
+
+    return { ok: true as const };
+  }
+
   async google(dto: GoogleLoginDto) {
-    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    try {
+      return await this.googleUnsafe(dto);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const message = (error as Error)?.message || 'error desconocido';
+      this.logger.error(`Google login fallo: ${message}`, (error as Error)?.stack);
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new BadRequestException(`No se pudo completar el inicio con Google: ${message}`);
+      }
+      throw new UnauthorizedException('No se pudo completar el inicio con Google.');
+    }
+  }
+
+  private async googleUnsafe(dto: GoogleLoginDto) {
+    const clientId = String(this.config.get<string>('GOOGLE_CLIENT_ID') || '').trim();
     if (!clientId) {
       throw new BadRequestException('Falta configurar GOOGLE_CLIENT_ID.');
     }
@@ -159,27 +269,35 @@ export class AuthService {
     const payload = dto.credential
       ? await this.googlePayloadFromCredential(client, clientId, dto.credential)
       : await this.googlePayloadFromAccessToken(client, clientId, dto.accessToken || '');
-    const email = payload?.email?.toLowerCase().trim();
+    const email = String(payload?.email || '').toLowerCase().trim();
     const referrer = await this.findReferrer(dto.referralCode);
+    const rawVerified = (payload as { email_verified?: unknown })?.email_verified;
+    const emailVerified =
+      rawVerified === true || rawVerified === 'true' || rawVerified === '1';
 
-    if (!payload?.sub || !email || !payload.email_verified) {
+    if (!payload?.sub || !email || !emailVerified) {
       throw new UnauthorizedException('No se pudo validar la cuenta de Google.');
     }
 
-    const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { email },
-          { metadata: { path: ['googleSub'], equals: payload.sub } },
-        ],
-      },
+    const existingByEmail = await this.prisma.user.findFirst({ where: { email } });
+    const existingBySub = await this.prisma.user.findFirst({
+      where: { metadata: { path: ['googleSub'], equals: payload.sub } },
     });
+    const existing = existingBySub || existingByEmail;
 
     if (existing) {
+      const emailTaken =
+        existing.email !== email
+          ? await this.prisma.user.findFirst({
+              where: { email, id: { not: existing.id } },
+              select: { id: true },
+            })
+          : null;
+
       const updated = await this.prisma.user.update({
         where: { id: existing.id },
         data: {
-          email,
+          email: emailTaken ? existing.email : email,
           displayName: existing.displayName || payload.name || usernameFromEmail(email),
           photoUrl: payload.picture || existing.photoUrl,
           metadata: {
@@ -286,7 +404,7 @@ export class AuthService {
       throw new UnauthorizedException('El token de Google no es valido o ya expiro.');
     }
 
-    if (tokenInfo.aud !== clientId) {
+    if (String(tokenInfo.aud || '').trim() !== clientId) {
       this.logger.warn(`Token emitido para otro client_id: ${tokenInfo.aud}`);
       throw new UnauthorizedException('Token de Google invalido para esta aplicacion.');
     }
@@ -529,8 +647,19 @@ export class AuthService {
     ];
 
     for (const candidate of candidates) {
-      const existing = await this.prisma.user.findUnique({ where: { username: candidate } });
-      if (!existing) return candidate;
+      const existing = await this.prisma.user.findFirst({
+        where: {
+          OR: [{ username: candidate }, { referralCode: candidate }],
+        },
+        select: { id: true },
+      });
+      if (!existing) {
+        const codeTaken = await this.prisma.referralCode.findUnique({
+          where: { code: candidate },
+          select: { id: true },
+        });
+        if (!codeTaken) return candidate;
+      }
     }
 
     return `google_${randomUUID().replace(/-/g, '').slice(0, 12)}`;

@@ -6,7 +6,7 @@ import { routePath } from "../../utils/localizedRoutes";
 import AuthModal from "../auth/AuthModal.vue";
 import ThemeToggle from "../theme/ThemeToggle.vue";
 import UserNotificationsMenu from "../UserNotificationsMenu.vue";
-import { getMe, getCurrentApiAuth, logout } from "../../services/api/authApi";
+import { getMe, getCurrentApiAuth, logout, peekLoginNotice } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
 
 const { locale } = useI18n();
@@ -204,6 +204,10 @@ onMounted(() => {
 
   syncAuth();
   unsubscribeAuth = onStoredAuthChange(syncAuth);
+
+  if (peekLoginNotice()) {
+    isAuthModalOpen.value = true;
+  }
 });
 
 onUnmounted(() => {

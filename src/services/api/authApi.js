@@ -26,6 +26,43 @@ export const login = async (payload) => {
   return auth;
 };
 
+export const LOGIN_NOTICE_KEY = "vmm_login_notice";
+
+export const goToLogin = (notice = "passwordReset") => {
+  window.sessionStorage.setItem(LOGIN_NOTICE_KEY, notice);
+  window.history.pushState({}, "", "/");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+};
+
+export const goToLoginAfterPasswordReset = () => goToLogin("passwordReset");
+
+export const goToLoginAfterInvalidResetLink = () => goToLogin("resetLinkInvalid");
+
+export const peekLoginNotice = () => window.sessionStorage.getItem(LOGIN_NOTICE_KEY);
+
+export const consumeLoginNotice = () => {
+  const notice = peekLoginNotice();
+  if (notice) {
+    window.sessionStorage.removeItem(LOGIN_NOTICE_KEY);
+  }
+  return notice;
+};
+
+export const requestPasswordReset = (payload) =>
+  apiRequest("/auth/forgot-password", {
+    method: "POST",
+    body: payload,
+  });
+
+export const resetPassword = (payload) =>
+  apiRequest("/auth/reset-password", {
+    method: "POST",
+    body: payload,
+  });
+
+export const checkResetToken = (token) =>
+  apiRequest(`/auth/reset-password?token=${encodeURIComponent(token)}`);
+
 export const loginWithGoogle = async (credential) => {
   const body = typeof credential === "string" ? { credential } : credential;
   const auth = await apiRequest("/auth/google", {

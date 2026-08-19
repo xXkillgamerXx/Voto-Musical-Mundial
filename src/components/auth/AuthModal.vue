@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from "vue";
-import { translate } from "../../i18n";
-import { login, loginWithGoogle } from "../../services/api/authApi";
+import { translate, i18n } from "../../i18n";
+import { consumeLoginNotice, login, loginWithGoogle, requestPasswordReset } from "../../services/api/authApi";
 
 const emit = defineEmits(["close"]);
 
@@ -30,6 +30,12 @@ const handleEscape = (event) => {
 
 onMounted(() => {
   window.addEventListener("keydown", handleEscape);
+  const notice = consumeLoginNotice();
+  if (notice === "passwordReset") {
+    successMessage.value = translate("auth.resetSuccess");
+  } else if (notice === "resetLinkInvalid") {
+    errorMessage.value = translate("auth.resetLinkInvalid");
+  }
 });
 
 onUnmounted(() => {
@@ -162,9 +168,13 @@ const handlePasswordReset = async () => {
   isLoading.value = true;
 
   try {
-    successMessage.value = "Reset de password pendiente de API propia.";
-  } catch {
-    errorMessage.value = translate("auth.errors.genericAction");
+    await requestPasswordReset({
+      email: resetEmail.value.trim().toLowerCase(),
+      locale: String(i18n.global.locale.value || "es").startsWith("en") ? "en" : "es",
+    });
+    successMessage.value = translate("auth.resetEmailSent");
+  } catch (error) {
+    errorMessage.value = friendlyAuthError(error);
   } finally {
     isLoading.value = false;
   }

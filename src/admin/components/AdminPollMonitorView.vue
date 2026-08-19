@@ -288,6 +288,7 @@ let stopResultsAggregator = null
 const getArtist = (artistId) => artists.value.find((artist) => artist.id === artistId)
 const getArtistImage = (artist) =>
   artist?.image || artist?.imageUrl || artist?.photo || artist?.photoURL || artist?.foto || artist?.photoUrl || artist?.metadata?.image || artist?.metadata?.imageUrl || artist?.metadata?.photoUrl || artist?.metadata?.banner || artist?.banner || ''
+const getArtistGroup = (artist) => artist?.group || artist?.fandom || artist?.metadata?.group || ''
 
 const getUserName = (user) => user?.displayName || user?.username || user?.name || user?.email || translate('admin.monitor.userFallback')
 const getUserAvatar = (user) => user?.photoURL || user?.avatar || user?.image || ''
@@ -373,6 +374,79 @@ const activeRoundRanking = computed(() =>
       }
     })
     .sort((current, next) => next.totalVotes - current.totalVotes),
+)
+
+const isActiveRoundVersus = computed(() => activeRound.value?.type === 'versus')
+
+const activeRoundVersusMatches = computed(() => {
+  const roundId = activeRound.value?.id || 'round'
+  const contestants = mergeContestantsWithPublicResults(activeRoundContestants.value, publicResults.value)
+    .map((contestant) => ({
+      ...contestant,
+      artist: getArtist(contestant.artistId) || contestant.artist,
+      totalVotes: Math.max(0, Number(contestant.totalVotes || 0)),
+      matchGroup: Number(contestant.matchGroup || 0),
+      matchOrder: Number(contestant.matchOrder || 0),
+      order: Number(contestant.order || 0),
+    }))
+    .sort((current, next) => {
+      const groupDiff = current.matchGroup - next.matchGroup
+      if (groupDiff) return groupDiff
+      const orderDiff = current.matchOrder - next.matchOrder
+      if (orderDiff) return orderDiff
+      return current.order - next.order
+    })
+
+  const grouped = contestants.reduce((groups, contestant) => {
+    if (!contestant.matchGroup) {
+      return groups
+    }
+    const group = groups.get(contestant.matchGroup) || []
+    group.push(contestant)
+    groups.set(contestant.matchGroup, group)
+    return groups
+  }, new Map())
+
+  const toMatch = (groupNumber, pair) => {
+    const votes = pair.map((contestant) => Math.max(0, Number(contestant.totalVotes || 0)))
+    const totalVotes = votes.reduce((sum, value) => sum + value, 0)
+    const percents = votes.map((value) => (totalVotes ? (value / totalVotes) * 100 : 0))
+    const leadVotes = Math.max(0, ...votes)
+    return {
+      id: `${roundId}-${groupNumber}`,
+      groupNumber,
+      title: translate('polls.detail.duelTitle', { number: groupNumber }),
+      totalVotes,
+      split: pair.length === 2
+        ? { left: percents[0] || 0, right: percents[1] || 0 }
+        : null,
+      contestants: pair.map((contestant, index) => ({
+        ...contestant,
+        matchTotalVotes: totalVotes,
+        matchPercent: percents[index] || 0,
+        matchPercentLabel: `${(percents[index] || 0).toFixed(2)}%`,
+        isMatchLeader: totalVotes > 0 && votes[index] === leadVotes,
+      })),
+    }
+  }
+
+  if (grouped.size) {
+    return [...grouped.entries()]
+      .sort(([currentGroup], [nextGroup]) => currentGroup - nextGroup)
+      .map(([groupNumber, pair]) => toMatch(groupNumber, pair))
+  }
+
+  const matches = []
+  for (let index = 0; index < contestants.length; index += 2) {
+    matches.push(toMatch(Math.floor(index / 2) + 1, contestants.slice(index, index + 2)))
+  }
+  return matches
+})
+
+const versusMatchWinners = computed(() =>
+  activeRoundVersusMatches.value
+    .map((match) => match.contestants.find((contestant) => contestant.isMatchLeader) || match.contestants[0])
+    .filter(Boolean),
 )
 
 const totalActiveRoundVotes = computed(() =>
@@ -703,6 +777,9 @@ const listenRounds = () => {
           ...contestant,
           id: String(contestant.id),
           artistId: String(contestant.artistId),
+          matchGroup: Number(contestant.matchGroup || contestant.metadata?.matchGroup || 0),
+          matchOrder: Number(contestant.matchOrder || contestant.metadata?.matchOrder || 0),
+          order: Number(contestant.order || contestant.metadata?.order || 0),
           totalVotes: Number(contestant.totalVotes ?? Number(contestant.votes || 0) + Number(contestant.manualVotes || 0)),
         })),
       }))
@@ -748,6 +825,9 @@ const listenActiveRoundContestants = ({ force = false } = {}) => {
   activeRoundContestants.value = (activeRound.value.contestants || []).map((contestant) => ({
     ...contestant,
     artistId: String(contestant.artistId),
+    matchGroup: Number(contestant.matchGroup || 0),
+    matchOrder: Number(contestant.matchOrder || 0),
+    order: Number(contestant.order || 0),
   }))
 
   unsubscribePublicResults = subscribePublicResults(db, {
@@ -831,8 +911,12 @@ const finishActiveRound = async () => {
     return
   }
 
-  const winnerCount = Number(winnersToAdvance.value || 1)
-  const winners = activeRoundRanking.value.slice(0, winnerCount)
+  const winnerCount = isActiveRoundVersus.value
+    ? versusMatchWinners.value.length
+    : Number(winnersToAdvance.value || 1)
+  const winners = isActiveRoundVersus.value
+    ? versusMatchWinners.value
+    : activeRoundRanking.value.slice(0, winnerCount)
 
   if (!winners.length) {
     errorMessage.value = translate('admin.monitor.errors.noWinners')
@@ -1565,14 +1649,24 @@ onUnmounted(() => {
               {{ activeRound?.title || $t('admin.monitor.firstRound') }}
             </h3>
             <p class="mt-2 text-sm text-slate-400">
-              {{ $t('admin.monitor.rankingSummary', { votes: totalActiveRoundVotes }) }}
+              {{
+                isActiveRoundVersus
+                  ? $t('admin.monitor.versusSummary', {
+                      votes: totalActiveRoundVotes,
+                      matches: activeRoundVersusMatches.length,
+                    })
+                  : $t('admin.monitor.rankingSummary', { votes: totalActiveRoundVotes })
+              }}
             </p>
           </div>
           <div v-if="activeRound" class="flex flex-wrap items-center gap-2">
             <span class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-300">
               {{ activeRound.type === 'versus' ? 'Versus' : 'Lista' }} · {{ activeRound.status || 'draft' }}
             </span>
-            <label class="flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-black text-slate-200">
+            <label
+              v-if="!isActiveRoundVersus"
+              class="flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-black text-slate-200"
+            >
               {{ $t('admin.monitor.advance') }}
               <select
                 v-model="winnersToAdvance"
@@ -1588,6 +1682,12 @@ onUnmounted(() => {
                 </option>
               </select>
             </label>
+            <span
+              v-else
+              class="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-fuchsia-100"
+            >
+              {{ $t('admin.monitor.versusAdvanceHint') }}
+            </span>
             <button
               type="button"
               class="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-amber-300/25 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1701,7 +1801,121 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="activeRound" class="mt-5 space-y-3">
+        <div v-if="activeRound" class="mt-5 space-y-4">
+          <template v-if="isActiveRoundVersus">
+            <article
+              v-for="match in activeRoundVersusMatches"
+              :key="match.id"
+              class="mx-auto w-full max-w-3xl rounded-3xl border border-white/10 bg-white/5 p-2 sm:p-3"
+            >
+              <div class="mb-2 text-center">
+                <p class="text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-300">
+                  {{ match.title }}
+                </p>
+                <p class="mt-0.5 text-[10px] font-bold text-slate-400">
+                  {{ $t('admin.monitor.versusMatchVotes', { count: match.totalVotes }) }}
+                </p>
+              </div>
+
+              <div
+                class="relative grid gap-1.5 sm:gap-2"
+                :class="match.contestants.length === 2 ? 'grid-cols-2' : ''"
+              >
+                <div
+                  v-if="match.contestants.length === 2"
+                  class="admin-versus-vs pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-center"
+                >
+                  <span class="grid size-8 place-items-center rounded-full border-2 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-[10px] font-black text-white shadow-lg shadow-fuchsia-500/50 sm:size-11 sm:text-sm">
+                    VS
+                  </span>
+                </div>
+
+                <div
+                  v-for="(contestant, contestantIndex) in match.contestants"
+                  :key="contestant.id"
+                  class="relative overflow-hidden rounded-2xl border border-violet-300/10 bg-slate-950/55"
+                >
+                  <div class="relative h-28 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950 sm:h-36">
+                    <img
+                      v-if="getArtistImage(contestant.artist)"
+                      :src="getArtistImage(contestant.artist)"
+                      :alt="contestant.artist?.name"
+                      class="absolute inset-0 size-full object-cover"
+                    />
+                    <div class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/30 to-transparent"></div>
+                    <span class="absolute left-2 top-2 rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white backdrop-blur">
+                      {{ $t('polls.detail.optionLabel', { option: contestantIndex === 0 ? 'A' : 'B' }) }}
+                    </span>
+                  </div>
+
+                  <div class="p-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <h3 class="truncate text-xs font-black leading-tight text-white sm:text-sm">
+                          {{ contestant.artist?.name || $t('admin.common.artist') }}
+                        </h3>
+                        <p class="mt-0.5 truncate text-[9px] font-black uppercase text-fuchsia-200">
+                          {{ getArtistGroup(contestant.artist) || $t('polls.detail.soloist') }}
+                        </p>
+                      </div>
+                      <p class="shrink-0 text-xs font-black text-cyan-100 sm:text-sm">
+                        {{ contestant.matchPercentLabel }}
+                      </p>
+                    </div>
+                    <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
+                        :style="{ width: contestant.matchPercentLabel }"
+                      ></div>
+                    </div>
+                    <p class="mt-1 text-[11px] font-bold text-slate-300">
+                      {{ $t('admin.monitor.individualVotes', { count: contestant.totalVotes }) }}
+                    </p>
+                    <div class="mt-2 flex flex-col gap-1.5">
+                      <input
+                        v-model="manualVoteAmounts[contestant.id]"
+                        type="number"
+                        step="1"
+                        class="min-h-8 w-full rounded-xl border border-white/10 bg-slate-950 px-2 text-xs font-bold text-white outline-none focus:border-fuchsia-300/50"
+                        :placeholder="$t('admin.monitor.manualVotesPlaceholder')"
+                      />
+                      <div class="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          class="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-2 text-[10px] font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          :disabled="Boolean(adjustingVoteContestantId)"
+                          @click="addManualVotes(contestant)"
+                        >
+                          <i
+                            v-if="adjustingVoteContestantId === contestant.id"
+                            class="fa-solid fa-circle-notch fa-spin"
+                            aria-hidden="true"
+                          ></i>
+                          <i
+                            v-else
+                            class="fa-solid fa-sliders"
+                            aria-hidden="true"
+                          ></i>
+                          {{ $t('admin.monitor.adjustVotes') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-violet-300/25 bg-violet-400/10 px-2 text-[10px] font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          :disabled="Boolean(adjustingVoteContestantId) || isStartingBotCampaign"
+                          @click="openBotCampaignModal(contestant)"
+                        >
+                          <i class="fa-solid fa-robot" aria-hidden="true"></i>
+                          {{ $t('admin.monitor.botCampaignTitle') }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </template>
+
+          <template v-else>
           <div
             v-for="(contestant, index) in activeRoundRanking"
             :key="contestant.id"
@@ -1783,9 +1997,10 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+          </template>
 
           <p
-            v-if="!activeRoundRanking.length"
+            v-if="isActiveRoundVersus ? !activeRoundVersusMatches.length : !activeRoundRanking.length"
             class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm font-bold text-slate-400"
           >
             {{ $t('admin.monitor.emptyRoundArtists') }}
@@ -2463,3 +2678,15 @@ onUnmounted(() => {
 
   </section>
 </template>
+
+<style scoped>
+.admin-versus-vs {
+  height: 7rem;
+}
+
+@media (min-width: 640px) {
+  .admin-versus-vs {
+    height: 9rem;
+  }
+}
+</style>

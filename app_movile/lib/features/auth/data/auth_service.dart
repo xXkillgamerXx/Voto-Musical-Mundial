@@ -5,6 +5,7 @@ import '../../../core/api/api_config.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/auth/auth_models.dart';
 import '../../../core/auth/auth_session.dart';
+import '../../../core/i18n/app_locale.dart';
 import '../../../core/i18n/tr.dart';
 
 class AuthService {
@@ -70,6 +71,18 @@ class AuthService {
     final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
     await _session.setAuth(auth);
     return auth;
+  }
+
+  Future<void> requestPasswordReset({required String email}) async {
+    await _client.request(
+      '/auth/forgot-password',
+      method: 'POST',
+      body: {
+        'email': email.trim().toLowerCase(),
+        'locale': AppLocale.instance.code == 'en' ? 'en' : 'es',
+      },
+      retryOnUnauthorized: false,
+    );
   }
 
   Future<ApiAuth> signInWithGoogle({String? referralCode}) async {

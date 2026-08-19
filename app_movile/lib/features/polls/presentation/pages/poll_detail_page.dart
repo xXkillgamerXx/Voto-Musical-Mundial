@@ -2882,11 +2882,7 @@ class _FinalWinnerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final artist = winner.artist;
-    final imageUrl = artist == null
-        ? ''
-        : resolveArtistMediaUrl(
-            artist.banner.isNotEmpty ? artist.banner : artist.image,
-          );
+    final imageUrl = artist == null ? '' : resolveArtistAvatarUrl(artist);
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: Container(
@@ -4285,11 +4281,7 @@ class _VersusImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final artist = entry.artist;
-    final imageUrl = artist == null
-        ? ''
-        : resolveArtistMediaUrl(
-            artist.banner.isNotEmpty ? artist.banner : artist.image,
-          );
+    final imageUrl = artist == null ? '' : resolveArtistAvatarUrl(artist);
     return AspectRatio(
       aspectRatio: 1,
       child: AnimatedContainer(
