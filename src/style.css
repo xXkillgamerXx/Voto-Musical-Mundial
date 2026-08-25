@@ -773,3 +773,30 @@ html[data-theme='light'] .vti__dropdown-item:hover {
 .poll-rich-text b {
   font-weight: 800;
 }
+
+/* Live vote stat highlight — glow only, minimal layout shift (mobile-safe). */
+.live-stats-pulse-target {
+  display: inline-block;
+  transform-origin: center;
+  line-height: 1.1;
+  vertical-align: baseline;
+}
+
+.live-stats-pulse-target[data-flash]:not([data-flash=""]) {
+  animation: live-stats-pulse 0.78s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes live-stats-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    text-shadow: none;
+  }
+
+  40% {
+    transform: scale(1.04);
+    text-shadow:
+      0 0 7px rgba(250, 204, 21, 0.6),
+      0 0 14px rgba(217, 70, 239, 0.32);
+  }
+}

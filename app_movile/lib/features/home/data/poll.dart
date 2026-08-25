@@ -200,7 +200,28 @@ class Poll {
   }
 
   DateTime? get countdownEndAt {
-    return activeEndAt ?? endAt ?? _activeRoundEndAt;
+    // Prefer the live/effective round deadline. poll.activeEndAt can go stale
+    // if the round end date is edited after launch.
+    return _effectiveRoundEndAt ?? activeEndAt ?? endAt;
+  }
+
+  DateTime? get _effectiveRoundEndAt {
+    final roundId = effectiveRoundId;
+    if (roundId.isNotEmpty) {
+      for (final round in rounds) {
+        if (round.id == roundId && round.endAt != null) {
+          return round.endAt;
+        }
+      }
+    }
+
+    for (final round in rounds) {
+      if (round.status == 'live' && round.endAt != null) {
+        return round.endAt;
+      }
+    }
+
+    return _activeRoundEndAt;
   }
 
   bool get hideCountdown {

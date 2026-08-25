@@ -338,6 +338,11 @@ const Map<String, Map<String, String>> homeStrings = {
     'en': '{count} votes',
     'ko': '{count}표',
   },
+  'home.votedBadge': {
+    'es': '¡Votó!',
+    'en': 'Voted!',
+    'ko': '투표!',
+  },
 
   // Tiempo relativo de actividad
   'home.timeNow': {'es': 'ahora', 'en': 'now', 'ko': '방금'},

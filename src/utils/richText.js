@@ -22,15 +22,19 @@ const ALLOWED_TAGS = [
 
 const ALLOWED_ATTR = ['href', 'target', 'rel', 'class']
 
-export const hasRichTextContent = (value) => {
-  const text = String(value || '')
+export const htmlToPlainText = (value) =>
+  String(value || '')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim()
 
-  return Boolean(text)
-}
+export const hasRichTextContent = (value) => Boolean(htmlToPlainText(value))
 
 export const sanitizeHtml = (value) =>
   DOMPurify.sanitize(String(value || ''), {

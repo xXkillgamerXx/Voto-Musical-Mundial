@@ -7,6 +7,29 @@ import { RedisService } from '../redis/redis.service';
 
 const POLLS_CACHE_SECONDS = 90;
 
+const withCountdownEnd = <T extends {
+  activeEndAt?: Date | null;
+  config?: unknown;
+  rounds?: Array<{ id: bigint | number | string; status: string; endsAt?: Date | null }>;
+}>(poll: T): T => {
+  const config =
+    poll.config && typeof poll.config === 'object' && !Array.isArray(poll.config)
+      ? (poll.config as Record<string, unknown>)
+      : {};
+  const activeRoundId = String(config.activeRoundId || '');
+  const rounds = Array.isArray(poll.rounds) ? poll.rounds : [];
+  const liveRound =
+    rounds.find((round) => String(round.id) === activeRoundId) ||
+    rounds.find((round) => round.status === PollStatus.live) ||
+    null;
+
+  if (liveRound?.endsAt) {
+    return { ...poll, activeEndAt: liveRound.endsAt };
+  }
+
+  return poll;
+};
+
 @Injectable()
 export class PollsService {
   constructor(
@@ -27,7 +50,7 @@ export class PollsService {
         rounds: { orderBy: { createdAt: 'asc' } },
       },
     });
-    const payload = serialize(polls);
+    const payload = serialize(polls.map((poll) => withCountdownEnd(poll)));
 
     await this.redis.client.set(key, JSON.stringify(payload), 'EX', POLLS_CACHE_SECONDS);
     return payload;
@@ -44,7 +67,7 @@ export class PollsService {
       },
     });
 
-    return serialize(polls);
+    return serialize(polls.map((poll) => withCountdownEnd(poll)));
   }
 
   async findOne(id: string) {
@@ -64,7 +87,7 @@ export class PollsService {
       throw new NotFoundException('La votacion no existe.');
     }
 
-    return serialize(poll);
+    return serialize(withCountdownEnd(poll));
   }
 
   async getResults(pollId: string, roundId?: string) {

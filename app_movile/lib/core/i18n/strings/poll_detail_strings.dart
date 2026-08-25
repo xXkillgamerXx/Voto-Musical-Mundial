@@ -313,6 +313,11 @@ const Map<String, Map<String, String>> pollDetailStrings = {
     'en': '{count} votes',
     'ko': '{count}표',
   },
+  'pollDetail.votesLabel': {
+    'es': 'Votos',
+    'en': 'Votes',
+    'ko': '표',
+  },
 
   // Insignia de feedback de voto
   'pollDetail.plusVoteSingular': {

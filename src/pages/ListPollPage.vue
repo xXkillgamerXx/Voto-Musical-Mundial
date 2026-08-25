@@ -111,6 +111,8 @@ const selectedRoundId = ref("");
 const voteModalContestant = ref(null);
 const voteAmount = ref(1);
 const voteFeedbacks = ref({});
+const liveVoteToasts = ref([]);
+const liveVoteFlashIds = ref({});
 const optimisticVoteTotals = ref({});
 const animatedVoteCounts = ref({});
 const animatedDisplayedTotalVotes = ref(null);
@@ -145,6 +147,10 @@ let unsubscribeRealtime = null;
 let reloadPublicResults = null;
 let realtimeResultsThrottle = 0;
 let realtimeStateThrottle = 0;
+let liveVoteToastSeq = 0;
+let lastLiveVoteToastAt = 0;
+const liveVoteToastTimers = new Map();
+const liveVoteFlashTimers = new Map();
 let missionsPromptTimer = null;
 let clockTimer = null;
 const handleAnonymousVisibilityRefresh = () => {
@@ -2316,11 +2322,14 @@ const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800 }
     return;
   }
 
+  // Para bots / ráfagas grandes: no mostrar "+15.387", solo la sensación de voto.
+  const displayAmount = amount > 5 ? 0 : amount;
+
   window.clearTimeout(voteFeedbackTimers.get(artistId));
   voteFeedbacks.value = {
     ...voteFeedbacks.value,
     [artistId]: {
-      amount,
+      amount: displayAmount,
       pending,
       token: Date.now(),
     },
@@ -2333,6 +2342,83 @@ const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800 }
       voteFeedbacks.value = nextFeedbacks;
       voteFeedbackTimers.delete(artistId);
     }, duration),
+  );
+};
+
+const flashLiveVoteArtist = (artistId) => {
+  if (!artistId) {
+    return;
+  }
+
+  window.clearTimeout(liveVoteFlashTimers.get(artistId));
+  liveVoteFlashIds.value = {
+    ...liveVoteFlashIds.value,
+    [artistId]: Date.now(),
+  };
+  liveVoteFlashTimers.set(
+    artistId,
+    window.setTimeout(() => {
+      const next = { ...liveVoteFlashIds.value };
+      delete next[artistId];
+      liveVoteFlashIds.value = next;
+      liveVoteFlashTimers.delete(artistId);
+    }, 1600),
+  );
+};
+
+const pushLiveVoteToast = (payload = {}) => {
+  const artistId = String(payload.artistId || payload.contestantId || "");
+  const nowMs = Date.now();
+  // Evita spam visual cuando un bot emite muchos paquetes seguidos.
+  if (nowMs - lastLiveVoteToastAt < 450) {
+    flashLiveVoteArtist(artistId);
+    return;
+  }
+  lastLiveVoteToastAt = nowMs;
+
+  const contestant = contestants.value.find(
+    (row) =>
+      getContestantArtistId(row) === artistId ||
+      String(row.id) === artistId ||
+      String(row.artistId) === artistId,
+  );
+  const artist =
+    contestant?.artist ||
+    artists.value.find((row) => String(row.id) === artistId) ||
+    null;
+  const artistName =
+    payload.artistName ||
+    artist?.name ||
+    translate("polls.detail.voteFallback");
+  const fanName =
+    payload.userDisplayName ||
+    payload.username ||
+    translate("widgets.activity.fan");
+
+  liveVoteToastSeq += 1;
+  const id = `live-vote-${liveVoteToastSeq}`;
+  liveVoteToasts.value = [
+    {
+      id,
+      fanName,
+      artistName,
+      artistId,
+    },
+    ...liveVoteToasts.value,
+  ].slice(0, 4);
+
+  flashLiveVoteArtist(artistId);
+  if (!voteFeedbacks.value[artistId]?.pending) {
+    showVoteFeedback(artistId, 1, { duration: 1800 });
+  }
+
+  window.clearTimeout(liveVoteToastTimers.get(id));
+  liveVoteToastTimers.set(
+    id,
+    window.setTimeout(() => {
+      liveVoteToasts.value = liveVoteToasts.value.filter((toast) => toast.id !== id);
+      liveVoteToastTimers.delete(id);
+    }, 2800),
   );
 };
 
@@ -2484,6 +2570,7 @@ const animateIncomingVoteTotals = (nextContestants) => {
     const duration = animationDurationForVoteDelta(from, to);
     longestDuration = Math.max(longestDuration, duration);
     changed = true;
+    flashLiveVoteArtist(artistId);
     animateVoteCount(artistId, from, to, duration);
   });
 
@@ -2535,6 +2622,21 @@ const subscribeRealtime = (pollId) => {
   }
 
   unsubscribeRealtime = subscribePollRealtime(pollId, {
+    onVoteDelta: (payload = {}) => {
+      if (!payload || payload.staffVote === true || payload.staffVote === "1") {
+        return;
+      }
+
+      const dirtyRoundId = payload.roundId ? String(payload.roundId) : "";
+      const currentRoundId = activeRound.value?.id
+        ? String(activeRound.value.id)
+        : "";
+      if (dirtyRoundId && currentRoundId && dirtyRoundId !== currentRoundId) {
+        return;
+      }
+
+      pushLiveVoteToast(payload);
+    },
     onResultsDirty: (event = {}) => {
       const dirtyRoundId = event.roundId ? String(event.roundId) : "";
       const currentRoundId = activeRound.value?.id ? String(activeRound.value.id) : "";
@@ -3584,6 +3686,12 @@ onUnmounted(() => {
   embedResizeObserver?.disconnect();
   voteFeedbackTimers.forEach((timer) => window.clearTimeout(timer));
   voteFeedbackTimers.clear();
+  liveVoteToastTimers.forEach((timer) => window.clearTimeout(timer));
+  liveVoteToastTimers.clear();
+  liveVoteFlashTimers.forEach((timer) => window.clearTimeout(timer));
+  liveVoteFlashTimers.clear();
+  liveVoteToasts.value = [];
+  liveVoteFlashIds.value = {};
   window.clearTimeout(anonymousVoteToastTimer);
   window.clearTimeout(missionsPromptTimer);
   voteCountAnimationTimers.forEach((timer) => window.clearInterval(timer));
@@ -4103,13 +4211,14 @@ onUnmounted(() => {
                 <span
                   class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
                 >
-                  <span v-if="!hideVoteCounts">
+                  <span>
                     <span
                       class="block text-xs font-black uppercase tracking-[0.24em] text-amber-200"
                     >
                       {{ $t("polls.detail.wonWith") }}
                     </span>
                     <span
+                      v-if="!hideVoteCounts"
                       class="mt-2 block text-4xl font-black leading-none text-white sm:text-5xl"
                     >
                       {{ winnerEntry.votes.toLocaleString("es") }}
@@ -4251,14 +4360,18 @@ onUnmounted(() => {
 
               <div class="sm:min-w-64 sm:text-right">
                 <p
-                  v-if="!hideVoteCounts"
                   class="text-xs font-black uppercase tracking-widest text-slate-400"
                 >
-                  {{
-                    $t("polls.detail.votesCount", {
-                      count: entry.votes.toLocaleString("es"),
-                    })
-                  }}
+                  <template v-if="!hideVoteCounts">
+                    {{
+                      $t("polls.detail.votesCount", {
+                        count: entry.votes.toLocaleString("es"),
+                      })
+                    }}
+                  </template>
+                  <template v-else>
+                    {{ $t("polls.detail.votesLabel") }}
+                  </template>
                 </p>
                 <p
                   class="text-2xl font-black text-fuchsia-100"
@@ -4525,10 +4638,12 @@ onUnmounted(() => {
               :key="contestant.id"
               :data-artist-id="getContestantArtistId(contestant)"
               class="relative overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
-              :class="
+              :class="[
                 voteFeedbacks[contestant.artistId || contestant.id] &&
-                'vote-feedback-card'
-              "
+                  'vote-feedback-card',
+                liveVoteFlashIds[contestant.artistId || contestant.id] &&
+                  'live-vote-flash-card',
+              ]"
               :style="{ animationDelay: `${Math.min(index, 2) * 90 + 80}ms` }"
             >
               <span
@@ -4642,7 +4757,12 @@ onUnmounted(() => {
                           : 'text-2xl'
                       "
                     >
-                      {{ percentForMatch(contestant, feedItem.row) }}
+                      <span
+                        class="live-stats-pulse-target"
+                        :data-flash="liveVoteFlashIds[contestant.artistId || contestant.id] || ''"
+                      >
+                        {{ percentForMatch(contestant, feedItem.row) }}
+                      </span>
                     </p>
                   </div>
 
@@ -4662,19 +4782,28 @@ onUnmounted(() => {
                     ></div>
                   </div>
                   <p
-                    v-if="!hideVoteCounts"
                     class="relative mt-2 text-sm font-bold text-slate-300"
                     :class="
                       voteFeedbacks[contestant.artistId || contestant.id] &&
-                      'text-emerald-200'
+                        'text-emerald-200'
                     "
                   >
-                    {{
-                      $t("polls.detail.votesCount", {
-                        count:
-                          displayVoteCountFor(contestant).toLocaleString("es"),
-                      })
-                    }}
+                    <template v-if="!hideVoteCounts">
+                      <span
+                        class="live-stats-pulse-target"
+                        :data-flash="liveVoteFlashIds[contestant.artistId || contestant.id] || ''"
+                      >
+                        {{
+                          $t("polls.detail.votesCount", {
+                          count:
+                            displayVoteCountFor(contestant).toLocaleString("es"),
+                        })
+                      }}
+                      </span>
+                    </template>
+                    <template v-else>
+                      {{ $t("polls.detail.votesLabel") }}
+                    </template>
                     <span
                       v-if="voteFeedbacks[contestant.artistId || contestant.id]"
                       :key="
@@ -4687,12 +4816,15 @@ onUnmounted(() => {
                         voteFeedbacks[contestant.artistId || contestant.id]
                           .pending
                           ? "Procesando..."
-                          : $t("polls.detail.votesAdded", {
-                              count:
-                                voteFeedbacks[
-                                  contestant.artistId || contestant.id
-                                ].amount,
-                            })
+                          : voteFeedbacks[contestant.artistId || contestant.id]
+                                .amount > 0
+                            ? $t("polls.detail.votesAdded", {
+                                count:
+                                  voteFeedbacks[
+                                    contestant.artistId || contestant.id
+                                  ].amount,
+                              })
+                            : $t("polls.detail.liveVoteBadge")
                       }}
                     </span>
                   </p>
@@ -4920,6 +5052,8 @@ onUnmounted(() => {
                     : 'border-white/10 bg-white/5 hover:bg-white/8',
                 voteFeedbacks[feedItem.row.artistId || feedItem.row.id] &&
                   'vote-feedback-card',
+                liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                  'live-vote-flash-card',
               ]"
               :style="{ animationDelay: `${Math.min(feedItem.index, 8) * 70}ms` }"
             >
@@ -4997,21 +5131,30 @@ onUnmounted(() => {
                   </span>
                   <span class="shrink-0 text-right">
                     <span
-                      v-if="!hideVoteCounts"
                       class="relative block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
                       :class="
                         voteFeedbacks[feedItem.row.artistId || feedItem.row.id] &&
-                        'text-emerald-200'
+                          'text-emerald-200'
                       "
                     >
-                      {{
-                        $t("polls.detail.votesCount", {
-                          count:
-                            displayVoteCountFor(feedItem.row).toLocaleString(
-                              "es",
-                            ),
-                        })
-                      }}
+                      <template v-if="!hideVoteCounts">
+                        <span
+                          class="live-stats-pulse-target"
+                          :data-flash="liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] || ''"
+                        >
+                          {{
+                            $t("polls.detail.votesCount", {
+                              count:
+                                displayVoteCountFor(feedItem.row).toLocaleString(
+                                  "es",
+                                ),
+                            })
+                          }}
+                        </span>
+                      </template>
+                      <template v-else>
+                        {{ $t("polls.detail.votesLabel") }}
+                      </template>
                       <span
                         v-if="
                           voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
@@ -5026,19 +5169,28 @@ onUnmounted(() => {
                           voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
                             .pending
                             ? "Procesando..."
-                            : $t("polls.detail.votesAdded", {
-                                count:
-                                  voteFeedbacks[
-                                    feedItem.row.artistId || feedItem.row.id
-                                  ].amount,
-                              })
+                            : voteFeedbacks[
+                                  feedItem.row.artistId || feedItem.row.id
+                                ].amount > 0
+                              ? $t("polls.detail.votesAdded", {
+                                  count:
+                                    voteFeedbacks[
+                                      feedItem.row.artistId || feedItem.row.id
+                                    ].amount,
+                                })
+                              : $t("polls.detail.liveVoteBadge")
                         }}
                       </span>
                     </span>
                     <span
                       class="block text-2xl font-black leading-none text-fuchsia-100 sm:text-4xl"
                     >
-                      {{ percentForDisplayedContestant(feedItem.row) }}
+                      <span
+                        class="live-stats-pulse-target"
+                        :data-flash="liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] || ''"
+                      >
+                        {{ percentForDisplayedContestant(feedItem.row) }}
+                      </span>
                     </span>
                   </span>
                 </div>
@@ -5804,6 +5956,35 @@ onUnmounted(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        class="pointer-events-none fixed inset-x-0 bottom-4 z-100 flex flex-col items-center gap-2 px-4 sm:bottom-6"
+      >
+        <TransitionGroup name="live-vote-toast">
+          <div
+            v-for="toast in liveVoteToasts"
+            :key="toast.id"
+            class="live-vote-toast pointer-events-none flex max-w-md items-center gap-3 rounded-2xl border border-fuchsia-300/30 bg-[#1a0b2e]/95 px-4 py-3 text-white shadow-2xl shadow-fuchsia-950/50 backdrop-blur-md"
+          >
+            <span
+              class="grid size-10 shrink-0 place-items-center rounded-xl border border-fuchsia-200/25 bg-fuchsia-400/15 text-fuchsia-100"
+              aria-hidden="true"
+            >
+              <i class="fa-solid fa-heart live-vote-toast-heart"></i>
+            </span>
+            <p class="min-w-0 text-sm font-bold leading-5">
+              {{
+                $t("polls.detail.liveVoteToast", {
+                  fan: toast.fanName,
+                  artist: toast.artistName,
+                })
+              }}
+            </p>
+          </div>
+        </TransitionGroup>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -6397,5 +6578,64 @@ onUnmounted(() => {
 :global(.anonymous-vote-toast-leave-to) {
   opacity: 0;
   transform: translateY(-14px);
+}
+
+.live-vote-flash-card {
+  animation: live-vote-flash-card 1.45s ease-out;
+}
+
+.live-vote-toast-heart {
+  animation: live-vote-toast-heart 0.85s ease-in-out infinite;
+}
+
+:global(.live-vote-toast-enter-active),
+:global(.live-vote-toast-leave-active) {
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:global(.live-vote-toast-enter-from) {
+  opacity: 0;
+  transform: translateY(18px) scale(0.94);
+}
+
+:global(.live-vote-toast-leave-to) {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.96);
+}
+
+:global(.live-vote-toast-move) {
+  transition: transform 0.35s ease;
+}
+
+@keyframes live-vote-flash-card {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 114, 182, 0.55);
+    border-color: rgba(244, 114, 182, 0.55);
+    filter: brightness(1.18);
+  }
+
+  45% {
+    box-shadow: 0 0 0 12px rgba(244, 114, 182, 0);
+    border-color: rgba(217, 70, 239, 0.45);
+    filter: brightness(1.08);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 114, 182, 0);
+    filter: brightness(1);
+  }
+}
+
+@keyframes live-vote-toast-heart {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.25);
+  }
 }
 </style>

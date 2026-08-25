@@ -77,11 +77,16 @@ const countdownFor = (poll) => {
     ];
   }
 
+  const liveRound =
+    (poll.rounds || []).find((round) => round.id === poll.activeRoundId) ||
+    (poll.rounds || []).find((round) => round.status === "live") ||
+    null;
   const endDate =
+    asDate(poll.activeRoundEndAt) ||
+    asDate(liveRound?.endAt || liveRound?.endsAt) ||
     asDate(poll.activeEndAt) ||
     asDate(poll.endAt) ||
-    asDate(poll.endsAt) ||
-    asDate(poll.activeRoundEndAt);
+    asDate(poll.endsAt);
 
   if (!endDate) {
     return ["LIVE", "", "", ""];
@@ -106,8 +111,21 @@ const countdownFor = (poll) => {
   ];
 };
 
-const getPollEndAt = (poll) =>
-  poll.activeEndAt || poll.endAt || poll.endsAt || poll.activeRoundEndAt || null;
+const getPollEndAt = (poll) => {
+  const liveRound =
+    (poll.rounds || []).find((round) => round.id === poll.activeRoundId) ||
+    (poll.rounds || []).find((round) => round.status === "live") ||
+    null;
+  return (
+    poll.activeRoundEndAt ||
+    liveRound?.endAt ||
+    liveRound?.endsAt ||
+    poll.activeEndAt ||
+    poll.endAt ||
+    poll.endsAt ||
+    null
+  );
+};
 
 const syncActiveRoundEndListeners = (pollRows) => {
   activeRoundEndListeners.forEach((listener, pollId) => {

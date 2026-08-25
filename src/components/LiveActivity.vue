@@ -291,7 +291,8 @@ const activities = computed(() => {
       pollUrl: pollUrlFor(vote),
       time: formatTime(vote.createdAt),
       votes: Number(vote.amount || 1),
-      showVoteCount: true,
+      // No mostrar cantidad: se nota más la interacción (quién votó) que el número.
+      showVoteCount: false,
       isPulsing: pulseIds.value.includes(vote.id),
       color: colorOptions[index % colorOptions.length],
       visual: visualOptions[index % visualOptions.length],
@@ -509,11 +510,11 @@ onUnmounted(() => {
 
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span
-                  v-if="activity.showVoteCount"
-                  class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-black text-fuchsia-100"
+                  class="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-black text-emerald-100"
+                  :class="activity.isPulsing && 'live-vote-chip-pulse'"
                 >
-                  <i class="fa-solid fa-heart mr-1" aria-hidden="true"></i>
-                  {{ $t('widgets.activity.votes', { count: activity.votes }) }}
+                  <i class="fa-solid fa-heart live-vote-heart" aria-hidden="true"></i>
+                  {{ $t('widgets.activity.votedBadge') }}
                 </span>
                 <span class="text-[11px] text-slate-500 sm:text-xs">{{ activity.time }}</span>
               </div>
@@ -657,6 +658,42 @@ onUnmounted(() => {
 
   100% {
     box-shadow: 0 0 0 0 rgba(217, 70, 239, 0);
+  }
+}
+
+.live-vote-chip-pulse {
+  animation: live-vote-chip-pulse 1.8s ease-out;
+}
+
+.live-vote-heart {
+  animation: live-vote-heart 0.9s ease-in-out infinite;
+}
+
+@keyframes live-vote-chip-pulse {
+  0% {
+    transform: scale(0.86);
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  }
+
+  55% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 10px rgba(52, 211, 153, 0);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  }
+}
+
+@keyframes live-vote-heart {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.28);
   }
 }
 </style>

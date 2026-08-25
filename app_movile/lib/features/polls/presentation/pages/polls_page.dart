@@ -650,7 +650,7 @@ class _PollCard extends StatelessWidget {
   }
 
   String _dateLabel(Poll poll) {
-    final date = poll.activeEndAt ?? poll.endAt;
+    final date = poll.countdownEndAt;
     if (poll.hideCountdown || date == null) {
       return poll.status == 'closed'
           ? tr('catalog.pollFinished')

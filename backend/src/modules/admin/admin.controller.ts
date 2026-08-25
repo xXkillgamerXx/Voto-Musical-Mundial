@@ -659,6 +659,19 @@ export class AdminController {
       data: { title: body.title || body.name, type: body.type ? roundTypeFor(body.type) : undefined, status: body.status ? statusFor(body.status) : undefined, config, startsAt: body.startsAt || body.startAt ? toDate(body.startsAt || body.startAt) : undefined, endsAt },
     });
 
+    // Keep poll.activeEndAt aligned with the live round so public countdowns
+    // do not keep showing a previous long deadline after an admin edit.
+    if (endsAt && (round.status === PollStatus.live || current.status === PollStatus.live)) {
+      await this.prisma.poll.update({
+        where: { id: toBigInt(pollId) },
+        data: { activeEndAt: endsAt },
+      });
+      const cacheKeys = await this.redis.client.keys('cache:polls:*');
+      if (cacheKeys.length) {
+        await this.redis.client.del(...cacheKeys);
+      }
+    }
+
     if (body.status) {
       await this.publishPollState(pollId, {
         reason: 'round_status',

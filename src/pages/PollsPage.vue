@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { applyPollLocale, pollUrl as buildPollUrl } from "../utils/pollLocale";
 import { routePath } from "../utils/localizedRoutes";
+import { htmlToPlainText } from "../utils/richText";
 import { subscribePollsCached } from "../services/firebaseCache";
 
 const { locale } = useI18n();
@@ -71,7 +72,13 @@ const visiblePolls = computed(() => {
       ["live", "selecting_winners", "closed"].includes(poll.status) &&
       pollMatchesCategory(poll, selectedCategoryId.value),
     )
-    .map((poll) => applyPollLocale(poll, locale.value))
+    .map((poll) => {
+      const localized = applyPollLocale(poll, locale.value)
+      return {
+        ...localized,
+        description: htmlToPlainText(localized.description),
+      }
+    })
 });
 
 const selectedCategoryName = computed(() => {

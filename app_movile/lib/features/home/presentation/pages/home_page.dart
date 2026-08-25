@@ -12,6 +12,7 @@ import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/ads/native_ad_widget.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
+import '../../../polls/presentation/widgets/pulsing_stat_text.dart';
 import '../../../users/presentation/pages/user_profile_page.dart';
 import '../../data/live_activity_feed.dart';
 import '../../data/mission.dart';
@@ -1057,8 +1058,8 @@ class _HeroStatBlock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
+        PulsingStatText(
+          text: value,
           style: TextStyle(
             color: valueColor,
             fontSize: valueSize,
@@ -2565,19 +2566,30 @@ class _LiveActivityCard extends StatelessWidget {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD946EF).withValues(alpha: 0.12),
+                            color: const Color(0xFF34D399).withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: const Color(0xFFF5D0FE).withValues(alpha: 0.2),
+                              color: const Color(0xFF6EE7B7).withValues(alpha: 0.28),
                             ),
                           ),
-                          child: Text(
-                            trp('home.votesCount', {'count': '${activity.amount}'}),
-                            style: const TextStyle(
-                              color: Color(0xFFF5D0FE),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.favorite_rounded,
+                                size: 12,
+                                color: Color(0xFF6EE7B7),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tr('home.votedBadge'),
+                                style: const TextStyle(
+                                  color: Color(0xFFD1FAE5),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         Text(

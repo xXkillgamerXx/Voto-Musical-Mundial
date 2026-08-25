@@ -6,12 +6,18 @@ import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/fi
 import { subscribePublicResults } from '../services/pollResults'
 import { applyPollLocale, pollUrl as buildPollUrl } from '../utils/pollLocale'
 import { routePath } from '../utils/localizedRoutes'
+import { htmlToPlainText } from '../utils/richText'
 
 const { locale } = useI18n()
 const activeSlide = ref(0)
 const animatedLeaderVotes = ref(0)
 const animatedPercent = ref(0)
 const animatedProgress = ref(0)
+const statsPulseFlash = ref({
+  votes: '',
+  percent: '',
+  total: '',
+})
 const livePolls = ref([])
 const livePollResults = ref({})
 const activeRoundIds = ref({})
@@ -20,6 +26,16 @@ const artists = ref([])
 let unsubscribePolls = null
 const roundListeners = new Map()
 const pollResultListeners = new Map()
+let lastLiveStatsSignature = ''
+
+const triggerStatsPulse = (fields = {}) => {
+  const stamp = String(Date.now())
+  statsPulseFlash.value = {
+    votes: fields.votes ? stamp : '',
+    percent: fields.percent ? stamp : '',
+    total: fields.total ? stamp : '',
+  }
+}
 
 const emptyBannerSlide = computed(() => {
   locale.value
@@ -209,7 +225,7 @@ const syncPollResultListeners = (pollRows) => {
   })
 }
 
-const animateBannerStats = () => {
+const animateBannerStats = ({ intro = false } = {}) => {
   if (statsAnimationFrame) {
     window.cancelAnimationFrame(statsAnimationFrame)
   }
@@ -222,20 +238,20 @@ const animateBannerStats = () => {
   const targetLeaderVotes = Number(slide.leaderVotes || 0)
   const targetPercent = parsePercent(slide.percent)
   const targetProgress = slide.progress
-  const duration = 1300
+  const startLeaderVotes = intro ? 0 : animatedLeaderVotes.value
+  const startPercent = intro ? 0 : animatedPercent.value
+  const startProgress = intro ? 0 : animatedProgress.value
+  const duration = intro ? 1300 : 420
   const startTime = performance.now()
-
-  animatedLeaderVotes.value = 0
-  animatedPercent.value = 0
-  animatedProgress.value = 0
 
   const tick = (currentTime) => {
     const progress = Math.min((currentTime - startTime) / duration, 1)
     const easedProgress = easeOutCubic(progress)
 
-    animatedLeaderVotes.value = targetLeaderVotes * easedProgress
-    animatedPercent.value = targetPercent * easedProgress
-    animatedProgress.value = targetProgress * easedProgress
+    animatedLeaderVotes.value =
+      startLeaderVotes + (targetLeaderVotes - startLeaderVotes) * easedProgress
+    animatedPercent.value = startPercent + (targetPercent - startPercent) * easedProgress
+    animatedProgress.value = startProgress + (targetProgress - startProgress) * easedProgress
 
     if (progress < 1) {
       statsAnimationFrame = window.requestAnimationFrame(tick)
@@ -272,7 +288,7 @@ const buildLiveSlide = (poll, index) => {
     title: leaderArtistId
       ? translate('widgets.hero.leadingTitle', { name: leaderName })
       : (localized.title || translate('widgets.hero.fallbackTitle')),
-    description: localized.description || translate('widgets.hero.fallbackDescription'),
+    description: htmlToPlainText(localized.description) || translate('widgets.hero.fallbackDescription'),
     category: localized.categoryName || '',
     leader: leaderName,
     leaderVotes,
@@ -302,7 +318,6 @@ const listenLivePolls = () => {
       syncRoundListeners(pollRows)
       syncPollResultListeners(pollRows)
       activeSlide.value = Math.min(activeSlide.value, Math.max(bannerSlides.value.length - 1, 0))
-      animateBannerStats()
     },
     () => {
       livePolls.value = []
@@ -312,9 +327,42 @@ const listenLivePolls = () => {
   )
 }
 
-watch([activeSlide, bannerSlides], () => {
-  animateBannerStats()
+watch(activeSlide, () => {
+  animateBannerStats({ intro: true })
 })
+
+watch(
+  () => {
+    const slide = currentSlide.value
+    if (!slide || slide.isEmpty) return ''
+    return `${activeSlide.value}:${slide.leaderVotes}:${slide.percent}:${slide.totalVotes}`
+  },
+  (signature) => {
+    if (!signature) {
+      lastLiveStatsSignature = ''
+      return
+    }
+
+    const previous = lastLiveStatsSignature
+    lastLiveStatsSignature = signature
+    if (!previous) {
+      animateBannerStats({ intro: true })
+      return
+    }
+
+    const [prevSlide, prevVotes, prevPercent, prevTotal] = previous.split(':')
+    const [nextSlide, nextVotes, nextPercent, nextTotal] = signature.split(':')
+    if (prevSlide !== nextSlide) return
+    if (previous === signature) return
+
+    animateBannerStats({ intro: false })
+    triggerStatsPulse({
+      votes: prevVotes !== nextVotes,
+      percent: prevPercent !== nextPercent,
+      total: prevTotal !== nextTotal,
+    })
+  },
+)
 
 let unsubscribeArtists = null
 
@@ -323,7 +371,6 @@ onMounted(() => {
     artists.value = artistRows
   })
   listenLivePolls()
-  animateBannerStats()
   autoplayTimer = window.setInterval(goToNextSlide, 5000)
 })
 
@@ -403,7 +450,10 @@ onUnmounted(() => {
             <p class="text-xs font-black uppercase tracking-widest text-slate-400">
               {{ $t('widgets.hero.leaderVotes') }}
             </p>
-            <p class="mt-1 text-4xl font-black text-white">
+            <p
+              class="live-stats-pulse-target mt-1 text-4xl font-black text-white"
+              :data-flash="statsPulseFlash.votes"
+            >
               {{ formatVotes(animatedLeaderVotes) }}
             </p>
           </div>
@@ -411,7 +461,10 @@ onUnmounted(() => {
             <p class="text-xs font-black uppercase tracking-widest text-slate-400">
               {{ currentSlide.hideVoteCounts ? $t('widgets.hero.leading') : $t('widgets.hero.leaderShare') }}
             </p>
-            <p class="mt-1 text-3xl font-black text-fuchsia-300">
+            <p
+              class="live-stats-pulse-target mt-1 text-3xl font-black text-fuchsia-300"
+              :data-flash="statsPulseFlash.percent"
+            >
               {{ formatPercent(animatedPercent) }}
             </p>
           </div>
@@ -422,7 +475,10 @@ onUnmounted(() => {
             <p class="text-xs font-black uppercase tracking-widest text-slate-400">
               {{ $t('widgets.hero.totalVotes') }}
             </p>
-            <p class="mt-1 text-xl font-black text-slate-200">
+            <p
+              class="live-stats-pulse-target mt-1 text-xl font-black text-slate-200"
+              :data-flash="statsPulseFlash.total"
+            >
               {{ formatVotes(currentSlide.totalVotes) }}
             </p>
           </div>

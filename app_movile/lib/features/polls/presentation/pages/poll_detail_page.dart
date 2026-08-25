@@ -25,6 +25,7 @@ import '../../../home/data/votes_api.dart';
 import '../../../home/presentation/pages/missions_page.dart';
 import '../../data/poll_realtime_service.dart';
 import '../widgets/follow_us_card.dart';
+import '../widgets/pulsing_stat_text.dart';
 import '../widgets/winner_certificate_modal.dart';
 import 'poll_comments_page.dart';
 
@@ -3020,23 +3021,23 @@ class _FinalWinnerCard extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (!hideCounts)
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  tr('pollDetail.wonWith'),
-                                  style: const TextStyle(
-                                    color: Color(0xFFFDE68A),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.4,
-                                  ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                tr('pollDetail.wonWith'),
+                                style: const TextStyle(
+                                  color: Color(0xFFFDE68A),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.4,
                                 ),
+                              ),
+                              if (!hideCounts) ...[
                                 const SizedBox(height: 4),
-                                Text(
-                                  _formatNumber(winner.totalVotes),
+                                PulsingStatText(
+                                  text: _formatNumber(winner.totalVotes),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 28,
@@ -3045,8 +3046,19 @@ class _FinalWinnerCard extends StatelessWidget {
                                   ),
                                 ),
                               ],
-                            ),
+                              const SizedBox(height: 4),
+                              Text(
+                                tr('pollDetail.votesLabel'),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ],
                           ),
+                        ),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: hideCounts
@@ -3063,8 +3075,8 @@ class _FinalWinnerCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              Text(
-                                '${winner.percent.toStringAsFixed(2)}%',
+                              PulsingStatText(
+                                text: '${winner.percent.toStringAsFixed(2)}%',
                                 style: const TextStyle(
                                   color: Color(0xFFFEF3C7),
                                   fontSize: 28,
@@ -3179,24 +3191,24 @@ class _FinalRankCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 _WinnerChip(label: badgeLabel, isWinner: place == 1, tone: place),
-                if (!hideCounts) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    trp('pollDetail.votesLower', {
-                      'count': _formatNumber(entry.totalVotes),
-                    }),
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
+                const SizedBox(height: 4),
+                PulsingStatText(
+                  text: hideCounts
+                      ? tr('pollDetail.votesLabel')
+                      : trp('pollDetail.votesLower', {
+                          'count': _formatNumber(entry.totalVotes),
+                        }),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
                   ),
-                ],
+                ),
               ],
             ),
           ),
-          Text(
-            '${entry.percent.toStringAsFixed(2)}%',
+          PulsingStatText(
+            text: '${entry.percent.toStringAsFixed(2)}%',
             style: TextStyle(
               color: tone.rank,
               fontSize: 16,
@@ -3426,8 +3438,8 @@ class _ModalArtistCard extends StatelessWidget {
               ],
             ),
           ),
-          Text(
-            '${entry.percent.toStringAsFixed(2)}%',
+          PulsingStatText(
+            text: '${entry.percent.toStringAsFixed(2)}%',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 15,
@@ -3730,19 +3742,20 @@ class _ContestantCard extends StatelessWidget {
               Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    if (!hideCounts)
-                      Text(
-                        trp('pollDetail.votesUppercase', {
-                          'count': _formatNumber(entry.totalVotes),
-                        }),
-                        style: const TextStyle(
-                          color: Color(0xFFE2E8F0),
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    PulsingStatText(
+                      text: hideCounts
+                          ? tr('pollDetail.votesLabel').toUpperCase()
+                          : trp('pollDetail.votesUppercase', {
+                              'count': _formatNumber(entry.totalVotes),
+                            }),
+                      style: const TextStyle(
+                        color: Color(0xFFE2E8F0),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
                       ),
-                    Text(
-                      '${entry.percent.toStringAsFixed(2)}%',
+                    ),
+                    PulsingStatText(
+                      text: '${entry.percent.toStringAsFixed(2)}%',
                       style: TextStyle(
                         color: tone?.rank ?? Colors.white,
                         fontSize: 20,
@@ -4486,8 +4499,8 @@ class _VersusInfo extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 6),
-                AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 350),
+                PulsingStatText(
+                  text: '${entry.percent.toStringAsFixed(2)}%',
                   style: TextStyle(
                     color: showFeedback
                         ? const Color(0xFF6EE7B7)
@@ -4497,7 +4510,6 @@ class _VersusInfo extends StatelessWidget {
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
-                  child: Text('${entry.percent.toStringAsFixed(2)}%'),
                 ),
               ],
             ),
@@ -4515,19 +4527,19 @@ class _VersusInfo extends StatelessWidget {
                 ),
               ),
             ],
-            if (!hideCounts) ...[
-              const SizedBox(height: 2),
-              Text(
-                trp('pollDetail.votesLower', {
-                  'count': _formatNumber(entry.totalVotes),
-                }),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
+            const SizedBox(height: 2),
+            PulsingStatText(
+              text: hideCounts
+                  ? tr('pollDetail.votesLabel')
+                  : trp('pollDetail.votesLower', {
+                      'count': _formatNumber(entry.totalVotes),
+                    }),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
               ),
-            ],
+            ),
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(99),
