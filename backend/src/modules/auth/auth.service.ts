@@ -14,6 +14,7 @@ import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { OAuth2Client, TokenInfo } from 'google-auth-library';
 import { MailService } from '../mail/mail.service';
+import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { AnonymousTokenDto } from './dto/anonymous-token.dto';
@@ -50,6 +51,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly redis: RedisService,
     private readonly mail: MailService,
+    private readonly missionProgress: MissionProgressService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -486,6 +488,8 @@ export class AuthService {
   }
 
   private async authResponse(user: User) {
+    void this.missionProgress.trackLogin(user.id).catch(() => {});
+
     const accessPayload: JwtPayload = {
       sub: user.id.toString(),
       type: 'access',
@@ -573,70 +577,10 @@ export class AuthService {
     tx: Prisma.TransactionClient,
     referrerId: bigint,
   ) {
-    const missions = await tx.mission.findMany({
-      where: {
-        active: true,
-        type: { in: ['referral_signup', 'referral_signup_milestone'] },
-      },
-      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    });
-
-    for (const mission of missions) {
-      const completion = await tx.missionCompletion.upsert({
-        where: { missionId_userId: { missionId: mission.id, userId: referrerId } },
-        update: {
-          progress: { increment: 1 },
-        },
-        create: {
-          missionId: mission.id,
-          userId: referrerId,
-          progress: 1,
-        },
-      });
-      const nextProgress = Math.min(Math.max(completion.progress, 1), mission.target);
-
-      if (completion.rewardedAt) {
-        continue;
-      }
-
-      if (nextProgress < mission.target) {
-        await tx.missionCompletion.update({
-          where: { id: completion.id },
-          data: { progress: nextProgress },
-        });
-        continue;
-      }
-
-      const updatedUser = await tx.user.update({
-        where: { id: referrerId },
-        data: { points: { increment: mission.rewardPoints } },
-      });
-
-      await tx.notification.create({
-        data: {
-          userId: referrerId,
-          type: 'mission_completed',
-          payload: {
-            title: 'Mision completada',
-            message: `Completaste "${mission.title}" y ganaste ${mission.rewardPoints} puntos.`,
-            missionId: mission.id.toString(),
-            missionTitle: mission.title,
-            rewardPoints: mission.rewardPoints,
-            pointsAfter: updatedUser.points.toString(),
-            url: '/notificaciones',
-          },
-        },
-      });
-
-      await tx.missionCompletion.update({
-        where: { id: completion.id },
-        data: {
-          progress: mission.target,
-          completedAt: new Date(),
-          rewardedAt: new Date(),
-        },
-      });
-    }
+    await this.missionProgress.progressForTypesInTx(tx, referrerId, [
+      'referral_signup',
+      'referral_signup_milestone',
+    ]);
   }
 
   private async availableUsername(baseUsername: string, suffix: string) {

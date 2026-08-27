@@ -20,6 +20,7 @@ export class CommentBotCampaignController {
       artistId: body.artistId ? String(body.artistId) : undefined,
       artistName: body.artistName ? String(body.artistName) : undefined,
       rivalArtistName: body.rivalArtistName ? String(body.rivalArtistName) : undefined,
+      language: body.language ? String(body.language) : undefined,
     });
   }
 
@@ -35,6 +36,7 @@ export class CommentBotCampaignController {
       artistId: body.artistId ? String(body.artistId) : undefined,
       artistName: body.artistName ? String(body.artistName) : undefined,
       rivalArtistName: body.rivalArtistName ? String(body.rivalArtistName) : undefined,
+      language: body.language ? String(body.language) : undefined,
       createdBy: body.createdBy ? String(body.createdBy) : null,
     });
   }

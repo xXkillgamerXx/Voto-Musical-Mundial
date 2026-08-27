@@ -27,11 +27,20 @@ const messageSource = ref('')
 const referenceCommentsCount = ref(0)
 const selectedContestantId = ref('')
 const rivalArtistName = ref('')
+const resolvedLanguageLabel = ref('')
+
+const LANGUAGE_OPTIONS = [
+  { code: 'es', label: 'Español' },
+  { code: 'en', label: 'English' },
+  { code: 'pt', label: 'Português' },
+  { code: 'auto', label: 'Auto (según comentarios reales)' },
+]
 
 const form = ref({
   totalComments: 40,
   botsCount: 20,
   durationMinutes: 60,
+  language: 'es',
   topic: '',
   brief: '',
   messages: '',
@@ -54,6 +63,17 @@ const selectedContestant = computed(() =>
 
 const selectedArtistName = computed(() => selectedContestant.value?.name || '')
 
+const preparedMessages = computed(() =>
+  String(form.value.messages || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean),
+)
+
+const canLaunch = computed(
+  () => Boolean(selectedContestant.value) && preparedMessages.value.length > 0,
+)
+
 const buildArtistTopic = (artistName, rival = '') => {
   if (rival) {
     return `Fans apoyando a ${artistName} en el duelo contra ${rival}. Pedir votos, hype, remonta y emoción.`
@@ -75,10 +95,12 @@ const resetForm = () => {
   modalFeedback.value = ''
   messageSource.value = ''
   referenceCommentsCount.value = 0
+  resolvedLanguageLabel.value = ''
   form.value = {
     totalComments: 40,
     botsCount: 20,
     durationMinutes: 60,
+    language: 'es',
     topic: '',
     brief: '',
     messages: '',
@@ -129,6 +151,19 @@ watch(selectedContestantId, (nextId) => {
   }
 })
 
+watch(
+  () => form.value.language,
+  (next, prev) => {
+    if (!isOpen.value || next === prev || !messageSource.value) {
+      return
+    }
+    form.value.messages = ''
+    messageSource.value = ''
+    resolvedLanguageLabel.value = ''
+    modalFeedback.value = ''
+  },
+)
+
 const generateMessages = async () => {
   modalError.value = ''
   modalFeedback.value = ''
@@ -152,6 +187,7 @@ const generateMessages = async () => {
       artistId: selectedContestant.value.artistId || undefined,
       artistName: selectedArtistName.value,
       rivalArtistName: rivalArtistName.value || undefined,
+      language: form.value.language || 'es',
     })
     const lines = Array.isArray(result?.messages) ? result.messages : []
     if (!lines.length) {
@@ -161,10 +197,11 @@ const generateMessages = async () => {
     form.value.messages = lines.join('\n')
     messageSource.value = result?.source === 'ai' ? 'ia' : 'plantilla'
     referenceCommentsCount.value = Number(result?.sampleCommentsCount || 0)
+    resolvedLanguageLabel.value = result?.languageLabel || ''
     modalFeedback.value =
       result?.source === 'ai'
-        ? `Listo: ${lines.length} comentarios sobre ${selectedArtistName.value}. Revísalos antes de lanzar.`
-        : `IA no disponible: se usaron ${lines.length} frases automáticas.`
+        ? `Listo: ${lines.length} comentarios en ${result?.languageLabel || 'el idioma elegido'} sobre ${selectedArtistName.value}. Revísalos antes de lanzar.`
+        : `IA no disponible: se usaron ${lines.length} frases automáticas en ${result?.languageLabel || 'el idioma elegido'}.`
   } catch (error) {
     modalError.value = error?.message || 'No se pudieron generar los comentarios.'
   } finally {
@@ -181,13 +218,15 @@ const submit = async () => {
     return
   }
 
+  const messages = preparedMessages.value
+  if (!messages.length) {
+    modalError.value =
+      'Primero genera comentarios con IA o escríbelos a mano. Lanzar solo publica lo que ves en la lista.'
+    return
+  }
+
   isCreating.value = true
   try {
-    const messages = String(form.value.messages || '')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-
     await createAdminCommentBotCampaign(props.pollId, {
       totalComments: Number(form.value.totalComments || 0),
       botsCount: Number(form.value.botsCount || 0),
@@ -196,6 +235,7 @@ const submit = async () => {
       artistId: selectedContestant.value.artistId || undefined,
       artistName: selectedArtistName.value,
       rivalArtistName: rivalArtistName.value || undefined,
+      language: form.value.language || 'es',
       messages,
     })
 
@@ -232,9 +272,9 @@ defineExpose({ open, close })
                 Fans comentando en vivo
               </h2>
               <p class="mt-2 text-sm leading-6 text-slate-300">
-                Publica comentarios de apoyo con nombres de usuario reales. Esto
-                <strong class="text-white">no vota</strong> — solo anima el feed. Para votos automáticos usa
-                <strong class="text-violet-200">Bot de votos</strong>.
+                Primero <strong class="text-white">genera o escribe</strong> los comentarios, revísalos,
+                y después pulsa <strong class="text-cyan-200">Lanzar</strong>. El bot no inventa frases al iniciar.
+                Esto <strong class="text-white">no vota</strong> — solo anima el feed.
               </p>
             </div>
             <button
@@ -288,6 +328,27 @@ defineExpose({ open, close })
               Duelo contra {{ rivalArtistName }}
             </p>
           </div>
+
+          <label class="block">
+            <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
+              Idioma de los comentarios
+            </span>
+            <select
+              v-model="form.language"
+              class="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none focus:border-cyan-300/50"
+            >
+              <option
+                v-for="option in LANGUAGE_OPTIONS"
+                :key="option.code"
+                :value="option.code"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <span class="mt-2 block text-xs font-bold text-slate-400">
+              La IA y las plantillas de respaldo usarán este idioma. «Auto» imita el idioma de los comentarios reales del poll.
+            </span>
+          </label>
 
           <div class="grid gap-4 sm:grid-cols-3">
             <label class="block">
@@ -370,20 +431,32 @@ defineExpose({ open, close })
               v-if="messageSource === 'ia'"
               class="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-100"
             >
-              IA lista
+              IA lista{{ resolvedLanguageLabel ? ` · ${resolvedLanguageLabel}` : '' }}
             </span>
           </div>
 
           <label class="block">
             <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
-              Comentarios (uno por línea)
+              Comentarios (uno por línea) — obligatorio antes de lanzar
             </span>
             <textarea
               v-model="form.messages"
               rows="7"
-              placeholder="Pulsa «Generar comentarios con IA» o escribe las frases aquí..."
+              placeholder="1) Pulsa «Generar comentarios con IA», o escribe las frases aquí. 2) Revísalas. 3) Lanzar."
               class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-cyan-300/50"
             ></textarea>
+            <span
+              v-if="preparedMessages.length"
+              class="mt-2 block text-xs font-bold text-emerald-200"
+            >
+              {{ preparedMessages.length }} comentario(s) listos para publicar.
+            </span>
+            <span
+              v-else
+              class="mt-2 block text-xs font-bold text-amber-200"
+            >
+              Aún no hay comentarios. Genera con IA o escríbelos antes de lanzar.
+            </span>
           </label>
 
           <p
@@ -412,7 +485,7 @@ defineExpose({ open, close })
           <button
             type="button"
             class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-cyan-500 to-emerald-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-cyan-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="isCreating || !selectedContestant"
+            :disabled="isCreating || !canLaunch"
             @click="submit"
           >
             <i

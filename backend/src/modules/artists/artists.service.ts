@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { artistLookupWhere } from '../../common/artist-lookup';
 import { serialize } from '../../common/serialize';
+import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -12,6 +13,7 @@ export class ArtistsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly missionProgress: MissionProgressService,
   ) {}
 
   async findAll(limit = 250) {
@@ -96,6 +98,7 @@ export class ArtistsService {
           },
         }),
       ]);
+      void this.missionProgress.trackArtistFollow(userId).catch(() => {});
     }
 
     const updated = await this.prisma.artist.findUnique({

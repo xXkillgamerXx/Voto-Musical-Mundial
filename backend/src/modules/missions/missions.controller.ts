@@ -72,6 +72,27 @@ export class MissionsController {
     );
   }
 
+  @Post('poll-view')
+  @UseGuards(JwtAuthGuard)
+  trackPollView(@CurrentUser() user: { id: bigint }) {
+    return this.missions.trackPollView(user.id);
+  }
+
+  @Post('referral-share')
+  @UseGuards(JwtAuthGuard)
+  trackReferralShare(@CurrentUser() user: { id: bigint }) {
+    return this.missions.trackReferralShare(user.id);
+  }
+
+  @Post('share-action')
+  @UseGuards(JwtAuthGuard)
+  trackShareAction(
+    @CurrentUser() user: { id: bigint },
+    @Body() body: { platform?: string },
+  ) {
+    return this.missions.trackShareAction(user.id, body?.platform);
+  }
+
   @Post(':id/visit-token')
   @UseGuards(JwtAuthGuard)
   createVisitToken(@Param('id') id: string, @CurrentUser() user: { id: bigint }) {

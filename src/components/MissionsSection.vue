@@ -8,8 +8,31 @@ import {
   completeMission,
   createMissionVisitToken,
   getMissions,
+  reportMissionReferralShare,
+  reportMissionShareAction,
   reportMissionVisitProgress,
 } from '../services/api/missionsApi'
+
+const MISSION_VISIT_TYPES = new Set([
+  'visit_page',
+  'follow_social',
+  'like_social_post',
+  'comment_social_post',
+])
+
+const PASSIVE_MISSION_TYPES = new Set([
+  'referral_signup',
+  'referral_signup_milestone',
+  'referral_first_vote',
+  'daily_streak',
+  'daily_login',
+  'daily_open',
+  'daily_view_polls',
+  'daily_poll',
+  'vote_count',
+  'follow_artist',
+  'complete_profile',
+])
 
 const { locale } = useI18n()
 const dbMissions = ref([])
@@ -113,7 +136,47 @@ const referralUrl = () => {
 }
 const encodedReferralUrl = () => encodeURIComponent(referralUrl())
 const isReferralMission = (mission) => mission?.type?.startsWith('referral_')
+const isVisitMission = (mission) => MISSION_VISIT_TYPES.has(mission?.type)
+const isPassiveMission = (mission) => PASSIVE_MISSION_TYPES.has(mission?.type)
+const isShareMission = (mission) =>
+  mission?.type?.startsWith('share_') || mission?.type === 'share_poll'
+
+const sharePlatformForMission = (mission) => {
+  if (mission?.type === 'share_whatsapp') return 'whatsapp'
+  if (mission?.type === 'share_facebook') return 'facebook'
+  if (mission?.type === 'share_twitter') return 'twitter'
+  if (mission?.type === 'share_instagram_story') return 'instagram'
+  return 'more'
+}
+
+const missionHasAction = (mission) => {
+  if (!mission || mission.done || isPassiveMission(mission)) {
+    return false
+  }
+
+  if (isReferralMission(mission)) {
+    return Boolean(referralCode.value)
+  }
+
+  if (isVisitMission(mission)) {
+    return Boolean(mission.actionUrl || mission.visitUrls?.length)
+  }
+
+  if (isShareMission(mission)) {
+    return true
+  }
+
+  if (mission.type === 'manual' || mission.type === 'favorite_poll') {
+    return true
+  }
+
+  return Boolean(mission.actionUrl)
+}
 const missionActionLabel = (mission) => {
+  if (isPassiveMission(mission)) {
+    return 'Se valida automaticamente'
+  }
+
   if (isReferralMission(mission)) {
     return 'Compartir invitacion'
   }
@@ -232,29 +295,96 @@ const applyUpdatedPoints = (pointsAfter) => {
   }
 }
 
+const syncMissionFromServer = async (mission, wasDone) => {
+  const rows = await getMissions()
+  dbMissions.value = Array.isArray(rows) ? rows : []
+  const updated = dbMissions.value.find((item) => String(item.id) === String(mission.id))
+  if (!updated) {
+    return { done: false, awarded: false }
+  }
+
+  const target = Math.max(1, Number(updated.target || mission.target || 1))
+  const current = Math.min(target, Number(updated.progress || 0))
+  const done = Boolean(
+    updated.rewardedAt
+    || updated.completedAt
+    || current >= target,
+  )
+
+  mission.progress = `${current}/${target}`
+  mission.percent = Math.round((current / target) * 100)
+  mission.done = done
+  if (done) {
+    mission.statusKey = 'common.status.completed'
+  }
+
+  if (selectedMission.value && String(selectedMission.value.id) === String(mission.id)) {
+    selectedMission.value.progress = mission.progress
+    selectedMission.value.percent = mission.percent
+    selectedMission.value.done = done
+  }
+
+  if (done && !wasDone) {
+    markMissionCompletedLocally(mission)
+    try {
+      const me = await getMe()
+      applyUpdatedPoints(me?.points)
+      userProfile.value = me || userProfile.value
+    } catch {
+      // ignore profile refresh errors
+    }
+    selectedMission.value = null
+    openMissionReward(mission)
+  }
+
+  return { done, awarded: done && !wasDone, progress: current }
+}
+
 const performMissionAction = async (mission) => {
   if (!mission || missionActionInProgress.value) {
     return
   }
 
   if (isReferralMission(mission)) {
+    const wasDone = mission.done
     const url = referralUrl()
     const text = encodeURIComponent('Unete a Votos Mundial con mi codigo de invitacion')
 
     if (navigator.share) {
-      navigator.share({
-        title: 'Votos Mundial',
-        text: 'Unete a Votos Mundial con mi codigo de invitacion',
-        url,
-      }).catch(() => {})
-      return
+      try {
+        await navigator.share({
+          title: 'Votos Mundial',
+          text: 'Unete a Votos Mundial con mi codigo de invitacion',
+          url,
+        })
+      } catch {
+        // Usuario cancelo el share.
+      }
+    } else {
+      window.open(`https://wa.me/?text=${text}%20${encodedReferralUrl()}`, '_blank', 'noopener,noreferrer')
     }
 
-    window.open(`https://wa.me/?text=${text}%20${encodedReferralUrl()}`, '_blank', 'noopener,noreferrer')
+    try {
+      missionActionInProgress.value = true
+      actionMessage.value = translate('home.missions.socialOpened')
+      const results = await reportMissionReferralShare()
+      const match = Array.isArray(results)
+        ? results.find((row) => String(row.missionId) === String(mission.id))
+        : null
+      if (match?.pointsAfter != null) {
+        applyUpdatedPoints(match.pointsAfter)
+      }
+      await syncMissionFromServer(mission, wasDone)
+    } catch {
+      actionMessage.value = translate('home.missions.registerError')
+    } finally {
+      missionActionInProgress.value = false
+    }
+
     return
   }
 
-  if (mission.type === 'visit_page') {
+  if (isVisitMission(mission)) {
     const wasDone = mission.done
     const target = Math.max(1, Number(mission.target || 1))
     const firstUrl = String(mission.actionUrl || mission.visitUrls?.[0] || '').trim()
@@ -381,25 +511,43 @@ const performMissionAction = async (mission) => {
     return
   }
 
-  if (mission.actionUrl) {
-    window.open(mission.actionUrl, '_blank', 'noopener,noreferrer')
+  if (isShareMission(mission)) {
+    const wasDone = mission.done
 
-    if (mission.type === 'follow_social') {
-      await claimHonorMission(mission, {
-        countdownSeconds: 2,
-        waitingMessage: translate('home.missions.socialOpened'),
-      })
+    try {
+      missionActionInProgress.value = true
+      actionMessage.value = translate('home.missions.socialOpened')
+      await shareMissionLink(mission)
+      const results = await reportMissionShareAction(sharePlatformForMission(mission))
+      const match = Array.isArray(results)
+        ? results.find((row) => String(row.missionId) === String(mission.id))
+        : null
+      if (match?.pointsAfter != null) {
+        applyUpdatedPoints(match.pointsAfter)
+      }
+      await syncMissionFromServer(mission, wasDone)
+      if (!match?.awarded && !mission.done) {
+        actionMessage.value = translate('home.missions.visitPending')
+      }
+    } catch {
+      actionMessage.value = translate('home.missions.registerError')
+    } finally {
+      missionActionInProgress.value = false
     }
 
     return
   }
 
-  if (mission.type?.startsWith('share_') || mission.type === 'share_poll') {
-    await shareMissionLink(mission)
+  if (mission.type === 'manual' || mission.type === 'favorite_poll') {
     await claimHonorMission(mission, {
       countdownSeconds: 2,
-      waitingMessage: translate('home.missions.socialOpened'),
+      waitingMessage: translate('home.missions.validation.manual'),
     })
+    return
+  }
+
+  if (mission.actionUrl) {
+    window.open(mission.actionUrl, '_blank', 'noopener,noreferrer')
     return
   }
 
@@ -410,14 +558,8 @@ const performMissionAction = async (mission) => {
         text: missionText(mission),
         url: window.location.origin,
       })
-      if (mission.type?.startsWith('share_') || mission.type === 'share_poll') {
-        await claimHonorMission(mission, {
-          countdownSeconds: 1,
-          waitingMessage: translate('home.missions.socialOpened'),
-        })
-      }
     } catch {
-      // Usuario canceló el share.
+      // Usuario cancelo el share.
     }
   }
 }
@@ -575,6 +717,7 @@ onMounted(() => {
   syncReferralCode()
   unsubscribeAuth = onStoredAuthChange(syncReferralCode)
   window.addEventListener('vmm:mission-visit-progress', onVisitProgressEvent)
+  window.addEventListener('vmm:missions-refresh', loadMissions)
 })
 
 watch(locale, () => {
@@ -585,6 +728,7 @@ onUnmounted(() => {
   unsubscribeMissions?.()
   unsubscribeAuth?.()
   window.removeEventListener('vmm:mission-visit-progress', onVisitProgressEvent)
+  window.removeEventListener('vmm:missions-refresh', loadMissions)
   window.clearInterval(missionActionTimer)
 })
 </script>
@@ -794,7 +938,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="min-h-12 w-full rounded-xl bg-linear-to-r from-amber-400 via-fuchsia-500 to-violet-500 px-5 text-sm font-black uppercase tracking-wide text-slate-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
-              :disabled="missionActionInProgress || selectedMission.done"
+              :disabled="missionActionInProgress || selectedMission.done || !missionHasAction(selectedMission)"
               @click="performMissionAction(selectedMission)"
             >
               {{

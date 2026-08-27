@@ -13,6 +13,7 @@ import {
 } from '../../common/comment-profanity';
 import { pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
+import { toPublicComment } from '../../common/public-comment';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -57,7 +58,7 @@ export class CommentsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return serialize(comments);
+    return serialize(comments.map((comment) => toPublicComment(comment as Record<string, unknown>)));
   }
 
   async create(pollId: string, userId: bigint, body: any) {
@@ -127,7 +128,7 @@ export class CommentsService {
       });
     }
 
-    const payload = serialize(comment);
+    const payload = toPublicComment(comment as Record<string, unknown>);
     await this.publishComment(poll.id, { action: 'new', comment: payload });
 
     return payload;

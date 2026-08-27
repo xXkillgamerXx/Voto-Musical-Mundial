@@ -78,8 +78,6 @@ export const mergeContestantsWithPublicResults = (contestants, publicResults) =>
     return {
       ...contestant,
       totalVotes: Number(result?.totalVotes ?? contestant.totalVotes ?? 0),
-      votes: Number(result?.votes ?? contestant.votes ?? 0),
-      manualVotes: Number(result?.manualVotes ?? contestant.manualVotes ?? 0),
       percent: Number(result?.percent || 0),
       rank: result?.rank || null,
     };

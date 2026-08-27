@@ -24,7 +24,7 @@ import {
   getAnonymousVoteStatus,
   getShareVoteBoost,
 } from "../services/api/votesApi";
-import { getMissions } from "../services/api/missionsApi";
+import { getMissions, reportMissionPollView } from "../services/api/missionsApi";
 import { getAppDownloadConfig } from "../services/api/appDownloadApi";
 import { openGooglePlay } from "../utils/openGooglePlay";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
@@ -151,6 +151,10 @@ let realtimeResultsThrottle = 0;
 let realtimeStateThrottle = 0;
 let lastLiveVoteToastAt = 0;
 const liveVoteFlashTimers = new Map();
+const lastLiveVoteFlashAt = new Map();
+const recentOwnVoteArtists = new Set();
+const LIVE_VOTE_FLASH_COOLDOWN_MS = 1200;
+const RECENT_OWN_VOTE_WINDOW_MS = 4000;
 let missionsPromptTimer = null;
 let clockTimer = null;
 const handleAnonymousVisibilityRefresh = () => {
@@ -207,7 +211,10 @@ const applyCommittedVotes = (batch, result) => {
   const currentVotes = displayVoteCountFor(currentContestant || { artistId });
 
   setOptimisticVoteTotal(artistId, currentVotes + amount);
-  showVoteFeedback(artistId, amount);
+  showVoteFeedback(artistId, amount, { flash: false });
+  if (currentUser.value && !currentUser.value.isAnonymous) {
+    window.dispatchEvent(new CustomEvent('vmm:missions-refresh'));
+  }
   window.setTimeout(() => {
     clearOptimisticVoteTotal(batch.artistId);
   }, 1200);
@@ -504,20 +511,27 @@ const reconcileOptimisticVoteTotals = (rows = activeRoundContestantRows.value) =
 const getContestantArtistId = (contestant) =>
   String(contestant?.artistId ?? contestant?.id ?? "");
 
-const contestantIdentityIds = (contestant) => {
-  const ids = new Set();
-  const primaryId = getContestantArtistId(contestant);
-  if (primaryId) {
-    ids.add(primaryId);
+const normalizeArtistKey = (artistId) => String(artistId || "").trim();
+
+const hasOwnVoteFeedback = (artistId) =>
+  voteFeedbacks.value[normalizeArtistKey(artistId)]?.source === "own";
+
+const liveVoteFlashStampFor = (artistId) => {
+  const key = normalizeArtistKey(artistId);
+  if (!key || hasOwnVoteFeedback(key)) {
+    return "";
   }
-  if (contestant?.id !== undefined && contestant?.id !== null) {
-    ids.add(String(contestant.id));
-  }
-  if (contestant?.artistId !== undefined && contestant?.artistId !== null) {
-    ids.add(String(contestant.artistId));
-  }
-  return ids;
+
+  return liveVoteFlashIds.value[key] || "";
 };
+
+const showsLiveVoteFlash = (artistId) => Boolean(liveVoteFlashStampFor(artistId));
+
+const contestantLiveFlashStamp = (contestant) =>
+  liveVoteFlashStampFor(getContestantArtistId(contestant));
+
+const contestantShowsLiveFlash = (contestant) =>
+  showsLiveVoteFlash(getContestantArtistId(contestant));
 
 const activeRound = computed(() => {
   if (isEmbeddedPage.value && routeRoundId.value) {
@@ -2332,13 +2346,18 @@ const clearOptimisticVoteTotal = (artistId) => {
   optimisticVoteTotals.value = nextTotals;
 };
 
-const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800, source = "own" } = {}) => {
+const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800, source = "own", flash = true } = {}) => {
   if (!artistId || amount <= 0) {
     return;
   }
 
   // Para bots / ráfagas grandes: no mostrar "+15.387", solo la sensación de voto.
   const displayAmount = amount > 5 ? 0 : amount;
+  const existing = voteFeedbacks.value[artistId];
+  const keepExistingToken =
+    existing?.pending &&
+    !pending &&
+    existing?.source === source;
 
   window.clearTimeout(voteFeedbackTimers.get(artistId));
   voteFeedbacks.value = {
@@ -2347,7 +2366,7 @@ const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800, 
       amount: displayAmount,
       pending,
       source,
-      token: Date.now(),
+      token: keepExistingToken ? existing.token : Date.now(),
     },
   };
   voteFeedbackTimers.set(
@@ -2360,56 +2379,28 @@ const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800, 
     }, duration),
   );
 
-  flashLiveVoteArtist(artistId);
+  if (flash && source !== "own") {
+    flashLiveVoteArtist(artistId);
+  }
+
+  if (source === "own") {
+    markRecentOwnVote(artistId);
+  }
 };
 
 const collectLiveVoteFlashTargets = (artistId) => {
-  const targets = new Set();
   const normalized = String(artistId || "").trim();
   if (!normalized) {
-    return targets;
+    return new Set();
   }
 
-  targets.add(normalized);
-
-  if (displayedRoundType.value !== "versus") {
-    return targets;
-  }
-
-  for (const match of displayedVersusMatches.value) {
-    const matchContestants = match?.contestants || [];
-    if (matchContestants.length !== 2) {
-      continue;
-    }
-
-    const inMatch = matchContestants.some((contestant) =>
-      contestantIdentityIds(contestant).has(normalized),
-    );
-    if (!inMatch) {
-      continue;
-    }
-
-    matchContestants.forEach((contestant) => {
-      const matchArtistId = getContestantArtistId(contestant);
-      if (matchArtistId) {
-        targets.add(matchArtistId);
-      }
-    });
-  }
-
-  return targets;
+  return new Set([normalized]);
 };
 
-const flashLiveVoteArtist = (artistId) => {
-  const targets = collectLiveVoteFlashTargets(artistId);
-  if (!targets.size) {
-    return;
-  }
-
-  const stamp = Date.now();
+const applyLiveVoteFlash = (targetIds, stamp = Date.now()) => {
   const nextFlashIds = { ...liveVoteFlashIds.value };
 
-  targets.forEach((targetId) => {
+  targetIds.forEach((targetId) => {
     window.clearTimeout(liveVoteFlashTimers.get(targetId));
     nextFlashIds[targetId] = stamp;
     liveVoteFlashTimers.set(
@@ -2426,15 +2417,87 @@ const flashLiveVoteArtist = (artistId) => {
   liveVoteFlashIds.value = nextFlashIds;
 };
 
-const pushLiveVoteToast = (payload = {}) => {
-  const artistId = String(payload.artistId || payload.contestantId || "");
-  const nowMs = Date.now();
-  // Evita spam visual cuando un bot emite muchos paquetes seguidos.
-  if (nowMs - lastLiveVoteToastAt < 450) {
-    flashLiveVoteArtist(artistId);
+const flashLiveVoteArtist = (artistId, { force = false } = {}) => {
+  const targets = collectLiveVoteFlashTargets(artistId);
+  if (!targets.size) {
     return;
   }
-  lastLiveVoteToastAt = nowMs;
+
+  const nowMs = Date.now();
+  const eligibleTargets = new Set();
+
+  targets.forEach((targetId) => {
+    const lastAt = lastLiveVoteFlashAt.get(targetId) || 0;
+    if (force || nowMs - lastAt >= LIVE_VOTE_FLASH_COOLDOWN_MS) {
+      eligibleTargets.add(targetId);
+      lastLiveVoteFlashAt.set(targetId, nowMs);
+    }
+  });
+
+  if (!eligibleTargets.size) {
+    return;
+  }
+
+  applyLiveVoteFlash(eligibleTargets, nowMs);
+};
+
+const markRecentOwnVote = (artistId) => {
+  const key = normalizeArtistKey(artistId);
+  if (!key) {
+    return;
+  }
+
+  recentOwnVoteArtists.add(key);
+  window.setTimeout(() => {
+    recentOwnVoteArtists.delete(key);
+  }, RECENT_OWN_VOTE_WINDOW_MS);
+};
+
+const shouldSkipLiveVoteDeltaFlash = (payload = {}) => {
+  const artistId = normalizeArtistKey(payload.artistId || payload.contestantId || "");
+  if (!artistId) {
+    return true;
+  }
+
+  if (recentOwnVoteArtists.has(artistId) || hasOwnVoteFeedback(artistId)) {
+    return true;
+  }
+
+  const ownUserId =
+    currentUser.value?.id !== undefined && currentUser.value?.id !== null
+      ? String(currentUser.value.id)
+      : "";
+  if (
+    ownUserId &&
+    payload.userId !== undefined &&
+    payload.userId !== null &&
+    String(payload.userId) === ownUserId
+  ) {
+    return true;
+  }
+
+  const isAnonymousVote =
+    payload.isAnonymous === true ||
+    payload.isAnonymous === "1" ||
+    payload.isAnonymous === 1;
+  if (isAnonymousVote) {
+    const pending = pendingAnonymousVoteFeedback.value;
+    if (pending?.artistId && String(pending.artistId) === artistId) {
+      return true;
+    }
+  }
+
+  const lastAt = lastLiveVoteFlashAt.get(artistId) || 0;
+  return Date.now() - lastAt < LIVE_VOTE_FLASH_COOLDOWN_MS;
+};
+
+const pushLiveVoteToast = (payload = {}) => {
+  const artistId = String(payload.artistId || payload.contestantId || "");
+  if (!artistId || shouldSkipLiveVoteDeltaFlash(payload)) {
+    return;
+  }
+
+  lastLiveVoteToastAt = Date.now();
   flashLiveVoteArtist(artistId);
 };
 
@@ -2563,6 +2626,7 @@ const animateIncomingVoteTotals = (nextContestants) => {
   );
   let changed = false;
   let longestDuration = 900;
+  const flashTargets = new Set();
 
   nextContestants.forEach((contestant) => {
     const artistId = getContestantArtistId(contestant);
@@ -2586,9 +2650,26 @@ const animateIncomingVoteTotals = (nextContestants) => {
     const duration = animationDurationForVoteDelta(from, to);
     longestDuration = Math.max(longestDuration, duration);
     changed = true;
-    flashLiveVoteArtist(artistId);
     animateVoteCount(artistId, from, to, duration);
+    flashTargets.add(artistId);
   });
+
+  if (flashTargets.size) {
+    const nowMs = Date.now();
+    const eligibleTargets = new Set();
+
+    flashTargets.forEach((targetId) => {
+      const lastAt = lastLiveVoteFlashAt.get(targetId) || 0;
+      if (nowMs - lastAt >= LIVE_VOTE_FLASH_COOLDOWN_MS) {
+        eligibleTargets.add(targetId);
+        lastLiveVoteFlashAt.set(targetId, nowMs);
+      }
+    });
+
+    if (eligibleTargets.size) {
+      applyLiveVoteFlash(eligibleTargets, nowMs);
+    }
+  }
 
   if (changed && previousVisibleTotal !== nextTotal) {
     animateDisplayedTotalVotes(previousVisibleTotal, nextTotal, longestDuration);
@@ -2640,6 +2721,9 @@ const subscribeRealtime = (pollId) => {
   unsubscribeRealtime = subscribePollRealtime(pollId, {
     onVoteDelta: (payload = {}) => {
       if (!payload || payload.staffVote === true || payload.staffVote === "1") {
+        return;
+      }
+      if (payload.botCampaignId) {
         return;
       }
 
@@ -2930,6 +3014,9 @@ const loadPoll = async ({ silent = false } = {}) => {
     poll.value = normalizeApiPoll(pollDetail);
     currentPollId.value = poll.value.id;
     syncPollShareMeta();
+    if (currentUser.value && !currentUser.value.isAnonymous) {
+      reportMissionPollView().catch(() => {});
+    }
     unsubscribePoll = null;
     listenRounds(poll.value.id);
     subscribeRealtime(poll.value.id);
@@ -3412,9 +3499,9 @@ const voteFor = async (contestant, amount = 1) => {
   }
 
   try {
-    const artistId = contestant.artistId;
+    const artistId = getContestantArtistId(contestant);
 
-    isVoting.value = contestant.artistId;
+    isVoting.value = artistId;
     voteQueue.enqueue({
       pollId: poll.value.id,
       roundId: activeRound.value?.id || null,
@@ -3433,6 +3520,7 @@ const voteFor = async (contestant, amount = 1) => {
     // the visible counters, so numbers never jump up and then down during reconciliation.
     showVoteFeedback(artistId, votesToAdd, {
       pending: true,
+      flash: false,
       duration: Math.min(15000, 2600 + Math.ceil(votesToAdd / 1000) * 1200),
     });
     closeVoteModal();
@@ -3704,6 +3792,8 @@ onUnmounted(() => {
   voteFeedbackTimers.clear();
   liveVoteFlashTimers.forEach((timer) => window.clearTimeout(timer));
   liveVoteFlashTimers.clear();
+  lastLiveVoteFlashAt.clear();
+  recentOwnVoteArtists.clear();
   liveVoteFlashIds.value = {};
   window.clearTimeout(anonymousVoteToastTimer);
   window.clearTimeout(missionsPromptTimer);
@@ -4654,14 +4744,14 @@ onUnmounted(() => {
               :class="[
                 voteFeedbacks[getContestantArtistId(contestant)]?.source === 'own' &&
                   'vote-feedback-card',
-                liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                contestantShowsLiveFlash(contestant) &&
                   'live-vote-flash-card',
               ]"
               :style="{ animationDelay: `${Math.min(index, 2) * 90 + 80}ms` }"
             >
               <span
                 v-if="voteFeedbacks[getContestantArtistId(contestant)]?.source === 'own'"
-                :key="`notice-${voteFeedbacks[getContestantArtistId(contestant)].token}-${voteFeedbacks[getContestantArtistId(contestant)].pending ? 'pending' : 'done'}`"
+                :key="`notice-${voteFeedbacks[getContestantArtistId(contestant)].token}`"
                 class="vote-feedback-notice"
               >
                 {{
@@ -4772,7 +4862,7 @@ onUnmounted(() => {
                             ? 'min-w-[4.5rem] sm:min-w-[5.5rem]'
                             : 'min-w-[4.25rem] sm:min-w-[5.5rem]'
                           : 'min-w-[5.5rem]',
-                        liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                        contestantShowsLiveFlash(contestant) &&
                           'live-stat-boost',
                       ]"
                     >
@@ -4786,8 +4876,9 @@ onUnmounted(() => {
                       >
                         <template v-if="!hideVoteCounts">
                           <span
+                            :key="`votes-${getContestantArtistId(contestant)}-${contestantLiveFlashStamp(contestant) || 0}`"
                             class="live-stats-pulse-target"
-                            :data-flash="liveVoteFlashIds[getContestantArtistId(contestant)] || ''"
+                            :data-flash="contestantLiveFlashStamp(contestant)"
                           >
                             {{
                               $t("polls.detail.votesCount", {
@@ -4814,8 +4905,9 @@ onUnmounted(() => {
                         "
                       >
                         <span
+                          :key="`percent-${getContestantArtistId(contestant)}-${contestantLiveFlashStamp(contestant) || 0}`"
                           class="live-percent-pulse"
-                          :data-flash="liveVoteFlashIds[getContestantArtistId(contestant)] || ''"
+                          :data-flash="contestantLiveFlashStamp(contestant)"
                         >
                           {{ percentForMatch(contestant, feedItem.row) }}
                         </span>
@@ -4831,16 +4923,17 @@ onUnmounted(() => {
                             ? 'mt-3 h-2 sm:mt-4 sm:h-3'
                             : 'mt-3 h-2.5'
                           : 'mt-4 h-3',
-                        liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                        contestantShowsLiveFlash(contestant) &&
                           'live-vote-bar-shell',
                       ]"
                     >
                       <div
                         class="poll-vote-bar-fill h-full rounded-full transition-[width] duration-700 ease-out"
                         :class="
-                          liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                          contestantShowsLiveFlash(contestant) &&
                             'live-vote-flash-bar'
                         "
+                        :data-flash="contestantLiveFlashStamp(contestant)"
                         :style="{ width: percentForMatch(contestant, feedItem.row) }"
                       ></div>
                     </div>
@@ -5066,20 +5159,20 @@ onUnmounted(() => {
                   : hasRoundWinners
                     ? 'border-white/10 bg-white/3 opacity-55 grayscale hover:opacity-75'
                     : 'border-white/10 bg-white/5 hover:bg-white/8',
-                voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.source === 'own' &&
+                voteFeedbacks[getContestantArtistId(feedItem.row)]?.source === 'own' &&
                   'vote-feedback-card',
-                liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                showsLiveVoteFlash(getContestantArtistId(feedItem.row)) &&
                   'live-vote-flash-card',
               ]"
               :style="{ animationDelay: `${Math.min(feedItem.index, 8) * 70}ms` }"
             >
             <span
-              v-if="voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.source === 'own'"
-              :key="`notice-${voteFeedbacks[feedItem.row.artistId || feedItem.row.id].token}-${voteFeedbacks[feedItem.row.artistId || feedItem.row.id].pending ? 'pending' : 'done'}`"
+              v-if="voteFeedbacks[getContestantArtistId(feedItem.row)]?.source === 'own'"
+              :key="`notice-${voteFeedbacks[getContestantArtistId(feedItem.row)].token}`"
               class="vote-feedback-notice"
             >
               {{
-                voteFeedbacks[feedItem.row.artistId || feedItem.row.id].pending
+                voteFeedbacks[getContestantArtistId(feedItem.row)].pending
                   ? $t("polls.detail.voteProcessing")
                   : $t("polls.detail.voteCounted")
               }}
@@ -5152,22 +5245,22 @@ onUnmounted(() => {
                   <span
                     class="contestant-stats-stack min-w-[5rem] shrink-0 text-right sm:min-w-[6.5rem]"
                     :class="
-                      liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                      showsLiveVoteFlash(getContestantArtistId(feedItem.row)) &&
                         'live-stat-boost'
                     "
                   >
                     <span
                       class="contestant-stat-votes block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
                       :class="
-                        voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.source === 'own' &&
-                          !voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.pending &&
+                        voteFeedbacks[getContestantArtistId(feedItem.row)]?.source === 'own' &&
+                          !voteFeedbacks[getContestantArtistId(feedItem.row)]?.pending &&
                           'text-emerald-200'
                       "
                     >
                       <template v-if="!hideVoteCounts">
                         <span
                           class="live-stats-pulse-target"
-                          :data-flash="liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] || ''"
+                          :data-flash="liveVoteFlashStampFor(getContestantArtistId(feedItem.row))"
                         >
                           {{
                             $t("polls.detail.votesCount", {
@@ -5188,7 +5281,7 @@ onUnmounted(() => {
                     >
                       <span
                         class="live-percent-pulse"
-                        :data-flash="liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] || ''"
+                        :data-flash="liveVoteFlashStampFor(getContestantArtistId(feedItem.row))"
                       >
                         {{ percentForDisplayedContestant(feedItem.row) }}
                       </span>
@@ -5198,14 +5291,14 @@ onUnmounted(() => {
                 <div
                   class="mt-5 h-3 overflow-hidden rounded-full bg-white/10"
                   :class="
-                    liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                    showsLiveVoteFlash(getContestantArtistId(feedItem.row)) &&
                       'live-vote-bar-shell'
                   "
                 >
                   <div
                     class="poll-vote-bar-fill h-full rounded-full transition-[width] duration-700 ease-out"
                     :class="
-                      liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                      showsLiveVoteFlash(getContestantArtistId(feedItem.row)) &&
                         'live-vote-flash-bar'
                     "
                     :style="{
@@ -6581,6 +6674,10 @@ onUnmounted(() => {
 }
 
 .live-vote-flash-bar {
+  animation: live-vote-flash-bar 1.2s ease-out;
+}
+
+.poll-vote-bar-fill[data-flash]:not([data-flash=""]) {
   animation: live-vote-flash-bar 1.2s ease-out;
 }
 

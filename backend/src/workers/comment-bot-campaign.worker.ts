@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { serialize } from '../common/serialize';
+import { toPublicComment } from '../common/public-comment';
 import { PrismaService } from '../modules/prisma/prisma.service';
 import { RedisService } from '../modules/redis/redis.service';
 
@@ -167,7 +168,7 @@ export class CommentBotCampaignWorker implements OnModuleDestroy {
         posted += 1;
         await this.publish(campaign.pollId, {
           action: 'new',
-          comment: serialize(comment),
+          comment: toPublicComment(serialize(comment) as Record<string, unknown>),
         });
       } catch (error) {
         this.logger.error(error);

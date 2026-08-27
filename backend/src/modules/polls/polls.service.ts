@@ -122,8 +122,6 @@ export class PollsService {
           contestantId: contestant.id.toString(),
           artistId: contestant.artistId.toString(),
           artist: serialize(contestant.artist),
-          votes,
-          manualVotes,
           totalVotes: votes + manualVotes,
           matchGroup: contestant.matchGroup,
           matchOrder: contestant.matchOrder,

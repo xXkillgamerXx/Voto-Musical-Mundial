@@ -49,6 +49,43 @@ export const reportMissionVisitProgress = (pageUrl) => {
   })
 }
 
+export const reportMissionPollView = () => {
+  const auth = getStoredAuth()
+  if (!auth?.accessToken || auth?.user?.isAnonymous) {
+    return Promise.resolve({ ok: false })
+  }
+
+  return apiRequest('/missions/poll-view', {
+    method: 'POST',
+    token: auth.accessToken,
+  })
+}
+
+export const reportMissionReferralShare = () => {
+  const auth = getStoredAuth()
+  if (!auth?.accessToken || auth?.user?.isAnonymous) {
+    return Promise.resolve({ ok: false })
+  }
+
+  return apiRequest('/missions/referral-share', {
+    method: 'POST',
+    token: auth.accessToken,
+  })
+}
+
+export const reportMissionShareAction = (platform = 'more') => {
+  const auth = getStoredAuth()
+  if (!auth?.accessToken || auth?.user?.isAnonymous) {
+    return Promise.resolve({ ok: false })
+  }
+
+  return apiRequest('/missions/share-action', {
+    method: 'POST',
+    body: { platform: String(platform || 'more') },
+    token: auth.accessToken,
+  })
+}
+
 export const claimDailyReward = () => {
   const auth = getStoredAuth()
   return apiRequest('/rewards/daily-claim', {

@@ -9,16 +9,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-
-// Mission types that are credited by the backend itself (referrals, daily streak) or that
-// require manual/admin validation. None of these may be self-completed via the public endpoint.
-const SERVER_MANAGED_MISSION_TYPES = new Set([
-  'manual',
-  'referral_signup',
-  'referral_signup_milestone',
-  'daily_streak',
-  'visit_page',
-]);
+import { MISSION_VISIT_TYPES, MissionProgressService } from './mission-progress.service';
 
 const VISIT_SESSION_TTL_SECONDS = 24 * 60 * 60;
 const VISIT_PAGES_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -112,6 +103,7 @@ export class MissionsService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
+    private readonly missionProgress: MissionProgressService,
   ) {}
 
   async findAll(lang?: string) {
@@ -124,6 +116,8 @@ export class MissionsService {
   }
 
   async findForUser(userId: bigint, lang?: string) {
+    await this.missionProgress.trackAppOpen(userId);
+
     const missions = await this.prisma.mission.findMany({
       where: { active: true },
       include: {
@@ -168,7 +162,7 @@ export class MissionsService {
   async createVisitToken(missionId: string, userId: bigint) {
     const mission = await this.findActiveMission(missionId);
 
-    if (mission.type !== 'visit_page') {
+    if (!MISSION_VISIT_TYPES.has(mission.type)) {
       throw new BadRequestException('Esta mision no usa validacion por visita.');
     }
 
@@ -244,7 +238,7 @@ export class MissionsService {
     const parsed = this.parseVisitToken(token);
     const mission = await this.findActiveMission(parsed.missionId);
 
-    if (mission.type !== 'visit_page') {
+    if (!MISSION_VISIT_TYPES.has(mission.type)) {
       throw new BadRequestException('Esta mision no usa validacion por visita.');
     }
 
@@ -309,9 +303,21 @@ export class MissionsService {
   }
 
   assertSelfCompletable(type: string) {
-    if (SERVER_MANAGED_MISSION_TYPES.has(type)) {
+    if (this.missionProgress.isServerManaged(type)) {
       throw new BadRequestException('Esta mision se valida automaticamente y no puede completarse manualmente.');
     }
+  }
+
+  trackPollView(userId: bigint) {
+    return this.missionProgress.trackPollView(userId);
+  }
+
+  trackReferralShare(userId: bigint) {
+    return this.missionProgress.trackReferralShare(userId);
+  }
+
+  trackShareAction(userId: bigint, platform?: string) {
+    return this.missionProgress.trackShareClaim(userId, platform);
   }
 
   private async findActiveMission(missionId: string) {

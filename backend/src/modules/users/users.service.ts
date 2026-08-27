@@ -1,10 +1,14 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { serialize } from '../../common/serialize';
+import { MissionProgressService } from '../missions/mission-progress.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly missionProgress: MissionProgressService,
+  ) {}
 
   private readonly publicSelect = {
     id: true,
@@ -81,6 +85,8 @@ export class UsersService {
       select: this.publicSelect,
     });
 
+    void this.missionProgress.trackProfileComplete(updated).catch(() => {});
+
     return this.profilePayload(updated);
   }
 
@@ -119,6 +125,8 @@ export class UsersService {
         referralPoints: true,
       },
     });
+
+    void this.missionProgress.trackReferralShare(userId).catch(() => {});
 
     return serialize(user);
   }

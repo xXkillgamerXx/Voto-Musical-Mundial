@@ -4,8 +4,9 @@ import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { generateBotNames } from './bot-name.util';
-import { buildCommentBotMessages, sanitizeCommentBotMessages } from './comment-bot-message.util';
+import { sanitizeCommentBotMessages } from './comment-bot-message.util';
 import { generateCommentBotMessagesWithAi } from './comment-bot-ai.util';
+import { commentBotLanguageLabel } from './comment-bot-language.util';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 
@@ -28,6 +29,7 @@ export class CommentBotCampaignService {
     artistId?: string;
     artistName?: string;
     rivalArtistName?: string;
+    language?: string;
   }) {
     const poll = await this.prisma.poll.findFirst({
       where: pollLookupWhere(params.pollId),
@@ -65,11 +67,14 @@ export class CommentBotCampaignService {
       focusArtistName,
       rivalArtistName,
       sampleComments,
+      language: params.language,
     });
 
     return serialize({
       messages: result.messages,
       source: result.source,
+      language: result.language,
+      languageLabel: commentBotLanguageLabel(result.language),
       topic,
       focusArtistName,
       sampleCommentsCount: sampleComments.length,
@@ -88,6 +93,7 @@ export class CommentBotCampaignService {
     artistId?: string;
     artistName?: string;
     rivalArtistName?: string;
+    language?: string;
     createdBy?: string | null;
   }) {
     const totalComments = Math.trunc(Number(params.totalComments || 0));
@@ -120,42 +126,12 @@ export class CommentBotCampaignService {
     }
 
     const custom = sanitizeCommentBotMessages(params.messages);
-    let messages = custom;
-
-    const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
-    const rivalArtistName = String(params.rivalArtistName || '').trim();
-    const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
-    const contestants = await this.prisma.contestant.findMany({
-      where: { pollId: poll.id },
-      select: { artist: { select: { name: true } } },
-      take: 60,
-    });
-    const artistNames = contestants
-      .map((row) => row.artist?.name || '')
-      .filter((name): name is string => Boolean(name));
-    const topic =
-      String(params.topic || '').trim() ||
-      (focusArtistName && rivalArtistName
-        ? `Fans apoyando a ${focusArtistName} en el duelo contra ${rivalArtistName}`
-        : focusArtistName
-          ? `Apoyo, hype y votos por ${focusArtistName}`
-          : '');
+    const messages = custom;
 
     if (!messages.length) {
-      if (topic || focusArtistName) {
-        const generated = await generateCommentBotMessagesWithAi({
-          topic,
-          count: Math.min(totalComments, 60),
-          pollTitle: poll.title,
-          artistNames: focusArtistName ? [focusArtistName] : artistNames,
-          focusArtistName,
-          rivalArtistName,
-          sampleComments,
-        });
-        messages = generated.messages;
-      } else {
-        messages = buildCommentBotMessages(Math.min(totalComments, 60), artistNames);
-      }
+      throw new BadRequestException(
+        'Debes generar o escribir los comentarios antes de lanzar la campaña. El bot no crea frases al iniciar.',
+      );
     }
 
     const durationSeconds = durationMinutes * 60;

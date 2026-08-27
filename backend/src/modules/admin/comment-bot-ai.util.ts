@@ -3,6 +3,12 @@ import {
   MAX_BOT_MESSAGE_LENGTH,
   sanitizeCommentBotMessages,
 } from './comment-bot-message.util';
+import {
+  commentBotAiLanguageLine,
+  commentBotAiSystemPrompt,
+  CommentBotLanguage,
+  resolveCommentBotLanguage,
+} from './comment-bot-language.util';
 
 type AiMessage = { role: 'system' | 'user'; content: string };
 
@@ -54,7 +60,8 @@ export async function generateCommentBotMessagesWithAi(params: {
   focusArtistName?: string;
   rivalArtistName?: string;
   sampleComments?: string[];
-}): Promise<{ messages: string[]; source: 'ai' | 'template' }> {
+  language?: string;
+}): Promise<{ messages: string[]; source: 'ai' | 'template'; language: CommentBotLanguage }> {
   const target = Math.max(5, Math.min(80, Math.floor(Number(params.count) || 20)));
   const topic = String(params.topic || '').trim();
   const pollTitle = String(params.pollTitle || '').trim();
@@ -68,34 +75,38 @@ export async function generateCommentBotMessagesWithAi(params: {
     .map((line) => String(line || '').trim())
     .filter(Boolean)
     .slice(0, 20);
+  const language = resolveCommentBotLanguage(params.language, sampleComments);
 
   const effectiveArtists = focusArtistName ? [focusArtistName] : artists;
 
   if (!topic && !focusArtistName) {
     return {
-      messages: buildCommentBotMessages(target, effectiveArtists),
+      messages: buildCommentBotMessages(target, effectiveArtists, language),
       source: 'template',
+      language,
     };
   }
 
   const { apiKey, baseUrl, model } = aiConfig();
   if (!apiKey) {
     return {
-      messages: buildCommentBotMessages(target, effectiveArtists),
+      messages: buildCommentBotMessages(target, effectiveArtists, language),
       source: 'template',
+      language,
     };
   }
 
   const system: AiMessage = {
     role: 'system',
     content:
-      'Eres un asistente que escribe comentarios cortos de fans latinos en una votación musical online. ' +
-      'Responde SOLO con JSON válido: un array de strings. Sin markdown, sin explicaciones. ' +
-      `Cada comentario debe tener entre 8 y ${MAX_BOT_MESSAGE_LENGTH} caracteres, tono natural de fan real, ` +
-      'sin insultos, sin spam, sin links, sin hashtags excesivos.',
+      commentBotAiSystemPrompt(language) +
+      ` Each comment must be between 8 and ${MAX_BOT_MESSAGE_LENGTH} characters.`,
   };
 
-  const userLines = [`Genera exactamente ${target} comentarios distintos.`];
+  const userLines = [
+    `Genera exactamente ${target} comentarios distintos.`,
+    commentBotAiLanguageLine(language),
+  ];
 
   if (focusArtistName) {
     userLines.push(
@@ -131,8 +142,16 @@ export async function generateCommentBotMessagesWithAi(params: {
   }
 
   userLines.push(
-    'Varía el estilo: emoción, apoyo directo, pedir votos, reacciones casuales, slang latino suave.',
-    'Ejemplo de formato: ["Vamos con todo!!", "Ya voté por {artista}"]',
+    language === 'en'
+      ? 'Vary the style: emotion, direct support, asking for votes, casual reactions, light fan slang.'
+      : language === 'pt'
+        ? 'Varie o estilo: emocao, apoio direto, pedir votos, reacoes casuais, gírias leves de fã.'
+        : 'Varía el estilo: emoción, apoyo directo, pedir votos, reacciones casuales, slang latino suave.',
+    language === 'en'
+      ? 'Example format: ["Let\'s go!!", "Just voted for {artista}"]'
+      : language === 'pt'
+        ? 'Exemplo de formato: ["Vamos com tudo!!", "Ja votei no {artista}"]'
+        : 'Ejemplo de formato: ["Vamos con todo!!", "Ya voté por {artista}"]',
   );
 
   const controller = new AbortController();
@@ -179,17 +198,18 @@ export async function generateCommentBotMessagesWithAi(params: {
     }
 
     if (messages.length < target) {
-      const filler = buildCommentBotMessages(target - messages.length, effectiveArtists);
+      const filler = buildCommentBotMessages(target - messages.length, effectiveArtists, language);
       messages = [...new Set([...messages, ...filler])].slice(0, target);
     } else {
       messages = messages.slice(0, target);
     }
 
-    return { messages, source: 'ai' };
+    return { messages, source: 'ai', language };
   } catch {
     return {
-      messages: buildCommentBotMessages(target, effectiveArtists),
+      messages: buildCommentBotMessages(target, effectiveArtists, language),
       source: 'template',
+      language,
     };
   } finally {
     clearTimeout(timer);

@@ -49,17 +49,14 @@ const getArtistImage = (artist) =>
 
 const isStaffVote = (vote) => vote?.staffVote === true || vote?.staffVote === '1'
 
+const isBotVote = (vote) => Boolean(vote?.botCampaignId)
+
 const isRegisteredVote = (vote) =>
   Boolean(vote?.userId)
   && !vote?.isAnonymous
   && vote?.isAnonymous !== '1'
   && !isStaffVote(vote)
-
-/** Bot campaigns publish as normal fans; keep this as a fallback for older payloads. */
-const isNaturalFanVote = (vote) =>
-  !isStaffVote(vote)
-  && Boolean(vote?.userDisplayName || vote?.username)
-  && (Boolean(vote?.botCampaignId) || Boolean(vote?.userId))
+  && !isBotVote(vote)
 
 const isActivePollVote = (vote) => {
   const pollId = String(vote?.pollId || '')
@@ -75,8 +72,7 @@ const isActivePollVote = (vote) => {
   return livePollIds.value.has(pollId)
 }
 
-const acceptsVote = (vote) =>
-  (isRegisteredVote(vote) || isNaturalFanVote(vote)) && isActivePollVote(vote)
+const acceptsVote = (vote) => isRegisteredVote(vote) && isActivePollVote(vote)
 
 const localUserForVote = (vote) => {
   const authUser = getStoredAuth()?.user

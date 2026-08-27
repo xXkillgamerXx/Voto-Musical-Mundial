@@ -15,6 +15,7 @@ import { getClientIp, hashIp } from '../../common/request';
 import { serialize } from '../../common/serialize';
 import { AuthService } from '../auth/auth.service';
 import { VoteIdentity } from '../auth/auth.types';
+import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { ShareVoteBoostConfigService } from '../rewards/share-vote-boost-config.service';
@@ -48,6 +49,7 @@ export class VotesService {
     private readonly config: ConfigService,
     private readonly turnstile: TurnstileService,
     private readonly shareVoteBoostConfig: ShareVoteBoostConfigService,
+    private readonly missionProgress: MissionProgressService,
   ) {}
 
   async castVote(dto: CastVoteDto, request: Request) {
@@ -190,6 +192,10 @@ export class VotesService {
       )
       .exec();
 
+    if (identity.type === 'user' && identity.userId) {
+      void this.missionProgress.trackVote(identity.userId, countedAmount).catch(() => {});
+    }
+
     let user: { points: number; spentPoints: number } | null = null;
     if (voteUser) {
       user = { points: Number(voteUser.points), spentPoints: Number(voteUser.spentPoints) };
@@ -295,6 +301,10 @@ export class VotesService {
       pipeline.set(dayKey, '1', 'EX', this.secondsUntilNextUtcMidnight());
     }
     await pipeline.exec();
+
+    if (identity.type === 'user' && identity.userId) {
+      void this.missionProgress.trackShareClaim(identity.userId, normalizedPlatform).catch(() => {});
+    }
 
     return {
       ok: true,
@@ -623,7 +633,7 @@ export class VotesService {
     const hours = Math.min(Math.max(Number(hoursValue || 24), 1), 720);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const [registeredRows, botRows] = await Promise.all([
+    const [registeredRows] = await Promise.all([
       this.prisma.voteLedger.findMany({
         where: {
           isAnonymous: false,
@@ -669,61 +679,10 @@ export class VotesService {
           },
         },
       }),
-      this.prisma.voteLedger.findMany({
-        where: {
-          isAnonymous: true,
-          createdAt: { gte: since },
-          poll: {
-            status: PollStatus.live,
-          },
-        },
-        take: Math.min(limit * 4, 80),
-        orderBy: { createdAt: 'desc' },
-        include: {
-          contestant: {
-            include: {
-              artist: {
-                select: {
-                  id: true,
-                  name: true,
-                  photoUrl: true,
-                },
-              },
-            },
-          },
-          poll: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              config: true,
-              createdAt: true,
-            },
-          },
-        },
-      }),
     ]);
 
-    const botCampaignRows = botRows.filter((row) => {
-      const metadata =
-        row.metadata && typeof row.metadata === 'object'
-          ? (row.metadata as Record<string, unknown>)
-          : {};
-      return Boolean(metadata.botCampaignId);
-    });
-
-    const shape = (row: any, bot = false) => {
+    const shape = (row: any) => {
       const pollConfig = (row.poll?.config || {}) as Record<string, unknown>;
-      const metadata =
-        row.metadata && typeof row.metadata === 'object'
-          ? (row.metadata as Record<string, unknown>)
-          : {};
-      const displayName = bot
-        ? String(metadata.displayName || metadata.userDisplayName || 'Fan')
-        : row.user?.displayName || row.user?.username || '';
-      const publicUserId = bot
-        ? `f${String(metadata.displayName || row.id || 'fan').replace(/\W+/g, '').slice(0, 12).toLowerCase() || row.id}`
-        : row.userId?.toString() || '';
 
       return {
         id: row.id.toString(),
@@ -736,17 +695,15 @@ export class VotesService {
         artistId: row.contestant?.artistId?.toString() || '',
         artistName: row.contestant?.artist?.name || '',
         artistPhotoUrl: row.contestant?.artist?.photoUrl || '',
-        userId: publicUserId,
-        username: bot ? displayName : row.user?.username || '',
-        userDisplayName: displayName,
-        userPhotoUrl: bot ? '' : row.user?.photoUrl || '',
+        userId: row.userId?.toString() || '',
+        username: row.user?.username || '',
+        userDisplayName: row.user?.displayName || row.user?.username || '',
+        userPhotoUrl: row.user?.photoUrl || '',
       };
     };
 
-    const merged = [
-      ...registeredRows.map((row) => shape(row, false)),
-      ...botCampaignRows.map((row) => shape(row, true)),
-    ]
+    const merged = registeredRows
+      .map((row) => shape(row))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, limit);
 

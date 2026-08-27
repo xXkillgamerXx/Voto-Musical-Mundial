@@ -254,6 +254,7 @@ export class VoteBotCampaignWorker implements OnModuleDestroy {
           pointsSpent: packet.amount,
           isAnonymous: false,
           staffVote: false,
+          botCampaignId: campaignId,
           createdAt,
         }),
       );
