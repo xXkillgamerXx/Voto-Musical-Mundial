@@ -151,6 +151,7 @@ const categories = computed(() => {
     href: categoryHref(category.id),
     icon: category.icon || fallbackIcons[index % fallbackIcons.length],
     visual: category.visual || fallbackVisuals[index % fallbackVisuals.length],
+    certificateImage: category.certificateImage || category.metadata?.certificateImage || "",
   }));
 });
 
@@ -194,7 +195,12 @@ onMounted(() => {
           year: poll.year || poll.category?.year || poll.category?.metadata?.year,
           icon: poll.category?.icon || poll.category?.metadata?.icon || poll.config?.categoryIcon || "",
           visual: poll.category?.visual || poll.category?.metadata?.visual || poll.config?.categoryVisual || "",
-          metadata: poll.category?.metadata || {},
+          certificateImage:
+          poll.category?.metadata?.certificateImage ||
+          poll.category?.certificateImage ||
+          poll.config?.categoryCertificateImage ||
+          "",
+        metadata: poll.category?.metadata || {},
           pollCount: 0,
         });
       });
@@ -308,6 +314,15 @@ onMounted(() => {
           <div
             class="absolute inset-0 bg-linear-to-t from-[#080a17] via-transparent to-white/5"
           ></div>
+          <template v-if="category.certificateImage">
+            <img
+              :src="category.certificateImage"
+              :alt="category.title"
+              class="category-certificate-card absolute left-1/2 top-1/2 z-10 h-[86%] w-[70%] -translate-x-1/2 -translate-y-1/2 rotate-3 rounded-2xl border border-white/20 object-cover shadow-2xl shadow-black/45"
+              loading="lazy"
+            />
+          </template>
+          <template v-else>
           <div
             class="absolute inset-x-6 bottom-3 h-10 rounded-full bg-fuchsia-300/20 blur-xl"
           ></div>
@@ -341,6 +356,7 @@ onMounted(() => {
             class="fa-solid fa-music absolute bottom-[24%] right-[23%] text-sm text-cyan-100 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]"
             aria-hidden="true"
           ></i>
+          </template>
         </div>
 
         <div class="px-4 py-4">
@@ -437,6 +453,15 @@ onMounted(() => {
           <div
             class="absolute inset-0 bg-linear-to-t from-[#080a17] via-transparent to-white/5"
           ></div>
+          <template v-if="category.certificateImage">
+            <img
+              :src="category.certificateImage"
+              :alt="category.title"
+              class="category-certificate-card absolute left-1/2 top-1/2 z-10 h-[86%] w-[70%] -translate-x-1/2 -translate-y-1/2 rotate-3 rounded-2xl border border-white/20 object-cover shadow-2xl shadow-black/45"
+              loading="lazy"
+            />
+          </template>
+          <template v-else>
           <div
             class="absolute inset-x-6 bottom-3 h-10 rounded-full bg-fuchsia-300/20 blur-xl"
           ></div>
@@ -470,6 +495,7 @@ onMounted(() => {
             class="fa-solid fa-music absolute bottom-[24%] right-[23%] text-sm text-cyan-100 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]"
             aria-hidden="true"
           ></i>
+          </template>
         </div>
 
         <div class="px-4 py-4">
@@ -525,6 +551,22 @@ onMounted(() => {
   animation: category-icon-orb 2.8s ease-in-out infinite;
   transform: translate(-50%, -50%);
   transform-origin: center;
+}
+
+.category-certificate-card {
+  animation: category-certificate-card 3.2s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes category-certificate-card {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) rotate(3deg) scale(1);
+  }
+
+  50% {
+    transform: translate(-50%, -52%) rotate(2deg) scale(1.03);
+  }
 }
 
 @keyframes category-icon-orb {

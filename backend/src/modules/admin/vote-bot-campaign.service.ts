@@ -6,7 +6,6 @@ import { generateBotNames } from './bot-name.util';
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 
 const MIN_DURATION_MINUTES = 1;
-const MAX_DURATION_MINUTES = 180;
 const MAX_AMOUNT = 1_000_000;
 const MAX_BOTS = 500;
 
@@ -32,13 +31,9 @@ export class VoteBotCampaignService {
     if (!Number.isFinite(botsCount) || botsCount < 1 || botsCount > MAX_BOTS) {
       throw new BadRequestException(`La cantidad de bots debe estar entre 1 y ${MAX_BOTS}.`);
     }
-    if (
-      !Number.isFinite(durationMinutes) ||
-      durationMinutes < MIN_DURATION_MINUTES ||
-      durationMinutes > MAX_DURATION_MINUTES
-    ) {
+    if (!Number.isFinite(durationMinutes) || durationMinutes < MIN_DURATION_MINUTES) {
       throw new BadRequestException(
-        `La duración debe estar entre ${MIN_DURATION_MINUTES} y ${MAX_DURATION_MINUTES} minutos.`,
+        `La duración debe ser de al menos ${MIN_DURATION_MINUTES} minuto.`,
       );
     }
 

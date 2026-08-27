@@ -6,6 +6,7 @@ import {
   deleteAdminPollCategory,
   getAdminPollCategories,
   updateAdminPollCategory,
+  uploadAdminImage,
 } from '../../services/api/adminApi'
 
 const props = defineProps({
@@ -60,7 +61,9 @@ const categoryForm = ref({
   year: currentYear,
   icon: iconOptions[0].value,
   visual: visualOptions[0].value,
+  certificateImage: '',
 })
+const isUploadingCertificate = ref(false)
 const editingCategoryId = ref('')
 const isFormOpen = ref(false)
 const isSaving = ref(false)
@@ -76,6 +79,52 @@ const formTitle = computed(() => editingCategoryId.value ? translate('admin.cate
 const shouldShowForm = computed(() => props.showForm || isFormOpen.value || Boolean(editingCategoryId.value))
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
 
+const isAcceptedImageFile = (file) => {
+  const accepted = ['image/jpeg', 'image/png', 'image/webp']
+  return file && accepted.includes(file.type)
+}
+
+const uploadCategoryCertificate = async (file) => {
+  if (!file) {
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  if (!isAcceptedImageFile(file)) {
+    errorMessage.value = translate('admin.categories.errors.certificateType')
+    return
+  }
+
+  isUploadingCertificate.value = true
+
+  try {
+    const upload = await uploadAdminImage('category-certificate', file)
+    categoryForm.value.certificateImage = upload.path || upload.url || ''
+    successMessage.value = translate('admin.categories.certificateUploaded')
+  } catch {
+    errorMessage.value = translate('admin.categories.errors.certificateUpload')
+  } finally {
+    isUploadingCertificate.value = false
+  }
+}
+
+const handleCertificateInput = (event) => {
+  const [file] = event.target.files || []
+  uploadCategoryCertificate(file)
+  event.target.value = ''
+}
+
+const handleCertificateDrop = (event) => {
+  const [file] = event.dataTransfer.files || []
+  uploadCategoryCertificate(file)
+}
+
+const clearCategoryCertificate = () => {
+  categoryForm.value.certificateImage = ''
+}
+
 const flattenCategory = (category) => {
   const metadata = category?.metadata && typeof category.metadata === 'object' && !Array.isArray(category.metadata)
     ? category.metadata
@@ -87,9 +136,10 @@ const flattenCategory = (category) => {
     id: String(category.id),
     name: category.name || metadata.name || '',
     nameEn: metadata.nameEn || category.nameEn || '',
-    year: Number(category.year || metadata.year || currentYear),
-    icon: category.icon || metadata.icon || iconOptions[0].value,
-    visual: category.visual || metadata.visual || visualOptions[0].value,
+      year: Number(category.year || metadata.year || currentYear),
+      icon: category.icon || metadata.icon || iconOptions[0].value,
+      visual: category.visual || metadata.visual || visualOptions[0].value,
+      certificateImage: category.certificateImage || metadata.certificateImage || '',
   }
 }
 
@@ -100,6 +150,7 @@ const resetForm = () => {
     year: currentYear,
     icon: iconOptions[0].value,
     visual: visualOptions[0].value,
+    certificateImage: '',
   }
   editingCategoryId.value = ''
   isFormOpen.value = false
@@ -121,6 +172,7 @@ const editCategory = (category) => {
     year: Number(flat.year || currentYear),
     icon: flat.icon || iconOptions[0].value,
     visual: flat.visual || visualOptions[0].value,
+    certificateImage: flat.certificateImage || '',
   }
   editingCategoryId.value = category.id
   isFormOpen.value = true
@@ -154,6 +206,7 @@ const saveCategory = async () => {
       year,
       icon: categoryForm.value.icon || iconOptions[0].value,
       visual: categoryForm.value.visual || visualOptions[0].value,
+      certificateImage: String(categoryForm.value.certificateImage || '').trim(),
     }
 
     if (editingCategoryId.value) {
@@ -340,6 +393,51 @@ onMounted(async () => {
             </option>
           </select>
         </label>
+
+        <div class="block">
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-400">
+            {{ $t('admin.categories.certificate') }}
+          </span>
+          <label
+            class="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-fuchsia-300/35 bg-fuchsia-400/10 px-4 text-center text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+            @dragover.prevent
+            @drop.prevent="handleCertificateDrop"
+          >
+            <i class="fa-solid fa-certificate mb-2 text-2xl" aria-hidden="true"></i>
+            {{
+              isUploadingCertificate
+                ? $t('admin.categories.certificateUploading')
+                : $t('admin.categories.certificateUpload')
+            }}
+            <span class="mt-1 text-[10px] font-bold normal-case tracking-normal text-slate-400">
+              {{ $t('admin.categories.certificateHint') }}
+            </span>
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              class="sr-only"
+              :disabled="isUploadingCertificate"
+              @change="handleCertificateInput"
+            />
+          </label>
+          <div
+            v-if="categoryForm.certificateImage"
+            class="relative mt-3 overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-3"
+          >
+            <img
+              :src="categoryForm.certificateImage"
+              :alt="categoryForm.name || $t('admin.categories.certificate')"
+              class="mx-auto max-h-44 w-full rounded-2xl object-contain"
+            />
+            <button
+              type="button"
+              class="mt-3 min-h-10 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
+              @click="clearCategoryCertificate"
+            >
+              {{ $t('admin.categories.certificateRemove') }}
+            </button>
+          </div>
+        </div>
 
         <div
           class="overflow-hidden rounded-3xl border border-white/10 bg-linear-to-br p-5"

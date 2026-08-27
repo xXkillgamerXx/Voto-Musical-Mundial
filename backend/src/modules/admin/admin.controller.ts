@@ -37,7 +37,7 @@ const statusFor = (value: unknown) =>
   Object.values(PollStatus).includes(value as PollStatus) ? (value as PollStatus) : PollStatus.draft;
 const roundTypeFor = (value: unknown) =>
   Object.values(RoundType).includes(value as RoundType) ? (value as RoundType) : RoundType.standard;
-const allowedUploadTypes = new Set(['poll-banner', 'artist-banner', 'artist-profile']);
+const allowedUploadTypes = new Set(['poll-banner', 'artist-banner', 'artist-profile', 'category-certificate']);
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const adminUploadsPath = join(process.cwd(), 'uploads', 'admin');
 const uploadTypeFor = (value: unknown) => {

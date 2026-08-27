@@ -81,7 +81,12 @@ onMounted(async () => {
   }
 
   if (mode === 'modal' && !wasDismissed()) {
-    isOpen.value = true
+    const isMobileWeb =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 639px)').matches
+    if (!isMobileWeb) {
+      isOpen.value = true
+    }
   }
 })
 </script>

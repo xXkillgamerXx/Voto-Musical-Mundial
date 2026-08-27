@@ -70,6 +70,7 @@ const isLoadingBotCampaignDetail = ref(false)
 const monitorBootError = ref('')
 let botCampaignsTimer = null
 let botCampaignDetailTimer = null
+const commentBotPanelRef = ref(null)
 
 const hasRunningBotCampaigns = () =>
   (botCampaigns.value || []).some(
@@ -1091,6 +1092,10 @@ const openBotCampaignModal = (contestant) => {
   isBotCampaignModalOpen.value = true
 }
 
+const openCommentBotForArtist = (contestant) => {
+  commentBotPanelRef.value?.openForArtist?.(contestant)
+}
+
 const closeBotCampaignModal = () => {
   isBotCampaignModalOpen.value = false
   botCampaignContestant.value = null
@@ -1118,7 +1123,7 @@ const startBotCampaign = async () => {
     botCampaignModalError.value = translate('admin.monitor.errors.botCampaignBots')
     return
   }
-  if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 180) {
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
     botCampaignModalError.value = translate('admin.monitor.errors.botCampaignDuration')
     return
   }
@@ -1907,6 +1912,14 @@ onUnmounted(() => {
                           <i class="fa-solid fa-robot" aria-hidden="true"></i>
                           {{ $t('admin.monitor.botCampaignTitle') }}
                         </button>
+                        <button
+                          type="button"
+                          class="col-span-2 inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-2 text-[10px] font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                          @click="openCommentBotForArtist(contestant)"
+                        >
+                          <i class="fa-solid fa-comments" aria-hidden="true"></i>
+                          Bot comentarios
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1994,6 +2007,14 @@ onUnmounted(() => {
               >
                 <i class="fa-solid fa-robot" aria-hidden="true"></i>
                 {{ $t('admin.monitor.botCampaignTitle') }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                @click="openCommentBotForArtist(contestant)"
+              >
+                <i class="fa-solid fa-comments" aria-hidden="true"></i>
+                Bot comentarios
               </button>
             </div>
           </div>
@@ -2182,7 +2203,7 @@ onUnmounted(() => {
     </div>
     </section>
 
-    <AdminCommentBotPanel :poll-id="props.pollId" />
+    <AdminCommentBotPanel ref="commentBotPanelRef" :poll-id="props.pollId" />
 
     <Teleport to="body">
       <div
@@ -2471,7 +2492,6 @@ onUnmounted(() => {
                 v-model.number="botCampaignForm.durationMinutes"
                 type="number"
                 min="1"
-                max="180"
                 class="mt-2 min-h-11 w-full rounded-2xl border border-white/10 bg-slate-950 px-3 text-sm font-black text-white outline-none focus:border-violet-300/50"
               />
             </label>

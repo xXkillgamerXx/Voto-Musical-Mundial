@@ -70,7 +70,7 @@ export function buildCommentBotMessages(count: number, artistNames: string[] = [
 
   while (messages.size < target && guard < target * 40) {
     guard += 1;
-    const useArtist = artists.length > 0 && Math.random() < 0.55;
+    const useArtist = artists.length > 0 && (artists.length === 1 || Math.random() < 0.55);
     const template = useArtist ? pick(WITH_ARTIST) : pick(GENERIC);
     const text = `${template.replace('{artista}', useArtist ? pick(artists) : '')}${pick(TAIL)}`.trim();
     if (text.length >= 3 && text.length <= MAX_BOT_MESSAGE_LENGTH) {

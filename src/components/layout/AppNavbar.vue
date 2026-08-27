@@ -223,7 +223,7 @@ onUnmounted(() => {
 
 <template>
   <header
-    class="fixed inset-x-0 top-0 z-50 border-b border-violet-400/15 bg-slate-950/85 backdrop-blur-xl"
+    class="fixed inset-x-0 top-0 z-40 border-b border-violet-400/15 bg-slate-950/85 backdrop-blur-xl"
   >
     <nav
       class="mx-auto flex max-w-352 items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4"

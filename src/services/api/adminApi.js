@@ -92,6 +92,11 @@ export const cancelAdminBotCampaign = (campaignId) =>
     method: 'POST',
     body: {},
   })
+export const suggestAdminCommentBotMessages = (pollId, body) =>
+  adminRequest(`/polls/${encodeURIComponent(pollId)}/comment-bot-campaigns/suggest-messages`, {
+    method: 'POST',
+    body,
+  })
 export const createAdminCommentBotCampaign = (pollId, body) =>
   adminRequest(`/polls/${encodeURIComponent(pollId)}/comment-bot-campaigns`, {
     method: 'POST',

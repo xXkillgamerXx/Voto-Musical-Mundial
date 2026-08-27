@@ -106,12 +106,14 @@ const shareBoostCanClaim = ref(true);
 const isClaimingShareBoost = ref(false);
 const shareBoostMessage = ref("");
 const now = ref(Date.now());
+const isMobileViewport = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia("(max-width: 639px)").matches;
 const STARTLY_SHARE_URL = "https://startlyapp.com/musicmundial";
 const selectedRoundId = ref("");
 const voteModalContestant = ref(null);
 const voteAmount = ref(1);
 const voteFeedbacks = ref({});
-const liveVoteToasts = ref([]);
 const liveVoteFlashIds = ref({});
 const optimisticVoteTotals = ref({});
 const animatedVoteCounts = ref({});
@@ -147,9 +149,7 @@ let unsubscribeRealtime = null;
 let reloadPublicResults = null;
 let realtimeResultsThrottle = 0;
 let realtimeStateThrottle = 0;
-let liveVoteToastSeq = 0;
 let lastLiveVoteToastAt = 0;
-const liveVoteToastTimers = new Map();
 const liveVoteFlashTimers = new Map();
 let missionsPromptTimer = null;
 let clockTimer = null;
@@ -502,7 +502,22 @@ const reconcileOptimisticVoteTotals = (rows = activeRoundContestantRows.value) =
 };
 
 const getContestantArtistId = (contestant) =>
-  contestant?.artistId || contestant?.id || "";
+  String(contestant?.artistId ?? contestant?.id ?? "");
+
+const contestantIdentityIds = (contestant) => {
+  const ids = new Set();
+  const primaryId = getContestantArtistId(contestant);
+  if (primaryId) {
+    ids.add(primaryId);
+  }
+  if (contestant?.id !== undefined && contestant?.id !== null) {
+    ids.add(String(contestant.id));
+  }
+  if (contestant?.artistId !== undefined && contestant?.artistId !== null) {
+    ids.add(String(contestant.artistId));
+  }
+  return ids;
+};
 
 const activeRound = computed(() => {
   if (isEmbeddedPage.value && routeRoundId.value) {
@@ -570,7 +585,7 @@ const activeRoundContestantRows = computed(() => {
 const rankedContestants = computed(() =>
   activeRoundContestantRows.value
     .map((contestant) => {
-      const artistId = contestant.artistId || contestant.id;
+      const artistId = getContestantArtistId(contestant);
       const serverTotalVotes = normalizeContestantVotes(contestant);
       const totalVotes = Math.max(
         serverTotalVotes,
@@ -589,7 +604,7 @@ const rankedContestants = computed(() =>
 const activeContestants = computed(() =>
   activeRoundContestantRows.value
     .map((contestant, index) => {
-      const artistId = contestant.artistId || contestant.id;
+      const artistId = getContestantArtistId(contestant);
       const totalVotes = Math.max(
         normalizeContestantVotes(contestant),
         getOptimisticVoteTotal(artistId),
@@ -636,7 +651,7 @@ const versusSourceContestants = computed(() => {
 
   return selectedRoundContestants.value
     .map((contestant, index) => {
-      const artistId = contestant.artistId || contestant.id;
+      const artistId = getContestantArtistId(contestant);
 
       return {
         ...contestant,
@@ -1696,7 +1711,7 @@ const finalWinnerEntries = computed(() => {
 
   if (!winnerIds.length) {
     const contestant = finalRoundContestants[0];
-    return [buildEntry(contestant, contestant.artistId || contestant.id)].filter(
+    return [buildEntry(contestant, getContestantArtistId(contestant))].filter(
       (entry) => entry.artist,
     );
   }
@@ -2317,7 +2332,7 @@ const clearOptimisticVoteTotal = (artistId) => {
   optimisticVoteTotals.value = nextTotals;
 };
 
-const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800 } = {}) => {
+const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800, source = "own" } = {}) => {
   if (!artistId || amount <= 0) {
     return;
   }
@@ -2331,6 +2346,7 @@ const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800 }
     [artistId]: {
       amount: displayAmount,
       pending,
+      source,
       token: Date.now(),
     },
   };
@@ -2343,27 +2359,71 @@ const showVoteFeedback = (artistId, amount, { pending = false, duration = 2800 }
       voteFeedbackTimers.delete(artistId);
     }, duration),
   );
+
+  flashLiveVoteArtist(artistId);
+};
+
+const collectLiveVoteFlashTargets = (artistId) => {
+  const targets = new Set();
+  const normalized = String(artistId || "").trim();
+  if (!normalized) {
+    return targets;
+  }
+
+  targets.add(normalized);
+
+  if (displayedRoundType.value !== "versus") {
+    return targets;
+  }
+
+  for (const match of displayedVersusMatches.value) {
+    const matchContestants = match?.contestants || [];
+    if (matchContestants.length !== 2) {
+      continue;
+    }
+
+    const inMatch = matchContestants.some((contestant) =>
+      contestantIdentityIds(contestant).has(normalized),
+    );
+    if (!inMatch) {
+      continue;
+    }
+
+    matchContestants.forEach((contestant) => {
+      const matchArtistId = getContestantArtistId(contestant);
+      if (matchArtistId) {
+        targets.add(matchArtistId);
+      }
+    });
+  }
+
+  return targets;
 };
 
 const flashLiveVoteArtist = (artistId) => {
-  if (!artistId) {
+  const targets = collectLiveVoteFlashTargets(artistId);
+  if (!targets.size) {
     return;
   }
 
-  window.clearTimeout(liveVoteFlashTimers.get(artistId));
-  liveVoteFlashIds.value = {
-    ...liveVoteFlashIds.value,
-    [artistId]: Date.now(),
-  };
-  liveVoteFlashTimers.set(
-    artistId,
-    window.setTimeout(() => {
-      const next = { ...liveVoteFlashIds.value };
-      delete next[artistId];
-      liveVoteFlashIds.value = next;
-      liveVoteFlashTimers.delete(artistId);
-    }, 1600),
-  );
+  const stamp = Date.now();
+  const nextFlashIds = { ...liveVoteFlashIds.value };
+
+  targets.forEach((targetId) => {
+    window.clearTimeout(liveVoteFlashTimers.get(targetId));
+    nextFlashIds[targetId] = stamp;
+    liveVoteFlashTimers.set(
+      targetId,
+      window.setTimeout(() => {
+        const next = { ...liveVoteFlashIds.value };
+        delete next[targetId];
+        liveVoteFlashIds.value = next;
+        liveVoteFlashTimers.delete(targetId);
+      }, 2000),
+    );
+  });
+
+  liveVoteFlashIds.value = nextFlashIds;
 };
 
 const pushLiveVoteToast = (payload = {}) => {
@@ -2375,51 +2435,7 @@ const pushLiveVoteToast = (payload = {}) => {
     return;
   }
   lastLiveVoteToastAt = nowMs;
-
-  const contestant = contestants.value.find(
-    (row) =>
-      getContestantArtistId(row) === artistId ||
-      String(row.id) === artistId ||
-      String(row.artistId) === artistId,
-  );
-  const artist =
-    contestant?.artist ||
-    artists.value.find((row) => String(row.id) === artistId) ||
-    null;
-  const artistName =
-    payload.artistName ||
-    artist?.name ||
-    translate("polls.detail.voteFallback");
-  const fanName =
-    payload.userDisplayName ||
-    payload.username ||
-    translate("widgets.activity.fan");
-
-  liveVoteToastSeq += 1;
-  const id = `live-vote-${liveVoteToastSeq}`;
-  liveVoteToasts.value = [
-    {
-      id,
-      fanName,
-      artistName,
-      artistId,
-    },
-    ...liveVoteToasts.value,
-  ].slice(0, 4);
-
   flashLiveVoteArtist(artistId);
-  if (!voteFeedbacks.value[artistId]?.pending) {
-    showVoteFeedback(artistId, 1, { duration: 1800 });
-  }
-
-  window.clearTimeout(liveVoteToastTimers.get(id));
-  liveVoteToastTimers.set(
-    id,
-    window.setTimeout(() => {
-      liveVoteToasts.value = liveVoteToasts.value.filter((toast) => toast.id !== id);
-      liveVoteToastTimers.delete(id);
-    }, 2800),
-  );
 };
 
 const animateNumber = ({
@@ -2607,7 +2623,7 @@ const getRoundContestants = async (round) => {
   return rows
     .map((contestant) => ({
       ...contestant,
-      artist: contestant.artist || getArtist(contestant.artistId || contestant.id),
+      artist: contestant.artist || getArtist(getContestantArtistId(contestant)),
     }))
     .filter((contestant) => contestant.artist)
     .sort((current, next) => next.totalVotes - current.totalVotes);
@@ -2849,7 +2865,7 @@ const loadFinalResultContestants = async () => {
       const roundContestants = await getRoundContestants(round);
 
       roundContestants.forEach((contestant) => {
-        const artistId = contestant.artistId || contestant.id;
+        const artistId = getContestantArtistId(contestant);
         const currentTotal = totalsByArtist.get(artistId);
         const totalVotes =
           Number(currentTotal?.totalVotes || 0) + Number(contestant.totalVotes || 0);
@@ -3686,11 +3702,8 @@ onUnmounted(() => {
   embedResizeObserver?.disconnect();
   voteFeedbackTimers.forEach((timer) => window.clearTimeout(timer));
   voteFeedbackTimers.clear();
-  liveVoteToastTimers.forEach((timer) => window.clearTimeout(timer));
-  liveVoteToastTimers.clear();
   liveVoteFlashTimers.forEach((timer) => window.clearTimeout(timer));
   liveVoteFlashTimers.clear();
-  liveVoteToasts.value = [];
   liveVoteFlashIds.value = {};
   window.clearTimeout(anonymousVoteToastTimer);
   window.clearTimeout(missionsPromptTimer);
@@ -4639,19 +4652,23 @@ onUnmounted(() => {
               :data-artist-id="getContestantArtistId(contestant)"
               class="relative overflow-hidden rounded-3xl border border-violet-300/10 bg-slate-950/55"
               :class="[
-                voteFeedbacks[contestant.artistId || contestant.id] &&
+                voteFeedbacks[getContestantArtistId(contestant)]?.source === 'own' &&
                   'vote-feedback-card',
-                liveVoteFlashIds[contestant.artistId || contestant.id] &&
+                liveVoteFlashIds[getContestantArtistId(contestant)] &&
                   'live-vote-flash-card',
               ]"
               :style="{ animationDelay: `${Math.min(index, 2) * 90 + 80}ms` }"
             >
               <span
-                v-if="voteFeedbacks[contestant.artistId || contestant.id]"
-                :key="`notice-${voteFeedbacks[contestant.artistId || contestant.id].token}`"
+                v-if="voteFeedbacks[getContestantArtistId(contestant)]?.source === 'own'"
+                :key="`notice-${voteFeedbacks[getContestantArtistId(contestant)].token}-${voteFeedbacks[getContestantArtistId(contestant)].pending ? 'pending' : 'done'}`"
                 class="vote-feedback-notice"
               >
-                {{ $t("polls.detail.voteCounted") }}
+                {{
+                  voteFeedbacks[getContestantArtistId(contestant)].pending
+                    ? $t("polls.detail.voteProcessing")
+                    : $t("polls.detail.voteCounted")
+                }}
               </span>
               <div
                 class="grid gap-0"
@@ -4747,87 +4764,86 @@ onUnmounted(() => {
                         }}
                       </span>
                     </div>
-                    <p
-                      class="embed-percent shrink-0 font-black text-cyan-100"
-                      :class="
+                    <div
+                      class="contestant-stats-stack shrink-0 text-right"
+                      :class="[
                         feedItem.row.contestants.length === 2
                           ? isEmbeddedPage
-                            ? 'text-base sm:text-2xl'
-                            : 'text-sm sm:text-xl'
-                          : 'text-2xl'
-                      "
+                            ? 'min-w-[4.5rem] sm:min-w-[5.5rem]'
+                            : 'min-w-[4.25rem] sm:min-w-[5.5rem]'
+                          : 'min-w-[5.5rem]',
+                        liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                          'live-stat-boost',
+                      ]"
                     >
-                      <span
-                        class="live-stats-pulse-target"
-                        :data-flash="liveVoteFlashIds[contestant.artistId || contestant.id] || ''"
+                      <p
+                        class="contestant-stat-votes text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-xs"
+                        :class="
+                          voteFeedbacks[getContestantArtistId(contestant)]?.source === 'own' &&
+                            !voteFeedbacks[getContestantArtistId(contestant)]?.pending &&
+                            'text-emerald-200'
+                        "
                       >
-                        {{ percentForMatch(contestant, feedItem.row) }}
-                      </span>
-                    </p>
+                        <template v-if="!hideVoteCounts">
+                          <span
+                            class="live-stats-pulse-target"
+                            :data-flash="liveVoteFlashIds[getContestantArtistId(contestant)] || ''"
+                          >
+                            {{
+                              $t("polls.detail.votesCount", {
+                                count:
+                                  displayVoteCountFor(contestant).toLocaleString(
+                                    "es",
+                                  ),
+                              })
+                            }}
+                          </span>
+                        </template>
+                        <template v-else>
+                          {{ $t("polls.detail.votesLabel") }}
+                        </template>
+                      </p>
+                      <p
+                        class="contestant-stat-percent embed-percent font-black leading-none text-cyan-100"
+                        :class="
+                          feedItem.row.contestants.length === 2
+                            ? isEmbeddedPage
+                              ? 'text-base sm:text-2xl'
+                              : 'text-sm sm:text-xl'
+                            : 'text-2xl'
+                        "
+                      >
+                        <span
+                          class="live-percent-pulse"
+                          :data-flash="liveVoteFlashIds[getContestantArtistId(contestant)] || ''"
+                        >
+                          {{ percentForMatch(contestant, feedItem.row) }}
+                        </span>
+                      </p>
+                    </div>
                   </div>
 
-                  <div
-                    class="overflow-hidden rounded-full bg-white/10"
-                    :class="
-                      feedItem.row.contestants.length === 2
-                        ? isEmbeddedPage
-                          ? 'mt-3 h-2 sm:mt-4 sm:h-3'
-                          : 'mt-3 h-2.5'
-                        : 'mt-4 h-3'
-                    "
-                  >
                     <div
-                      class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
-                      :style="{ width: percentForMatch(contestant, feedItem.row) }"
-                    ></div>
-                  </div>
-                  <p
-                    class="relative mt-2 text-sm font-bold text-slate-300"
-                    :class="
-                      voteFeedbacks[contestant.artistId || contestant.id] &&
-                        'text-emerald-200'
-                    "
-                  >
-                    <template v-if="!hideVoteCounts">
-                      <span
-                        class="live-stats-pulse-target"
-                        :data-flash="liveVoteFlashIds[contestant.artistId || contestant.id] || ''"
-                      >
-                        {{
-                          $t("polls.detail.votesCount", {
-                          count:
-                            displayVoteCountFor(contestant).toLocaleString("es"),
-                        })
-                      }}
-                      </span>
-                    </template>
-                    <template v-else>
-                      {{ $t("polls.detail.votesLabel") }}
-                    </template>
-                    <span
-                      v-if="voteFeedbacks[contestant.artistId || contestant.id]"
-                      :key="
-                        voteFeedbacks[contestant.artistId || contestant.id]
-                          .token
-                      "
-                      class="vote-feedback-badge"
+                      class="overflow-hidden rounded-full bg-white/10"
+                      :class="[
+                        feedItem.row.contestants.length === 2
+                          ? isEmbeddedPage
+                            ? 'mt-3 h-2 sm:mt-4 sm:h-3'
+                            : 'mt-3 h-2.5'
+                          : 'mt-4 h-3',
+                        liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                          'live-vote-bar-shell',
+                      ]"
                     >
-                      {{
-                        voteFeedbacks[contestant.artistId || contestant.id]
-                          .pending
-                          ? "Procesando..."
-                          : voteFeedbacks[contestant.artistId || contestant.id]
-                                .amount > 0
-                            ? $t("polls.detail.votesAdded", {
-                                count:
-                                  voteFeedbacks[
-                                    contestant.artistId || contestant.id
-                                  ].amount,
-                              })
-                            : $t("polls.detail.liveVoteBadge")
-                      }}
-                    </span>
-                  </p>
+                      <div
+                        class="poll-vote-bar-fill h-full rounded-full transition-[width] duration-700 ease-out"
+                        :class="
+                          liveVoteFlashIds[getContestantArtistId(contestant)] &&
+                            'live-vote-flash-bar'
+                        "
+                        :style="{ width: percentForMatch(contestant, feedItem.row) }"
+                      ></div>
+                    </div>
                 </div>
 
                 <button
@@ -5050,7 +5066,7 @@ onUnmounted(() => {
                   : hasRoundWinners
                     ? 'border-white/10 bg-white/3 opacity-55 grayscale hover:opacity-75'
                     : 'border-white/10 bg-white/5 hover:bg-white/8',
-                voteFeedbacks[feedItem.row.artistId || feedItem.row.id] &&
+                voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.source === 'own' &&
                   'vote-feedback-card',
                 liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
                   'live-vote-flash-card',
@@ -5058,11 +5074,15 @@ onUnmounted(() => {
               :style="{ animationDelay: `${Math.min(feedItem.index, 8) * 70}ms` }"
             >
             <span
-              v-if="voteFeedbacks[feedItem.row.artistId || feedItem.row.id]"
-              :key="`notice-${voteFeedbacks[feedItem.row.artistId || feedItem.row.id].token}`"
+              v-if="voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.source === 'own'"
+              :key="`notice-${voteFeedbacks[feedItem.row.artistId || feedItem.row.id].token}-${voteFeedbacks[feedItem.row.artistId || feedItem.row.id].pending ? 'pending' : 'done'}`"
               class="vote-feedback-notice"
             >
-              {{ $t("polls.detail.voteCounted") }}
+              {{
+                voteFeedbacks[feedItem.row.artistId || feedItem.row.id].pending
+                  ? $t("polls.detail.voteProcessing")
+                  : $t("polls.detail.voteCounted")
+              }}
             </span>
             <div
               class="relative grid grid-cols-[auto_1fr] gap-3 md:flex md:flex-row md:items-center md:gap-4"
@@ -5129,11 +5149,18 @@ onUnmounted(() => {
                       }}
                     </p>
                   </span>
-                  <span class="shrink-0 text-right">
+                  <span
+                    class="contestant-stats-stack min-w-[5rem] shrink-0 text-right sm:min-w-[6.5rem]"
+                    :class="
+                      liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                        'live-stat-boost'
+                    "
+                  >
                     <span
-                      class="relative block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
+                      class="contestant-stat-votes block text-[10px] font-black uppercase tracking-widest text-slate-300 sm:text-sm"
                       :class="
-                        voteFeedbacks[feedItem.row.artistId || feedItem.row.id] &&
+                        voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.source === 'own' &&
+                          !voteFeedbacks[feedItem.row.artistId || feedItem.row.id]?.pending &&
                           'text-emerald-200'
                       "
                     >
@@ -5155,38 +5182,12 @@ onUnmounted(() => {
                       <template v-else>
                         {{ $t("polls.detail.votesLabel") }}
                       </template>
-                      <span
-                        v-if="
-                          voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
-                        "
-                        :key="
-                          voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
-                            .token
-                        "
-                        class="vote-feedback-badge right-0"
-                      >
-                        {{
-                          voteFeedbacks[feedItem.row.artistId || feedItem.row.id]
-                            .pending
-                            ? "Procesando..."
-                            : voteFeedbacks[
-                                  feedItem.row.artistId || feedItem.row.id
-                                ].amount > 0
-                              ? $t("polls.detail.votesAdded", {
-                                  count:
-                                    voteFeedbacks[
-                                      feedItem.row.artistId || feedItem.row.id
-                                    ].amount,
-                                })
-                              : $t("polls.detail.liveVoteBadge")
-                        }}
-                      </span>
                     </span>
                     <span
-                      class="block text-2xl font-black leading-none text-fuchsia-100 sm:text-4xl"
+                      class="contestant-stat-percent block text-2xl font-black leading-none text-fuchsia-100 sm:text-4xl"
                     >
                       <span
-                        class="live-stats-pulse-target"
+                        class="live-percent-pulse"
                         :data-flash="liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] || ''"
                       >
                         {{ percentForDisplayedContestant(feedItem.row) }}
@@ -5194,9 +5195,19 @@ onUnmounted(() => {
                     </span>
                   </span>
                 </div>
-                <div class="mt-5 h-3 overflow-hidden rounded-full bg-white/10">
+                <div
+                  class="mt-5 h-3 overflow-hidden rounded-full bg-white/10"
+                  :class="
+                    liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                      'live-vote-bar-shell'
+                  "
+                >
                   <div
-                    class="h-full rounded-full bg-linear-to-r from-cyan-300 to-fuchsia-300 transition-[width] duration-700 ease-out"
+                    class="poll-vote-bar-fill h-full rounded-full transition-[width] duration-700 ease-out"
+                    :class="
+                      liveVoteFlashIds[feedItem.row.artistId || feedItem.row.id] &&
+                        'live-vote-flash-bar'
+                    "
                     :style="{
                       width: percentForDisplayedContestant(feedItem.row),
                     }"
@@ -5927,63 +5938,33 @@ onUnmounted(() => {
     </Teleport>
 
     <Teleport to="body">
-      <Transition name="anonymous-vote-toast">
+      <Transition name="live-vote-banner">
         <div
           v-if="anonymousVoteSuccessToast"
           :key="anonymousVoteSuccessToast.token"
-          class="fixed inset-x-4 top-4 z-100 mx-auto flex max-w-lg items-center gap-4 rounded-3xl border border-emerald-300/35 bg-[#052e2b]/95 px-5 py-4 text-white shadow-2xl shadow-emerald-950/50 backdrop-blur-md sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2"
+          class="live-vote-banner pointer-events-none fixed inset-x-0 top-0 z-[1000]"
           role="status"
           aria-live="polite"
         >
-          <span
-            class="grid size-12 shrink-0 place-items-center rounded-2xl border border-emerald-200/30 bg-emerald-400/15 text-xl text-emerald-100"
-            aria-hidden="true"
+          <p
+            class="live-vote-banner-bar mx-auto flex w-full max-w-5xl items-center justify-center gap-2.5 border-b border-emerald-300/30 bg-slate-950/94 px-4 pb-3 pt-[max(0.65rem,env(safe-area-inset-top))] text-center text-sm font-black leading-6 text-white shadow-lg shadow-emerald-950/35 backdrop-blur-md sm:gap-3 sm:px-6 sm:pb-3.5 sm:pt-[max(0.75rem,env(safe-area-inset-top))] sm:text-base"
           >
-            <i class="fa-solid fa-check"></i>
-          </span>
-          <div class="min-w-0">
-            <p class="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-200">
-              {{ $t("polls.detail.anonymousVoteSuccessTitle") }}
-            </p>
-            <p class="mt-1 text-sm font-bold leading-6 text-emerald-50">
+            <span
+              class="grid size-8 shrink-0 place-items-center rounded-full border border-emerald-200/30 bg-emerald-400/15 text-sm text-emerald-100 sm:size-9 sm:text-base"
+              aria-hidden="true"
+            >
+              <i class="fa-solid fa-check"></i>
+            </span>
+            <span class="min-w-0 text-pretty">
               {{
                 $t("polls.detail.anonymousVoteSuccessNotice", {
                   artist: anonymousVoteSuccessToast.artistName,
                 })
               }}
-            </p>
-          </div>
+            </span>
+          </p>
         </div>
       </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <div
-        class="pointer-events-none fixed inset-x-0 bottom-4 z-100 flex flex-col items-center gap-2 px-4 sm:bottom-6"
-      >
-        <TransitionGroup name="live-vote-toast">
-          <div
-            v-for="toast in liveVoteToasts"
-            :key="toast.id"
-            class="live-vote-toast pointer-events-none flex max-w-md items-center gap-3 rounded-2xl border border-fuchsia-300/30 bg-[#1a0b2e]/95 px-4 py-3 text-white shadow-2xl shadow-fuchsia-950/50 backdrop-blur-md"
-          >
-            <span
-              class="grid size-10 shrink-0 place-items-center rounded-xl border border-fuchsia-200/25 bg-fuchsia-400/15 text-fuchsia-100"
-              aria-hidden="true"
-            >
-              <i class="fa-solid fa-heart live-vote-toast-heart"></i>
-            </span>
-            <p class="min-w-0 text-sm font-bold leading-5">
-              {{
-                $t("polls.detail.liveVoteToast", {
-                  fan: toast.fanName,
-                  artist: toast.artistName,
-                })
-              }}
-            </p>
-          </div>
-        </TransitionGroup>
-      </div>
     </Teleport>
   </section>
 </template>
@@ -6126,36 +6107,29 @@ onUnmounted(() => {
 }
 
 .vote-feedback-card {
-  animation: none;
+  animation: vote-feedback-card 1.1s ease-out;
 }
 
+.contestant-stats-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.12rem;
+  min-height: 2.65rem;
+}
+
+.contestant-stat-votes,
+.contestant-stat-percent {
+  line-height: 1.1;
+}
+
+.vote-feedback-overlay,
+.vote-feedback-slot,
+.vote-feedback-badge-inline,
 .vote-feedback-badge {
-  position: absolute;
-  top: -1.85rem;
-  right: 0;
-  z-index: 20;
-  white-space: nowrap;
-  border-radius: 9999px;
-  border: 1px solid rgba(110, 231, 183, 0.38);
-  background: linear-gradient(
-    90deg,
-    rgba(16, 185, 129, 0.96),
-    rgba(34, 211, 238, 0.96)
-  );
-  padding: 0.28rem 0.65rem;
-  color: #052e2b;
-  font-size: 0.7rem;
-  font-weight: 1000;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  box-shadow: 0 0 28px rgba(45, 212, 191, 0.34);
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
-  pointer-events: none;
+  display: none;
 }
 
 .vote-feedback-notice {
@@ -6163,6 +6137,7 @@ onUnmounted(() => {
   right: 0.85rem;
   top: 0.85rem;
   z-index: 40;
+  max-width: calc(100% - 1.7rem);
   border-radius: 9999px;
   border: 1px solid rgba(110, 231, 183, 0.46);
   background: linear-gradient(
@@ -6170,17 +6145,26 @@ onUnmounted(() => {
     rgba(6, 78, 59, 0.96),
     rgba(8, 47, 73, 0.96)
   );
-  padding: 0.45rem 0.85rem;
+  padding: 0.4rem 0.75rem;
   color: #d1fae5;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 1000;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: nowrap;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 0 30px rgba(16, 185, 129, 0.38);
-  animation: vote-feedback-notice 0.45s ease-out both;
+    0 0 24px rgba(16, 185, 129, 0.32);
+  animation: vote-feedback-notice 0.35s ease-out both;
   pointer-events: none;
+}
+
+@media (min-width: 640px) {
+  .vote-feedback-notice {
+    font-size: 0.68rem;
+    padding: 0.45rem 0.85rem;
+    letter-spacing: 0.16em;
+  }
 }
 
 .winner-card:nth-child(2) {
@@ -6382,59 +6366,53 @@ onUnmounted(() => {
 @keyframes vote-feedback-card {
   0% {
     border-color: rgba(110, 231, 183, 0.72);
-    background-color: rgba(16, 185, 129, 0.12);
     box-shadow:
       0 0 0 0 rgba(45, 212, 191, 0.56),
       0 0 44px rgba(34, 211, 238, 0.28);
-    transform: translateY(0) scale(1);
   }
 
-  30% {
+  35% {
     border-color: rgba(244, 114, 182, 0.72);
-    background-color: rgba(34, 211, 238, 0.1);
     box-shadow:
-      0 0 0 10px rgba(45, 212, 191, 0),
-      0 0 62px rgba(217, 70, 239, 0.36);
-    transform: translateY(-3px) scale(1.012);
+      0 0 0 8px rgba(45, 212, 191, 0),
+      0 0 52px rgba(217, 70, 239, 0.32);
   }
 
   100% {
+    border-color: rgba(255, 255, 255, 0.1);
     box-shadow: none;
-    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes vote-feedback-badge {
   0% {
     opacity: 0;
-    transform: translateY(0.45rem) scale(0.82);
+    transform: translateY(0.35rem);
   }
 
-  18% {
+  20% {
     opacity: 1;
-    transform: translateY(0) scale(1.06);
+    transform: translateY(0);
   }
 
-  78% {
+  80% {
     opacity: 1;
-    transform: translateY(-0.25rem) scale(1);
+    transform: translateY(0);
   }
 
   100% {
     opacity: 0;
-    transform: translateY(-0.85rem) scale(0.96);
+    transform: translateY(-0.2rem);
   }
 }
 
 @keyframes vote-feedback-notice {
   0% {
     opacity: 0;
-    transform: translateY(-0.5rem) scale(0.88);
   }
 
   100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -6567,75 +6545,101 @@ onUnmounted(() => {
   }
 }
 
-:global(.anonymous-vote-toast-enter-active),
-:global(.anonymous-vote-toast-leave-active) {
+:global(.live-vote-banner-enter-active),
+:global(.live-vote-banner-leave-active) {
   transition:
-    opacity 0.32s ease,
-    transform 0.32s ease;
+    opacity 0.28s ease,
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-:global(.anonymous-vote-toast-enter-from),
-:global(.anonymous-vote-toast-leave-to) {
+:global(.live-vote-banner-enter-from),
+:global(.live-vote-banner-leave-to) {
   opacity: 0;
-  transform: translateY(-14px);
+  transform: translateY(-12px);
 }
 
 .live-vote-flash-card {
-  animation: live-vote-flash-card 1.45s ease-out;
+  animation: live-vote-flash-card 1.35s ease-out;
 }
 
-.live-vote-toast-heart {
-  animation: live-vote-toast-heart 0.85s ease-in-out infinite;
+.live-stat-boost .contestant-stat-votes {
+  animation: live-stat-boost 1.1s ease-out;
 }
 
-:global(.live-vote-toast-enter-active),
-:global(.live-vote-toast-leave-active) {
-  transition:
-    opacity 0.35s ease,
-    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+.live-stat-boost .contestant-stat-percent,
+.live-stat-boost .live-percent-pulse {
+  animation: live-percent-pulse 1.15s ease-out;
 }
 
-:global(.live-vote-toast-enter-from) {
-  opacity: 0;
-  transform: translateY(18px) scale(0.94);
+.live-vote-bar-shell {
+  box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.28);
+  background: rgba(255, 255, 255, 0.12);
 }
 
-:global(.live-vote-toast-leave-to) {
-  opacity: 0;
-  transform: translateY(-10px) scale(0.96);
+.poll-vote-bar-fill {
+  background: linear-gradient(90deg, #67e8f9, #f0abfc);
 }
 
-:global(.live-vote-toast-move) {
-  transition: transform 0.35s ease;
+.live-vote-flash-bar {
+  animation: live-vote-flash-bar 1.2s ease-out;
+}
+
+@keyframes live-stat-boost {
+  0%,
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+
+  35% {
+    color: #fef9c3;
+    text-shadow:
+      0 0 10px rgba(250, 204, 21, 0.85),
+      0 0 22px rgba(217, 70, 239, 0.45);
+  }
+
+  65% {
+    color: #f5d0fe;
+    text-shadow: 0 0 8px rgba(232, 121, 249, 0.55);
+  }
+}
+
+@keyframes live-vote-flash-bar {
+  0%,
+  100% {
+    background: linear-gradient(90deg, #67e8f9, #f0abfc);
+    box-shadow: none;
+  }
+
+  30% {
+    background: linear-gradient(90deg, #fde047, #34d399);
+    box-shadow: 0 0 16px rgba(52, 211, 153, 0.75);
+  }
+
+  60% {
+    background: linear-gradient(90deg, #fbbf24, #22d3ee);
+    box-shadow: 0 0 12px rgba(250, 204, 21, 0.55);
+  }
 }
 
 @keyframes live-vote-flash-card {
   0% {
-    box-shadow: 0 0 0 0 rgba(244, 114, 182, 0.55);
-    border-color: rgba(244, 114, 182, 0.55);
-    filter: brightness(1.18);
+    box-shadow:
+      0 0 0 0 rgba(244, 114, 182, 0.65),
+      0 0 28px rgba(217, 70, 239, 0.28);
+    border-color: rgba(244, 114, 182, 0.72);
   }
 
   45% {
-    box-shadow: 0 0 0 12px rgba(244, 114, 182, 0);
-    border-color: rgba(217, 70, 239, 0.45);
-    filter: brightness(1.08);
+    box-shadow:
+      0 0 0 14px rgba(244, 114, 182, 0),
+      0 0 36px rgba(217, 70, 239, 0.38);
+    border-color: rgba(217, 70, 239, 0.55);
   }
 
   100% {
-    box-shadow: 0 0 0 0 rgba(244, 114, 182, 0);
-    filter: brightness(1);
-  }
-}
-
-@keyframes live-vote-toast-heart {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-
-  50% {
-    transform: scale(1.25);
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.1);
   }
 }
 </style>

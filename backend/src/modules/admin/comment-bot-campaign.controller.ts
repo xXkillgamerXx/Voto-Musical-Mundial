@@ -11,6 +11,17 @@ import { CommentBotCampaignService } from './comment-bot-campaign.service';
 export class CommentBotCampaignController {
   constructor(private readonly campaigns: CommentBotCampaignService) {}
 
+  @Post('polls/:pollId/comment-bot-campaigns/suggest-messages')
+  async suggestMessages(@Param('pollId') pollId: string, @Body() body: any) {
+    return this.campaigns.suggestMessages({
+      pollId,
+      topic: String(body.topic || body.brief || body.prompt || ''),
+      count: Number(body.count ?? body.totalComments ?? 25),
+      artistId: body.artistId ? String(body.artistId) : undefined,
+      artistName: body.artistName ? String(body.artistName) : undefined,
+    });
+  }
+
   @Post('polls/:pollId/comment-bot-campaigns')
   async create(@Param('pollId') pollId: string, @Body() body: any) {
     return this.campaigns.create({
@@ -19,6 +30,9 @@ export class CommentBotCampaignController {
       botsCount: Number(body.botsCount ?? body.bots ?? 0),
       durationMinutes: Number(body.durationMinutes ?? body.duration ?? 0),
       messages: body.messages,
+      topic: body.topic ? String(body.topic) : undefined,
+      artistId: body.artistId ? String(body.artistId) : undefined,
+      artistName: body.artistName ? String(body.artistName) : undefined,
       createdBy: body.createdBy ? String(body.createdBy) : null,
     });
   }

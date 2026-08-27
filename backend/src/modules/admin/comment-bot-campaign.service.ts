@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { generateBotNames } from './bot-name.util';
 import { buildCommentBotMessages, sanitizeCommentBotMessages } from './comment-bot-message.util';
+import { generateCommentBotMessagesWithAi } from './comment-bot-ai.util';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 
@@ -20,12 +21,65 @@ export class CommentBotCampaignService {
     private readonly redis: RedisService,
   ) {}
 
+  async suggestMessages(params: {
+    pollId: string;
+    topic?: string;
+    count?: number;
+    artistId?: string;
+    artistName?: string;
+  }) {
+    const poll = await this.prisma.poll.findFirst({
+      where: pollLookupWhere(params.pollId),
+      select: { id: true, title: true },
+    });
+
+    if (!poll) {
+      throw new NotFoundException('La votación no existe.');
+    }
+
+    const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
+    const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
+    const contestants = await this.prisma.contestant.findMany({
+      where: { pollId: poll.id },
+      select: { artist: { select: { name: true } } },
+      take: 60,
+    });
+    const artistNames = contestants
+      .map((row) => row.artist?.name || '')
+      .filter((name): name is string => Boolean(name));
+    const topic =
+      String(params.topic || '').trim() ||
+      (focusArtistName ? `Apoyo, hype y votos por ${focusArtistName}` : '');
+
+    const result = await generateCommentBotMessagesWithAi({
+      topic,
+      count: Number(params.count || 25),
+      pollTitle: poll.title,
+      artistNames: focusArtistName ? [focusArtistName] : artistNames,
+      focusArtistName,
+      sampleComments,
+    });
+
+    return serialize({
+      messages: result.messages,
+      source: result.source,
+      topic,
+      focusArtistName,
+      sampleCommentsCount: sampleComments.length,
+      pollTitle: poll.title,
+      artistNames: focusArtistName ? [focusArtistName] : artistNames.slice(0, 12),
+    });
+  }
+
   async create(params: {
     pollId: string;
     totalComments: number;
     botsCount: number;
     durationMinutes: number;
     messages?: unknown;
+    topic?: string;
+    artistId?: string;
+    artistName?: string;
     createdBy?: string | null;
   }) {
     const totalComments = Math.trunc(Number(params.totalComments || 0));
@@ -60,16 +114,34 @@ export class CommentBotCampaignService {
     const custom = sanitizeCommentBotMessages(params.messages);
     let messages = custom;
 
+    const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
+    const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
+    const contestants = await this.prisma.contestant.findMany({
+      where: { pollId: poll.id },
+      select: { artist: { select: { name: true } } },
+      take: 60,
+    });
+    const artistNames = contestants
+      .map((row) => row.artist?.name || '')
+      .filter((name): name is string => Boolean(name));
+    const topic =
+      String(params.topic || '').trim() ||
+      (focusArtistName ? `Apoyo, hype y votos por ${focusArtistName}` : '');
+
     if (!messages.length) {
-      const contestants = await this.prisma.contestant.findMany({
-        where: { pollId: poll.id },
-        select: { artist: { select: { name: true } } },
-        take: 60,
-      });
-      const artistNames = contestants
-        .map((row) => row.artist?.name || '')
-        .filter((name): name is string => Boolean(name));
-      messages = buildCommentBotMessages(Math.min(totalComments, 60), artistNames);
+      if (topic || focusArtistName) {
+        const generated = await generateCommentBotMessagesWithAi({
+          topic,
+          count: Math.min(totalComments, 60),
+          pollTitle: poll.title,
+          artistNames: focusArtistName ? [focusArtistName] : artistNames,
+          focusArtistName,
+          sampleComments,
+        });
+        messages = generated.messages;
+      } else {
+        messages = buildCommentBotMessages(Math.min(totalComments, 60), artistNames);
+      }
     }
 
     const durationSeconds = durationMinutes * 60;
@@ -216,6 +288,58 @@ export class CommentBotCampaignService {
         : campaign;
 
     return serialize({ ...this.shape(updated), removed: pending.length });
+  }
+
+  private async resolveFocusArtistName(
+    pollId: bigint,
+    params: { artistId?: string; artistName?: string },
+  ) {
+    const directName = String(params.artistName || '').trim();
+    if (directName) {
+      return directName;
+    }
+
+    const artistId = String(params.artistId || '').trim();
+    if (!artistId) {
+      return '';
+    }
+
+    const contestant = await this.prisma.contestant.findFirst({
+      where: {
+        pollId,
+        OR: [{ artistId: toBigInt(artistId) }, { id: toBigInt(artistId) }],
+      },
+      include: { artist: { select: { name: true } } },
+    });
+
+    return contestant?.artist?.name || '';
+  }
+
+  private async loadReferenceComments(pollId: bigint, focusArtistName: string) {
+    const rows = await this.prisma.comment.findMany({
+      where: {
+        pollId,
+        deletedAt: null,
+        botCampaignId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 180,
+      select: { text: true },
+    });
+
+    const cleaned = rows
+      .map((row) => String(row.text || '').trim())
+      .filter((text) => text.length >= 3);
+
+    if (!focusArtistName) {
+      return [...new Set(cleaned)].slice(0, 20);
+    }
+
+    const focusLower = focusArtistName.toLowerCase();
+    const aboutArtist = cleaned.filter((text) => text.toLowerCase().includes(focusLower));
+    const general = cleaned.filter((text) => !text.toLowerCase().includes(focusLower));
+
+    return [...new Set([...aboutArtist, ...general])].slice(0, 20);
   }
 
   private async publish(pollId: bigint, payload: Record<string, unknown>) {
