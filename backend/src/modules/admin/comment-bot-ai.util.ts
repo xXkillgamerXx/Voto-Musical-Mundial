@@ -52,12 +52,14 @@ export async function generateCommentBotMessagesWithAi(params: {
   pollTitle?: string;
   artistNames?: string[];
   focusArtistName?: string;
+  rivalArtistName?: string;
   sampleComments?: string[];
 }): Promise<{ messages: string[]; source: 'ai' | 'template' }> {
   const target = Math.max(5, Math.min(80, Math.floor(Number(params.count) || 20)));
   const topic = String(params.topic || '').trim();
   const pollTitle = String(params.pollTitle || '').trim();
   const focusArtistName = String(params.focusArtistName || '').trim();
+  const rivalArtistName = String(params.rivalArtistName || '').trim();
   const artists = (params.artistNames || [])
     .map((name) => String(name || '').trim())
     .filter(Boolean)
@@ -98,9 +100,17 @@ export async function generateCommentBotMessagesWithAi(params: {
   if (focusArtistName) {
     userLines.push(
       `Artista objetivo (OBLIGATORIO): ${focusArtistName}`,
-      'TODOS los comentarios deben hablar de ese artista: apoyo, votos, talento, emoción, urgencia por votar.',
-      'No menciones a otros artistas ni cambies de tema.',
+      'TODOS los comentarios deben apoyar a ese artista: votos, talento, emoción, urgencia por votar.',
     );
+    if (rivalArtistName) {
+      userLines.push(
+        `Contexto de duelo: compite contra ${rivalArtistName}.`,
+        `Los fans apoyan a ${focusArtistName} para ganarle a ${rivalArtistName}. Puedes mencionar el duelo o la remonta, pero siempre desde el lado de ${focusArtistName}.`,
+        `No escribas como fan de ${rivalArtistName}.`,
+      );
+    } else {
+      userLines.push('No menciones a otros artistas ni cambies de tema.');
+    }
   }
 
   if (topic) {

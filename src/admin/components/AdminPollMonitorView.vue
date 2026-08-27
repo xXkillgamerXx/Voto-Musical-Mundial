@@ -1092,8 +1092,14 @@ const openBotCampaignModal = (contestant) => {
   isBotCampaignModalOpen.value = true
 }
 
-const openCommentBotForArtist = (contestant) => {
-  commentBotPanelRef.value?.openForArtist?.(contestant)
+const openCommentBotForArtist = (contestant, match = null) => {
+  const rivals = (match?.contestants || [])
+    .filter((row) => String(row.id) !== String(contestant.id))
+    .map((row) => row.artist?.name)
+    .filter(Boolean)
+  commentBotPanelRef.value?.openForArtist?.(contestant, {
+    rivalArtistName: rivals.join(', '),
+  })
 }
 
 const closeBotCampaignModal = () => {
@@ -1910,12 +1916,12 @@ onUnmounted(() => {
                           @click="openBotCampaignModal(contestant)"
                         >
                           <i class="fa-solid fa-robot" aria-hidden="true"></i>
-                          {{ $t('admin.monitor.botCampaignTitle') }}
+                          Bot votos
                         </button>
                         <button
                           type="button"
                           class="col-span-2 inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-2 text-[10px] font-black text-cyan-100 transition hover:bg-cyan-400/20"
-                          @click="openCommentBotForArtist(contestant)"
+                          @click="openCommentBotForArtist(contestant, match)"
                         >
                           <i class="fa-solid fa-comments" aria-hidden="true"></i>
                           Bot comentarios
@@ -2006,7 +2012,7 @@ onUnmounted(() => {
                 @click="openBotCampaignModal(contestant)"
               >
                 <i class="fa-solid fa-robot" aria-hidden="true"></i>
-                {{ $t('admin.monitor.botCampaignTitle') }}
+                Bot votos
               </button>
               <button
                 type="button"
@@ -2203,7 +2209,11 @@ onUnmounted(() => {
     </div>
     </section>
 
-    <AdminCommentBotPanel ref="commentBotPanelRef" :poll-id="props.pollId" />
+    <AdminCommentBotPanel
+      ref="commentBotPanelRef"
+      :poll-id="props.pollId"
+      :contestants="activeRoundRanking"
+    />
 
     <Teleport to="body">
       <div
@@ -2443,13 +2453,14 @@ onUnmounted(() => {
           @click.stop
         >
           <p class="text-xs font-black uppercase tracking-[0.28em] text-violet-300">
-            {{ $t('admin.monitor.botCampaignTitle') }}
+            Bot de votos
           </p>
           <h2 class="mt-3 text-3xl font-black">
             {{ botCampaignContestant.artist?.name || $t('admin.common.artist') }}
           </h2>
           <p class="mt-2 text-sm leading-6 text-slate-300">
-            {{ $t('admin.monitor.botCampaignDescription') }}
+            Suma votos automáticos a este artista. Para comentarios en el feed usa
+            <strong class="text-cyan-200">Bot comentarios</strong>.
           </p>
 
           <p

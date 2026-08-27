@@ -19,6 +19,7 @@ export class CommentBotCampaignController {
       count: Number(body.count ?? body.totalComments ?? 25),
       artistId: body.artistId ? String(body.artistId) : undefined,
       artistName: body.artistName ? String(body.artistName) : undefined,
+      rivalArtistName: body.rivalArtistName ? String(body.rivalArtistName) : undefined,
     });
   }
 
@@ -33,6 +34,7 @@ export class CommentBotCampaignController {
       topic: body.topic ? String(body.topic) : undefined,
       artistId: body.artistId ? String(body.artistId) : undefined,
       artistName: body.artistName ? String(body.artistName) : undefined,
+      rivalArtistName: body.rivalArtistName ? String(body.rivalArtistName) : undefined,
       createdBy: body.createdBy ? String(body.createdBy) : null,
     });
   }

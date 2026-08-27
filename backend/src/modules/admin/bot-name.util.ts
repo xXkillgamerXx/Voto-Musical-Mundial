@@ -1,60 +1,136 @@
 const FIRST = [
-  'Army',
-  'Blink',
-  'Stay',
-  'Once',
-  'Midzy',
-  'Atiny',
-  'Carat',
-  'Engene',
-  'Moa',
   'Sofi',
+  'Mateo',
+  'Vale',
+  'Camila',
+  'Diego',
+  'Lucia',
+  'Juan',
+  'Ana',
+  'Carlos',
+  'Maria',
+  'Pedro',
+  'Laura',
+  'Andres',
+  'Paula',
+  'Nicolas',
+  'Emma',
+  'Sebas',
+  'Mari',
   'Dani',
   'Alex',
-  'Val',
-  'Nico',
-  'Luna',
-  'Kai',
-  'Mina',
-  'Sora',
-  'Yuri',
-  'Hana',
-  'Leo',
-  'Mari',
-  'Fer',
   'Gaby',
-  'Cam',
+  'Fer',
   'Isa',
+  'Leo',
   'Noa',
   'Ren',
-  'Vale',
   'Tomi',
+  'Kari',
+  'Lu',
+  'Max',
+  'Eli',
+  'Rafa',
+  'Nico',
+  'Sara',
+  'Bruno',
+  'Elena',
+  'Joaco',
+  'Belen',
+  'Thiago',
+  'Mia',
+  'Luis',
+  'Pablo',
+  'Julia',
+  'Kevin',
+  'Rosa',
+  'Hugo',
+  'Clara',
+  'Ivan',
+  'Moni',
+  'Edu',
 ];
 
-const SECOND = [
-  'Fan',
-  'Lover',
-  'Wave',
-  'Heart',
-  'Dream',
-  'Light',
-  'Night',
-  'Sky',
-  'Glow',
-  'Beat',
-  'Vibe',
-  'Soul',
-  'Spark',
-  'Bloom',
-  'Star',
-  'Moon',
-  'Fire',
-  'Rain',
+const NICK = [
+  'sofi',
+  'mate',
+  'vale',
+  'cami',
+  'diego',
+  'lucho',
+  'juancho',
+  'anita',
+  'charly',
+  'mary',
+  'pepe',
+  'lau',
+  'pipe',
+  'pau',
+  'nico',
+  'emma',
+  'seba',
+  'dani',
+  'gaby',
+  'fer',
+  'isa',
+  'leo',
+  'noa',
+  'tomi',
+  'maxi',
+  'eli',
+  'rafa',
+  'sara',
+  'bruno',
+  'belu',
+  'thi',
+  'mia',
+  'luis',
+  'juli',
+  'kevin',
+  'rosa',
+  'hugo',
+  'clau',
+  'ivan',
+  'moni',
 ];
 
-const SUFFIX = ['07', '13', '24', '99', 'x', 'xo', 'kr', 'latam', 'ok', 'vip', ''];
+const TAGS = ['mx', 've', 'co', 'ar', 'cl', 'pe', 'rd', 'ok', 'x', 'r', 'm', 'vega', 'rios', 'sol'];
 
-const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
+const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)];
+
+const capitalizeDisplay = (value: string) => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return 'Usuario';
+  }
+  if (/^[a-z]/.test(trimmed)) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  }
+  return trimmed;
+};
+
+const buildNaturalName = () => {
+  const style = Math.random();
+  const nick = pick(NICK);
+  const first = pick(FIRST);
+
+  if (style < 0.22) {
+    return capitalizeDisplay(`${nick}${Math.floor(Math.random() * 90) + 10}`);
+  }
+  if (style < 0.42) {
+    return capitalizeDisplay(`${nick}_${pick(TAGS)}`);
+  }
+  if (style < 0.58) {
+    return capitalizeDisplay(`${nick}.${Math.floor(Math.random() * 900) + 100}`);
+  }
+  if (style < 0.72) {
+    return capitalizeDisplay(`${first.toLowerCase()}${pick(['_', '.'])}${Math.floor(Math.random() * 90) + 10}`);
+  }
+  if (style < 0.86) {
+    return capitalizeDisplay(`${nick}${pick(['aa', 'ita', 'ito', 'ux', 'ee', ''])}`);
+  }
+  return capitalizeDisplay(`${first.charAt(0).toLowerCase()}${pick(NICK).slice(0, 4)}${Math.floor(Math.random() * 900) + 10}`);
+};
 
 export const generateBotNames = (count: number): string[] => {
   const target = Math.max(1, Math.min(500, Math.floor(count)));
@@ -63,23 +139,14 @@ export const generateBotNames = (count: number): string[] => {
 
   while (names.size < target && guard < target * 40) {
     guard += 1;
-    const style = Math.random();
-    let name: string;
-    if (style < 0.35) {
-      const suffix = pick(SUFFIX);
-      name = `${pick(FIRST)}${pick(SECOND)}${suffix}`;
-    } else if (style < 0.6) {
-      name = `${pick(FIRST)}_${pick(SECOND)}`;
-    } else if (style < 0.8) {
-      name = `${pick(FIRST)}${Math.floor(Math.random() * 90) + 10}`;
-    } else {
-      name = `${pick(SECOND)}${pick(FIRST)}${Math.floor(Math.random() * 90) + 10}`;
+    const name = buildNaturalName().slice(0, 24);
+    if (name.length >= 3) {
+      names.add(name);
     }
-    names.add(name.slice(0, 24));
   }
 
   while (names.size < target) {
-    names.add(`${pick(FIRST)}${Math.floor(Math.random() * 9000) + 1000}`);
+    names.add(capitalizeDisplay(`${pick(NICK)}${Math.floor(Math.random() * 9000) + 1000}`).slice(0, 24));
   }
 
   return [...names];

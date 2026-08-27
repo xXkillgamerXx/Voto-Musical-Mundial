@@ -27,6 +27,7 @@ export class CommentBotCampaignService {
     count?: number;
     artistId?: string;
     artistName?: string;
+    rivalArtistName?: string;
   }) {
     const poll = await this.prisma.poll.findFirst({
       where: pollLookupWhere(params.pollId),
@@ -38,6 +39,7 @@ export class CommentBotCampaignService {
     }
 
     const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
+    const rivalArtistName = String(params.rivalArtistName || '').trim();
     const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
     const contestants = await this.prisma.contestant.findMany({
       where: { pollId: poll.id },
@@ -49,7 +51,11 @@ export class CommentBotCampaignService {
       .filter((name): name is string => Boolean(name));
     const topic =
       String(params.topic || '').trim() ||
-      (focusArtistName ? `Apoyo, hype y votos por ${focusArtistName}` : '');
+      (focusArtistName && rivalArtistName
+        ? `Fans apoyando a ${focusArtistName} en el duelo contra ${rivalArtistName}`
+        : focusArtistName
+          ? `Apoyo, hype y votos por ${focusArtistName}`
+          : '');
 
     const result = await generateCommentBotMessagesWithAi({
       topic,
@@ -57,6 +63,7 @@ export class CommentBotCampaignService {
       pollTitle: poll.title,
       artistNames: focusArtistName ? [focusArtistName] : artistNames,
       focusArtistName,
+      rivalArtistName,
       sampleComments,
     });
 
@@ -80,6 +87,7 @@ export class CommentBotCampaignService {
     topic?: string;
     artistId?: string;
     artistName?: string;
+    rivalArtistName?: string;
     createdBy?: string | null;
   }) {
     const totalComments = Math.trunc(Number(params.totalComments || 0));
@@ -115,6 +123,7 @@ export class CommentBotCampaignService {
     let messages = custom;
 
     const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
+    const rivalArtistName = String(params.rivalArtistName || '').trim();
     const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
     const contestants = await this.prisma.contestant.findMany({
       where: { pollId: poll.id },
@@ -126,7 +135,11 @@ export class CommentBotCampaignService {
       .filter((name): name is string => Boolean(name));
     const topic =
       String(params.topic || '').trim() ||
-      (focusArtistName ? `Apoyo, hype y votos por ${focusArtistName}` : '');
+      (focusArtistName && rivalArtistName
+        ? `Fans apoyando a ${focusArtistName} en el duelo contra ${rivalArtistName}`
+        : focusArtistName
+          ? `Apoyo, hype y votos por ${focusArtistName}`
+          : '');
 
     if (!messages.length) {
       if (topic || focusArtistName) {
@@ -136,6 +149,7 @@ export class CommentBotCampaignService {
           pollTitle: poll.title,
           artistNames: focusArtistName ? [focusArtistName] : artistNames,
           focusArtistName,
+          rivalArtistName,
           sampleComments,
         });
         messages = generated.messages;
