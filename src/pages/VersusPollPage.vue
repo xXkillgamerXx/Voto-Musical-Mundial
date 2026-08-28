@@ -166,9 +166,6 @@ const confirmVote = () => {
                     class="absolute inset-0 size-full object-cover"
                   />
                   <div class="absolute inset-0 bg-linear-to-t from-[#201b35] via-transparent to-black/15"></div>
-                  <div class="absolute left-2 top-2 rounded-full border px-2 py-0.5 text-[8px] font-black uppercase backdrop-blur md:left-4 md:top-4 md:px-3 md:py-1 md:text-[10px]" :class="index === 0 ? 'border-amber-300/50 bg-amber-400/25 text-amber-100' : 'border-slate-200/50 bg-slate-300/20 text-slate-100'">
-                    {{ index === 0 ? $t('polls.detail.optionLabel', { option: 'A' }) : $t('polls.detail.optionLabel', { option: 'B' }) }}
-                  </div>
                 </div>
 
                 <div class="p-2 md:p-4">

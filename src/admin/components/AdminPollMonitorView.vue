@@ -1854,9 +1854,6 @@ onUnmounted(() => {
                       class="absolute inset-0 size-full object-cover"
                     />
                     <div class="absolute inset-0 bg-linear-to-t from-[#080a18] via-[#080a18]/30 to-transparent"></div>
-                    <span class="absolute left-2 top-2 rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white backdrop-blur">
-                      {{ $t('polls.detail.optionLabel', { option: contestantIndex === 0 ? 'A' : 'B' }) }}
-                    </span>
                   </div>
 
                   <div class="p-2">
