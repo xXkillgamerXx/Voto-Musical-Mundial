@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { RedisThrottleGuard } from '../../common/throttle.guard';
 import { Throttle } from '../../common/throttle.decorator';
 import { CurrentUser } from './current-user.decorator';
@@ -18,9 +19,9 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('register')
-  @Throttle({ name: 'auth-register', limit: 10, windowSec: 3600 })
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto);
+  @Throttle({ name: 'auth-register', limit: 3, windowSec: 3600 })
+  register(@Body() dto: RegisterDto, @Req() request: Request) {
+    return this.auth.register(dto, request);
   }
 
   @Post('login')
@@ -49,8 +50,8 @@ export class AuthController {
 
   @Post('google')
   @Throttle({ name: 'auth-google', limit: 20, windowSec: 60 })
-  google(@Body() dto: GoogleLoginDto) {
-    return this.auth.google(dto);
+  google(@Body() dto: GoogleLoginDto, @Req() request: Request) {
+    return this.auth.google(dto, request);
   }
 
   @Post('refresh')

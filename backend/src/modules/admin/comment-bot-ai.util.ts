@@ -1,12 +1,16 @@
 import {
+  AI_BOT_MESSAGE_MAX_LENGTH,
+  AI_BOT_MESSAGE_MIN_LENGTH,
   buildCommentBotMessages,
-  MAX_BOT_MESSAGE_LENGTH,
+  normalizeBotCommentLine,
   sanitizeCommentBotMessages,
 } from './comment-bot-message.util';
 import {
   commentBotAiLanguageLine,
   commentBotAiSystemPrompt,
+  commentBotStyleMixLine,
   CommentBotLanguage,
+  filterCommentsByLanguage,
   resolveCommentBotLanguage,
 } from './comment-bot-language.util';
 
@@ -35,10 +39,10 @@ const parseJsonArray = (raw: string): string[] => {
   try {
     const parsed = JSON.parse(candidate);
     if (Array.isArray(parsed)) {
-      return sanitizeCommentBotMessages(parsed);
+      return sanitizeCommentBotMessages(parsed, { aiMode: true });
     }
     if (parsed && Array.isArray(parsed.messages)) {
-      return sanitizeCommentBotMessages(parsed.messages);
+      return sanitizeCommentBotMessages(parsed.messages, { aiMode: true });
     }
   } catch {
     // Fall through to line-based parsing.
@@ -49,7 +53,33 @@ const parseJsonArray = (raw: string): string[] => {
       .split('\n')
       .map((line) => line.replace(/^[\s\-*\d.)]+/, '').trim())
       .filter(Boolean),
+    { aiMode: true },
   );
+};
+
+const applyArtistTokens = (messages: string[], artistNames: string[]) =>
+  messages.map((line) =>
+    artistNames.reduce((text, artist) => text.replace(/\{artista\}/gi, artist), line),
+  );
+
+const postProcessAiMessages = (
+  messages: string[],
+  language: CommentBotLanguage,
+  focusArtistName: string,
+) => {
+  let processed = messages
+    .map((line) => normalizeBotCommentLine(line))
+    .filter((line) => line.length >= AI_BOT_MESSAGE_MIN_LENGTH && line.length <= AI_BOT_MESSAGE_MAX_LENGTH);
+
+  const { kept } = filterCommentsByLanguage(processed, language);
+  processed = kept;
+
+  if (focusArtistName) {
+    const focusLower = focusArtistName.toLowerCase();
+    processed = processed.filter((line) => line.toLowerCase().includes(focusLower));
+  }
+
+  return [...new Set(processed)];
 };
 
 export async function generateCommentBotMessagesWithAi(params: {
@@ -61,7 +91,12 @@ export async function generateCommentBotMessagesWithAi(params: {
   rivalArtistName?: string;
   sampleComments?: string[];
   language?: string;
-}): Promise<{ messages: string[]; source: 'ai' | 'template'; language: CommentBotLanguage }> {
+}): Promise<{
+  messages: string[];
+  source: 'ai' | 'template';
+  language: CommentBotLanguage;
+  languageRejectedCount?: number;
+}> {
   const target = Math.max(5, Math.min(80, Math.floor(Number(params.count) || 20)));
   const topic = String(params.topic || '').trim();
   const pollTitle = String(params.pollTitle || '').trim();
@@ -72,12 +107,13 @@ export async function generateCommentBotMessagesWithAi(params: {
     .filter(Boolean)
     .slice(0, 20);
   const sampleComments = (params.sampleComments || [])
-    .map((line) => String(line || '').trim())
+    .map((line) => normalizeBotCommentLine(line))
     .filter(Boolean)
     .slice(0, 20);
   const language = resolveCommentBotLanguage(params.language, sampleComments);
 
   const effectiveArtists = focusArtistName ? [focusArtistName] : artists;
+  let languageRejectedCount = 0;
 
   if (!topic && !focusArtistName) {
     return {
@@ -98,37 +134,35 @@ export async function generateCommentBotMessagesWithAi(params: {
 
   const system: AiMessage = {
     role: 'system',
-    content:
-      commentBotAiSystemPrompt(language) +
-      ` Each comment must be between 8 and ${MAX_BOT_MESSAGE_LENGTH} characters.`,
+    content: commentBotAiSystemPrompt(language),
   };
 
   const userLines = [
-    `Genera exactamente ${target} comentarios distintos.`,
+    `Genera exactamente ${target} comentarios DISTINTOS para publicar en una votación musical en vivo.`,
     commentBotAiLanguageLine(language),
+    commentBotStyleMixLine(language),
+    `Cada comentario: ${AI_BOT_MESSAGE_MIN_LENGTH}-${AI_BOT_MESSAGE_MAX_LENGTH} caracteres, UNA sola frase, estilo fan real.`,
   ];
 
   if (focusArtistName) {
     userLines.push(
-      `Artista objetivo (OBLIGATORIO): ${focusArtistName}`,
-      'TODOS los comentarios deben apoyar a ese artista: votos, talento, emoción, urgencia por votar.',
+      `Artista a apoyar (OBLIGATORIO en ~70% de los comentarios): ${focusArtistName}`,
+      'Perspectiva: fan emocionado de ese artista. Pide votos, celebra, sufre si va perdiendo, comparte hype.',
     );
     if (rivalArtistName) {
       userLines.push(
-        `Contexto de duelo: compite contra ${rivalArtistName}.`,
-        `Los fans apoyan a ${focusArtistName} para ganarle a ${rivalArtistName}. Puedes mencionar el duelo o la remonta, pero siempre desde el lado de ${focusArtistName}.`,
-        `No escribas como fan de ${rivalArtistName}.`,
+        `Contexto duelo VS: ${focusArtistName} compite contra ${rivalArtistName}.`,
+        `Puedes mencionar la remonta o el duelo, pero SIEMPRE desde el lado de ${focusArtistName}.`,
+        `Nunca escribas como fan de ${rivalArtistName}.`,
       );
-    } else {
-      userLines.push('No menciones a otros artistas ni cambies de tema.');
     }
   }
 
   if (topic) {
-    userLines.push(`Enfoque adicional: ${topic}`);
+    userLines.push(`Contexto / brief del admin: ${topic}`);
   }
   if (pollTitle) {
-    userLines.push(`Votación: ${pollTitle}`);
+    userLines.push(`Nombre de la votación: ${pollTitle}`);
   }
   if (!focusArtistName && artists.length) {
     userLines.push(`Artistas en la votación: ${artists.join(', ')}`);
@@ -136,22 +170,22 @@ export async function generateCommentBotMessagesWithAi(params: {
 
   if (sampleComments.length) {
     userLines.push(
-      'Comentarios reales que ya dejaron usuarios (imita el estilo, longitud y tono; NO copies literal):',
-      ...sampleComments.map((line, index) => `${index + 1}. ${line}`),
+      'Comentarios REALES que ya dejaron usuarios (copia el tono, longitud y naturalidad; NO copies literal):',
+      ...sampleComments.slice(0, 12).map((line, index) => `${index + 1}. ${line}`),
     );
   }
 
   userLines.push(
     language === 'en'
-      ? 'Vary the style: emotion, direct support, asking for votes, casual reactions, light fan slang.'
+      ? 'Before returning JSON, verify EVERY line is English, short, and sounds like a real fan.'
       : language === 'pt'
-        ? 'Varie o estilo: emocao, apoio direto, pedir votos, reacoes casuais, gírias leves de fã.'
-        : 'Varía el estilo: emoción, apoyo directo, pedir votos, reacciones casuales, slang latino suave.',
+        ? 'Antes de devolver o JSON, verifique se CADA linha está em português, curta e parece fã real.'
+        : 'Antes de devolver el JSON, verifica que CADA línea esté en español, sea corta y suene a fan real.',
     language === 'en'
-      ? 'Example format: ["Let\'s go!!", "Just voted for {artista}"]'
+      ? 'Output example: ["lets go {artista}!!", "just voted again", "this is so close omg"]'
       : language === 'pt'
-        ? 'Exemplo de formato: ["Vamos com tudo!!", "Ja votei no {artista}"]'
-        : 'Ejemplo de formato: ["Vamos con todo!!", "Ya voté por {artista}"]',
+        ? 'Exemplo: ["vamos {artista}!!", "acabei de votar de novo", "ta muito apertado"]'
+        : 'Ejemplo: ["vamos {artista}!!", "acabo de votar otra vez", "esta reñidísimo"]',
   );
 
   const controller = new AbortController();
@@ -166,8 +200,8 @@ export async function generateCommentBotMessagesWithAi(params: {
       },
       body: JSON.stringify({
         model,
-        temperature: 0.85,
-        max_tokens: 2500,
+        temperature: 0.78,
+        max_tokens: 2200,
         messages: [system, { role: 'user', content: userLines.join('\n') }],
       }),
       signal: controller.signal,
@@ -181,17 +215,14 @@ export async function generateCommentBotMessagesWithAi(params: {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const content = payload.choices?.[0]?.message?.content || '';
-    let messages = parseJsonArray(content);
-
+    const rawMessages = parseJsonArray(content);
     const namePool = effectiveArtists.length ? effectiveArtists : artists;
-    messages = messages.map((line) =>
-      namePool.reduce((text, artist) => text.replace(/\{artista\}/gi, artist), line),
-    );
 
-    if (focusArtistName) {
-      const focusLower = focusArtistName.toLowerCase();
-      messages = messages.filter((line) => line.toLowerCase().includes(focusLower));
-    }
+    const beforeLangFilter = applyArtistTokens(rawMessages, namePool);
+    const { kept, rejected } = filterCommentsByLanguage(beforeLangFilter, language);
+    languageRejectedCount = rejected.length;
+
+    let messages = postProcessAiMessages(kept, language, focusArtistName);
 
     if (messages.length < Math.min(5, target)) {
       throw new Error('AI returned too few valid messages');
@@ -204,7 +235,7 @@ export async function generateCommentBotMessagesWithAi(params: {
       messages = messages.slice(0, target);
     }
 
-    return { messages, source: 'ai', language };
+    return { messages, source: 'ai', language, languageRejectedCount };
   } catch {
     return {
       messages: buildCommentBotMessages(target, effectiveArtists, language),

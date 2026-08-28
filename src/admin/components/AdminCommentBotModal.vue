@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import {
   createAdminCommentBotCampaign,
-  suggestAdminCommentBotMessages,
 } from '../../services/api/adminApi'
 
 const props = defineProps({
@@ -22,12 +21,8 @@ const isOpen = ref(false)
 const modalError = ref('')
 const modalFeedback = ref('')
 const isCreating = ref(false)
-const isGenerating = ref(false)
-const messageSource = ref('')
-const referenceCommentsCount = ref(0)
 const selectedContestantId = ref('')
 const rivalArtistName = ref('')
-const resolvedLanguageLabel = ref('')
 
 const LANGUAGE_OPTIONS = [
   { code: 'es', label: 'Español' },
@@ -43,7 +38,6 @@ const form = ref({
   language: 'es',
   topic: '',
   brief: '',
-  messages: '',
 })
 
 const contestantOptions = computed(() =>
@@ -63,16 +57,7 @@ const selectedContestant = computed(() =>
 
 const selectedArtistName = computed(() => selectedContestant.value?.name || '')
 
-const preparedMessages = computed(() =>
-  String(form.value.messages || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean),
-)
-
-const canLaunch = computed(
-  () => Boolean(selectedContestant.value) && preparedMessages.value.length > 0,
-)
+const canLaunch = computed(() => Boolean(selectedContestant.value) && !isCreating.value)
 
 const buildArtistTopic = (artistName, rival = '') => {
   if (rival) {
@@ -93,9 +78,6 @@ const buildPrompt = () => {
 const resetForm = () => {
   modalError.value = ''
   modalFeedback.value = ''
-  messageSource.value = ''
-  referenceCommentsCount.value = 0
-  resolvedLanguageLabel.value = ''
   form.value = {
     totalComments: 40,
     botsCount: 20,
@@ -103,7 +85,6 @@ const resetForm = () => {
     language: 'es',
     topic: '',
     brief: '',
-    messages: '',
   }
 }
 
@@ -115,8 +96,6 @@ const applyContestant = (contestant, options = {}) => {
     rivalArtistName.value,
   )
   form.value.brief = ''
-  form.value.messages = ''
-  messageSource.value = ''
 }
 
 const open = (contestant = null, options = {}) => {
@@ -131,7 +110,7 @@ const open = (contestant = null, options = {}) => {
 }
 
 const close = () => {
-  if (isCreating.value || isGenerating.value) {
+  if (isCreating.value) {
     return
   }
   isOpen.value = false
@@ -149,65 +128,18 @@ watch(selectedContestantId, (nextId) => {
   if (!form.value.topic.trim() || form.value.topic.includes('Fans apoyando a')) {
     form.value.topic = buildArtistTopic(row.name, rivalArtistName.value)
   }
+  modalFeedback.value = ''
 })
 
 watch(
   () => form.value.language,
   (next, prev) => {
-    if (!isOpen.value || next === prev || !messageSource.value) {
+    if (!isOpen.value || next === prev) {
       return
     }
-    form.value.messages = ''
-    messageSource.value = ''
-    resolvedLanguageLabel.value = ''
     modalFeedback.value = ''
   },
 )
-
-const generateMessages = async () => {
-  modalError.value = ''
-  modalFeedback.value = ''
-
-  if (!selectedContestant.value) {
-    modalError.value = 'Selecciona el artista que van a apoyar en los comentarios.'
-    return
-  }
-
-  const topic = buildPrompt()
-  if (!topic) {
-    modalError.value = 'Escribe el contexto del apoyo o instrucciones para la IA.'
-    return
-  }
-
-  isGenerating.value = true
-  try {
-    const result = await suggestAdminCommentBotMessages(props.pollId, {
-      topic: topic || buildArtistTopic(selectedArtistName.value, rivalArtistName.value),
-      count: Math.min(80, Math.max(10, Number(form.value.totalComments || 25))),
-      artistId: selectedContestant.value.artistId || undefined,
-      artistName: selectedArtistName.value,
-      rivalArtistName: rivalArtistName.value || undefined,
-      language: form.value.language || 'es',
-    })
-    const lines = Array.isArray(result?.messages) ? result.messages : []
-    if (!lines.length) {
-      modalError.value = 'No se pudieron generar comentarios. Revisa la API de IA en el servidor.'
-      return
-    }
-    form.value.messages = lines.join('\n')
-    messageSource.value = result?.source === 'ai' ? 'ia' : 'plantilla'
-    referenceCommentsCount.value = Number(result?.sampleCommentsCount || 0)
-    resolvedLanguageLabel.value = result?.languageLabel || ''
-    modalFeedback.value =
-      result?.source === 'ai'
-        ? `Listo: ${lines.length} comentarios en ${result?.languageLabel || 'el idioma elegido'} sobre ${selectedArtistName.value}. Revísalos antes de lanzar.`
-        : `IA no disponible: se usaron ${lines.length} frases automáticas en ${result?.languageLabel || 'el idioma elegido'}.`
-  } catch (error) {
-    modalError.value = error?.message || 'No se pudieron generar los comentarios.'
-  } finally {
-    isGenerating.value = false
-  }
-}
 
 const submit = async () => {
   modalError.value = ''
@@ -218,15 +150,10 @@ const submit = async () => {
     return
   }
 
-  const messages = preparedMessages.value
-  if (!messages.length) {
-    modalError.value =
-      'Primero genera comentarios con IA o escríbelos a mano. Lanzar solo publica lo que ves en la lista.'
-    return
-  }
-
   isCreating.value = true
   try {
+    modalFeedback.value = 'La IA está generando comentarios y arrancando el bot...'
+
     await createAdminCommentBotCampaign(props.pollId, {
       totalComments: Number(form.value.totalComments || 0),
       botsCount: Number(form.value.botsCount || 0),
@@ -236,13 +163,13 @@ const submit = async () => {
       artistName: selectedArtistName.value,
       rivalArtistName: rivalArtistName.value || undefined,
       language: form.value.language || 'es',
-      messages,
     })
 
     isOpen.value = false
     emit('created')
   } catch (error) {
     modalError.value = error?.message || 'No se pudo iniciar la campaña.'
+    modalFeedback.value = ''
   } finally {
     isCreating.value = false
   }
@@ -272,9 +199,9 @@ defineExpose({ open, close })
                 Fans comentando en vivo
               </h2>
               <p class="mt-2 text-sm leading-6 text-slate-300">
-                Primero <strong class="text-white">genera o escribe</strong> los comentarios, revísalos,
-                y después pulsa <strong class="text-cyan-200">Lanzar</strong>. El bot no inventa frases al iniciar.
-                Esto <strong class="text-white">no vota</strong> — solo anima el feed.
+                Elige artista, idioma y cantidad. Al pulsar <strong class="text-cyan-200">Lanzar</strong>,
+                el bot genera los comentarios con IA y los publica solo, poco a poco.
+                Esto <strong class="text-white">no vota</strong>.
               </p>
             </div>
             <button
@@ -346,7 +273,7 @@ defineExpose({ open, close })
               </option>
             </select>
             <span class="mt-2 block text-xs font-bold text-slate-400">
-              La IA y las plantillas de respaldo usarán este idioma. «Auto» imita el idioma de los comentarios reales del poll.
+              La IA escribe frases cortas (8–120 caracteres) como fan real, en el idioma elegido.
             </span>
           </label>
 
@@ -391,72 +318,26 @@ defineExpose({ open, close })
 
           <label class="block">
             <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
-              Contexto del apoyo
+              Contexto para la IA (opcional)
             </span>
             <textarea
               v-model="form.topic"
               rows="2"
-              placeholder="Ej: pedir remonta en el duelo, hype por nuevo single, urgencia porque cierra hoy..."
+              placeholder="Ej: pedir remonta en el duelo, hype por nuevo single..."
               class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-cyan-300/50"
             ></textarea>
           </label>
 
           <label class="block">
             <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
-              Instrucciones extra para la IA (opcional)
+              Instrucciones extra (opcional)
             </span>
             <textarea
               v-model="form.brief"
               rows="2"
-              placeholder="Ej: tono emocionado, pedir votos al grupo, mencionar que van perdiendo..."
+              placeholder="Ej: tono emocionado, pedir votos al grupo..."
               class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-cyan-300/50"
             ></textarea>
-          </label>
-
-          <div class="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-cyan-300/30 bg-cyan-400/10 px-5 text-sm font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="isGenerating || isCreating || !selectedContestant"
-              @click="generateMessages"
-            >
-              <i
-                class="fa-solid"
-                :class="isGenerating ? 'fa-circle-notch fa-spin' : 'fa-wand-magic-sparkles'"
-                aria-hidden="true"
-              ></i>
-              {{ isGenerating ? 'Generando...' : 'Generar comentarios con IA' }}
-            </button>
-            <span
-              v-if="messageSource === 'ia'"
-              class="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-100"
-            >
-              IA lista{{ resolvedLanguageLabel ? ` · ${resolvedLanguageLabel}` : '' }}
-            </span>
-          </div>
-
-          <label class="block">
-            <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">
-              Comentarios (uno por línea) — obligatorio antes de lanzar
-            </span>
-            <textarea
-              v-model="form.messages"
-              rows="7"
-              placeholder="1) Pulsa «Generar comentarios con IA», o escribe las frases aquí. 2) Revísalas. 3) Lanzar."
-              class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-cyan-300/50"
-            ></textarea>
-            <span
-              v-if="preparedMessages.length"
-              class="mt-2 block text-xs font-bold text-emerald-200"
-            >
-              {{ preparedMessages.length }} comentario(s) listos para publicar.
-            </span>
-            <span
-              v-else
-              class="mt-2 block text-xs font-bold text-amber-200"
-            >
-              Aún no hay comentarios. Genera con IA o escríbelos antes de lanzar.
-            </span>
           </label>
 
           <p
@@ -477,7 +358,7 @@ defineExpose({ open, close })
           <button
             type="button"
             class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
-            :disabled="isCreating || isGenerating"
+            :disabled="isCreating"
             @click="close"
           >
             Cancelar
@@ -485,7 +366,7 @@ defineExpose({ open, close })
           <button
             type="button"
             class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-cyan-500 to-emerald-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-cyan-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="isCreating || !canLaunch"
+            :disabled="!canLaunch"
             @click="submit"
           >
             <i
@@ -493,7 +374,7 @@ defineExpose({ open, close })
               :class="isCreating ? 'fa-circle-notch fa-spin' : 'fa-comment-dots'"
               aria-hidden="true"
             ></i>
-            {{ isCreating ? 'Iniciando...' : 'Lanzar comentarios' }}
+            {{ isCreating ? 'Lanzando bot...' : 'Lanzar comentarios' }}
           </button>
         </div>
       </article>

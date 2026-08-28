@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -13,6 +15,9 @@ import { Prisma, User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { OAuth2Client, TokenInfo } from 'google-auth-library';
+import { Request } from 'express';
+import { BLOCKED_IPS_KEY } from '../../common/moderation-keys';
+import { getClientIp, hashIp } from '../../common/request';
 import { MailService } from '../mail/mail.service';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,6 +36,7 @@ const REFERRAL_MILESTONE_BONUSES: Record<number, number> = {
   5: 300,
   10: 700,
 };
+const DEFAULT_SIGNUP_MAX_PER_IP = 3;
 
 const usernameFromEmail = (email: string) =>
   email
@@ -54,11 +60,13 @@ export class AuthService {
     private readonly missionProgress: MissionProgressService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, request?: Request) {
     const normalizedEmail = dto.email.toLowerCase().trim();
     const normalizedUsername = dto.username.toLowerCase().trim();
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const referrer = await this.findReferrer(dto.referralCode);
+    const signupIpHash = this.resolveSignupIpHash(request);
+    let signupSlotReserved = false;
 
     const existing = await this.prisma.user.findFirst({
       where: { OR: [{ email: normalizedEmail }, { username: normalizedUsername }] },
@@ -72,6 +80,11 @@ export class AuthService {
       throw new ConflictException('Ese username ya esta en uso.');
     }
 
+    if (signupIpHash) {
+      await this.reserveSignupSlot(signupIpHash);
+      signupSlotReserved = true;
+    }
+
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
@@ -82,7 +95,10 @@ export class AuthService {
           referralCode: normalizedUsername,
           referredById: referrer?.userId || null,
           points: 25,
-          metadata: (dto.metadata || {}) as any,
+          metadata: {
+            ...(dto.metadata && typeof dto.metadata === 'object' ? dto.metadata : {}),
+            ...(signupIpHash ? { signupIpHash } : {}),
+          } as Prisma.InputJsonValue,
         },
       });
 
@@ -129,6 +145,10 @@ export class AuthService {
 
       return createdUser;
     }).catch((error) => {
+      if (signupSlotReserved && signupIpHash) {
+        void this.releaseSignupSlot(signupIpHash).catch(() => {});
+      }
+
       if (error?.code === 'P2002') {
         throw new ConflictException('Ese correo o username ya esta registrado.');
       }
@@ -244,9 +264,9 @@ export class AuthService {
     return { ok: true as const };
   }
 
-  async google(dto: GoogleLoginDto) {
+  async google(dto: GoogleLoginDto, request?: Request) {
     try {
-      return await this.googleUnsafe(dto);
+      return await this.googleUnsafe(dto, request);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -261,7 +281,7 @@ export class AuthService {
     }
   }
 
-  private async googleUnsafe(dto: GoogleLoginDto) {
+  private async googleUnsafe(dto: GoogleLoginDto, request?: Request) {
     const clientId = String(this.config.get<string>('GOOGLE_CLIENT_ID') || '').trim();
     if (!clientId) {
       throw new BadRequestException('Falta configurar GOOGLE_CLIENT_ID.');
@@ -317,7 +337,17 @@ export class AuthService {
 
     const baseUsername = usernameFromEmail(email);
     const username = await this.availableUsername(baseUsername, payload.sub.slice(-6));
-    const user = await this.prisma.$transaction(async (tx) => {
+    const signupIpHash = this.resolveSignupIpHash(request);
+    let signupSlotReserved = false;
+
+    if (signupIpHash) {
+      await this.reserveSignupSlot(signupIpHash);
+      signupSlotReserved = true;
+    }
+
+    let user: User;
+    try {
+      user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
           email,
@@ -332,7 +362,8 @@ export class AuthService {
             googleEmail: email,
             googlePicture: payload.picture || null,
             authProvider: 'google',
-          } as any,
+            ...(signupIpHash ? { signupIpHash } : {}),
+          } as Prisma.InputJsonValue,
         },
       });
       await tx.referralCode.create({
@@ -376,6 +407,12 @@ export class AuthService {
 
       return createdUser;
     });
+    } catch (error) {
+      if (signupSlotReserved && signupIpHash) {
+        void this.releaseSignupSlot(signupIpHash).catch(() => {});
+      }
+      throw error;
+    }
 
     return this.authResponse(user);
   }
@@ -631,5 +668,83 @@ export class AuthService {
 
   private anonymousSecret() {
     return this.config.get<string>('JWT_ANONYMOUS_SECRET') || 'change-me-anonymous-secret';
+  }
+
+  private signupMaxPerIp() {
+    const configured = Number(this.config.get('SIGNUP_MAX_PER_IP') || DEFAULT_SIGNUP_MAX_PER_IP);
+    return Number.isFinite(configured) && configured > 0
+      ? Math.min(20, Math.floor(configured))
+      : DEFAULT_SIGNUP_MAX_PER_IP;
+  }
+
+  private signupIpCountKey(ipHash: string) {
+    return `auth:signup-count:${ipHash}`;
+  }
+
+  private resolveSignupIpHash(request?: Request) {
+    if (!request) {
+      return null;
+    }
+
+    const clientIp = getClientIp(request);
+    if (!clientIp || clientIp === 'unknown') {
+      return null;
+    }
+
+    return hashIp(clientIp, this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial');
+  }
+
+  private async enforceSignupIpNotBlocked(ipHash: string) {
+    const blocked = await this.redis.client.hexists(BLOCKED_IPS_KEY, ipHash);
+    if (blocked) {
+      throw new ForbiddenException('No se pueden crear cuentas desde esta conexion.');
+    }
+  }
+
+  private async syncSignupIpCount(ipHash: string) {
+    const key = this.signupIpCountKey(ipHash);
+    const exists = await this.redis.client.exists(key);
+    if (exists) {
+      return;
+    }
+
+    const dbCount = await this.prisma.user.count({
+      where: {
+        metadata: {
+          path: ['signupIpHash'],
+          equals: ipHash,
+        },
+      },
+    });
+
+    if (dbCount > 0) {
+      await this.redis.client.set(key, dbCount.toString());
+    }
+  }
+
+  private async reserveSignupSlot(ipHash: string) {
+    await this.enforceSignupIpNotBlocked(ipHash);
+    await this.syncSignupIpCount(ipHash);
+
+    const max = this.signupMaxPerIp();
+    const key = this.signupIpCountKey(ipHash);
+    const next = await this.redis.client.incr(key);
+
+    if (next > max) {
+      await this.redis.client.decr(key);
+      throw new HttpException(
+        `Solo se permiten ${max} cuentas por conexion. Si necesitas ayuda, contacta soporte.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private async releaseSignupSlot(ipHash: string) {
+    const key = this.signupIpCountKey(ipHash);
+    const current = Number(await this.redis.client.get(key) || 0);
+    if (current <= 0) {
+      return;
+    }
+    await this.redis.client.decr(key);
   }
 }

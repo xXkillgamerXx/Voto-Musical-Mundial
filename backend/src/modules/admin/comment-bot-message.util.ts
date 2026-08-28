@@ -176,6 +176,29 @@ const TAIL = ['', '', '', '', ' 🔥', ' ❤️', '!!', ' 👏', ' 💪', ' 🎶
 const pick = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
 export const MAX_BOT_MESSAGE_LENGTH = 500;
+export const AI_BOT_MESSAGE_MIN_LENGTH = 8;
+export const AI_BOT_MESSAGE_MAX_LENGTH = 120;
+
+export function normalizeBotCommentLine(text: string) {
+  return String(text || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+export function isNaturalBotCommentLength(text: string, maxLength = AI_BOT_MESSAGE_MAX_LENGTH) {
+  const normalized = normalizeBotCommentLine(text);
+  if (normalized.length < AI_BOT_MESSAGE_MIN_LENGTH || normalized.length > maxLength) {
+    return false;
+  }
+
+  const sentenceBreaks = (normalized.match(/[.!?…]+/g) || []).length;
+  if (sentenceBreaks > 2) {
+    return false;
+  }
+
+  return true;
+}
 
 /**
  * Los mensajes se resuelven al crear la campaña para que el admin pueda
@@ -209,7 +232,13 @@ export function buildCommentBotMessages(
   return [...messages];
 }
 
-export function sanitizeCommentBotMessages(input: unknown): string[] {
+export function sanitizeCommentBotMessages(
+  input: unknown,
+  options: { aiMode?: boolean } = {},
+): string[] {
+  const maxLen = options.aiMode ? AI_BOT_MESSAGE_MAX_LENGTH : MAX_BOT_MESSAGE_LENGTH;
+  const minLen = options.aiMode ? AI_BOT_MESSAGE_MIN_LENGTH : 3;
+
   const raw = Array.isArray(input)
     ? input
     : String(input || '')
@@ -217,8 +246,16 @@ export function sanitizeCommentBotMessages(input: unknown): string[] {
         .map((line) => line.trim());
 
   const cleaned = raw
-    .map((line) => String(line || '').trim())
-    .filter((line) => line.length >= 3 && line.length <= MAX_BOT_MESSAGE_LENGTH);
+    .map((line) => normalizeBotCommentLine(line))
+    .filter((line) => {
+      if (line.length < minLen || line.length > maxLen) {
+        return false;
+      }
+      if (options.aiMode && !isNaturalBotCommentLength(line, maxLen)) {
+        return false;
+      }
+      return true;
+    });
 
   return [...new Set(cleaned)].slice(0, 200);
 }

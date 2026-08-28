@@ -75,6 +75,7 @@ export class CommentBotCampaignService {
       source: result.source,
       language: result.language,
       languageLabel: commentBotLanguageLabel(result.language),
+      languageRejectedCount: Number(result.languageRejectedCount || 0),
       topic,
       focusArtistName,
       sampleCommentsCount: sampleComments.length,
@@ -126,11 +127,44 @@ export class CommentBotCampaignService {
     }
 
     const custom = sanitizeCommentBotMessages(params.messages);
-    const messages = custom;
+    let messages = custom;
+
+    if (!messages.length) {
+      const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
+      const rivalArtistName = String(params.rivalArtistName || '').trim();
+      const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
+      const contestants = await this.prisma.contestant.findMany({
+        where: { pollId: poll.id },
+        select: { artist: { select: { name: true } } },
+        take: 60,
+      });
+      const artistNames = contestants
+        .map((row) => row.artist?.name || '')
+        .filter((name): name is string => Boolean(name));
+      const topic =
+        String(params.topic || '').trim() ||
+        (focusArtistName && rivalArtistName
+          ? `Fans apoyando a ${focusArtistName} en el duelo contra ${rivalArtistName}`
+          : focusArtistName
+            ? `Apoyo, hype y votos por ${focusArtistName}`
+            : 'Comentarios de fans en la votación');
+
+      const generated = await generateCommentBotMessagesWithAi({
+        topic,
+        count: Math.min(80, Math.max(10, totalComments)),
+        pollTitle: poll.title,
+        artistNames: focusArtistName ? [focusArtistName] : artistNames,
+        focusArtistName,
+        rivalArtistName,
+        sampleComments,
+        language: params.language,
+      });
+      messages = generated.messages;
+    }
 
     if (!messages.length) {
       throw new BadRequestException(
-        'Debes generar o escribir los comentarios antes de lanzar la campaña. El bot no crea frases al iniciar.',
+        'No se pudieron generar comentarios con IA. Revisa la configuración del servidor e inténtalo de nuevo.',
       );
     }
 

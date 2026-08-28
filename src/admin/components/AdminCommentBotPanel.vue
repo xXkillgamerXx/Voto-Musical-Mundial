@@ -201,8 +201,8 @@ defineExpose({
         <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Bot de comentarios</p>
         <h3 class="mt-1 text-xl font-black text-white">Fans comentando apoyo al artista</h3>
         <p class="mt-2 max-w-2xl text-sm font-bold leading-6 text-slate-400">
-          Solo publica comentarios en el feed (no suma votos). Elige un artista, genera frases con IA y
-          lánzalos de a poco con nombres de usuario naturales.
+          Solo publica comentarios en el feed (no suma votos). Elige artista e idioma: al lanzar,
+          la IA crea las frases y el bot las publica automáticamente.
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
