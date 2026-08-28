@@ -139,6 +139,10 @@ export const sendAdminPush = (body) =>
 export const sendAdminArtistPush = (artistId, body) =>
   adminRequest(`/push/artists/${encodeURIComponent(artistId)}/followers`, { method: 'POST', body })
 
+export const getAdminMailStatus = () => adminRequest('/mail/status')
+export const sendAdminTestEmail = (body) =>
+  adminRequest('/mail/send-test', { method: 'POST', body })
+
 export const getAdminNotificationCampaigns = () => adminRequest('/notification-campaigns')
 export const createAdminNotificationCampaign = (body) =>
   adminRequest('/notification-campaigns', { method: 'POST', body })
