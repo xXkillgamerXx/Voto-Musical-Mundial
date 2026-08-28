@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AdminCommentBotPanel from './AdminCommentBotPanel.vue'
+import AdminBotCampaignsHistory from './AdminBotCampaignsHistory.vue'
 import {
   adjustAdminContestantVotes,
   cancelAdminBotCampaign,
@@ -71,6 +72,7 @@ const monitorBootError = ref('')
 let botCampaignsTimer = null
 let botCampaignDetailTimer = null
 const commentBotPanelRef = ref(null)
+const campaignHistoryRef = ref(null)
 
 const hasRunningBotCampaigns = () =>
   (botCampaigns.value || []).some(
@@ -2039,83 +2041,18 @@ onUnmounted(() => {
         </p>
 
         <div
-          v-if="botCampaigns.length"
-          class="mt-6 space-y-3 rounded-3xl border border-cyan-300/20 bg-cyan-400/5 p-4"
+          v-if="botCampaigns.length && runningBotCampaigns.length === 0"
+          class="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-3 text-sm font-bold text-slate-500"
         >
-          <div class="flex items-center justify-between gap-3">
-            <p class="text-xs font-black uppercase tracking-[0.24em] text-cyan-200">
-              {{ $t('admin.monitor.botCampaignsHistory') }}
-            </p>
-            <button
-              type="button"
-              class="text-[11px] font-black uppercase tracking-wide text-cyan-100/80 hover:text-white"
-              @click="loadBotCampaigns"
-            >
-              {{ $t('admin.monitor.botCampaignRefresh') }}
-            </button>
-          </div>
-          <div
-            v-for="campaign in botCampaigns"
-            :key="campaign.id"
-            class="rounded-2xl border border-white/10 bg-slate-950/50 p-4"
+          No hay campañas de votos en curso.
+          <button
+            type="button"
+            class="ml-2 text-fuchsia-200 underline underline-offset-2"
+            @click="campaignHistoryRef?.open?.('votes')"
           >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="truncate text-sm font-black text-white">
-                  {{ campaign.artistName || $t('admin.common.artist') }}
-                </p>
-                <p class="mt-1 text-xs font-bold text-slate-400">
-                  {{ botCampaignStatusLabel(campaign.status) }}
-                  ·
-                  {{
-                    $t('admin.monitor.botCampaignProgress', {
-                      applied: campaign.appliedAmount,
-                      total: campaign.totalAmount,
-                    })
-                  }}
-                  · {{ campaign.percent || 0 }}%
-                </p>
-              </div>
-              <div class="flex shrink-0 flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  class="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-cyan-100"
-                  @click="openBotCampaignDetail(campaign)"
-                >
-                  {{ $t('admin.monitor.botCampaignView') }}
-                </button>
-                <button
-                  v-if="campaign.status === 'running' || campaign.status === 'paused'"
-                  type="button"
-                  class="rounded-xl border border-red-300/40 bg-red-500/20 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-red-100 disabled:opacity-50"
-                  :disabled="cancellingBotCampaignId === campaign.id"
-                  @click="cancelBotCampaign(campaign)"
-                >
-                  {{ $t('admin.monitor.botCampaignStop') }}
-                </button>
-              </div>
-            </div>
-            <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-              <div
-                class="h-full rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-400 transition-[width]"
-                :style="{ width: `${campaign.percent || 0}%` }"
-              ></div>
-            </div>
-            <p
-              v-if="campaign.status === 'running'"
-              class="mt-2 text-[11px] font-bold text-cyan-100/80"
-            >
-              {{ formatBotCampaignEta(campaign) }}
-            </p>
-          </div>
+            Ver historial
+          </button>
         </div>
-
-        <p
-          v-else-if="activeRound"
-          class="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-sm font-bold text-slate-500"
-        >
-          {{ $t('admin.monitor.botCampaignsEmpty') }}
-        </p>
       </article>
 
       <div class="grid gap-6">
@@ -2206,11 +2143,27 @@ onUnmounted(() => {
     </div>
     </section>
 
+    <div class="space-y-4">
     <AdminCommentBotPanel
       ref="commentBotPanelRef"
       :poll-id="props.pollId"
       :contestants="activeRoundRanking"
+      @campaign-created="campaignHistoryRef?.refresh?.()"
+      @open-history="campaignHistoryRef?.open?.('comments')"
     />
+
+    <AdminBotCampaignsHistory
+      ref="campaignHistoryRef"
+      :poll-id="props.pollId"
+      :vote-campaigns="botCampaigns"
+      :cancelling-vote-id="cancellingBotCampaignId"
+      :vote-status-label="botCampaignStatusLabel"
+      :format-vote-eta="formatBotCampaignEta"
+      @refresh-votes="loadBotCampaigns"
+      @view-vote="openBotCampaignDetail"
+      @cancel-vote="cancelBotCampaign"
+    />
+    </div>
 
     <Teleport to="body">
       <div

@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging, MulticastMessage } from 'firebase-admin/messaging';
+import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 type SendPushPayload = {
   title?: string;
@@ -16,13 +18,35 @@ type SendPushPayload = {
   sendToAll?: boolean;
 };
 
+type PushJobState = {
+  id: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  title: string;
+  body: string;
+  url: string;
+  sendToAll: boolean;
+  total: number;
+  processed: number;
+  sent: number;
+  failed: number;
+  percent: number;
+  errors: Array<{ token: string; code: string; message: string }>;
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+};
+
 @Injectable()
 export class AdminPushService {
   private readonly logger = new Logger(AdminPushService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   private firebaseReady = false;
+  private static readonly PUSH_JOB_TTL_SECONDS = 60 * 60;
 
   private initFirebaseAdmin() {
     if (this.firebaseReady || getApps().length) {
@@ -185,11 +209,13 @@ export class AdminPushService {
   async dispatch(
     tokens: string[],
     payload: { title: string; body: string; url: string; type: string; extraData?: Record<string, string> },
+    onBatch?: (progress: { processed: number; sent: number; failed: number; total: number }) => void | Promise<void>,
   ) {
     this.initFirebaseAdmin();
 
     let sent = 0;
     let failed = 0;
+    let processed = 0;
     const errors: Array<{ token: string; code: string; message: string }> = [];
     const deadTokens: string[] = [];
 
@@ -201,6 +227,7 @@ export class AdminPushService {
       this.logPushFailures(batch, response);
       sent += response.successCount;
       failed += response.failureCount;
+      processed += batch.length;
 
       response.responses.forEach((item, index) => {
         if (item.success) {
@@ -222,11 +249,36 @@ export class AdminPushService {
           });
         }
       });
+
+      if (onBatch) {
+        await onBatch({ processed, sent, failed, total: tokens.length });
+      }
     }
 
     await this.pruneDeadTokens(deadTokens);
 
     return { sent, failed, total: tokens.length, errors };
+  }
+
+  private pushJobKey(jobId: string) {
+    return `admin-push-job:${jobId}`;
+  }
+
+  private async savePushJob(job: PushJobState) {
+    await this.redis.client.set(
+      this.pushJobKey(job.id),
+      JSON.stringify(job),
+      'EX',
+      AdminPushService.PUSH_JOB_TTL_SECONDS,
+    );
+  }
+
+  async getJob(jobId: string) {
+    const raw = await this.redis.client.get(this.pushJobKey(String(jobId || '').trim()));
+    if (!raw) {
+      throw new NotFoundException('No se encontro ese envio de push.');
+    }
+    return serialize(JSON.parse(raw) as PushJobState);
   }
 
   async createInAppNotifications(userIds: string[], type: string, payload: Record<string, unknown>) {
@@ -386,41 +438,113 @@ export class AdminPushService {
       throw new BadRequestException('No hay tokens para enviar.');
     }
 
-    try {
-      const result = await this.dispatch(tokens, {
-        title,
-        body,
-        url,
-        type: 'admin_push',
-        extraData: {
-          ...(titleEn ? { titleEn } : {}),
-          ...(bodyEn ? { bodyEn } : {}),
-        },
-      });
+    const jobId = randomUUID();
+    const job: PushJobState = {
+      id: jobId,
+      status: 'queued',
+      title,
+      body,
+      url,
+      sendToAll: Boolean(payload.sendToAll),
+      total: tokens.length,
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      percent: 0,
+      errors: [],
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      error: null,
+    };
+    await this.savePushJob(job);
 
-      this.logger.log(`Push admin: ${result.sent}/${result.total} enviados`);
+    void this.runPushJob(jobId, tokens, tokenRows, {
+      title,
+      body,
+      titleEn,
+      bodyEn,
+      url,
+    }).catch((error) => {
+      this.logger.error(`Push job ${jobId} fallo: ${(error as Error).message}`);
+    });
+
+    return serialize({
+      ok: true,
+      jobId,
+      total: tokens.length,
+      status: 'queued',
+    });
+  }
+
+  private async runPushJob(
+    jobId: string,
+    tokens: string[],
+    tokenRows: Array<{ token: string; userId: bigint | null }>,
+    payload: { title: string; body: string; titleEn: string; bodyEn: string; url: string },
+  ) {
+    const raw = await this.redis.client.get(this.pushJobKey(jobId));
+    if (!raw) {
+      return;
+    }
+
+    const job = JSON.parse(raw) as PushJobState;
+    job.status = 'running';
+    await this.savePushJob(job);
+
+    try {
+      const result = await this.dispatch(
+        tokens,
+        {
+          title: payload.title,
+          body: payload.body,
+          url: payload.url,
+          type: 'admin_push',
+          extraData: {
+            ...(payload.titleEn ? { titleEn: payload.titleEn } : {}),
+            ...(payload.bodyEn ? { bodyEn: payload.bodyEn } : {}),
+          },
+        },
+        async (progress) => {
+          job.processed = progress.processed;
+          job.sent = progress.sent;
+          job.failed = progress.failed;
+          job.total = progress.total;
+          job.percent =
+            progress.total > 0 ? Math.min(100, Math.round((progress.processed / progress.total) * 100)) : 100;
+          await this.savePushJob(job);
+        },
+      );
+
+      this.logger.log(`Push admin job ${jobId}: ${result.sent}/${result.total} enviados`);
 
       const notifiedUserIds = tokenRows
         .map((row) => row.userId?.toString())
         .filter((value): value is string => Boolean(value));
       await this.createInAppNotifications(notifiedUserIds, 'admin_push', {
-        title,
-        titleEn,
-        message: body,
-        messageEn: bodyEn,
-        body,
-        bodyEn,
-        url,
+        title: payload.title,
+        titleEn: payload.titleEn,
+        message: payload.body,
+        messageEn: payload.bodyEn,
+        body: payload.body,
+        bodyEn: payload.bodyEn,
+        url: payload.url,
       });
 
-      return {
-        ok: result.failed === 0,
-        ...result,
-      };
+      job.status = 'done';
+      job.processed = result.total;
+      job.sent = result.sent;
+      job.failed = result.failed;
+      job.total = result.total;
+      job.percent = 100;
+      job.errors = result.errors;
+      job.finishedAt = new Date().toISOString();
+      await this.savePushJob(job);
     } catch (error) {
-      throw new InternalServerErrorException(
-        `No se pudo enviar push. Revisa FIREBASE_SERVICE_ACCOUNT_PATH o FIREBASE_SERVICE_ACCOUNT_JSON. ${(error as Error).message}`,
-      );
+      job.status = 'failed';
+      job.error = `No se pudo enviar push. Revisa FIREBASE_SERVICE_ACCOUNT_PATH o FIREBASE_SERVICE_ACCOUNT_JSON. ${(error as Error).message}`;
+      job.finishedAt = new Date().toISOString();
+      await this.savePushJob(job);
+      throw error;
     }
   }
 

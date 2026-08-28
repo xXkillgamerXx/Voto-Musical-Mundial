@@ -36,6 +36,15 @@ const TEMPLATES: Record<
       'Ya somos varios votando',
       'Estamos subiendo, sigan asi',
       'La emocion es total',
+      'Acabo de votar otra vez y le mande el link a todo mi grupo de whatsapp',
+      'No entiendo como van tan apretados los numeros, hay que seguir votando',
+      'Llevo rato mirando el resultado y cada vez se pone mas reñido',
+      'Ya vote por mi artista favorito, ojala mucha gente haga lo mismo hoy',
+      'Estoy compartiendo la votacion en mis historias para que entren mas votos',
+      'Se nota que la gente esta votando fuerte, falta remontar un poquito nomas',
+      'Vengo cada rato a dejar mis votos porque no quiero que se quede atras',
+      'Si tienen un rato libre pasen a votar, esto se define al final',
+      'Me emociona ver tanta gente apoyando, hay que mantener la energia',
     ],
     withArtist: [
       'Vamos {artista}!!',
@@ -56,6 +65,10 @@ const TEMPLATES: Record<
       'Escuchando a {artista} mientras voto',
       'No hay comparacion, {artista} aparte',
       '{artista} se viene con todo',
+      'Le acabo de pasar el link de la votacion a todos mis amigos fans de {artista}',
+      'No paro de votar por {artista} porque se lo merece de verdad',
+      'Ojala mucha gente entre hoy a votar por {artista}, va muy apretado',
+      'Sigo apoyando a {artista} aunque vaya perdiendo, hay que remontar juntos',
     ],
     fallback: 'Vamos con todo!!',
   },
@@ -171,13 +184,63 @@ const TEMPLATES: Record<
   },
 };
 
-const TAIL = ['', '', '', '', ' 🔥', ' ❤️', '!!', ' 👏', ' 💪', ' 🎶'];
+const TAIL = ['', '', '', '', '!!', '...', ''];
 
 const pick = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
 export const MAX_BOT_MESSAGE_LENGTH = 500;
-export const AI_BOT_MESSAGE_MIN_LENGTH = 8;
-export const AI_BOT_MESSAGE_MAX_LENGTH = 120;
+export const AI_BOT_MESSAGE_MIN_LENGTH = 12;
+export const AI_BOT_MESSAGE_MAX_LENGTH = 280;
+export const AI_BOT_MESSAGE_DEFAULT_MEDIAN = 72;
+
+export type CommentLengthProfile = {
+  minLength: number;
+  maxLength: number;
+  median: number;
+  average: number;
+  targetLength: number;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+export function buildCommentLengthProfile(samples: string[] = []): CommentLengthProfile {
+  const lengths = samples
+    .map((line) => normalizeBotCommentLine(line).length)
+    .filter((length) => length >= 3)
+    .sort((a, b) => a - b);
+
+  if (!lengths.length) {
+    return {
+      minLength: 35,
+      maxLength: AI_BOT_MESSAGE_MAX_LENGTH,
+      median: AI_BOT_MESSAGE_DEFAULT_MEDIAN,
+      average: 80,
+      targetLength: AI_BOT_MESSAGE_DEFAULT_MEDIAN,
+    };
+  }
+
+  const median = lengths[Math.floor(lengths.length / 2)] || AI_BOT_MESSAGE_DEFAULT_MEDIAN;
+  const average = Math.round(lengths.reduce((sum, length) => sum + length, 0) / lengths.length);
+  const p25 = lengths[Math.floor(lengths.length * 0.25)] || median;
+  const p75 = lengths[Math.floor(lengths.length * 0.75)] || median;
+  const sampleMax = lengths[lengths.length - 1] || median;
+  const targetLength = Math.round(median * 0.95);
+
+  return {
+    minLength: clamp(Math.max(Math.round(median * 0.5), p25, 35), 35, 90),
+    maxLength: clamp(Math.max(p75, Math.round(median * 1.4), sampleMax, 100), 120, AI_BOT_MESSAGE_MAX_LENGTH),
+    median,
+    average,
+    targetLength,
+  };
+}
+
+const EMOJI_REGEX =
+  /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
+
+export function stripBotCommentEmoji(text: string) {
+  return normalizeBotCommentLine(String(text || '').replace(EMOJI_REGEX, ''));
+}
 
 export function normalizeBotCommentLine(text: string) {
   return String(text || '')
@@ -186,28 +249,82 @@ export function normalizeBotCommentLine(text: string) {
     .trim();
 }
 
-export function isNaturalBotCommentLength(text: string, maxLength = AI_BOT_MESSAGE_MAX_LENGTH) {
+export function isNaturalBotCommentLength(
+  text: string,
+  maxLength = AI_BOT_MESSAGE_MAX_LENGTH,
+  minLength = AI_BOT_MESSAGE_MIN_LENGTH,
+) {
   const normalized = normalizeBotCommentLine(text);
-  if (normalized.length < AI_BOT_MESSAGE_MIN_LENGTH || normalized.length > maxLength) {
+  if (normalized.length < minLength || normalized.length > maxLength) {
     return false;
   }
 
   const sentenceBreaks = (normalized.match(/[.!?…]+/g) || []).length;
-  if (sentenceBreaks > 2) {
+  if (sentenceBreaks > 3) {
     return false;
   }
 
   return true;
 }
 
-/**
- * Los mensajes se resuelven al crear la campaña para que el admin pueda
- * revisar exactamente qué se va a publicar antes de que arranque el goteo.
- */
+const mutateSampleComment = (text: string, artistName = '') => {
+  let out = normalizeBotCommentLine(text);
+  const focus = String(artistName || '').trim();
+  const mutations = [
+    () => out,
+    () => (out.charAt(0) === out.charAt(0).toUpperCase() ? out.charAt(0).toLowerCase() + out.slice(1) : out),
+    () => out.replace(/[!.…]+$/u, '').trim(),
+    () => `${out.replace(/[!.…]+$/u, '').trim()} la verdad`,
+    () => `yo ${out.charAt(0).toLowerCase()}${out.slice(1)}`,
+    () => `uff ${out.charAt(0).toLowerCase()}${out.slice(1)}`,
+    () => (focus && !out.toLowerCase().includes(focus.toLowerCase()) ? `${out}, hay que votar por ${focus}` : out),
+    () => (focus && !out.toLowerCase().includes(focus.toLowerCase()) ? `vamos ${focus}, ${out.charAt(0).toLowerCase()}${out.slice(1)}` : out),
+  ];
+
+  return stripBotCommentEmoji(pick(mutations)());
+};
+
+export function buildCommentBotMessagesFromSamples(
+  samples: string[],
+  count: number,
+  artistNames: string[] = [],
+  minLength = 35,
+): string[] {
+  const cleaned = samples.map((line) => normalizeBotCommentLine(line)).filter((line) => line.length >= 12);
+  const target = Math.max(1, Math.min(200, Math.floor(count) || 1));
+  const artist = artistNames.length === 1 ? artistNames[0] : pick(artistNames.filter(Boolean));
+
+  if (!cleaned.length) {
+    return buildCommentBotMessages(target, artistNames, 'es', minLength);
+  }
+
+  const ordered = [...cleaned].sort((a, b) => b.length - a.length);
+  const messages = new Set<string>();
+  let guard = 0;
+
+  while (messages.size < target && guard < target * 30) {
+    guard += 1;
+    const base = ordered[messages.size % ordered.length] || pick(ordered);
+    const candidate = mutateSampleComment(base, artist);
+    if (candidate.length >= Math.min(minLength, 12) && candidate.length <= MAX_BOT_MESSAGE_LENGTH) {
+      messages.add(candidate);
+    }
+  }
+
+  if (messages.size < target) {
+    for (const filler of buildCommentBotMessages(target - messages.size, artistNames, 'es', minLength)) {
+      messages.add(filler);
+    }
+  }
+
+  return [...messages].slice(0, target);
+}
+
 export function buildCommentBotMessages(
   count: number,
   artistNames: string[] = [],
   language: CommentBotLanguage = 'es',
+  minLength = 35,
 ): string[] {
   const pool = TEMPLATES[language] || TEMPLATES.es;
   const target = Math.max(1, Math.min(200, Math.floor(count) || 1));
@@ -215,12 +332,17 @@ export function buildCommentBotMessages(
   const messages = new Set<string>();
   let guard = 0;
 
+  const longGeneric = pool.generic.filter((line) => line.length >= minLength);
+  const longWithArtist = pool.withArtist.filter((line) => line.length >= minLength);
+  const genericPool = longGeneric.length ? longGeneric : pool.generic;
+  const artistPool = longWithArtist.length ? longWithArtist : pool.withArtist;
+
   while (messages.size < target && guard < target * 40) {
     guard += 1;
     const useArtist = artists.length > 0 && (artists.length === 1 || Math.random() < 0.55);
-    const template = useArtist ? pick(pool.withArtist) : pick(pool.generic);
+    const template = useArtist ? pick(artistPool) : pick(genericPool);
     const text = `${template.replace('{artista}', useArtist ? pick(artists) : '')}${pick(TAIL)}`.trim();
-    if (text.length >= 3 && text.length <= MAX_BOT_MESSAGE_LENGTH) {
+    if (text.length >= minLength && text.length <= MAX_BOT_MESSAGE_LENGTH) {
       messages.add(text);
     }
   }
@@ -234,10 +356,10 @@ export function buildCommentBotMessages(
 
 export function sanitizeCommentBotMessages(
   input: unknown,
-  options: { aiMode?: boolean } = {},
+  options: { aiMode?: boolean; minLength?: number; maxLength?: number } = {},
 ): string[] {
-  const maxLen = options.aiMode ? AI_BOT_MESSAGE_MAX_LENGTH : MAX_BOT_MESSAGE_LENGTH;
-  const minLen = options.aiMode ? AI_BOT_MESSAGE_MIN_LENGTH : 3;
+  const maxLen = options.maxLength ?? (options.aiMode ? AI_BOT_MESSAGE_MAX_LENGTH : MAX_BOT_MESSAGE_LENGTH);
+  const minLen = options.minLength ?? (options.aiMode ? AI_BOT_MESSAGE_MIN_LENGTH : 3);
 
   const raw = Array.isArray(input)
     ? input
@@ -246,12 +368,12 @@ export function sanitizeCommentBotMessages(
         .map((line) => line.trim());
 
   const cleaned = raw
-    .map((line) => normalizeBotCommentLine(line))
+    .map((line) => stripBotCommentEmoji(line))
     .filter((line) => {
       if (line.length < minLen || line.length > maxLen) {
         return false;
       }
-      if (options.aiMode && !isNaturalBotCommentLength(line, maxLen)) {
+      if (options.aiMode && !isNaturalBotCommentLength(line, maxLen, minLen)) {
         return false;
       }
       return true;

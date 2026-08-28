@@ -26,6 +26,11 @@ export class AdminPushController {
     return this.push.send(body);
   }
 
+  @Get('jobs/:jobId')
+  getJob(@Param('jobId') jobId: string) {
+    return this.push.getJob(jobId);
+  }
+
   @Post('artists/:artistId/followers')
   sendArtistFollowers(@Param('artistId') artistId: string, @Body() body: any) {
     return this.push.sendArtistFollowers(artistId, body);

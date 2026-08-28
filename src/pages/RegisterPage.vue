@@ -2,8 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { VueTelInput } from 'vue-tel-input'
 import 'vue-tel-input/vue-tel-input.css'
-import { translate } from '../i18n'
-import { register } from '../services/api/authApi'
+import { translate, i18n } from '../i18n'
+import { goToVerifyEmail, register } from '../services/api/authApi'
 
 const fallbackCountries = [
   { name: 'República Dominicana', code: 'DO', flag: '🇩🇴', dialCode: '+1', example: '(809) 000-0000', maxDigits: 10 },
@@ -470,6 +470,7 @@ const handleRegister = async () => {
       username: normalizedUsername.value,
       displayName: fullName.value,
       referralCode: referralCode.value || undefined,
+      locale: i18n.global.locale.value === 'en' ? 'en' : 'es',
       metadata: {
         firstName: firstName.value.trim(),
         lastName: lastName.value.trim(),
@@ -483,7 +484,7 @@ const handleRegister = async () => {
       },
     })
 
-    window.location.href = '/'
+    goToVerifyEmail(email.value.trim().toLowerCase())
   } catch (error) {
     errorMessage.value = error.message === 'username-unavailable'
       ? translate('register.errors.usernameTaken')

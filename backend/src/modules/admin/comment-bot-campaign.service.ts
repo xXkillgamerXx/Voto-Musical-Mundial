@@ -4,7 +4,7 @@ import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { generateBotNames } from './bot-name.util';
-import { sanitizeCommentBotMessages } from './comment-bot-message.util';
+import { buildCommentLengthProfile, sanitizeCommentBotMessages } from './comment-bot-message.util';
 import { generateCommentBotMessagesWithAi } from './comment-bot-ai.util';
 import { commentBotLanguageLabel } from './comment-bot-language.util';
 
@@ -43,6 +43,7 @@ export class CommentBotCampaignService {
     const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
     const rivalArtistName = String(params.rivalArtistName || '').trim();
     const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
+    const sampleTexts = sampleComments.map((row) => row.text);
     const contestants = await this.prisma.contestant.findMany({
       where: { pollId: poll.id },
       select: { artist: { select: { name: true } } },
@@ -66,9 +67,16 @@ export class CommentBotCampaignService {
       artistNames: focusArtistName ? [focusArtistName] : artistNames,
       focusArtistName,
       rivalArtistName,
-      sampleComments,
+      sampleComments: sampleTexts,
       language: params.language,
     });
+
+    const previewNames = generateBotNames(Math.min(12, Math.max(8, Number(params.count || 8))));
+    const lengthProfile = buildCommentLengthProfile(sampleTexts);
+    const previewAvgLength =
+      result.messages.length > 0
+        ? Math.round(result.messages.reduce((sum, line) => sum + line.length, 0) / result.messages.length)
+        : 0;
 
     return serialize({
       messages: result.messages,
@@ -79,6 +87,11 @@ export class CommentBotCampaignService {
       topic,
       focusArtistName,
       sampleCommentsCount: sampleComments.length,
+      sampleCommentsPreview: sampleComments.slice(0, 6),
+      botNamesPreview: previewNames,
+      promptSummary: topic,
+      lengthProfile,
+      previewAvgLength,
       pollTitle: poll.title,
       artistNames: focusArtistName ? [focusArtistName] : artistNames.slice(0, 12),
     });
@@ -133,6 +146,7 @@ export class CommentBotCampaignService {
       const focusArtistName = await this.resolveFocusArtistName(poll.id, params);
       const rivalArtistName = String(params.rivalArtistName || '').trim();
       const sampleComments = await this.loadReferenceComments(poll.id, focusArtistName);
+      const sampleTexts = sampleComments.map((row) => row.text);
       const contestants = await this.prisma.contestant.findMany({
         where: { pollId: poll.id },
         select: { artist: { select: { name: true } } },
@@ -156,7 +170,7 @@ export class CommentBotCampaignService {
         artistNames: focusArtistName ? [focusArtistName] : artistNames,
         focusArtistName,
         rivalArtistName,
-        sampleComments,
+        sampleComments: sampleTexts,
         language: params.language,
       });
       messages = generated.messages;
@@ -348,22 +362,42 @@ export class CommentBotCampaignService {
       },
       orderBy: { createdAt: 'desc' },
       take: 180,
-      select: { text: true },
+      select: { text: true, displayName: true, photoUrl: true },
     });
 
     const cleaned = rows
-      .map((row) => String(row.text || '').trim())
-      .filter((text) => text.length >= 3);
+      .map((row) => ({
+        text: String(row.text || '').trim(),
+        displayName: String(row.displayName || 'Fan').trim() || 'Fan',
+        photoUrl: row.photoUrl ? String(row.photoUrl) : '',
+      }))
+      .filter((row) => row.text.length >= 3);
+
+    const uniqueByText = (items: typeof cleaned) => {
+      const seen = new Set<string>();
+      const kept: typeof cleaned = [];
+      for (const item of items) {
+        const key = item.text.toLowerCase();
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        kept.push(item);
+      }
+      return kept;
+    };
 
     if (!focusArtistName) {
-      return [...new Set(cleaned)].slice(0, 20);
+      return uniqueByText(cleaned).sort((a, b) => b.text.length - a.text.length).slice(0, 20);
     }
 
     const focusLower = focusArtistName.toLowerCase();
-    const aboutArtist = cleaned.filter((text) => text.toLowerCase().includes(focusLower));
-    const general = cleaned.filter((text) => !text.toLowerCase().includes(focusLower));
+    const aboutArtist = cleaned.filter((row) => row.text.toLowerCase().includes(focusLower));
+    const general = cleaned.filter((row) => !row.text.toLowerCase().includes(focusLower));
 
-    return [...new Set([...aboutArtist, ...general])].slice(0, 20);
+    return uniqueByText([...aboutArtist, ...general])
+      .sort((a, b) => b.text.length - a.text.length)
+      .slice(0, 20);
   }
 
   private async publish(pollId: bigint, payload: Record<string, unknown>) {

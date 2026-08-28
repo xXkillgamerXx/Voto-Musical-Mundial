@@ -136,12 +136,28 @@ export const getAdminPushTokens = (userId = '') =>
   adminRequest(`/push/tokens${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`)
 export const sendAdminPush = (body) =>
   adminRequest('/push/send', { method: 'POST', body })
+export const getAdminPushJob = (jobId) =>
+  adminRequest(`/push/jobs/${encodeURIComponent(jobId)}`)
 export const sendAdminArtistPush = (artistId, body) =>
   adminRequest(`/push/artists/${encodeURIComponent(artistId)}/followers`, { method: 'POST', body })
 
 export const getAdminMailStatus = () => adminRequest('/mail/status')
+export const getAdminMailUsers = (search = '', limit = 80) =>
+  adminRequest(`/mail/users?search=${encodeURIComponent(search)}&limit=${limit}`)
+export const previewAdminMail = (body) =>
+  adminRequest('/mail/preview', { method: 'POST', body })
+export const getAdminVerificationMailTemplate = () =>
+  adminRequest('/mail/templates/verification')
+export const saveAdminVerificationMailTemplate = (body) =>
+  adminRequest('/mail/templates/verification', { method: 'PUT', body })
 export const sendAdminTestEmail = (body) =>
   adminRequest('/mail/send-test', { method: 'POST', body })
+export const sendAdminVerificationTestEmail = (body) =>
+  adminRequest('/mail/send-verification-test', { method: 'POST', body })
+export const sendAdminBulkEmail = (body) =>
+  adminRequest('/mail/send', { method: 'POST', body })
+export const getAdminMailJob = (jobId) =>
+  adminRequest(`/mail/jobs/${encodeURIComponent(jobId)}`)
 
 export const getAdminNotificationCampaigns = () => adminRequest('/notification-campaigns')
 export const createAdminNotificationCampaign = (body) =>

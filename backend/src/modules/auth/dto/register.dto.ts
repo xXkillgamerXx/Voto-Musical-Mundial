@@ -1,4 +1,4 @@
-import { IsEmail, IsObject, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsEmail, IsIn, IsObject, IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -25,4 +25,9 @@ export class RegisterDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['es', 'en'])
+  locale?: 'es' | 'en';
 }

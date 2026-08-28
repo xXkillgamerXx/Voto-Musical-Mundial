@@ -4,6 +4,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { RewardsModule } from '../rewards/rewards.module';
 import { SettingsModule } from '../settings/settings.module';
 import { AdminMailController } from './admin-mail.controller';
+import { AdminMailService } from './admin-mail.service';
 import { AdminOverviewController } from './admin-overview.controller';
 import { AdminOverviewService } from './admin-overview.service';
 import { AdminPushController } from './admin-push.controller';
@@ -35,6 +36,7 @@ import { VoteBotCampaignService } from './vote-bot-campaign.service';
     UserActivityService,
     ModerationService,
     AdminPushService,
+    AdminMailService,
     AdminOverviewService,
     VoteBotCampaignService,
     CommentBotCampaignService,

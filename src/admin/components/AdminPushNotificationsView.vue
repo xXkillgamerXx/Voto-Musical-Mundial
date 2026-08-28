@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { getAdminPushUsers, sendAdminPush } from '../../services/api/adminApi'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { getAdminPushJob, getAdminPushUsers, sendAdminPush } from '../../services/api/adminApi'
 
 const users = ref([])
 const selectedUserIds = ref([])
@@ -12,6 +12,7 @@ const search = ref('')
 const manualToken = ref('')
 const sendToAll = ref(false)
 const result = ref(null)
+const activeJob = ref(null)
 const activeLocale = ref('es')
 const localeTabs = [
   { value: 'es', label: 'Español' },
@@ -26,7 +27,71 @@ const form = ref({
   url: '/',
 })
 
+let jobTimer = null
+
 const selectedCount = computed(() => selectedUserIds.value.length)
+
+const jobPercent = computed(() => {
+  const job = activeJob.value
+  if (!job) return 0
+  if (typeof job.percent === 'number') return Math.min(100, Math.max(0, job.percent))
+  if (!job.total) return 0
+  return Math.min(100, Math.round((Number(job.processed || 0) / Number(job.total)) * 100))
+})
+
+const isJobRunning = computed(() => {
+  const status = activeJob.value?.status
+  return status === 'queued' || status === 'running'
+})
+
+const stopJobPolling = () => {
+  if (jobTimer) {
+    clearInterval(jobTimer)
+    jobTimer = null
+  }
+}
+
+const applyFinishedJob = (job) => {
+  result.value = {
+    sent: job.sent || 0,
+    failed: job.failed || 0,
+    total: job.total || 0,
+    errors: job.errors || [],
+  }
+
+  if (job.status === 'failed') {
+    errorMessage.value = job.error || 'No se pudo enviar el push.'
+    successMessage.value = ''
+    return
+  }
+
+  successMessage.value = `Push enviado: ${job.sent || 0}/${job.total || 0} correctos.`
+}
+
+const pollJob = async (jobId) => {
+  try {
+    const job = await getAdminPushJob(jobId)
+    activeJob.value = job
+
+    if (job.status === 'done' || job.status === 'failed') {
+      stopJobPolling()
+      isSending.value = false
+      applyFinishedJob(job)
+    }
+  } catch (error) {
+    stopJobPolling()
+    isSending.value = false
+    errorMessage.value = error?.message || 'No se pudo consultar el progreso del push.'
+  }
+}
+
+const startJobPolling = (jobId) => {
+  stopJobPolling()
+  pollJob(jobId)
+  jobTimer = setInterval(() => {
+    pollJob(jobId)
+  }, 1000)
+}
 
 const loadUsers = async () => {
   isLoading.value = true
@@ -77,9 +142,19 @@ const sendPush = async () => {
   }
 
   isSending.value = true
+  activeJob.value = {
+    status: 'queued',
+    title: form.value.title,
+    body: form.value.body,
+    total: 0,
+    processed: 0,
+    sent: 0,
+    failed: 0,
+    percent: 0,
+  }
 
   try {
-    result.value = await sendAdminPush({
+    const started = await sendAdminPush({
       title: form.value.title,
       titleEn: form.value.titleEn,
       body: form.value.body,
@@ -89,19 +164,35 @@ const sendPush = async () => {
       tokens,
       sendToAll: sendToAll.value,
     })
-    successMessage.value = `Push enviado: ${result.value.sent}/${result.value.total} correctos.`
+
+    if (!started?.jobId) {
+      throw new Error('No se pudo iniciar el envio.')
+    }
+
+    activeJob.value = {
+      ...activeJob.value,
+      id: started.jobId,
+      total: started.total || 0,
+      status: started.status || 'queued',
+    }
+    startJobPolling(started.jobId)
   } catch (error) {
-    errorMessage.value = error?.message || 'No se pudo enviar el push.'
-  } finally {
+    stopJobPolling()
     isSending.value = false
+    activeJob.value = null
+    errorMessage.value = error?.message || 'No se pudo enviar el push.'
   }
 }
 
 onMounted(loadUsers)
+
+onUnmounted(() => {
+  stopJobPolling()
+})
 </script>
 
 <template>
-  <section class="space-y-6">
+  <section class="space-y-6 pb-36">
     <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -236,7 +327,7 @@ onMounted(loadUsers)
           </button>
 
           <div
-            v-if="result"
+            v-if="result && !isJobRunning"
             class="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-300"
           >
             <p class="font-black text-white">
@@ -320,5 +411,55 @@ onMounted(loadUsers)
         </div>
       </article>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="activeJob"
+        class="fixed inset-x-0 bottom-0 z-70 border-t border-amber-300/30 bg-[#080a18]/95 px-4 py-4 shadow-2xl shadow-black/50 backdrop-blur-xl sm:px-6"
+      >
+        <div class="mx-auto max-w-5xl">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-xs font-black uppercase tracking-[0.24em] text-amber-200">
+                Envio push en curso
+              </p>
+              <p class="mt-1 truncate text-sm font-black text-white">
+                {{ activeJob.title || 'Notificacion' }}
+              </p>
+              <p class="mt-1 text-sm font-bold text-slate-300">
+                {{ activeJob.processed || 0 }} / {{ activeJob.total || 0 }} tokens
+                · {{ activeJob.sent || 0 }} ok
+                · {{ activeJob.failed || 0 }} fallidos
+                · {{ jobPercent }}%
+              </p>
+            </div>
+            <span
+              class="rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide"
+              :class="
+                isJobRunning
+                  ? 'border-amber-300/40 bg-amber-400/15 text-amber-100'
+                  : activeJob.status === 'failed'
+                    ? 'border-red-300/40 bg-red-500/15 text-red-100'
+                    : 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100'
+              "
+            >
+              {{
+                isJobRunning
+                  ? 'Enviando'
+                  : activeJob.status === 'failed'
+                    ? 'Fallido'
+                    : 'Terminado'
+              }}
+            </span>
+          </div>
+          <div class="mt-3 h-3 overflow-hidden rounded-full bg-white/10">
+            <div
+              class="h-full rounded-full bg-linear-to-r from-amber-300 via-fuchsia-400 to-cyan-400 transition-[width] duration-500"
+              :style="{ width: `${jobPercent}%` }"
+            ></div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>

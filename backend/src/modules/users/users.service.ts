@@ -25,6 +25,7 @@ export class UsersService {
     dailyRewardStreak: true,
     dailyRewardStreakDay: true,
     lastDailyRewardClaimDate: true,
+    emailVerifiedAt: true,
     metadata: true,
     followingArtists: {
       include: { artist: true },
@@ -173,6 +174,7 @@ export class UsersService {
       dailyRewardStreak: user.dailyRewardStreak,
       dailyRewardStreakDay: user.dailyRewardStreakDay,
       lastDailyRewardClaimDate: user.lastDailyRewardClaimDate,
+      emailVerified: Boolean(user.emailVerifiedAt),
       followedArtists,
     });
   }

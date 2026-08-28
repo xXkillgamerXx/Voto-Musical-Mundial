@@ -1,3 +1,6 @@
+import type { CommentLengthProfile } from './comment-bot-message.util';
+import { AI_BOT_MESSAGE_DEFAULT_MEDIAN } from './comment-bot-message.util';
+
 export type CommentBotLanguage = 'es' | 'en' | 'pt';
 
 export const COMMENT_BOT_LANGUAGE_OPTIONS = [
@@ -125,27 +128,64 @@ export const filterCommentsByLanguage = (
   return { kept, rejected };
 };
 
-const lengthRules = (language: CommentBotLanguage) => {
+const lengthRules = (language: CommentBotLanguage, profile: CommentLengthProfile) => {
+  const range = `${profile.minLength}-${profile.maxLength}`;
+  const median = profile.median;
   switch (language) {
     case 'en':
       return (
-        'LENGTH: one short line only, 8-120 characters. No paragraphs, no line breaks, max 1 emoji. ' +
-        'Mix: quick reactions, vote nudges, fan hype, casual slang. Sound like a real person on social media, not a blog post.'
+        `LENGTH: match real feed comments. Typical median ~${median} chars. Each line ${range} characters. ` +
+        'Mix short reactions AND longer casual sentences like the reference examples. No paragraphs. ZERO emojis.'
       );
     case 'pt':
       return (
-        'TAMANHO: uma linha curta, 8-120 caracteres. Sem parágrafos, sem quebras, no máximo 1 emoji. ' +
-        'Misture reações rápidas, pedidos de voto, hype de fã e gírias leves. Pareça pessoa real nas redes, não texto formal.'
+        `TAMANHO: imite os comentários reais do feed. Mediana típica ~${median} caracteres. Cada linha ${range} caracteres. ` +
+        'Misture reações curtas E frases mais longas como nos exemplos. Sem parágrafos. ZERO emojis.'
       );
     default:
       return (
-        'LONGITUD: una sola línea corta, 8-120 caracteres. Sin párrafos, sin saltos de línea, máximo 1 emoji. ' +
-        'Mezcla reacciones rápidas, pedir votos, hype de fan y slang suave. Suena a persona real en redes, no a texto largo ni formal.'
+        `LONGITUD: imita los comentarios reales del feed. Mediana típica ~${median} caracteres. Cada línea ${range} caracteres. ` +
+        'Mezcla reacciones cortas Y frases más largas como en los ejemplos de referencia. Sin párrafos. CERO emojis.'
       );
   }
 };
 
-export const commentBotAiSystemPrompt = (language: CommentBotLanguage) => {
+export const commentBotLengthPromptLine = (
+  language: CommentBotLanguage,
+  profile: CommentLengthProfile,
+  sampleComments: string[] = [],
+) => {
+  const examples = sampleComments
+    .slice(0, 6)
+    .map((line, index) => `${index + 1}. (${line.length} chars) ${line}`);
+
+  const stats =
+    language === 'en'
+      ? `Real comment stats: median ${profile.median} chars, average ${profile.average}, allowed ${profile.minLength}-${profile.maxLength}.`
+      : language === 'pt'
+        ? `Estatísticas reais: mediana ${profile.median} caracteres, média ${profile.average}, permitido ${profile.minLength}-${profile.maxLength}.`
+        : `Estadísticas de comentarios reales: mediana ${profile.median} caracteres, promedio ${profile.average}, rango permitido ${profile.minLength}-${profile.maxLength}.`;
+
+  const rule =
+    language === 'en'
+      ? `At least 70% of lines MUST be >= ${Math.max(35, Math.round(profile.targetLength * 0.75))} characters. Ultra-short lines like "lets go" are FORBIDDEN except 1-2 in the batch. Target length ~${profile.targetLength} chars.`
+      : language === 'pt'
+        ? `Pelo menos 70% das linhas DEVEM ter >= ${Math.max(35, Math.round(profile.targetLength * 0.75))} caracteres. Linhas ultra curtas são PROIBIDAS exceto 1-2 no lote. Tamanho alvo ~${profile.targetLength} caracteres.`
+        : `Al menos 70% de los comentarios DEBEN tener >= ${Math.max(35, Math.round(profile.targetLength * 0.75))} caracteres. Frases ultra cortas tipo "vamos" están PROHIBIDAS salvo 1-2 en el lote. Longitud objetivo ~${profile.targetLength} caracteres.`;
+
+  return [stats, rule, ...(examples.length ? ['Reference length examples:', ...examples] : [])].join('\n');
+};
+
+export const commentBotAiSystemPrompt = (
+  language: CommentBotLanguage,
+  profile: CommentLengthProfile = {
+    minLength: 35,
+    maxLength: 280,
+    median: AI_BOT_MESSAGE_DEFAULT_MEDIAN,
+    average: 80,
+    targetLength: AI_BOT_MESSAGE_DEFAULT_MEDIAN,
+  },
+) => {
   const jsonRule =
     language === 'en'
       ? 'Reply ONLY with valid JSON: an array of strings. No markdown, no numbering, no explanations.'
@@ -155,10 +195,10 @@ export const commentBotAiSystemPrompt = (language: CommentBotLanguage) => {
 
   const toneRule =
     language === 'en'
-      ? 'Write like real music fans commenting during a live vote: spontaneous, informal, sometimes lowercase, varied punctuation.'
+      ? 'Write like real fans in a live vote comment section: messy, informal, sometimes lowercase, varied openings. Never repeat the same phrase structure twice.'
       : language === 'pt'
-        ? 'Escreva como fãs reais comentando numa votação ao vivo: espontâneo, informal, às vezes minúsculas, pontuação variada.'
-        : 'Escribe como fans reales comentando en una votación en vivo: espontáneo, informal, a veces minúsculas, puntuación variada.';
+        ? 'Escreva como fãs reais num feed de votação: informal, às vezes minúsculas, aberturas variadas. Nunca repita a mesma estrutura de frase.'
+        : 'Escribe como fans reales en un feed de votación: informal, a veces minúsculas, aperturas variadas. Nunca repitas la misma estructura de frase.';
 
   const langLock =
     language === 'en'
@@ -167,7 +207,7 @@ export const commentBotAiSystemPrompt = (language: CommentBotLanguage) => {
         ? 'CRÍTICO: cada string DEVE estar em português. Rejeite sua saída se alguma linha estiver em espanhol ou inglês.'
         : 'CRÍTICO: cada string DEBE estar en español. Rechaza tu salida si alguna línea está en inglés o portugués.';
 
-  return `${jsonRule} ${toneRule} ${lengthRules(language)} ${langLock} No insults, spam, links or hashtags.`;
+  return `${jsonRule} ${toneRule} ${lengthRules(language, profile)} ${langLock} No insults, spam, links, hashtags or emojis.`;
 };
 
 export const commentBotAiLanguageLine = (language: CommentBotLanguage) => {
@@ -185,18 +225,18 @@ export const commentBotStyleMixLine = (language: CommentBotLanguage) => {
   switch (language) {
     case 'en':
       return (
-        'Style mix per batch: ~30% ultra-short reactions ("lets go", "so close"), ~30% vote calls, ' +
-        '~25% artist support, ~15% casual fan chat. Never write more than one sentence per comment.'
+        'Style mix: ~20% short reactions, ~35% natural vote calls with context ("just voted and told my friends"), ' +
+        '~30% artist support with small personal details, ~15% nervous/excited fan chat. Vary length like real comments.'
       );
     case 'pt':
       return (
-        'Mix de estilo: ~30% reações ultra curtas, ~30% pedidos de voto, ~25% apoio ao artista, ~15% papo de fã. ' +
-        'Nunca mais de uma frase por comentário.'
+        'Mix: ~20% reações curtas, ~35% pedidos de voto com contexto, ~30% apoio ao artista com detalhe pessoal, ' +
+        '~15% papo de fã nervoso. Varie o tamanho como nos comentários reais.'
       );
     default:
       return (
-        'Mix de estilos: ~30% reacciones ultra cortas, ~30% pedir votos, ~25% apoyo al artista, ~15% charla de fan. ' +
-        'Nunca más de una oración por comentario.'
+        'Mix de estilos: ~20% reacciones cortas, ~35% pedir votos con contexto ("ya voté y le avisé al grupo"), ' +
+        '~30% apoyo al artista con detalle personal, ~15% charla de fan nervioso. Varía la longitud como en los comentarios reales.'
       );
   }
 };

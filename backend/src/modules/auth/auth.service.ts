@@ -29,6 +29,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ResendEmailVerificationDto, VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtPayload, VoteIdentity } from './auth.types';
 
 const REFERRAL_SIGNUP_POINTS = 50;
@@ -37,6 +38,8 @@ const REFERRAL_MILESTONE_BONUSES: Record<number, number> = {
   10: 700,
 };
 const DEFAULT_SIGNUP_MAX_PER_IP = 3;
+const EMAIL_VERIFY_TTL_SECONDS = 15 * 60;
+const EMAIL_VERIFY_CODE_LENGTH = 6;
 
 const usernameFromEmail = (email: string) =>
   email
@@ -160,7 +163,14 @@ export class AuthService {
       throw error;
     });
 
-    return this.authResponse(user);
+    const locale = dto.locale === 'en' ? 'en' : 'es';
+    await this.issueEmailVerificationCode(user, locale);
+
+    return {
+      requiresEmailVerification: true as const,
+      email: user.email,
+      message: 'Te enviamos un codigo a tu correo para activar la cuenta.',
+    };
   }
 
   async login(dto: LoginDto) {
@@ -175,7 +185,85 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales invalidas.');
     }
 
+    if (!user.emailVerifiedAt) {
+      if (user.email) {
+        void this.issueEmailVerificationCode(user, 'es').catch((error) => {
+          this.logger.warn(
+            `No se pudo reenviar codigo al login de ${user.email}: ${(error as Error).message}`,
+          );
+        });
+      }
+      throw new HttpException(
+        {
+          statusCode: 403,
+          error: 'EMAIL_NOT_VERIFIED',
+          message: 'Debes verificar tu correo antes de entrar. Te enviamos un codigo nuevo.',
+          email: user.email,
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
     return this.authResponse(user);
+  }
+
+  async verifyEmail(dto: VerifyEmailDto) {
+    const email = dto.email.toLowerCase().trim();
+    const code = String(dto.code || '').trim();
+    if (!/^\d{6}$/.test(code)) {
+      throw new BadRequestException('El codigo debe tener 6 digitos.');
+    }
+
+    const user = await this.prisma.user.findFirst({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('Codigo incorrecto o vencido.');
+    }
+
+    if (user.emailVerifiedAt) {
+      return this.authResponse(user);
+    }
+
+    const codeHash = this.hashEmailVerificationCode(code);
+    const storedUserId = await this.redis.client.get(this.emailVerifyCodeKey(codeHash));
+    const expectedHash = await this.redis.client.get(this.emailVerifyUserKey(user.id));
+
+    if (!storedUserId || storedUserId !== user.id.toString() || expectedHash !== codeHash) {
+      throw new BadRequestException('Codigo incorrecto o vencido.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: new Date() },
+    });
+
+    await this.clearEmailVerificationKeys(user.id, codeHash);
+
+    return this.authResponse(updated);
+  }
+
+  async resendEmailVerification(dto: ResendEmailVerificationDto) {
+    const email = dto.email.toLowerCase().trim();
+    const generic = {
+      ok: true as const,
+      message: 'Si la cuenta existe y no esta verificada, enviamos un codigo nuevo.',
+    };
+    const user = await this.prisma.user.findFirst({ where: { email } });
+
+    if (!user?.email || user.emailVerifiedAt) {
+      return generic;
+    }
+
+    const locale = dto.locale === 'en' ? 'en' : 'es';
+    try {
+      await this.issueEmailVerificationCode(user, locale);
+    } catch (error) {
+      this.logger.error(`No se pudo reenviar verificacion a ${email}: ${(error as Error).message}`);
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new ServiceUnavailableException(`No se pudo enviar el correo: ${(error as Error).message}`);
+      }
+    }
+
+    return generic;
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -322,6 +410,7 @@ export class AuthService {
           email: emailTaken ? existing.email : email,
           displayName: existing.displayName || payload.name || usernameFromEmail(email),
           photoUrl: payload.picture || existing.photoUrl,
+          emailVerifiedAt: existing.emailVerifiedAt || new Date(),
           metadata: {
             ...((existing.metadata as Record<string, unknown>) || {}),
             googleSub: payload.sub,
@@ -357,6 +446,7 @@ export class AuthService {
           referralCode: username,
           referredById: referrer?.userId || null,
           points: 25,
+          emailVerifiedAt: new Date(),
           metadata: {
             googleSub: payload.sub,
             googleEmail: email,
@@ -480,6 +570,10 @@ export class AuthService {
       throw new UnauthorizedException('Usuario no encontrado.');
     }
 
+    if (user.passwordHash && !user.emailVerifiedAt) {
+      throw new UnauthorizedException('Debes verificar tu correo antes de continuar.');
+    }
+
     return this.authResponse(user);
   }
 
@@ -569,7 +663,81 @@ export class AuthService {
       points: Number(user.points),
       spentPoints: Number(user.spentPoints),
       referralCode: user.referralCode,
+      emailVerified: Boolean(user.emailVerifiedAt),
     };
+  }
+
+  private hashEmailVerificationCode(code: string) {
+    return createHash('sha256').update(String(code || '').trim()).digest('hex');
+  }
+
+  private emailVerifyCodeKey(codeHash: string) {
+    return `email-verify:${codeHash}`;
+  }
+
+  private emailVerifyUserKey(userId: bigint | string) {
+    return `email-verify-user:${userId.toString()}`;
+  }
+
+  private async clearEmailVerificationKeys(userId: bigint | string, codeHash?: string | null) {
+    const userKey = this.emailVerifyUserKey(userId);
+    const previousHash = codeHash || (await this.redis.client.get(userKey));
+    if (previousHash) {
+      await this.redis.client.del(this.emailVerifyCodeKey(previousHash));
+    }
+    await this.redis.client.del(userKey);
+  }
+
+  private generateEmailVerificationCode() {
+    const max = 10 ** EMAIL_VERIFY_CODE_LENGTH;
+    const value = randomBytes(4).readUInt32BE(0) % max;
+    return String(value).padStart(EMAIL_VERIFY_CODE_LENGTH, '0');
+  }
+
+  private async issueEmailVerificationCode(
+    user: Pick<User, 'id' | 'email' | 'displayName' | 'username'>,
+    locale: 'es' | 'en' = 'es',
+  ) {
+    if (!user.email) {
+      throw new BadRequestException('La cuenta no tiene correo.');
+    }
+
+    if (!this.mail.isConfigured()) {
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new ServiceUnavailableException(
+          'Falta configurar SMTP_HOST / SMTP_USER / SMTP_PASS en backend/.env para enviar el correo.',
+        );
+      }
+      this.logger.warn('email-verification: SMTP no configurado');
+      return;
+    }
+
+    const code = this.generateEmailVerificationCode();
+    const codeHash = this.hashEmailVerificationCode(code);
+    await this.clearEmailVerificationKeys(user.id);
+    await this.redis.client.set(
+      this.emailVerifyCodeKey(codeHash),
+      user.id.toString(),
+      'EX',
+      EMAIL_VERIFY_TTL_SECONDS,
+    );
+    await this.redis.client.set(this.emailVerifyUserKey(user.id), codeHash, 'EX', EMAIL_VERIFY_TTL_SECONDS);
+
+    try {
+      await this.mail.sendEmailVerification({
+        to: user.email,
+        name: user.displayName || user.username || '',
+        code,
+        locale,
+      });
+    } catch (error) {
+      await this.clearEmailVerificationKeys(user.id, codeHash);
+      this.logger.error(`No se pudo enviar verificacion a ${user.email}: ${(error as Error).message}`);
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new ServiceUnavailableException(`No se pudo enviar el correo: ${(error as Error).message}`);
+      }
+      throw error;
+    }
   }
 
   private async findReferrer(referralCode?: string) {

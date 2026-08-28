@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from "vue";
 import { translate, i18n } from "../../i18n";
-import { consumeLoginNotice, login, loginWithGoogle, requestPasswordReset } from "../../services/api/authApi";
+import { consumeLoginNotice, goToVerifyEmail, login, loginWithGoogle, requestPasswordReset } from "../../services/api/authApi";
 
 const emit = defineEmits(["close"]);
 
@@ -42,8 +42,12 @@ onUnmounted(() => {
   window.removeEventListener("keydown", handleEscape);
 });
 
-const friendlyAuthError = (error) => {
-  return error?.message || translate("auth.errors.genericAction");
+  const friendlyAuthError = (error) => {
+  const message = error?.payload?.message || error?.message;
+  if (Array.isArray(message)) {
+    return message[0] || translate("auth.errors.genericAction");
+  }
+  return message || translate("auth.errors.genericAction");
 };
 
 const openGooglePopup = () => {
@@ -121,6 +125,10 @@ const handleEmailAccess = async () => {
     });
     emit("close");
   } catch (error) {
+    if (error?.payload?.error === "EMAIL_NOT_VERIFIED" || error?.status === 403) {
+      goToVerifyEmail(error?.payload?.email || email.value.trim().toLowerCase());
+      return;
+    }
     errorMessage.value = friendlyAuthError(error);
   } finally {
     isLoading.value = false;

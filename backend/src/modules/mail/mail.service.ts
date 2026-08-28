@@ -8,6 +8,20 @@ import {
   buildPasswordResetEmail,
   PASSWORD_RESET_LOGO_CID,
 } from './password-reset.email';
+import {
+  buildEmailVerificationEmail,
+  EMAIL_VERIFICATION_LOGO_CID,
+} from './email-verification.email';
+import {
+  DEFAULT_EMAIL_VERIFICATION_COPY,
+  EMAIL_VERIFICATION_COPY_REDIS_KEY,
+  EmailVerificationCopySettings,
+  EmailVerificationLocaleCopy,
+  normalizeEmailVerificationCopy,
+} from './email-verification.config';
+import { buildAdminTestEmail } from './admin-test.email';
+import { RedisService } from '../redis/redis.service';
+import { resolveMailLocale } from './transactional-email.layout';
 
 export type MailPublicStatus = {
   configured: boolean;
@@ -27,7 +41,10 @@ export class MailService implements OnModuleInit {
   private readonly smtpPort: number;
   private smtpVerified = false;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly redis: RedisService,
+  ) {
     const host = String(
       config.get<string>('SMTP_HOST') || config.get<string>('MAIL_HOST') || '',
     ).trim();
@@ -44,10 +61,17 @@ export class MailService implements OnModuleInit {
     this.smtpPort = port;
     this.from =
       String(config.get<string>('MAIL_FROM') || '').trim() ||
-      'Music Mundial <noreply@musicmundial.com>';
+      'Votos Mundial <noreply@musicmundial.com>';
 
     const candidate = join(process.cwd(), 'assets', 'email', 'logo-votos.png');
     this.logoPath = existsSync(candidate) ? candidate : null;
+
+    const isInternalHost =
+      host === '127.0.0.1' ||
+      host === 'localhost' ||
+      host.startsWith('172.') ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.');
 
     this.transporter =
       host && user && pass
@@ -55,7 +79,9 @@ export class MailService implements OnModuleInit {
             host,
             port,
             secure: port === 465,
+            requireTLS: port === 587,
             auth: { user, pass },
+            ...(isInternalHost ? { tls: { rejectUnauthorized: false } } : {}),
           })
         : null;
   }
@@ -120,29 +146,143 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  async sendTestEmail(input: { to: string; subject?: string; message?: string }) {
+  async getEmailVerificationCopy(): Promise<EmailVerificationCopySettings> {
+    try {
+      const raw = await this.redis.client.get(EMAIL_VERIFICATION_COPY_REDIS_KEY);
+      if (raw) {
+        return normalizeEmailVerificationCopy(JSON.parse(raw));
+      }
+    } catch {
+      // Fall back to defaults when Redis is unavailable or payload is invalid.
+    }
+
+    return { ...DEFAULT_EMAIL_VERIFICATION_COPY };
+  }
+
+  async saveEmailVerificationCopy(body: {
+    es?: Partial<EmailVerificationLocaleCopy>;
+    en?: Partial<EmailVerificationLocaleCopy>;
+  }): Promise<EmailVerificationCopySettings> {
+    const current = await this.getEmailVerificationCopy();
+    const next = normalizeEmailVerificationCopy({
+      es: { ...current.es, ...(body.es || {}) },
+      en: { ...current.en, ...(body.en || {}) },
+      updatedAt: new Date().toISOString(),
+    });
+    await this.redis.client.set(EMAIL_VERIFICATION_COPY_REDIS_KEY, JSON.stringify(next));
+    return next;
+  }
+
+  async sendEmailVerification(input: {
+    to: string;
+    name: string;
+    code: string;
+    locale?: string | null;
+    copy?: Partial<EmailVerificationLocaleCopy> | null;
+  }) {
+    if (!this.transporter) {
+      throw new Error('SMTP no configurado.');
+    }
+
+    const locale = resolveMailLocale(input.locale);
+    const settings = await this.getEmailVerificationCopy();
+    const { subject, text, html } = buildEmailVerificationEmail({
+      ...input,
+      copy: input.copy || settings[locale],
+    });
+
+    await this.sendMail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      attachments: this.logoPath
+        ? [
+            {
+              filename: 'logo-votos.png',
+              path: this.logoPath,
+              cid: EMAIL_VERIFICATION_LOGO_CID,
+              contentType: 'image/png',
+            },
+          ]
+        : undefined,
+    });
+  }
+
+  async sendTestVerificationEmail(input: {
+    to: string;
+    name?: string;
+    code?: string;
+    locale?: string | null;
+    copy?: Partial<EmailVerificationLocaleCopy> | null;
+  }) {
     const to = String(input.to || '')
       .trim()
       .toLowerCase();
-    const subject = String(input.subject || '').trim() || 'Prueba de correo — Music Mundial';
-    const message =
-      String(input.message || '').trim() ||
-      'Este es un correo de prueba enviado desde el panel de administración de Music Mundial.';
-
-    const html = `
-      <div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0 auto;padding:24px">
-        <p style="margin:0 0 16px;font-size:14px;color:#6b7280">Music Mundial · Admin</p>
-        <h1 style="margin:0 0 16px;font-size:22px">${subject}</h1>
-        <p style="margin:0 0 16px;white-space:pre-wrap">${message.replace(/</g, '&lt;')}</p>
-        <p style="margin:24px 0 0;font-size:12px;color:#9ca3af">Enviado desde noreply@musicmundial.com</p>
-      </div>
-    `.trim();
+    const locale = resolveMailLocale(input.locale);
+    const settings = await this.getEmailVerificationCopy();
+    const { subject, text, html } = buildEmailVerificationEmail({
+      name: String(input.name || 'Usuario').trim() || 'Usuario',
+      code: String(input.code || '847291').trim() || '847291',
+      locale,
+      copy: input.copy || settings[locale],
+    });
 
     const info = await this.sendMail({
       to,
       subject,
-      text: message,
+      text,
       html,
+      attachments: this.logoPath
+        ? [
+            {
+              filename: 'logo-votos.png',
+              path: this.logoPath,
+              cid: EMAIL_VERIFICATION_LOGO_CID,
+              contentType: 'image/png',
+            },
+          ]
+        : undefined,
+    });
+
+    return {
+      ok: true,
+      to,
+      subject,
+      messageId: info.messageId || null,
+    };
+  }
+
+  async sendTestEmail(input: {
+    to: string;
+    subject?: string;
+    message?: string;
+    mode?: 'test' | 'broadcast';
+  }) {
+    const to = String(input.to || '')
+      .trim()
+      .toLowerCase();
+    const { subject, text, html } = buildAdminTestEmail({
+      subject: input.subject,
+      message: input.message,
+      mode: input.mode === 'broadcast' ? 'broadcast' : 'test',
+    });
+
+    const info = await this.sendMail({
+      to,
+      subject,
+      text,
+      html,
+      attachments: this.logoPath
+        ? [
+            {
+              filename: 'logo-votos.png',
+              path: this.logoPath,
+              cid: PASSWORD_RESET_LOGO_CID,
+              contentType: 'image/png',
+            },
+          ]
+        : undefined,
     });
 
     return {

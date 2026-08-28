@@ -25,7 +25,6 @@ const GiftNotificationModal = defineAsyncComponent(() => import('./components/Gi
 const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
 const LiveActivity = defineAsyncComponent(() => import('./components/LiveActivity.vue'))
 const MissionsSection = defineAsyncComponent(() => import('./components/MissionsSection.vue'))
-const TopRanking = defineAsyncComponent(() => import('./components/TopRanking.vue'))
 const ArtistsPage = defineAsyncComponent(() => import('./pages/ArtistsPage.vue'))
 const ArtistProfilePage = defineAsyncComponent(() => import('./pages/ArtistProfilePage.vue'))
 const HallOfFamePage = defineAsyncComponent(() => import('./pages/HallOfFamePage.vue'))
@@ -36,6 +35,7 @@ const PollsPage = defineAsyncComponent(() => import('./pages/PollsPage.vue'))
 const PushNotificationPrompt = defineAsyncComponent(() => import('./components/PushNotificationPrompt.vue'))
 const RankingPopularityPage = defineAsyncComponent(() => import('./pages/RankingPopularityPage.vue'))
 const RegisterPage = defineAsyncComponent(() => import('./pages/RegisterPage.vue'))
+const VerifyEmailPage = defineAsyncComponent(() => import('./pages/VerifyEmailPage.vue'))
 const ResetPasswordPage = defineAsyncComponent(() => import('./pages/ResetPasswordPage.vue'))
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
 const PrivacyPage = defineAsyncComponent(() => import('./pages/PrivacyPage.vue'))
@@ -52,6 +52,7 @@ let loadingToken = 0
 const prefetchedRoutes = new Set()
 const canonicalPath = computed(() => toCanonicalPath(currentPath.value))
 const isRegisterPage = computed(() => matchStaticRoute(currentPath.value, 'register'))
+const isVerifyEmailPage = computed(() => matchStaticRoute(currentPath.value, 'verifyEmail'))
 const isResetPasswordPage = computed(() => matchStaticRoute(currentPath.value, 'resetPassword'))
 const isTermsPage = computed(() => matchStaticRoute(currentPath.value, 'terms'))
 const isPrivacyPage = computed(() => matchStaticRoute(currentPath.value, 'privacy'))
@@ -74,7 +75,7 @@ const isEmbeddedPage = computed(() => {
   const params = new URLSearchParams(window.location.search)
   return params.get('embed') === '1' || params.get('embed') === 'true'
 })
-const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isResetPasswordPage.value || isVersusEmbedPage.value || isAdminPage.value)
+const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVerifyEmailPage.value || isResetPasswordPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldForceEmbedDarkTheme = computed(() => isEmbeddedPage.value || isVersusEmbedPage.value)
 const shouldShowDailyRewardModal = computed(
   () => !isPlainPage.value && !isTermsPage.value && !isPrivacyPage.value,
@@ -296,6 +297,7 @@ onUnmounted(() => {
       :class="!isPlainPage && 'pt-20 sm:pt-24'"
     >
       <RegisterPage v-if="isRegisterPage" />
+      <VerifyEmailPage v-else-if="isVerifyEmailPage" />
       <ResetPasswordPage v-else-if="isResetPasswordPage" />
       <TermsPage v-else-if="isTermsPage" />
       <PrivacyPage v-else-if="isPrivacyPage" />
@@ -323,7 +325,6 @@ onUnmounted(() => {
         <DownloadAppSection />
         <ActivePolls />
         <MainCategories />
-        <TopRanking />
         <HomeAd />
         <LiveActivity />
         <LatestNews />

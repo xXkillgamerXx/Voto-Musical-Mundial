@@ -10,6 +10,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ResendEmailVerificationDto, VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthService } from './auth.service';
 
@@ -28,6 +29,18 @@ export class AuthController {
   @Throttle({ name: 'auth-login', limit: 20, windowSec: 60 })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  @Post('verify-email')
+  @Throttle({ name: 'auth-verify-email', limit: 20, windowSec: 3600 })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.auth.verifyEmail(dto);
+  }
+
+  @Post('resend-verification')
+  @Throttle({ name: 'auth-resend-verification', limit: 8, windowSec: 3600 })
+  resendVerification(@Body() dto: ResendEmailVerificationDto) {
+    return this.auth.resendEmailVerification(dto);
   }
 
   @Post('forgot-password')
