@@ -212,7 +212,6 @@ const saveProfile = async () => {
       banner: editForm.value.banner,
       emailCampaigns: Boolean(editForm.value.emailCampaigns),
     })
-    })
     currentUser.value = updated
     userProfile.value = updated
     profileUserId.value = updated.id
