@@ -19,7 +19,7 @@ export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   es: {
     title: 'Política de privacidad',
     intro:
-      'Esta política explica qué datos recogemos en Votos Música Mundial, para qué los usamos y cómo puedes ejercer tus derechos.',
+      'Esta política explica qué datos recogemos en Music Mundial VOTING, para qué los usamos y cómo puedes ejercer tus derechos.',
     bodyHtml: [
       sectionHtml(
         '1. Datos que recopilamos',
@@ -46,7 +46,7 @@ export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   en: {
     title: 'Privacy policy',
     intro:
-      'This policy explains what data we collect on Votos Música Mundial, how we use it, and how you can exercise your rights.',
+      'This policy explains what data we collect on Music Mundial VOTING, how we use it, and how you can exercise your rights.',
     bodyHtml: [
       sectionHtml(
         '1. Data we collect',

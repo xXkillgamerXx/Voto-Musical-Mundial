@@ -19,7 +19,7 @@ export const DEFAULT_TERMS_SETTINGS: TermsSettings = {
   es: {
     title: 'Términos y condiciones',
     intro:
-      'Al usar Votos Música Mundial aceptas estas reglas básicas para mantener una comunidad segura, justa y transparente.',
+      'Al usar Music Mundial VOTING aceptas estas reglas básicas para mantener una comunidad segura, justa y transparente.',
     bodyHtml: [
       sectionHtml(
         '1. Uso de la plataforma',
@@ -46,7 +46,7 @@ export const DEFAULT_TERMS_SETTINGS: TermsSettings = {
   en: {
     title: 'Terms and conditions',
     intro:
-      'By using Votos Música Mundial you accept these basic rules to keep the community safe, fair, and transparent.',
+      'By using Music Mundial VOTING you accept these basic rules to keep the community safe, fair, and transparent.',
     bodyHtml: [
       sectionHtml(
         '1. Platform use',
