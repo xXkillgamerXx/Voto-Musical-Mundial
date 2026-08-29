@@ -42,12 +42,12 @@ const broadcastLocale = ref('es')
 
 const form = ref({
   to: '',
-  subject: 'Comunicado · Votos Mundial',
+  subject: 'Comunicado · Music Mundial VOTING',
   message:
-    'Hola,\n\nTenemos novedades en Votos Mundial. Entra a la plataforma para ver las votaciones activas y apoyar a tus artistas.\n\n¡Gracias por formar parte de la comunidad!',
-  subjectEn: 'Announcement · Votos Mundial',
+    'Hola,\n\nTenemos novedades en Music Mundial VOTING. Entra a la plataforma para ver las votaciones activas y apoyar a tus artistas.\n\n¡Gracias por formar parte de la comunidad!',
+  subjectEn: 'Announcement · Music Mundial VOTING',
   messageEn:
-    'Hi,\n\nWe have news on Votos Mundial. Open the platform to see active polls and support your artists.\n\nThanks for being part of the community!',
+    'Hi,\n\nWe have news on Music Mundial VOTING. Open the platform to see active polls and support your artists.\n\nThanks for being part of the community!',
 })
 
 const activeBroadcastSubject = computed({

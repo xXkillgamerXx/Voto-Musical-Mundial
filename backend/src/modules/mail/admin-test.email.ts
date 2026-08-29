@@ -6,35 +6,35 @@ import {
 
 const COPY = {
   es: {
-    defaultSubject: 'Prueba de correo · Votos Mundial',
+    defaultSubject: 'Prueba de correo · Music Mundial VOTING',
     preheader: 'Correo de prueba enviado desde el panel de administración.',
     defaultTitle: 'Correo de prueba',
     defaultMessage:
-      'Este es un correo de prueba enviado desde el panel de administración de Votos Mundial.\n\nSi lo ves en Mailtrap con el diseño correcto, SMTP funciona bien.',
-    cta: 'Ir a Votos Mundial',
+      'Este es un correo de prueba enviado desde el panel de administración de Music Mundial VOTING.\n\nSi lo ves en Mailtrap con el diseño correcto, SMTP funciona bien.',
+    cta: 'Ir a Music Mundial VOTING',
     notice:
       'Este mensaje fue generado manualmente desde el admin. Si no esperabas este correo, puedes ignorarlo con tranquilidad.',
-    broadcastSubject: 'Comunicado · Votos Mundial',
-    broadcastPreheader: 'Mensaje del equipo de Votos Mundial.',
+    broadcastSubject: 'Comunicado · Music Mundial VOTING',
+    broadcastPreheader: 'Mensaje del equipo de Music Mundial VOTING.',
     broadcastTitle: 'Comunicado',
     broadcastNotice:
-      'Recibes este correo porque tienes cuenta en Votos Mundial. Si no esperabas este mensaje, puedes ignorarlo.',
+      'Recibes este correo porque tienes cuenta en Music Mundial VOTING. Si no esperabas este mensaje, puedes ignorarlo.',
     pollCta: 'Ir a votar',
   },
   en: {
-    defaultSubject: 'Test email · Votos Mundial',
+    defaultSubject: 'Test email · Music Mundial VOTING',
     preheader: 'Test email sent from the admin panel.',
     defaultTitle: 'Test email',
     defaultMessage:
-      'This is a test email sent from the Votos Mundial admin panel.\n\nIf you see it in Mailtrap with the correct design, SMTP is working.',
-    cta: 'Go to Votos Mundial',
+      'This is a test email sent from the Music Mundial VOTING admin panel.\n\nIf you see it in Mailtrap with the correct design, SMTP is working.',
+    cta: 'Go to Music Mundial VOTING',
     notice:
       'This message was sent manually from the admin panel. If you were not expecting it, you can safely ignore it.',
-    broadcastSubject: 'Announcement · Votos Mundial',
-    broadcastPreheader: 'A message from the Votos Mundial team.',
+    broadcastSubject: 'Announcement · Music Mundial VOTING',
+    broadcastPreheader: 'A message from the Music Mundial VOTING team.',
     broadcastTitle: 'Announcement',
     broadcastNotice:
-      'You are receiving this email because you have a Votos Mundial account. If you were not expecting it, you can safely ignore it.',
+      'You are receiving this email because you have a Music Mundial VOTING account. If you were not expecting it, you can safely ignore it.',
     pollCta: 'Go vote',
   },
 } as const;
@@ -76,7 +76,7 @@ export const buildAdminTestEmail = (input: {
   const subject = applyMailTemplateVars(subjectRaw, vars);
   const message = applyMailTemplateVars(messageRaw, vars);
   const title =
-    subject.replace(/ · Votos Mundial$/i, '').replace(/ · Music Mundial Voting$/i, '').trim() ||
+    subject.replace(/ · Music Mundial VOTING$/i, '').replace(/ · Music Mundial Voting$/i, '').trim() ||
     (isBroadcast ? copy.broadcastTitle : copy.defaultTitle);
   const notice = isBroadcast ? copy.broadcastNotice : copy.notice;
   const preheader = isBroadcast ? copy.broadcastPreheader : copy.preheader;
@@ -95,7 +95,7 @@ export const buildAdminTestEmail = (input: {
     '',
     notice,
     '',
-    'Votos Mundial',
+    'Music Mundial VOTING',
   ].join('\n');
 
   const html = buildTransactionalEmail({

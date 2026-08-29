@@ -297,7 +297,7 @@ onUnmounted(() => {
             </span>
             <span class="min-w-0">
               <span class="block truncate text-sm font-black uppercase leading-none">
-                Votos Mundial
+                Music Mundial VOTING
               </span>
               <span class="mt-1 block text-[10px] font-bold uppercase tracking-[0.26em] text-fuchsia-300">
                 {{ $t('admin.page.adminPanel') }}

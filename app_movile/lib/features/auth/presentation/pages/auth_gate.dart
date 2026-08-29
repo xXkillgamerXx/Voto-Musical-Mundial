@@ -1046,7 +1046,7 @@ class _DrawerHeader extends StatelessWidget {
               const SizedBox(width: 5),
               const Expanded(
                 child: Text(
-                  'Votos Mundial',
+                  'Music Mundial VOTING',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,

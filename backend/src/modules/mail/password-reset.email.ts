@@ -14,7 +14,7 @@ export { resolveMailLocale } from './transactional-email.layout';
 const COPY = {
   es: {
     greeting: (name: string) => (name ? `Hola ${name}` : 'Hola'),
-    subject: 'Recupera tu contraseña · Votos Mundial',
+    subject: 'Recupera tu contraseña · Music Mundial VOTING',
     preheader: 'El enlace caduca en 1 hora. Si no fuiste tú, ignora este correo.',
     title: 'Recupera tu contraseña',
     intro: (greeting: string) =>
@@ -26,13 +26,13 @@ const COPY = {
     fallback: 'Si el botón no funciona, copia y pega este enlace en tu navegador:',
     security:
       'Si no pediste este cambio, no tienes que hacer nada. Tu cuenta sigue segura y puedes ignorar este correo.',
-    textIntro: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta en Votos Mundial.',
+    textIntro: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta en Music Mundial VOTING.',
     textLink: 'Abre este enlace para crear una nueva. Caduca en 1 hora:',
     textSecurity: 'Si no pediste este cambio, ignora este correo. Tu cuenta sigue segura.',
   },
   en: {
     greeting: (name: string) => (name ? `Hi ${name}` : 'Hi'),
-    subject: 'Reset your password · Votos Mundial',
+    subject: 'Reset your password · Music Mundial VOTING',
     preheader: "This link expires in 1 hour. If this wasn't you, ignore this email.",
     title: 'Reset your password',
     intro: (greeting: string) =>
@@ -44,7 +44,7 @@ const COPY = {
     fallback: "If the button doesn't work, copy and paste this link into your browser:",
     security:
       "If you didn't ask for this change, you don't need to do anything. Your account is still safe and you can ignore this email.",
-    textIntro: 'We received a request to reset the password for your Votos Mundial account.',
+    textIntro: 'We received a request to reset the password for your Music Mundial VOTING account.',
     textLink: 'Open this link to create a new one. It expires in 1 hour:',
     textSecurity: "If you didn't ask for this change, ignore this email. Your account is still safe.",
   },
@@ -69,7 +69,7 @@ export const buildPasswordResetEmail = (input: {
     '',
     copy.textSecurity,
     '',
-    'Votos Mundial',
+    'Music Mundial VOTING',
     'https://vote.musicmundial.com',
   ].join('\n');
 

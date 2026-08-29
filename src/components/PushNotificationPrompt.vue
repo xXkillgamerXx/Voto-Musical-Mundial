@@ -103,7 +103,7 @@ onMounted(() => {
     }
 
     foregroundMessage.value = {
-      title: title.trim() || 'Votos Mundial',
+      title: title.trim() || 'Music Mundial VOTING',
       body: body.trim() || title.trim(),
       url: data.url || '/notificaciones',
     }

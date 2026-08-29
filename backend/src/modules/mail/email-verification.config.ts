@@ -19,20 +19,20 @@ export type EmailVerificationCopySettings = {
 
 export const DEFAULT_EMAIL_VERIFICATION_COPY: EmailVerificationCopySettings = {
   es: {
-    subject: 'Tu código de verificación · Votos Mundial',
+    subject: 'Tu código de verificación · Music Mundial VOTING',
     preheader: 'Usa este código para activar tu cuenta. Caduca en 15 minutos.',
     title: 'Verifica tu correo',
-    intro: 'Hola{{name}}, para activar tu cuenta en Votos Mundial introduce este código:',
+    intro: 'Hola{{name}}, para activar tu cuenta en Music Mundial VOTING introduce este código:',
     expiryBody: 'El código caduca en 15 minutos.',
     expiryBadge: 'Válido por 15 minutos',
     security:
       'Si no creaste esta cuenta, ignora este correo. Nadie podrá usarla sin el código.',
   },
   en: {
-    subject: 'Your verification code · Votos Mundial',
+    subject: 'Your verification code · Music Mundial VOTING',
     preheader: 'Use this code to activate your account. It expires in 15 minutes.',
     title: 'Verify your email',
-    intro: 'Hi{{name}}, to activate your Votos Mundial account enter this code:',
+    intro: 'Hi{{name}}, to activate your Music Mundial VOTING account enter this code:',
     expiryBody: 'This code expires in 15 minutes.',
     expiryBadge: 'Valid for 15 minutes',
     security:

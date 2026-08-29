@@ -130,16 +130,16 @@ const fillDefaults = () => {
   const titleEn = String(props.pollTitleEn || '').trim() || title
 
   if (!emailForm.value.subject.trim()) {
-    emailForm.value.subject = `Nueva votación: {{pollTitle}} · Votos Mundial`
+    emailForm.value.subject = `Nueva votación: {{pollTitle}} · Music Mundial VOTING`
   }
   if (!emailForm.value.message.trim()) {
-    emailForm.value.message = `Hola {{name}},\n\nYa puedes votar en {{pollTitle}}. Entra ahora y apoya a tus artistas favoritos.\n\n¡Gracias por ser parte de Votos Mundial!`
+    emailForm.value.message = `Hola {{name}},\n\nYa puedes votar en {{pollTitle}}. Entra ahora y apoya a tus artistas favoritos.\n\n¡Gracias por ser parte de Music Mundial VOTING!`
   }
   if (!emailForm.value.subjectEn.trim()) {
-    emailForm.value.subjectEn = `New poll: {{pollTitle}} · Votos Mundial`
+    emailForm.value.subjectEn = `New poll: {{pollTitle}} · Music Mundial VOTING`
   }
   if (!emailForm.value.messageEn.trim()) {
-    emailForm.value.messageEn = `Hi {{name}},\n\nYou can now vote in {{pollTitle}}. Open the app and support your favorite artists.\n\nThanks for being part of Votos Mundial!`
+    emailForm.value.messageEn = `Hi {{name}},\n\nYou can now vote in {{pollTitle}}. Open the app and support your favorite artists.\n\nThanks for being part of Music Mundial VOTING!`
   }
 
   if (!pushForm.value.title.trim()) {

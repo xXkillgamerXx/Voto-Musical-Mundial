@@ -20,7 +20,7 @@ const localeTabs = [
 ]
 
 const form = ref({
-  title: 'Votos Mundial',
+  title: 'Music Mundial VOTING',
   titleEn: 'Worldwide Votes',
   body: 'Tienes una nueva notificacion.',
   bodyEn: 'You have a new notification.',

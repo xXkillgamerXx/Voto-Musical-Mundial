@@ -91,7 +91,7 @@ export const applyShareMeta = ({
     return
   }
 
-  const nextTitle = String(title || document.title || 'Votos Mundial').trim()
+  const nextTitle = String(title || document.title || 'Music Mundial VOTING').trim()
   const nextDescription = String(
     description ||
       'Vota por tus artistas favoritos, sigue rondas en vivo y descubre rankings globales de fandoms.',
@@ -114,7 +114,7 @@ export const applyShareMeta = ({
 
   ensureMeta('name', 'description', nextDescription)
   ensureMeta('property', 'og:type', 'website')
-  ensureMeta('property', 'og:site_name', 'Votos Mundial')
+  ensureMeta('property', 'og:site_name', 'Music Mundial VOTING')
   ensureMeta('property', 'og:locale', ogLocale)
   ensureMeta('property', 'og:locale:alternate', ogLocaleAlt)
   ensureMeta('property', 'og:title', nextTitle)

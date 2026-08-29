@@ -348,13 +348,13 @@ const performMissionAction = async (mission) => {
   if (isReferralMission(mission)) {
     const wasDone = mission.done
     const url = referralUrl()
-    const text = encodeURIComponent('Unete a Votos Mundial con mi codigo de invitacion')
+    const text = encodeURIComponent('Unete a Music Mundial VOTING con mi codigo de invitacion')
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Votos Mundial',
-          text: 'Unete a Votos Mundial con mi codigo de invitacion',
+          title: 'Music Mundial VOTING',
+          text: 'Unete a Music Mundial VOTING con mi codigo de invitacion',
           url,
         })
       } catch {
@@ -567,7 +567,7 @@ const performMissionAction = async (mission) => {
 const shareMissionLink = async (mission) => {
   const url = window.location.origin
   const title = missionTitle(mission)
-  const text = `${title} - Votos Mundial`
+  const text = `${title} - Music Mundial VOTING`
 
   if (mission.type === 'share_whatsapp') {
     window.open(

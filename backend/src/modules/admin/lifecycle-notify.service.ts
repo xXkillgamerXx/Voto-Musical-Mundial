@@ -138,20 +138,20 @@ export class LifecycleNotifyService {
     const copy =
       locale === 'en'
         ? {
-            subject: 'Welcome to Votos Mundial',
+            subject: 'Welcome to Music Mundial VOTING',
             message:
-              'Hi {{name}},\n\nYour account is ready. Explore live polls, earn points, and support your favorite artists.\n\nThanks for joining Votos Mundial.',
-            title: 'Welcome to Votos Mundial',
+              'Hi {{name}},\n\nYour account is ready. Explore live polls, earn points, and support your favorite artists.\n\nThanks for joining Music Mundial VOTING.',
+            title: 'Welcome to Music Mundial VOTING',
             body: 'Your account is ready. Explore live polls and support your artists.',
-            ctaLabel: 'Go to Votos Mundial',
+            ctaLabel: 'Go to Music Mundial VOTING',
           }
         : {
-            subject: 'Bienvenido a Votos Mundial',
+            subject: 'Bienvenido a Music Mundial VOTING',
             message:
-              'Hola {{name}},\n\nTu cuenta ya está lista. Explora las votaciones en vivo, gana puntos y apoya a tus artistas favoritos.\n\nGracias por unirte a Votos Mundial.',
-            title: 'Bienvenido a Votos Mundial',
+              'Hola {{name}},\n\nTu cuenta ya está lista. Explora las votaciones en vivo, gana puntos y apoya a tus artistas favoritos.\n\nGracias por unirte a Music Mundial VOTING.',
+            title: 'Bienvenido a Music Mundial VOTING',
             body: 'Tu cuenta ya está lista. Explora las votaciones y apoya a tus artistas.',
-            ctaLabel: 'Ir a Votos Mundial',
+            ctaLabel: 'Ir a Music Mundial VOTING',
           };
 
     if (canEmail && email && this.mail.isConfigured()) {
@@ -176,8 +176,8 @@ export class LifecycleNotifyService {
         [userId],
         'welcome',
         {
-          title: 'Bienvenido a Votos Mundial',
-          titleEn: 'Welcome to Votos Mundial',
+          title: 'Bienvenido a Music Mundial VOTING',
+          titleEn: 'Welcome to Music Mundial VOTING',
           message: 'Tu cuenta ya está lista. Explora las votaciones y apoya a tus artistas.',
           messageEn: 'Your account is ready. Explore live polls and support your artists.',
           url: '/',

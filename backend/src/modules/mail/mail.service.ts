@@ -62,7 +62,7 @@ export class MailService implements OnModuleInit {
     this.smtpPort = port;
     this.from =
       String(config.get<string>('MAIL_FROM') || '').trim() ||
-      'Votos Mundial <noreply@musicmundial.com>';
+      'Music Mundial VOTING <noreply@musicmundial.com>';
 
     const candidate = join(process.cwd(), 'assets', 'email', 'logo-votos.png');
     this.logoPath = existsSync(candidate) ? candidate : null;

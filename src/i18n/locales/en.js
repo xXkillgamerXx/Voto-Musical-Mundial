@@ -1,7 +1,7 @@
 export default {
   common: {
-    appName: 'Votos Mundial',
-    appNamePlain: 'Votos Mundial',
+    appName: 'MUSIC MUNDIAL VOTING - CERTIFIED COMPETITION',
+    appNamePlain: 'MUSIC MUNDIAL VOTING',
     tagline: 'CERTIFIED COMPETITION',
     loading: 'Loading...',
     advertisement: 'Advertisement',
@@ -202,7 +202,7 @@ export default {
     },
     downloadApp: {
       eyebrow: 'Official app',
-      title: 'Download Votos Mundial',
+      title: 'Download Music Mundial VOTING',
       titleLine1: 'Take the vote',
       titleLine2: 'with you',
       description:
@@ -211,12 +211,12 @@ export default {
       feature2: 'Daily missions',
       feature3: 'Fan community',
       badgeAlt: 'Get it on Google Play',
-      phoneAlt: 'Votos Mundial app preview',
+      phoneAlt: 'Music Mundial VOTING app preview',
       ctaAria: 'Download the app on Google Play',
       ctaEyebrow: 'Google Play',
       ctaTitle: 'Download the app',
       ctaHint: 'Free · Android',
-      modalAria: 'Download the Votos Mundial app',
+      modalAria: 'Download the Music Mundial VOTING app',
       modalTitle: 'Download the app',
       modalDescription:
         'Vote faster, complete missions, and get alerts from your Android phone.',
@@ -376,7 +376,7 @@ export default {
       viewCertificate: 'View certificate',
       certificateEyebrow: 'Official certificate',
       certificateTitle: 'Winner certificate',
-      certificateHint: 'Official Votos Mundial document for the declared winner.',
+      certificateHint: 'Official Music Mundial VOTING document for the declared winner.',
       certificateOpen: 'Download certificate',
       certificateDownload: 'Download certificate',
       certificateShare: 'Share',

@@ -18,7 +18,7 @@ const messaging = firebase.messaging()
 messaging.onBackgroundMessage((payload) => {
   const notification = payload.notification || {}
   const data = payload.data || {}
-  const title = notification.title || data.title || 'Votos Mundial'
+  const title = notification.title || data.title || 'Music Mundial VOTING'
 
   self.registration.showNotification(title, {
     body: notification.body || data.body || 'Tienes una nueva notificacion.',

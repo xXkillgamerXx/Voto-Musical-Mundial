@@ -45,7 +45,7 @@ export const buildEmailVerificationEmail = (input: {
     '',
     copy.security,
     '',
-    'Votos Mundial',
+    'Music Mundial VOTING',
     'https://vote.musicmundial.com',
   ].join('\n');
 

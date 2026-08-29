@@ -12,20 +12,20 @@ const SITE_URL = 'https://vote.musicmundial.com';
 
 const COPY = {
   es: {
-    thanks: '¡Gracias por ser parte de Votos Mundial!',
+    thanks: '¡Gracias por ser parte de Music Mundial VOTING!',
     notice:
-      'Recibes este correo porque tienes cuenta en Votos Mundial. Si no esperabas este mensaje, puedes ignorarlo.',
+      'Recibes este correo porque tienes cuenta en Music Mundial VOTING. Si no esperabas este mensaje, puedes ignorarlo.',
     footer: 'Votos, rankings y competencia certificada.',
     defaultCta: 'Ir a votar',
-    preheader: 'Nueva votación en Votos Mundial. Entra y vota ahora.',
+    preheader: 'Nueva votación en Music Mundial VOTING. Entra y vota ahora.',
   },
   en: {
-    thanks: 'Thanks for being part of Votos Mundial!',
+    thanks: 'Thanks for being part of Music Mundial VOTING!',
     notice:
-      'You are receiving this email because you have a Votos Mundial account. If you were not expecting this message, you can ignore it.',
+      'You are receiving this email because you have a Music Mundial VOTING account. If you were not expecting this message, you can ignore it.',
     footer: 'Votes, rankings, and certified competition.',
     defaultCta: 'Go vote',
-    preheader: 'A new poll on Votos Mundial. Jump in and vote now.',
+    preheader: 'A new poll on Music Mundial VOTING. Jump in and vote now.',
   },
 } as const;
 
@@ -52,7 +52,7 @@ export const buildPollNotifyEmail = (input: {
   const copy = COPY[locale];
   const vars = input.vars || {};
 
-  const subjectRaw = String(input.subject || '').trim() || `{{pollTitle}} · Votos Mundial`;
+  const subjectRaw = String(input.subject || '').trim() || `{{pollTitle}} · Music Mundial VOTING`;
   const messageRaw = String(input.message || '').trim();
   const subject = applyMailTemplateVars(subjectRaw, vars);
   const message = applyMailTemplateVars(messageRaw, vars);
@@ -60,7 +60,7 @@ export const buildPollNotifyEmail = (input: {
   const pollTitle = String(vars.pollTitle || '').trim();
 
   const title =
-    subject.replace(/\s*·\s*Votos Mundial$/i, '').trim() ||
+    subject.replace(/\s*·\s*Music Mundial VOTING$/i, '').trim() ||
     (pollTitle
       ? locale === 'en'
         ? `New poll: ${pollTitle}`
@@ -86,7 +86,7 @@ export const buildPollNotifyEmail = (input: {
   const safeCoverAlt = escapeHtml(
     pollTitle
       ? `${pollTitle} — vote.musicmundial.com`
-      : 'Votos Mundial — vote.musicmundial.com',
+      : 'Music Mundial VOTING — vote.musicmundial.com',
   );
   const bodyHtml = message
     ? messageToHtmlParagraphs(message).replace(
@@ -107,7 +107,7 @@ export const buildPollNotifyEmail = (input: {
     '',
     copy.notice,
     '',
-    'Votos Mundial',
+    'Music Mundial VOTING',
     SITE_URL,
   ]
     .filter((line) => line !== undefined && line !== null)
@@ -135,7 +135,7 @@ export const buildPollNotifyEmail = (input: {
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;">
           <tr>
             <td align="left" style="padding:0 8px 14px 8px;font-size:11px;letter-spacing:2.5px;color:#a78bfa;font-weight:700;text-transform:uppercase;">
-              Votos Mundial
+              Music Mundial VOTING
             </td>
           </tr>
         </table>
@@ -150,9 +150,9 @@ export const buildPollNotifyEmail = (input: {
 
           <tr>
             <td align="center" style="padding:28px 24px 8px 24px;">
-              <img src="cid:${MAIL_LOGO_CID}" width="176" height="91" alt="Votos Mundial" style="display:block;border:0;width:176px;height:auto;max-width:176px;margin:0 auto;">
+              <img src="cid:${MAIL_LOGO_CID}" width="176" height="91" alt="Music Mundial VOTING" style="display:block;border:0;width:176px;height:auto;max-width:176px;margin:0 auto;">
               <div style="margin-top:10px;font-size:11px;letter-spacing:3px;color:#c4b5fd;font-weight:700;text-transform:uppercase;">
-                Votos Mundial
+                Music Mundial VOTING
               </div>
             </td>
           </tr>
@@ -232,7 +232,7 @@ export const buildPollNotifyEmail = (input: {
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;">
           <tr>
             <td align="center" style="padding:28px 16px 6px 16px;font-size:13px;letter-spacing:2px;color:#ffffff;font-weight:800;text-transform:uppercase;font-family:Arial,Helvetica,sans-serif;">
-              Votos Mundial
+              Music Mundial VOTING
             </td>
           </tr>
           <tr>

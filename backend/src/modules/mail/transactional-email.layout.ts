@@ -84,7 +84,7 @@ export const buildTransactionalEmail = (content: TransactionalEmailContent) => {
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;border-collapse:separate;">
           <tr>
             <td style="padding:0 8px 18px;font-family:Arial,Helvetica,sans-serif;font-size:12px;letter-spacing:0.28em;text-transform:uppercase;color:#c4b5fd;">
-              Votos Mundial
+              Music Mundial VOTING
             </td>
           </tr>
           <tr>
@@ -100,9 +100,9 @@ export const buildTransactionalEmail = (content: TransactionalEmailContent) => {
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#080a18" style="background-color:#080a18;">
                 <tr>
                   <td align="center" style="padding:36px 32px 8px;">
-                    <img src="cid:${MAIL_LOGO_CID}" width="176" height="91" alt="Votos Mundial" style="display:block;border:0;width:176px;height:auto;max-width:176px;margin:0 auto;">
+                    <img src="cid:${MAIL_LOGO_CID}" width="176" height="91" alt="Music Mundial VOTING" style="display:block;border:0;width:176px;height:auto;max-width:176px;margin:0 auto;">
                     <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.32em;text-transform:uppercase;color:#f0abfc;">
-                      Votos Mundial
+                      Music Mundial VOTING
                     </p>
                   </td>
                 </tr>
@@ -198,7 +198,7 @@ export const buildTransactionalEmail = (content: TransactionalEmailContent) => {
           <tr>
             <td align="center" style="padding:24px 12px 0;font-family:Arial,Helvetica,sans-serif;">
               <p style="margin:0;font-size:13px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#e2e8f0;">
-                Votos Mundial
+                Music Mundial VOTING
               </p>
               <p style="margin:8px 0 0;font-size:12px;line-height:1.6;color:#64748b;">
                 ${escapeHtml(FOOTER[locale])}
