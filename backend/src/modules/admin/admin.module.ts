@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RewardsModule } from '../rewards/rewards.module';
@@ -12,6 +12,7 @@ import { AdminPushService } from './admin-push.service';
 import { AdminController } from './admin.controller';
 import { CommentBotCampaignController } from './comment-bot-campaign.controller';
 import { CommentBotCampaignService } from './comment-bot-campaign.service';
+import { LifecycleNotifyService } from './lifecycle-notify.service';
 import { ModerationController } from './moderation.controller';
 import { ModerationService } from './moderation.service';
 import { NotificationCampaignsController } from './notification-campaigns.controller';
@@ -21,7 +22,7 @@ import { UserActivityService } from './user-activity.service';
 import { VoteBotCampaignService } from './vote-bot-campaign.service';
 
 @Module({
-  imports: [AuthModule, PrismaModule, RewardsModule, SettingsModule],
+  imports: [forwardRef(() => AuthModule), PrismaModule, RewardsModule, SettingsModule],
   controllers: [
     AdminController,
     ModerationController,
@@ -41,7 +42,13 @@ import { VoteBotCampaignService } from './vote-bot-campaign.service';
     VoteBotCampaignService,
     CommentBotCampaignService,
     NotificationCampaignsService,
+    LifecycleNotifyService,
   ],
-  exports: [VoteBotCampaignService, CommentBotCampaignService, NotificationCampaignsService],
+  exports: [
+    VoteBotCampaignService,
+    CommentBotCampaignService,
+    NotificationCampaignsService,
+    LifecycleNotifyService,
+  ],
 })
 export class AdminModule {}

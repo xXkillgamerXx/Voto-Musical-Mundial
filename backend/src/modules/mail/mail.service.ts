@@ -20,6 +20,7 @@ import {
   normalizeEmailVerificationCopy,
 } from './email-verification.config';
 import { buildAdminTestEmail } from './admin-test.email';
+import { buildPollNotifyEmail } from './poll-notify.email';
 import { RedisService } from '../redis/redis.service';
 import { resolveMailLocale } from './transactional-email.layout';
 
@@ -257,16 +258,39 @@ export class MailService implements OnModuleInit {
     to: string;
     subject?: string;
     message?: string;
-    mode?: 'test' | 'broadcast';
+    mode?: 'test' | 'broadcast' | 'poll';
+    locale?: string | null;
+    ctaUrl?: string | null;
+    ctaLabel?: string | null;
+    coverImageUrl?: string | null;
+    subtitle?: string | null;
+    vars?: Record<string, string | null | undefined>;
   }) {
     const to = String(input.to || '')
       .trim()
       .toLowerCase();
-    const { subject, text, html } = buildAdminTestEmail({
-      subject: input.subject,
-      message: input.message,
-      mode: input.mode === 'broadcast' ? 'broadcast' : 'test',
-    });
+    const built =
+      input.mode === 'poll'
+        ? buildPollNotifyEmail({
+            subject: input.subject,
+            message: input.message,
+            locale: input.locale,
+            ctaUrl: input.ctaUrl,
+            ctaLabel: input.ctaLabel,
+            coverImageUrl: input.coverImageUrl,
+            subtitle: input.subtitle,
+            vars: input.vars,
+          })
+        : buildAdminTestEmail({
+            subject: input.subject,
+            message: input.message,
+            mode: input.mode === 'broadcast' ? 'broadcast' : 'test',
+            locale: input.locale,
+            ctaUrl: input.ctaUrl,
+            ctaLabel: input.ctaLabel,
+            vars: input.vars,
+          });
+    const { subject, text, html } = built;
 
     const info = await this.sendMail({
       to,

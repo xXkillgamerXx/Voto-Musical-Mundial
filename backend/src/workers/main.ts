@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module';
 import { CommentBotCampaignWorker } from './comment-bot-campaign.worker';
+import { LifecycleNotifyWorker } from './lifecycle-notify.worker';
 import { NotificationCampaignWorker } from './notification-campaign.worker';
 import { VoteBotCampaignWorker } from './vote-bot-campaign.worker';
 import { VoteSyncWorker } from './vote-sync.worker';
@@ -13,11 +14,13 @@ async function bootstrap() {
   const voteBotCampaignWorker = app.get(VoteBotCampaignWorker);
   const commentBotCampaignWorker = app.get(CommentBotCampaignWorker);
   const notificationCampaignWorker = app.get(NotificationCampaignWorker);
+  const lifecycleNotifyWorker = app.get(LifecycleNotifyWorker);
 
   await voteSyncWorker.start();
   await voteBotCampaignWorker.start();
   await commentBotCampaignWorker.start();
   await notificationCampaignWorker.start();
+  await lifecycleNotifyWorker.start();
 
   const shutdown = async () => {
     await app.close();

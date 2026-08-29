@@ -31,6 +31,23 @@ const Map<String, Map<String, String>> settingsStrings = {
   },
   'settings.languageEnglish': {'es': 'Inglés', 'en': 'English', 'ko': '영어'},
   'settings.languageKorean': {'es': 'Coreano', 'en': 'Korean', 'ko': '한국어'},
+  'settings.emailCampaigns': {
+    'es': 'Correos de votaciones',
+    'en': 'Poll emails',
+    'ko': '투표 이메일',
+  },
+  'settings.emailCampaignsHelp': {
+    'es':
+        'Bienvenida, votaciones en vivo, recordatorios, resultados y comunicados. No afecta verificación ni recuperar contraseña.',
+    'en':
+        'Welcome, live polls, reminders, results and announcements. Does not affect verification or password reset.',
+    'ko': '환영, 라이브 투표, 알림, 결과 및 공지. 인증/비밀번호 재설정에는 영향 없음.',
+  },
+  'settings.emailCampaignsError': {
+    'es': 'No se pudo guardar la preferencia de correo.',
+    'en': 'Could not save the email preference.',
+    'ko': '이메일 설정을 저장하지 못했습니다.',
+  },
   'settings.signOut': {'es': 'Cerrar sesión', 'en': 'Sign out', 'ko': '로그아웃'},
   'settings.version': {'es': 'Versión', 'en': 'Version', 'ko': '버전'},
 

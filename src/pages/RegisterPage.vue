@@ -76,6 +76,7 @@ const isCheckingPhone = ref(false)
 const isUsernameAvailable = ref(false)
 const isPhoneValid = ref(false)
 const errorMessage = ref('')
+const successMessage = ref('')
 const usernameMessage = ref('')
 const phoneMessage = ref('')
 const phoneApiInternational = ref('')
@@ -464,7 +465,7 @@ const handleRegister = async () => {
       return
     }
 
-    await register({
+    const result = await register({
       email: email.value.trim().toLowerCase(),
       password: password.value,
       username: normalizedUsername.value,
@@ -481,8 +482,21 @@ const handleRegister = async () => {
         phoneDialCode: selectedPhoneCountry.value?.dialCode || '',
         phone: phone.value.trim(),
         phoneInternational: phoneForSave.value,
+        locale: i18n.global.locale.value === 'en' ? 'en' : 'es',
       },
     })
+
+    if (result?.requiresEmailVerification) {
+      successMessage.value =
+        result.message ||
+        translate('auth.verifySentNotice', {
+          email: email.value.trim().toLowerCase(),
+        })
+      window.setTimeout(() => {
+        goToVerifyEmail(email.value.trim().toLowerCase())
+      }, 900)
+      return
+    }
 
     goToVerifyEmail(email.value.trim().toLowerCase())
   } catch (error) {
@@ -741,6 +755,12 @@ const handleRegister = async () => {
 
             <p v-if="errorMessage" class="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">
               {{ errorMessage }}
+            </p>
+            <p
+              v-if="successMessage"
+              class="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100"
+            >
+              {{ successMessage }}
             </p>
 
             <div class="grid gap-3 sm:grid-cols-2">

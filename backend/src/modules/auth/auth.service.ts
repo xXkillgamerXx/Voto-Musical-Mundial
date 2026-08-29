@@ -2,8 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -18,6 +20,7 @@ import { OAuth2Client, TokenInfo } from 'google-auth-library';
 import { Request } from 'express';
 import { BLOCKED_IPS_KEY } from '../../common/moderation-keys';
 import { getClientIp, hashIp } from '../../common/request';
+import { LifecycleNotifyService } from '../admin/lifecycle-notify.service';
 import { MailService } from '../mail/mail.service';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -61,6 +64,8 @@ export class AuthService {
     private readonly redis: RedisService,
     private readonly mail: MailService,
     private readonly missionProgress: MissionProgressService,
+    @Inject(forwardRef(() => LifecycleNotifyService))
+    private readonly lifecycleNotify: LifecycleNotifyService,
   ) {}
 
   async register(dto: RegisterDto, request?: Request) {
@@ -237,6 +242,7 @@ export class AuthService {
     });
 
     await this.clearEmailVerificationKeys(user.id, codeHash);
+    this.lifecycleNotify.notifyWelcomeAsync(updated);
 
     return this.authResponse(updated);
   }
@@ -404,6 +410,7 @@ export class AuthService {
             })
           : null;
 
+      const wasUnverified = !existing.emailVerifiedAt;
       const updated = await this.prisma.user.update({
         where: { id: existing.id },
         data: {
@@ -420,6 +427,10 @@ export class AuthService {
           } as any,
         },
       });
+
+      if (wasUnverified) {
+        this.lifecycleNotify.notifyWelcomeAsync(updated);
+      }
 
       return this.authResponse(updated);
     }
@@ -504,6 +515,7 @@ export class AuthService {
       throw error;
     }
 
+    this.lifecycleNotify.notifyWelcomeAsync(user);
     return this.authResponse(user);
   }
 
@@ -731,12 +743,16 @@ export class AuthService {
         locale,
       });
     } catch (error) {
-      await this.clearEmailVerificationKeys(user.id, codeHash);
       this.logger.error(`No se pudo enviar verificacion a ${user.email}: ${(error as Error).message}`);
       if (this.config.get('NODE_ENV') !== 'production') {
+        await this.clearEmailVerificationKeys(user.id, codeHash);
         throw new ServiceUnavailableException(`No se pudo enviar el correo: ${(error as Error).message}`);
       }
-      throw error;
+      // Keep the code in Redis so "Resend" or a delayed delivery can still work;
+      // register must not fail after the account was created.
+      this.logger.warn(
+        `Registro de ${user.email} con posible fallo SMTP; el usuario puede reenviar el codigo.`,
+      );
     }
   }
 

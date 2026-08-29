@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { allowsCampaignEmail } from '../../common/email-preferences';
 import { serialize } from '../../common/serialize';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,20 +70,49 @@ export class UsersService {
     }
 
     const current = await this.prisma.user.findUnique({ where: { id }, select: { metadata: true } });
-    const metadata = {
-      ...((current?.metadata as Record<string, unknown>) || {}),
-      country: String(body?.country || '').trim(),
-      bio: String(body?.bio || '').trim(),
-      banner: String(body?.banner || body?.bannerUrl || '').trim(),
+    const currentMeta =
+      current?.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+        ? (current.metadata as Record<string, unknown>)
+        : {};
+    const metadata: Record<string, unknown> = { ...currentMeta };
+
+    if (Object.prototype.hasOwnProperty.call(body || {}, 'country')) {
+      metadata.country = String(body.country || '').trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(body || {}, 'bio')) {
+      metadata.bio = String(body.bio || '').trim();
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(body || {}, 'banner') ||
+      Object.prototype.hasOwnProperty.call(body || {}, 'bannerUrl')
+    ) {
+      metadata.banner = String(body?.banner || body?.bannerUrl || '').trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(body || {}, 'emailCampaigns')) {
+      metadata.emailCampaigns = Boolean(body.emailCampaigns);
+    }
+
+    const data: Record<string, unknown> = {
+      metadata: metadata as any,
     };
+
+    if (normalizedUsername) {
+      data.username = normalizedUsername;
+    }
+
+    const nextDisplayName = String(body?.displayName || body?.name || '').trim();
+    if (nextDisplayName) {
+      data.displayName = nextDisplayName;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body || {}, 'photoUrl') ||
+        Object.prototype.hasOwnProperty.call(body || {}, 'photoURL')) {
+      data.photoUrl = String(body?.photoUrl || body?.photoURL || '').trim() || null;
+    }
+
     const updated = await this.prisma.user.update({
       where: { id },
-      data: {
-        username: normalizedUsername,
-        displayName: String(body?.displayName || body?.name || '').trim() || undefined,
-        photoUrl: String(body?.photoUrl || body?.photoURL || '').trim() || null,
-        metadata: metadata as any,
-      },
+      data: data as any,
       select: this.publicSelect,
     });
 
@@ -175,6 +205,7 @@ export class UsersService {
       dailyRewardStreakDay: user.dailyRewardStreakDay,
       lastDailyRewardClaimDate: user.lastDailyRewardClaimDate,
       emailVerified: Boolean(user.emailVerifiedAt),
+      emailCampaigns: includeEmail ? allowsCampaignEmail(metadata) : undefined,
       followedArtists,
     });
   }

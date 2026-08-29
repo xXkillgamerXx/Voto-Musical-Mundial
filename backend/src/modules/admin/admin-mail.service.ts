@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { allowsCampaignEmail } from '../../common/email-preferences';
 import { serialize } from '../../common/serialize';
 import { buildAdminTestEmail } from '../mail/admin-test.email';
 import { buildEmailVerificationEmail } from '../mail/email-verification.email';
 import {
   EmailVerificationLocaleCopy,
 } from '../mail/email-verification.config';
+import { buildPollNotifyEmail } from '../mail/poll-notify.email';
 import { MAIL_LOGO_CID } from '../mail/transactional-email.layout';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,6 +17,7 @@ type MailRecipient = {
   userId: string;
   email: string;
   name: string;
+  locale: 'es' | 'en';
 };
 
 type MailJobState = {
@@ -68,16 +71,30 @@ export class AdminMailService {
     email: string | null;
     displayName: string | null;
     username: string | null;
+    metadata?: unknown;
   }): MailRecipient | null {
     const email = String(user.email || '')
       .trim()
       .toLowerCase();
     if (!email || !this.isValidEmail(email)) return null;
+    if (!allowsCampaignEmail(user.metadata)) return null;
     return {
       userId: user.id.toString(),
       email,
       name: user.displayName || user.username || email,
+      locale: this.resolveUserLocale(user.metadata),
     };
+  }
+
+  private resolveUserLocale(metadata: unknown): 'es' | 'en' {
+    const meta =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)
+        : {};
+    const raw = String(meta.locale || meta.lang || meta.language || '')
+      .trim()
+      .toLowerCase();
+    return raw.startsWith('en') ? 'en' : 'es';
   }
 
   private htmlForPreview(html: string) {
@@ -138,11 +155,16 @@ export class AdminMailService {
   preview(input: {
     subject?: string;
     message?: string;
-    mode?: 'test' | 'broadcast' | 'verification';
+    mode?: 'test' | 'broadcast' | 'verification' | 'poll';
     locale?: string | null;
     name?: string;
     code?: string;
     copy?: Partial<EmailVerificationLocaleCopy> | null;
+    ctaUrl?: string | null;
+    ctaLabel?: string | null;
+    coverImageUrl?: string | null;
+    subtitle?: string | null;
+    vars?: Record<string, string | null | undefined>;
   }) {
     if (input.mode === 'verification') {
       const built = buildEmailVerificationEmail({
@@ -161,11 +183,45 @@ export class AdminMailService {
       };
     }
 
+    if (input.mode === 'poll') {
+      const built = buildPollNotifyEmail({
+        subject: input.subject,
+        message: input.message,
+        locale: input.locale || 'es',
+        ctaUrl: input.ctaUrl,
+        ctaLabel: input.ctaLabel,
+        coverImageUrl: input.coverImageUrl,
+        subtitle: input.subtitle,
+        vars: {
+          name: input.name || input.vars?.name || (input.locale === 'en' ? 'User' : 'Usuario'),
+          pollTitle: input.vars?.pollTitle || '',
+          ...(input.vars || {}),
+        },
+      });
+
+      return {
+        subject: built.subject,
+        html: this.htmlForPreview(built.html),
+        text: built.text,
+        mode: 'poll' as const,
+        locale: built.locale,
+        ctaUrl: built.ctaUrl,
+      };
+    }
+
     const mode = input.mode === 'broadcast' ? 'broadcast' : 'test';
     const built = buildAdminTestEmail({
       subject: input.subject,
       message: input.message,
       mode,
+      locale: input.locale || 'es',
+      ctaUrl: input.ctaUrl,
+      ctaLabel: input.ctaLabel,
+      vars: {
+        name: input.name || input.vars?.name || (input.locale === 'en' ? 'User' : 'Usuario'),
+        pollTitle: input.vars?.pollTitle || '',
+        ...(input.vars || {}),
+      },
     });
 
     return {
@@ -173,6 +229,8 @@ export class AdminMailService {
       html: this.htmlForPreview(built.html),
       text: built.text,
       mode,
+      locale: built.locale,
+      ctaUrl: built.ctaUrl,
     };
   }
 
@@ -217,6 +275,7 @@ export class AdminMailService {
             email: true,
             displayName: true,
             username: true,
+            metadata: true,
           },
         });
 
@@ -251,6 +310,7 @@ export class AdminMailService {
         email: true,
         displayName: true,
         username: true,
+        metadata: true,
       },
     });
 
@@ -262,8 +322,19 @@ export class AdminMailService {
   async sendBulk(payload: {
     subject?: string;
     message?: string;
+    subjectEn?: string;
+    messageEn?: string;
     userIds?: string[];
     sendToAll?: boolean;
+    ctaUrl?: string | null;
+    ctaLabel?: string | null;
+    ctaLabelEn?: string | null;
+    pollTitle?: string | null;
+    pollTitleEn?: string | null;
+    template?: 'broadcast' | 'poll';
+    coverImageUrl?: string | null;
+    subtitle?: string | null;
+    subtitleEn?: string | null;
   }) {
     if (!this.mail.isConfigured()) {
       throw new BadRequestException(
@@ -273,15 +344,27 @@ export class AdminMailService {
 
     const subject = String(payload.subject || '').trim();
     const message = String(payload.message || '').trim();
+    const subjectEn = String(payload.subjectEn || '').trim() || subject;
+    const messageEn = String(payload.messageEn || '').trim() || message;
 
     if (!subject || !message) {
-      throw new BadRequestException('Asunto y mensaje son obligatorios.');
+      throw new BadRequestException('Asunto y mensaje en español son obligatorios.');
     }
 
     const recipients = await this.collectRecipients(payload);
     if (!recipients.length) {
       throw new BadRequestException('No hay correos válidos para enviar.');
     }
+
+    const ctaUrl = String(payload.ctaUrl || '').trim() || null;
+    const ctaLabel = String(payload.ctaLabel || '').trim() || null;
+    const ctaLabelEn = String(payload.ctaLabelEn || '').trim() || ctaLabel;
+    const pollTitle = String(payload.pollTitle || '').trim() || null;
+    const pollTitleEn = String(payload.pollTitleEn || '').trim() || pollTitle;
+    const template = payload.template === 'poll' ? 'poll' : 'broadcast';
+    const coverImageUrl = String(payload.coverImageUrl || '').trim() || null;
+    const subtitle = String(payload.subtitle || '').trim() || null;
+    const subtitleEn = String(payload.subtitleEn || '').trim() || subtitle;
 
     const jobId = randomUUID();
     const job: MailJobState = {
@@ -301,7 +384,21 @@ export class AdminMailService {
     };
     await this.saveMailJob(job);
 
-    void this.runMailJob(jobId, recipients, { subject, message }).catch((error) => {
+    void this.runMailJob(jobId, recipients, {
+      subject,
+      message,
+      subjectEn,
+      messageEn,
+      ctaUrl,
+      ctaLabel,
+      ctaLabelEn,
+      pollTitle,
+      pollTitleEn,
+      template,
+      coverImageUrl,
+      subtitle,
+      subtitleEn,
+    }).catch((error) => {
       this.logger.error(`Mail job ${jobId} fallo: ${(error as Error).message}`);
     });
 
@@ -320,7 +417,21 @@ export class AdminMailService {
   private async runMailJob(
     jobId: string,
     recipients: MailRecipient[],
-    payload: { subject: string; message: string },
+    payload: {
+      subject: string;
+      message: string;
+      subjectEn: string;
+      messageEn: string;
+      ctaUrl?: string | null;
+      ctaLabel?: string | null;
+      ctaLabelEn?: string | null;
+      pollTitle?: string | null;
+      pollTitleEn?: string | null;
+      template?: 'broadcast' | 'poll';
+      coverImageUrl?: string | null;
+      subtitle?: string | null;
+      subtitleEn?: string | null;
+    },
   ) {
     const raw = await this.redis.client.get(this.mailJobKey(jobId));
     if (!raw) return;
@@ -332,11 +443,21 @@ export class AdminMailService {
     try {
       for (const recipient of recipients) {
         try {
+          const isEn = recipient.locale === 'en';
           await this.mail.sendTestEmail({
             to: recipient.email,
-            subject: payload.subject,
-            message: payload.message,
-            mode: 'broadcast',
+            subject: isEn ? payload.subjectEn : payload.subject,
+            message: isEn ? payload.messageEn : payload.message,
+            mode: payload.template === 'poll' ? 'poll' : 'broadcast',
+            locale: recipient.locale,
+            ctaUrl: payload.ctaUrl,
+            ctaLabel: isEn ? payload.ctaLabelEn || payload.ctaLabel : payload.ctaLabel,
+            coverImageUrl: payload.coverImageUrl,
+            subtitle: isEn ? payload.subtitleEn || payload.subtitle : payload.subtitle,
+            vars: {
+              name: recipient.name,
+              pollTitle: (isEn ? payload.pollTitleEn : payload.pollTitle) || '',
+            },
           });
           job.sent += 1;
         } catch (error) {

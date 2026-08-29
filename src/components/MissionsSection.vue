@@ -567,7 +567,7 @@ const performMissionAction = async (mission) => {
 const shareMissionLink = async (mission) => {
   const url = window.location.origin
   const title = missionTitle(mission)
-  const text = `${title} - Music Mundial VOTE`
+  const text = `${title} - Votos Mundial`
 
   if (mission.type === 'share_whatsapp') {
     window.open(

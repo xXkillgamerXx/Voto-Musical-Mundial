@@ -58,8 +58,8 @@ export class PreviewEmailDto {
   message?: string;
 
   @IsOptional()
-  @IsIn(['test', 'broadcast', 'verification'])
-  mode?: 'test' | 'broadcast' | 'verification';
+  @IsIn(['test', 'broadcast', 'verification', 'poll'])
+  mode?: 'test' | 'broadcast' | 'verification' | 'poll';
 
   @IsOptional()
   @IsIn(['es', 'en'])
@@ -80,6 +80,30 @@ export class PreviewEmailDto {
   @ValidateNested()
   @Type(() => VerificationCopyFieldsDto)
   copy?: VerificationCopyFieldsDto;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  ctaUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  ctaLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  coverImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  subtitle?: string;
+
+  @IsOptional()
+  @IsObject()
+  vars?: Record<string, string>;
 }
 
 export class UpdateVerificationCopyDto {

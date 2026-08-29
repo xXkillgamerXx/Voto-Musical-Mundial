@@ -78,7 +78,7 @@ class PushNotificationService {
     if (Platform.isAndroid) {
       const channel = AndroidNotificationChannel(
         'vmm_default',
-        'Music Mundial VOTE',
+        'Votos Mundial',
         description: 'Regalos, misiones y avisos importantes',
         importance: Importance.high,
       );
@@ -324,7 +324,7 @@ class PushNotificationService {
       onInAppBanner?.call(
         title: localizedTitle.isNotEmpty
             ? localizedTitle
-            : 'Music Mundial VOTE',
+            : 'Votos Mundial',
         body: localizedBody.isNotEmpty ? localizedBody : localizedTitle,
         data: data,
       );
@@ -338,7 +338,7 @@ class PushNotificationService {
         const NotificationDetails(
           android: AndroidNotificationDetails(
             'vmm_default',
-            'Music Mundial VOTE',
+            'Votos Mundial',
             importance: Importance.high,
             priority: Priority.high,
           ),

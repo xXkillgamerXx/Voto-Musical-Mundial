@@ -19,6 +19,7 @@ const COPY = {
     broadcastTitle: 'Comunicado',
     broadcastNotice:
       'Recibes este correo porque tienes cuenta en Votos Mundial. Si no esperabas este mensaje, puedes ignorarlo.',
+    pollCta: 'Ir a votar',
   },
   en: {
     defaultSubject: 'Test email · Votos Mundial',
@@ -34,34 +35,63 @@ const COPY = {
     broadcastTitle: 'Announcement',
     broadcastNotice:
       'You are receiving this email because you have a Votos Mundial account. If you were not expecting it, you can safely ignore it.',
+    pollCta: 'Go vote',
   },
 } as const;
+
+const SITE_URL = 'https://vote.musicmundial.com';
+
+export const applyMailTemplateVars = (
+  template: string,
+  vars: Record<string, string | null | undefined>,
+) =>
+  String(template || '')
+    .replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => {
+      const value = String(vars[key] ?? '').trim();
+      return value;
+    })
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ +\n/g, '\n')
+    .trim();
 
 export const buildAdminTestEmail = (input: {
   subject?: string;
   message?: string;
   locale?: string | null;
   mode?: 'test' | 'broadcast';
+  ctaUrl?: string | null;
+  ctaLabel?: string | null;
+  vars?: Record<string, string | null | undefined>;
 }) => {
   const locale = resolveMailLocale(input.locale);
   const copy = COPY[locale];
   const isBroadcast = input.mode === 'broadcast';
-  const subject =
+  const vars = input.vars || {};
+
+  const subjectRaw =
     String(input.subject || '').trim() ||
     (isBroadcast ? copy.broadcastSubject : copy.defaultSubject);
-  const message = String(input.message || '').trim() || copy.defaultMessage;
+  const messageRaw = String(input.message || '').trim() || copy.defaultMessage;
+
+  const subject = applyMailTemplateVars(subjectRaw, vars);
+  const message = applyMailTemplateVars(messageRaw, vars);
   const title =
     subject.replace(/ · Votos Mundial$/i, '').replace(/ · Music Mundial Voting$/i, '').trim() ||
     (isBroadcast ? copy.broadcastTitle : copy.defaultTitle);
   const notice = isBroadcast ? copy.broadcastNotice : copy.notice;
   const preheader = isBroadcast ? copy.broadcastPreheader : copy.preheader;
 
+  const ctaUrl = String(input.ctaUrl || '').trim() || SITE_URL;
+  const ctaLabel =
+    String(input.ctaLabel || '').trim() ||
+    (ctaUrl !== SITE_URL ? copy.pollCta : copy.cta);
+
   const text = [
     title,
     '',
     message,
     '',
-    'https://vote.musicmundial.com',
+    ctaUrl,
     '',
     notice,
     '',
@@ -70,12 +100,12 @@ export const buildAdminTestEmail = (input: {
 
   const html = buildTransactionalEmail({
     locale,
-    preheader,
+    preheader: applyMailTemplateVars(preheader, vars),
     title,
     bodyHtml: messageToHtmlParagraphs(message),
-    cta: { label: copy.cta, url: 'https://vote.musicmundial.com' },
+    cta: { label: ctaLabel, url: ctaUrl },
     notice,
   });
 
-  return { subject, text, html, locale };
+  return { subject, text, html, locale, ctaUrl, ctaLabel };
 };

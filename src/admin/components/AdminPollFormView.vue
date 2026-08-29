@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import RichTextEditor from '../../components/RichTextEditor.vue'
+import AdminPollNotifyPanel from './AdminPollNotifyPanel.vue'
 import {
   createAdminPoll,
   getAdminPollCategories,
@@ -37,6 +38,7 @@ const emptyPoll = {
   anonymousVotingBlockByIp: true,
   hideVoteCounts: false,
   hideCountdown: false,
+  closingReminderDays: 1,
 }
 
 const pollForm = ref({ ...emptyPoll })
@@ -55,6 +57,13 @@ const localeTabs = [
 
 const isEditing = computed(() => Boolean(props.pollId))
 const formTitle = computed(() => (isEditing.value ? translate('admin.pollForm.editTitle') : translate('admin.pollForm.createTitle')))
+const notifyAutoOpen = computed(() => {
+  try {
+    return new URLSearchParams(window.location.search).get('notify') === '1'
+  } catch {
+    return false
+  }
+})
 const selectedCategory = computed(() =>
   categories.value.find((category) => String(category.id) === String(pollForm.value.categoryId)) || null,
 )
@@ -243,6 +252,11 @@ const loadPoll = async () => {
       anonymousVotingBlockByIp: poll.anonymousVoting?.blockByIp !== false,
       hideVoteCounts: Boolean(poll.hideVoteCounts),
       hideCountdown: Boolean(poll.hideCountdown),
+      closingReminderDays: (() => {
+        const raw = Number(poll.closingReminderDays)
+        if (!Number.isFinite(raw)) return 1
+        return Math.min(14, Math.max(0, Math.floor(raw)))
+      })(),
     }
   } catch {
     errorMessage.value = translate('admin.pollForm.errors.load')
@@ -292,6 +306,10 @@ const savePoll = async () => {
     },
     hideVoteCounts: Boolean(pollForm.value.hideVoteCounts),
     hideCountdown: Boolean(pollForm.value.hideCountdown),
+    closingReminderDays: Math.min(
+      14,
+      Math.max(0, Math.floor(Number(pollForm.value.closingReminderDays ?? 1))),
+    ),
     isLive: pollForm.value.status === 'live',
     winnersStatus: pollForm.value.status === 'closed' ? 'selected' : 'pending',
   }
@@ -301,10 +319,15 @@ const savePoll = async () => {
       await updateAdminPoll(props.pollId, pollData)
       successMessage.value = translate('admin.pollForm.updated')
     } else {
-      await createAdminPoll({
+      const created = await createAdminPoll({
         ...pollData,
         winnerIds: [],
       })
+      const createdId = created?.id || created?.pollId
+      if (createdId) {
+        window.location.href = `/admin/votaciones/editar/${createdId}?notify=1`
+        return
+      }
       window.location.href = '/admin/votaciones'
     }
   } catch {
@@ -614,6 +637,28 @@ onMounted(async () => {
             </select>
           </label>
 
+          <div class="rounded-3xl border border-amber-300/20 bg-amber-400/10 p-4">
+            <label class="block">
+              <span class="text-xs font-bold uppercase tracking-widest text-amber-100">
+                {{ $t('admin.pollForm.closingReminder') }}
+              </span>
+              <p class="mt-1 text-sm leading-6 text-slate-300">
+                {{ $t('admin.pollForm.closingReminderHelp') }}
+              </p>
+              <select
+                v-model.number="pollForm.closingReminderDays"
+                class="mt-3 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none transition focus:border-amber-300/40"
+              >
+                <option :value="0">{{ $t('admin.pollForm.closingReminderOff') }}</option>
+                <option :value="1">{{ $t('admin.pollForm.closingReminderDays', { days: 1 }) }}</option>
+                <option :value="2">{{ $t('admin.pollForm.closingReminderDays', { days: 2 }) }}</option>
+                <option :value="3">{{ $t('admin.pollForm.closingReminderDays', { days: 3 }) }}</option>
+                <option :value="5">{{ $t('admin.pollForm.closingReminderDays', { days: 5 }) }}</option>
+                <option :value="7">{{ $t('admin.pollForm.closingReminderDays', { days: 7 }) }}</option>
+              </select>
+            </label>
+          </div>
+
           <div class="rounded-3xl border border-violet-300/20 bg-violet-400/10 p-4">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -724,5 +769,19 @@ onMounted(async () => {
         </div>
       </form>
     </article>
+
+    <AdminPollNotifyPanel
+      v-if="isEditing"
+      :poll-id="pollId"
+      :poll-title="pollForm.title"
+      :poll-title-en="pollForm.titleEn"
+      :poll-slug="pollForm.slug"
+      :poll-slug-en="pollForm.slugEn"
+      :poll-year="pollForm.year"
+      :poll-banner="pollForm.banner"
+      :poll-description="pollForm.description"
+      :poll-description-en="pollForm.descriptionEn"
+      :auto-open="notifyAutoOpen"
+    />
   </section>
 </template>

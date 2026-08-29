@@ -48,6 +48,7 @@ class UsersApi {
     String? banner,
     String? bio,
     String? country,
+    bool? emailCampaigns,
   }) async {
     final body = <String, dynamic>{};
     if (displayName != null) {
@@ -59,6 +60,7 @@ class UsersApi {
     if (banner != null) body['banner'] = banner;
     if (bio != null) body['bio'] = bio;
     if (country != null) body['country'] = country;
+    if (emailCampaigns != null) body['emailCampaigns'] = emailCampaigns;
 
     final payload = await _client.request(
       '/users/me',

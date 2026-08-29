@@ -38,12 +38,34 @@ const previewHtml = ref('')
 const previewSubject = ref('')
 const showPreview = ref(true)
 const verificationLocale = ref('es')
+const broadcastLocale = ref('es')
 
 const form = ref({
   to: '',
   subject: 'Comunicado · Votos Mundial',
   message:
     'Hola,\n\nTenemos novedades en Votos Mundial. Entra a la plataforma para ver las votaciones activas y apoyar a tus artistas.\n\n¡Gracias por formar parte de la comunidad!',
+  subjectEn: 'Announcement · Votos Mundial',
+  messageEn:
+    'Hi,\n\nWe have news on Votos Mundial. Open the platform to see active polls and support your artists.\n\nThanks for being part of the community!',
+})
+
+const activeBroadcastSubject = computed({
+  get: () =>
+    broadcastLocale.value === 'en' ? form.value.subjectEn : form.value.subject,
+  set: (value) => {
+    if (broadcastLocale.value === 'en') form.value.subjectEn = value
+    else form.value.subject = value
+  },
+})
+
+const activeBroadcastMessage = computed({
+  get: () =>
+    broadcastLocale.value === 'en' ? form.value.messageEn : form.value.message,
+  set: (value) => {
+    if (broadcastLocale.value === 'en') form.value.messageEn = value
+    else form.value.message = value
+  },
 })
 
 const verificationForm = ref({
@@ -211,9 +233,17 @@ const refreshPreview = async () => {
     }
 
     const preview = await previewAdminMail({
-      subject: form.value.subject.trim(),
-      message: form.value.message.trim(),
+      subject:
+        broadcastLocale.value === 'en'
+          ? form.value.subjectEn.trim() || form.value.subject.trim()
+          : form.value.subject.trim(),
+      message:
+        broadcastLocale.value === 'en'
+          ? form.value.messageEn.trim() || form.value.message.trim()
+          : form.value.message.trim(),
       mode: sendToAll.value || selectedUserIds.value.length ? 'broadcast' : 'test',
+      locale: broadcastLocale.value,
+      name: broadcastLocale.value === 'en' ? 'User' : 'Usuario',
     })
     applyPreviewHtml(preview?.html, preview?.subject || form.value.subject)
   } catch (error) {
@@ -248,8 +278,16 @@ const sendTest = async () => {
   try {
     lastResult.value = await sendAdminTestEmail({
       to: form.value.to.trim(),
-      subject: form.value.subject.trim(),
-      message: form.value.message.trim(),
+      subject:
+        broadcastLocale.value === 'en'
+          ? form.value.subjectEn.trim() || form.value.subject.trim()
+          : form.value.subject.trim(),
+      message:
+        broadcastLocale.value === 'en'
+          ? form.value.messageEn.trim() || form.value.message.trim()
+          : form.value.message.trim(),
+      mode: 'broadcast',
+      locale: broadcastLocale.value,
     })
     successMessage.value = `Correo de prueba enviado a ${lastResult.value.to}. Revisa la bandeja de Mailtrap.`
   } catch (error) {
@@ -312,7 +350,12 @@ const sendBulk = async () => {
   lastResult.value = null
 
   if (!form.value.subject.trim() || !form.value.message.trim()) {
-    errorMessage.value = 'Asunto y mensaje son obligatorios.'
+    errorMessage.value = 'Asunto y mensaje en español son obligatorios.'
+    return
+  }
+
+  if (!form.value.subjectEn.trim() || !form.value.messageEn.trim()) {
+    errorMessage.value = 'Asunto y mensaje en inglés son obligatorios.'
     return
   }
 
@@ -344,6 +387,8 @@ const sendBulk = async () => {
     const started = await sendAdminBulkEmail({
       subject: form.value.subject.trim(),
       message: form.value.message.trim(),
+      subjectEn: form.value.subjectEn.trim(),
+      messageEn: form.value.messageEn.trim(),
       userIds: selectedUserIds.value,
       sendToAll: sendToAll.value,
     })
@@ -375,6 +420,9 @@ watch(
   () => [
     form.value.subject,
     form.value.message,
+    form.value.subjectEn,
+    form.value.messageEn,
+    broadcastLocale.value,
     sendToAll.value,
     selectedUserIds.value.length,
     verificationLocale.value,
@@ -517,15 +565,43 @@ onUnmounted(() => {
         v-if="mailTab === 'broadcast'"
         class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6"
       >
-        <h3 class="text-lg font-black text-white">Mensaje</h3>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 class="text-lg font-black text-white">Mensaje</h3>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+              :class="
+                broadcastLocale === 'es'
+                  ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-slate-300'
+              "
+              @click="broadcastLocale = 'es'"
+            >
+              ES
+            </button>
+            <button
+              type="button"
+              class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+              :class="
+                broadcastLocale === 'en'
+                  ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+                  : 'border border-white/10 bg-white/5 text-slate-300'
+              "
+              @click="broadcastLocale = 'en'"
+            >
+              EN
+            </button>
+          </div>
+        </div>
 
         <div class="mt-4 space-y-4">
           <div>
             <label class="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-              Asunto
+              {{ broadcastLocale === 'en' ? 'Subject (EN)' : 'Asunto (ES)' }}
             </label>
             <input
-              v-model="form.subject"
+              v-model="activeBroadcastSubject"
               type="text"
               maxlength="200"
               class="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
@@ -534,16 +610,19 @@ onUnmounted(() => {
 
           <div>
             <label class="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-              Mensaje
+              {{ broadcastLocale === 'en' ? 'Message (EN)' : 'Mensaje (ES)' }}
             </label>
             <textarea
-              v-model="form.message"
+              v-model="activeBroadcastMessage"
               rows="8"
               maxlength="5000"
               class="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-fuchsia-300/40"
             ></textarea>
           </div>
 
+          <p class="text-xs text-slate-500">
+            Al enviar a todos, cada usuario recibe ES o EN según su idioma (por defecto español).
+          </p>
           <label class="flex items-center gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-black text-amber-100">
             <input v-model="sendToAll" type="checkbox" class="size-4 accent-amber-300" />
             Enviar a todos los usuarios con correo ({{ totalWithEmail }})

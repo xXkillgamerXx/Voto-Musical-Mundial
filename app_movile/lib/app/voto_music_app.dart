@@ -63,7 +63,7 @@ class _VotoMusicAppState extends State<VotoMusicApp>
       animation: AppLocale.instance,
       builder: (context, _) {
         return MaterialApp(
-          title: 'Music Mundial VOTE',
+          title: 'Votos Mundial',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.dark,
           darkTheme: AppTheme.dark,

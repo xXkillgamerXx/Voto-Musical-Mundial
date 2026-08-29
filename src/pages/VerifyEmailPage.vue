@@ -104,6 +104,15 @@ const handleResend = async () => {
         <p class="mt-2 text-sm leading-6 text-slate-300">
           {{ $t('auth.verifySubtitle') }}
         </p>
+        <p
+          v-if="email"
+          class="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm font-bold text-cyan-50"
+        >
+          {{ email }}
+        </p>
+        <p class="mt-2 text-xs text-slate-500">
+          {{ $t('auth.verifyInboxHint') }}
+        </p>
 
         <form class="mt-6 space-y-4" @submit.prevent="handleVerify">
           <label class="block">

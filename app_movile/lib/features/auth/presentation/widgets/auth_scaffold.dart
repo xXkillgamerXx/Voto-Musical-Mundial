@@ -117,7 +117,7 @@ class _BrandHeader extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'MUSIC MUNDIAL VOTE',
+          'Votos Mundial',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontSize: 20,

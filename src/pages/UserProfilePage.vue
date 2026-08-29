@@ -126,6 +126,9 @@ const openEditProfile = () => {
     bio: userProfile.value?.bio || '',
     photoURL: profilePhoto.value,
     banner: profileBanner.value,
+    emailCampaigns:
+      userProfile.value?.emailCampaigns !== false &&
+      currentUser.value?.emailCampaigns !== false,
   }
   errorMessage.value = ''
   successMessage.value = ''
@@ -207,6 +210,8 @@ const saveProfile = async () => {
       bio: editForm.value.bio.trim(),
       photoURL: editForm.value.photoURL,
       banner: editForm.value.banner,
+      emailCampaigns: Boolean(editForm.value.emailCampaigns),
+    })
     })
     currentUser.value = updated
     userProfile.value = updated
@@ -697,6 +702,27 @@ onUnmounted(() => {
                   :placeholder="$t('profile.profileSummary')"
                 ></textarea>
               </label>
+
+              <div class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span class="text-xs font-bold uppercase tracking-widest text-cyan-200">
+                      {{ $t('profile.edit.emailCampaigns') }}
+                    </span>
+                    <p class="mt-1 text-sm leading-6 text-slate-300">
+                      {{ $t('profile.edit.emailCampaignsHelp') }}
+                    </p>
+                  </div>
+                  <label class="inline-flex items-center gap-3 text-sm font-black text-cyan-100">
+                    <input
+                      v-model="editForm.emailCampaigns"
+                      type="checkbox"
+                      class="size-5 accent-cyan-400"
+                    />
+                    {{ $t('profile.edit.emailCampaignsEnabled') }}
+                  </label>
+                </div>
+              </div>
 
               <p
                 v-if="errorMessage"

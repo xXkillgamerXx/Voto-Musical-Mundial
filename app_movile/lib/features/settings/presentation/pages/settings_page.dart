@@ -3,12 +3,68 @@ import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../users/data/users_api.dart';
 import '../../../users/presentation/pages/edit_profile_page.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({required this.authService, super.key});
 
   final AuthService authService;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late final UsersApi _usersApi;
+  bool _emailCampaigns = true;
+  bool _loadingEmailPref = true;
+  bool _savingEmailPref = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _usersApi = UsersApi(widget.authService.client);
+    _loadEmailPreference();
+  }
+
+  Future<void> _loadEmailPreference() async {
+    try {
+      final profile = await _usersApi.getMeProfile();
+      if (!mounted) return;
+      setState(() {
+        _emailCampaigns = profile.emailCampaigns;
+        _loadingEmailPref = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingEmailPref = false);
+    }
+  }
+
+  Future<void> _setEmailCampaigns(bool value) async {
+    setState(() {
+      _emailCampaigns = value;
+      _savingEmailPref = true;
+    });
+    try {
+      final updated = await _usersApi.updateProfile(emailCampaigns: value);
+      if (!mounted) return;
+      setState(() {
+        _emailCampaigns = updated.emailCampaigns;
+        _savingEmailPref = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _emailCampaigns = !value;
+        _savingEmailPref = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('settings.emailCampaignsError'))),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +88,8 @@ class SettingsPage extends StatelessWidget {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => EditProfilePage(authService: authService),
+                      builder: (_) =>
+                          EditProfilePage(authService: widget.authService),
                     ),
                   );
                 },
@@ -100,6 +157,43 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _SettingsCard(
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                secondary: const Icon(
+                  Icons.mark_email_read_outlined,
+                  color: Color(0xFF22D3EE),
+                ),
+                title: Text(
+                  tr('settings.emailCampaigns'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    tr('settings.emailCampaignsHelp'),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                value: _emailCampaigns,
+                activeThumbColor: const Color(0xFF22D3EE),
+                onChanged: (_loadingEmailPref || _savingEmailPref)
+                    ? null
+                    : _setEmailCampaigns,
               ),
             ),
             const SizedBox(height: 28),
@@ -181,7 +275,7 @@ class _SettingsTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Icon(icon, color: const Color(0xFFC084FC), size: 22),
@@ -199,13 +293,12 @@ class _SettingsTile extends StatelessWidget {
                       ),
                     ),
                     if (subtitle != null) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         subtitle!,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -229,65 +322,57 @@ class _LangOption extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    this.flag,
     this.icon,
+    this.flag,
   });
 
   final String label;
-  final String? flag;
-  final IconData? icon;
   final bool selected;
   final VoidCallback onTap;
+  final IconData? icon;
+  final String? flag;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: selected
-              ? const LinearGradient(
-                  colors: [Color(0xFF8B5CF6), Color(0xFFD946EF)],
-                )
-              : null,
-          color: selected ? null : Colors.white.withValues(alpha: 0.05),
-          border: Border.all(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
             color: selected
-                ? Colors.transparent
-                : Colors.white.withValues(alpha: 0.12),
+                ? const Color(0xFF7C3AED).withValues(alpha: 0.25)
+                : Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFFC084FC).withValues(alpha: 0.5)
+                  : Colors.white.withValues(alpha: 0.08),
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            if (flag != null)
-              Text(flag!, style: const TextStyle(fontSize: 18))
-            else if (icon != null)
-              Icon(
-                icon,
-                size: 18,
-                color: selected
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.7),
-              ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.75),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
+          child: Row(
+            children: [
+              if (flag != null)
+                Text(flag!, style: const TextStyle(fontSize: 18))
+              else if (icon != null)
+                Icon(icon, color: const Color(0xFFC084FC), size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            if (selected)
-              const Icon(Icons.check_circle, size: 18, color: Colors.white),
-          ],
+              if (selected)
+                const Icon(Icons.check_circle, color: Color(0xFFC084FC), size: 20),
+            ],
+          ),
         ),
       ),
     );

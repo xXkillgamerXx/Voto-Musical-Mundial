@@ -8,6 +8,7 @@ import { extname, join } from 'path';
 import { normalizeSlug, pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,6 +20,7 @@ import { AppDownloadConfigService } from '../settings/app-download-config.servic
 import { PrivacyConfigService } from '../settings/privacy-config.service';
 import { TermsConfigService } from '../settings/terms-config.service';
 import { AdminPushService } from './admin-push.service';
+import { LifecycleNotifyService } from './lifecycle-notify.service';
 import { VoteBotCampaignService } from './vote-bot-campaign.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
@@ -64,6 +66,7 @@ export class AdminController {
     private readonly appDownloadConfig: AppDownloadConfigService,
     private readonly adminPush: AdminPushService,
     private readonly voteBotCampaigns: VoteBotCampaignService,
+    private readonly lifecycleNotify: LifecycleNotifyService,
   ) {}
 
   @Get('metrics')
@@ -296,6 +299,35 @@ export class AdminController {
     }
 
     return serialize(result.updatedUser);
+  }
+
+  @Delete('users/:id')
+  async deleteUser(@Param('id') id: string, @CurrentUser() actor: { id?: bigint | number | string }) {
+    const userId = toBigInt(id);
+    const actorId = actor?.id == null ? '' : String(actor.id);
+
+    if (actorId && actorId === String(userId)) {
+      throw new BadRequestException('No puedes eliminar tu propia cuenta desde el admin.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('El usuario no existe.');
+    }
+
+    if (user.role === UserRole.owner) {
+      throw new BadRequestException('No se puede eliminar una cuenta owner.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.updateMany({
+        where: { referredById: userId },
+        data: { referredById: null },
+      });
+      await tx.user.delete({ where: { id: userId } });
+    });
+
+    return { ok: true, id: String(userId) };
   }
 
   @Get('artists')
@@ -915,6 +947,8 @@ export class AdminController {
       activeRoundId: roundId,
     });
 
+    this.lifecycleNotify.notifyPollLiveAsync(pollId);
+
     return { ok: true };
   }
 
@@ -932,6 +966,8 @@ export class AdminController {
     });
 
     await this.publishPollState(pollId, { reason: 'poll_closed', status: PollStatus.closed });
+
+    this.lifecycleNotify.notifyPollResultsAsync(pollId);
 
     return serialize(updated);
   }

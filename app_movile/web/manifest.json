@@ -1,6 +1,6 @@
 {
-    "name": "Music Mundial VOTE",
-    "short_name": "Music Mundial VOTE",
+    "name": "Votos Mundial",
+    "short_name": "Votos Mundial",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

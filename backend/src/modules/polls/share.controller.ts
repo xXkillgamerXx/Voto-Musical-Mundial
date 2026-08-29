@@ -126,9 +126,9 @@ export class ShareController {
   private resolveTitle(poll: Record<string, any> | null, locale: 'es' | 'en') {
     const config = asRecord(poll?.config);
     if (locale === 'en') {
-      return String(config.titleEn || poll?.title || 'MUSIC MUNDIAL VOTE');
+      return String(config.titleEn || poll?.title || 'Votos Mundial');
     }
-    return String(poll?.title || config.titleEn || 'MUSIC MUNDIAL VOTE');
+    return String(poll?.title || config.titleEn || 'Votos Mundial');
   }
 
   private resolveDescription(poll: Record<string, any> | null, locale: 'es' | 'en') {
@@ -204,7 +204,7 @@ export class ShareController {
   <link rel="canonical" href="${url}" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="MUSIC MUNDIAL VOTE" />
+  <meta property="og:site_name" content="Votos Mundial" />
   <meta property="og:locale" content="${ogLocale}" />
   <meta property="og:locale:alternate" content="${ogLocaleAlt}" />
   <meta property="og:title" content="${title}" />

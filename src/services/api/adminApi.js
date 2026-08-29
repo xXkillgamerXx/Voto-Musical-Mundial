@@ -40,6 +40,8 @@ export const getAdminUsers = ({
   return adminRequest(`/users?${params.toString()}`)
 }
 export const updateAdminUser = (id, body) => adminRequest(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const deleteAdminUser = (id) =>
+  adminRequest(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
 export const getAdminUserProfile = (id) => adminRequest(`/users/${encodeURIComponent(id)}/profile`)
 export const getAdminUserActivity = (id, limit = 120) =>
   adminRequest(`/users/${encodeURIComponent(id)}/activity?limit=${limit}`)

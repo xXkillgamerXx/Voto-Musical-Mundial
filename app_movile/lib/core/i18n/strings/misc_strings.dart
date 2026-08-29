@@ -208,9 +208,9 @@ const Map<String, Map<String, String>> miscStrings = {
     'ko': '해당 사용자가 존재하지 않거나 이용할 수 없어요.',
   },
   'misc.publicFanProfileBio': {
-    'es': 'Perfil público de fan en Music Mundial Voting.',
-    'en': 'Public fan profile on Music Mundial Voting.',
-    'ko': 'Music Mundial Voting의 공개 팬 프로필입니다.',
+    'es': 'Perfil público de fan en Votos Mundial.',
+    'en': 'Public fan profile on Votos Mundial.',
+    'ko': 'Votos Mundial의 공개 팬 프로필입니다.',
   },
   'misc.followedArtistsLabel': {
     'es': 'ARTISTAS SEGUIDOS',

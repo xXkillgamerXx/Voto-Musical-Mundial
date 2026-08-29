@@ -40,6 +40,7 @@ class UserProfile {
     required this.bio,
     required this.country,
     required this.followedArtists,
+    this.emailCampaigns = true,
   });
 
   final String id;
@@ -49,6 +50,7 @@ class UserProfile {
   final String bannerUrl;
   final String bio;
   final String country;
+  final bool emailCampaigns;
   final List<FollowedArtistSummary> followedArtists;
 
   String get name {
@@ -81,6 +83,7 @@ class UserProfile {
       ]),
       bio: _stringValue([json['bio']]),
       country: _stringValue([json['country']]),
+      emailCampaigns: json['emailCampaigns'] != false,
       followedArtists: followed is List
           ? followed
                 .whereType<Map<String, dynamic>>()
