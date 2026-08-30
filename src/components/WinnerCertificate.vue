@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getCertificateInstagramHandle } from '../utils/certificateBrand'
 
 const props = defineProps({
   name: { type: String, default: '' },
@@ -24,6 +25,7 @@ const certificateHref = computed(() => {
     category: props.category || '',
     year: yearText.value,
     lang: locale.value === 'en' ? 'en' : 'es',
+    ig: getCertificateInstagramHandle(),
   })
   return `/certificate.html?${params.toString()}`
 })

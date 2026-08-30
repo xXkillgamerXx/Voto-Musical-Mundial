@@ -7,6 +7,10 @@ import {
   downloadBlob,
   renderWinnerCertificateBlob,
 } from '../utils/winnerCertificateExport'
+import {
+  formatCertificateInstagramTag,
+  getCertificateInstagramHandle,
+} from '../utils/certificateBrand'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -27,6 +31,10 @@ const yearText = computed(() => {
   return String(new Date().getFullYear())
 })
 
+const instagramTag = computed(() =>
+  formatCertificateInstagramTag(getCertificateInstagramHandle()),
+)
+
 const certificateHref = computed(() => {
   const params = new URLSearchParams({
     name: props.name || '',
@@ -34,6 +42,7 @@ const certificateHref = computed(() => {
     category: props.category || '',
     year: yearText.value,
     lang: locale.value === 'en' ? 'en' : 'es',
+    ig: getCertificateInstagramHandle(),
   })
   return `/certificate.html?${params.toString()}`
 })
@@ -44,6 +53,7 @@ const certificateMeta = computed(() => ({
   category: props.category || '',
   year: yearText.value,
   lang: locale.value === 'en' ? 'en' : 'es',
+  instagram: instagramTag.value,
 }))
 
 const shareText = computed(() => {

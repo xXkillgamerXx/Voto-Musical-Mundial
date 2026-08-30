@@ -8,6 +8,7 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../../core/api/api_config.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
 
@@ -534,7 +535,7 @@ class WinnerCertificateView extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '#MusicMundialAwards$yearText',
+                          ApiConfig.instagramTag,
                           style: const TextStyle(
                             color: Color(0xFFC084FC),
                             fontSize: 9,

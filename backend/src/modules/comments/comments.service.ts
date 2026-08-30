@@ -11,6 +11,10 @@ import {
   BLOCKED_LANGUAGE_MESSAGE,
   isCommentLanguageBlocked,
 } from '../../common/comment-profanity';
+import {
+  BLOCKED_PROMO_MESSAGE,
+  isCommentPromoBlocked,
+} from '../../common/comment-promo';
 import { pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { toPublicComment } from '../../common/public-comment';
@@ -75,6 +79,10 @@ export class CommentsService {
 
     if (text.length > MAX_LENGTH) {
       throw new BadRequestException('El comentario es demasiado largo.');
+    }
+
+    if (text && (await isCommentPromoBlocked(text))) {
+      throw new BadRequestException(BLOCKED_PROMO_MESSAGE);
     }
 
     if (text && (await isCommentLanguageBlocked(text))) {

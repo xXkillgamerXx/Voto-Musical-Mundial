@@ -37,8 +37,10 @@ if (-not $BackendOnly) {
   $env:VITE_API_BASE_URL = "/api"
   $env:VITE_FIREBASE_VAPID_KEY = "BNQEx4dNvUVEV_CJ1qV64yzOA3xXPB2Y30EN_m4RLTf22tbVe_E1lkV-jNK7lbh4pbTxN2aOAN5mLPUMdYcRZuc"
   $env:VITE_TURNSTILE_SITE_KEY = "0x4AAAAAADscx-A_CXbgnFea"
+  $env:VITE_INSTAGRAM_HANDLE = "musicmundial_awards"
+  $env:VITE_INSTAGRAM_URL = "https://www.instagram.com/musicmundial_awards/"
   npm run build
-  Remove-Item Env:VITE_API_BASE_URL, Env:VITE_FIREBASE_VAPID_KEY, Env:VITE_TURNSTILE_SITE_KEY -ErrorAction SilentlyContinue
+  Remove-Item Env:VITE_API_BASE_URL, Env:VITE_FIREBASE_VAPID_KEY, Env:VITE_TURNSTILE_SITE_KEY, Env:VITE_INSTAGRAM_HANDLE, Env:VITE_INSTAGRAM_URL -ErrorAction SilentlyContinue
   Pop-Location
 
   Write-Host "Uploading frontend dist..." -ForegroundColor Cyan

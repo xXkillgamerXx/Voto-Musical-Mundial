@@ -30,4 +30,16 @@ class ApiConfig {
     'GIPHY_API_KEY',
     defaultValue: 'y6JAoCFwoiRlmmkcXapPcfHK0U2gzSpf',
   );
+
+  /// Instagram oficial del certificado. Mismo valor que `VITE_INSTAGRAM_HANDLE`.
+  /// https://www.instagram.com/musicmundial_awards/
+  static const instagramHandle = String.fromEnvironment(
+    'INSTAGRAM_HANDLE',
+    defaultValue: 'musicmundial_awards',
+  );
+
+  static String get instagramTag {
+    final raw = instagramHandle.trim().replaceFirst(RegExp(r'^[@#]+'), '');
+    return '#${raw.isEmpty ? 'musicmundial_awards' : raw}';
+  }
 }

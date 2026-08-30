@@ -1,4 +1,8 @@
 import { toBlob } from 'html-to-image'
+import {
+  formatCertificateInstagramTag,
+  getCertificateInstagramHandle,
+} from './certificateBrand'
 
 const CERT_WIDTH = 1000
 const CERT_HEIGHT = Math.round((CERT_WIDTH * 3.85) / 3)
@@ -275,7 +279,7 @@ const buildCertificateNode = ({ name, group, category, year, lang = 'es' } = {})
         <div class="foot">
           <span>◆ vote.musicmundial.com</span>
           <span class="mid">✦</span>
-          <span class="hash">#MusicMundialAwards${yearText}</span>
+          <span class="hash">${formatCertificateInstagramTag(getCertificateInstagramHandle())}</span>
         </div>
       </div>
     </article>

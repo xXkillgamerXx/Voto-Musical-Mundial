@@ -280,7 +280,7 @@
         <div class="foot">
           <span>◆ vote.musicmundial.com</span>
           <span class="mid">✦</span>
-          <span class="hash" id="out-hash">#MusicMundialAwards2026</span>
+          <span class="hash" id="out-hash">#musicmundial_awards</span>
         </div>
       </div>
     </article>
@@ -339,7 +339,13 @@
       setText("out-category", category.toUpperCase());
       document.getElementById("out-year").innerHTML =
         `<span class="spark">✦</span> ${year} <span class="spark">✦</span>`;
-      document.getElementById("out-hash").textContent = `#MusicMundialAwards${year}`;
+      const igRaw = String(params.get("ig") || params.get("instagram") || "musicmundial_awards")
+        .trim()
+        .replace(/^[@#]+/, "")
+        .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+        .replace(/\/.*$/, "")
+        .replace(/[^a-zA-Z0-9._]/g, "") || "musicmundial_awards";
+      document.getElementById("out-hash").textContent = `#${igRaw}`;
     </script>
   </body>
 </html>
