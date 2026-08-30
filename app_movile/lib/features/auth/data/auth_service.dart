@@ -61,9 +61,13 @@ class AuthService {
         'password': password,
         'username': username.trim().toLowerCase(),
         'displayName': displayName.trim(),
+        'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
         if (referralCode != null && referralCode.trim().isNotEmpty)
           'referralCode': referralCode.trim().toLowerCase(),
-        if (metadata != null) 'metadata': metadata,
+        if (metadata != null) 'metadata': {
+          ...metadata,
+          'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
+        },
       },
       retryOnUnauthorized: false,
     );
@@ -79,7 +83,7 @@ class AuthService {
       method: 'POST',
       body: {
         'email': email.trim().toLowerCase(),
-        'locale': AppLocale.instance.code == 'en' ? 'en' : 'es',
+        'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
       },
       retryOnUnauthorized: false,
     );
@@ -108,6 +112,7 @@ class AuthService {
       method: 'POST',
       body: {
         'credential': idToken,
+        'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
         if (referralCode != null && referralCode.trim().isNotEmpty)
           'referralCode': referralCode.trim().toLowerCase(),
       },

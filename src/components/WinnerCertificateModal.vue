@@ -12,7 +12,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   name: { type: String, default: '' },
   group: { type: String, default: '' },
-  date: { type: String, default: '' },
+  category: { type: String, default: '' },
+  year: { type: [String, Number], default: '' },
   pollUrl: { type: String, default: '' },
 })
 
@@ -20,11 +21,18 @@ const emit = defineEmits(['close'])
 const { locale, t } = useI18n()
 const busy = ref(false)
 
+const yearText = computed(() => {
+  const raw = String(props.year || '').trim()
+  if (/^\d{4}$/.test(raw)) return raw
+  return String(new Date().getFullYear())
+})
+
 const certificateHref = computed(() => {
   const params = new URLSearchParams({
     name: props.name || '',
     group: props.group || '',
-    date: props.date || '',
+    category: props.category || '',
+    year: yearText.value,
     lang: locale.value === 'en' ? 'en' : 'es',
   })
   return `/certificate.html?${params.toString()}`
@@ -33,14 +41,17 @@ const certificateHref = computed(() => {
 const certificateMeta = computed(() => ({
   name: props.name || '',
   group: props.group || '',
-  date: props.date || '',
+  category: props.category || '',
+  year: yearText.value,
+  lang: locale.value === 'en' ? 'en' : 'es',
 }))
 
 const shareText = computed(() => {
   const name = props.name || 'Music Mundial'
   const group = props.group ? ` (${props.group})` : ''
-  const date = props.date ? ` · ${props.date}` : ''
-  return `${name}${group}${date}`
+  const category = props.category ? ` · ${props.category}` : ''
+  const year = yearText.value ? ` ${yearText.value}` : ''
+  return `${name}${group}${category}${year}`
 })
 
 const close = () => emit('close')
@@ -82,7 +93,6 @@ const shareCertificate = async () => {
         return
       }
 
-      // Fallback: descarga la imagen (no la URL)
       downloadBlob(blob, filename)
     })
   } catch (error) {
@@ -124,7 +134,7 @@ const shareCertificate = async () => {
         <div class="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#050213] p-3 sm:p-4">
           <div
             class="relative overflow-hidden rounded-xl shadow-2xl shadow-black/40"
-            style="width: min(100%, calc((96vh - 11rem) * 819 / 1024)); aspect-ratio: 819 / 1024"
+            style="width: min(100%, calc((96vh - 11rem) * 3 / 3.85)); aspect-ratio: 3 / 3.85"
           >
             <iframe
               :key="certificateHref"

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translate } from '../i18n'
+import { setLocale, translate } from '../i18n'
 import { checkUsername, getCurrentApiAuth, getMe, getPublicProfile, updateMe, uploadProfileImage as uploadProfileImageFile } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
 import ReportModal from '../components/ReportModal.vue'
@@ -23,6 +23,8 @@ const editForm = ref({
   bio: '',
   photoURL: '',
   banner: '',
+  emailCampaigns: true,
+  locale: 'en',
 })
 const isLoading = ref(true)
 const isEditOpen = ref(false)
@@ -129,6 +131,10 @@ const openEditProfile = () => {
     emailCampaigns:
       userProfile.value?.emailCampaigns !== false &&
       currentUser.value?.emailCampaigns !== false,
+    locale:
+      userProfile.value?.locale === 'es' || currentUser.value?.locale === 'es'
+        ? 'es'
+        : 'en',
   }
   errorMessage.value = ''
   successMessage.value = ''
@@ -211,9 +217,13 @@ const saveProfile = async () => {
       photoURL: editForm.value.photoURL,
       banner: editForm.value.banner,
       emailCampaigns: Boolean(editForm.value.emailCampaigns),
+      locale: editForm.value.locale === 'es' ? 'es' : 'en',
     })
     currentUser.value = updated
     userProfile.value = updated
+    if (updated?.locale) {
+      setLocale(updated.locale === 'es' ? 'es' : 'en')
+    }
     profileUserId.value = updated.id
     successMessage.value = translate('profile.edit.saved')
     isEditOpen.value = false
@@ -701,6 +711,26 @@ onUnmounted(() => {
                   :placeholder="$t('profile.profileSummary')"
                 ></textarea>
               </label>
+
+              <div class="rounded-3xl border border-violet-300/20 bg-violet-400/10 p-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span class="text-xs font-bold uppercase tracking-widest text-violet-200">
+                      {{ $t('profile.edit.language') }}
+                    </span>
+                    <p class="mt-1 text-sm leading-6 text-slate-300">
+                      {{ $t('profile.edit.languageHelp') }}
+                    </p>
+                  </div>
+                  <select
+                    v-model="editForm.locale"
+                    class="min-h-11 rounded-2xl border border-white/15 bg-[#12081f] px-3 text-sm font-black text-white outline-none"
+                  >
+                    <option value="en">{{ $t('profile.edit.languageEnglish') }}</option>
+                    <option value="es">{{ $t('profile.edit.languageSpanish') }}</option>
+                  </select>
+                </div>
+              </div>
 
               <div class="rounded-3xl border border-cyan-300/20 bg-cyan-400/10 p-4">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

@@ -44,7 +44,7 @@ class AppLocale extends ChangeNotifier {
   String get _deviceCode {
     final device = PlatformDispatcher.instance.locale.languageCode
         .toLowerCase();
-    return supported.contains(device) ? device : 'es';
+    return supported.contains(device) ? device : 'en';
   }
 
   /// Carga la preferencia guardada (o `'system'` si no hay).

@@ -42,7 +42,7 @@ export class LifecycleNotifyService {
     const raw = String(meta.locale || meta.lang || meta.language || '')
       .trim()
       .toLowerCase();
-    return raw.startsWith('en') ? 'en' : 'es';
+    return raw.startsWith('es') ? 'es' : 'en';
   }
 
   private displayName(user: WelcomeUser) {
@@ -50,7 +50,7 @@ export class LifecycleNotifyService {
       String(user.displayName || '').trim() ||
       String(user.username || '').trim() ||
       String(user.email || '').trim() ||
-      'Usuario'
+      (this.resolveLocale(user.metadata) === 'en' ? 'User' : 'Usuario')
     );
   }
 
@@ -79,7 +79,7 @@ export class LifecycleNotifyService {
     return `${prefix}/${year}/${slug}`;
   }
 
-  private pollUrl(poll: { id: bigint; slug?: string | null; config?: unknown }, locale: Locale = 'es') {
+  private pollUrl(poll: { id: bigint; slug?: string | null; config?: unknown }, locale: Locale = 'en') {
     return `${SITE}${this.pollPath(poll, locale)}`;
   }
 

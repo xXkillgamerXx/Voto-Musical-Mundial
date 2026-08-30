@@ -154,6 +154,7 @@ const handleGoogleAccess = async () => {
     const referralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toLowerCase();
     await loginWithGoogle({
       accessToken,
+      locale: String(i18n.global.locale.value || "en").startsWith("es") ? "es" : "en",
       ...(referralCode ? { referralCode } : {}),
     });
     emit("close");
@@ -178,7 +179,7 @@ const handlePasswordReset = async () => {
   try {
     await requestPasswordReset({
       email: resetEmail.value.trim().toLowerCase(),
-      locale: String(i18n.global.locale.value || "es").startsWith("en") ? "en" : "es",
+      locale: String(i18n.global.locale.value || "en").startsWith("es") ? "es" : "en",
     });
     successMessage.value = translate("auth.resetEmailSent");
   } catch (error) {

@@ -924,6 +924,10 @@ export default {
       emailCampaignsHelp:
         'If you turn this off, you will not get welcome, live poll, closing reminder, results, or announcement emails. You will still get verification and password-reset emails.',
       emailCampaignsEnabled: 'Receive emails',
+      language: 'Email and notification language',
+      languageHelp: 'Emails and alerts will be sent in this language.',
+      languageEnglish: 'English',
+      languageSpanish: 'Spanish',
       changePhoto: 'Change photo',
       changeBanner: 'Change banner',
       uploadingPhoto: 'Uploading photo...',

@@ -16,6 +16,7 @@
     "@vueup/vue-quill": "^1.5.5",
     "dompurify": "^3.4.11",
     "firebase": "^12.15.0",
+    "html-to-image": "^1.11.13",
     "quill": "^2.0.3",
     "socket.io-client": "^4.8.1",
     "vue": "^3.5.12",

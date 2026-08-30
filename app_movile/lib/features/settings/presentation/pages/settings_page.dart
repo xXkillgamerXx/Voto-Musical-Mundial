@@ -66,6 +66,17 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _setLanguagePreference(String preference) async {
+    await AppLocale.instance.setPreference(preference);
+    if (!widget.authService.session.isSignedIn) return;
+    final locale = AppLocale.instance.code == 'es' ? 'es' : 'en';
+    try {
+      await _usersApi.updateProfile(locale: locale);
+    } catch (_) {
+      // Preferencia local ya aplicada; sync de cuenta best-effort.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -132,24 +143,21 @@ class _SettingsPageState extends State<SettingsPage> {
                               label: tr('settings.languageSystem'),
                               icon: Icons.smartphone,
                               selected: preference == 'system',
-                              onTap: () =>
-                                  AppLocale.instance.setPreference('system'),
-                            ),
-                            const SizedBox(height: 10),
-                            _LangOption(
-                              label: tr('settings.languageSpanish'),
-                              flag: '🇪🇸',
-                              selected: preference == 'es',
-                              onTap: () =>
-                                  AppLocale.instance.setPreference('es'),
+                              onTap: () => _setLanguagePreference('system'),
                             ),
                             const SizedBox(height: 10),
                             _LangOption(
                               label: tr('settings.languageEnglish'),
                               flag: '🇺🇸',
                               selected: preference == 'en',
-                              onTap: () =>
-                                  AppLocale.instance.setPreference('en'),
+                              onTap: () => _setLanguagePreference('en'),
+                            ),
+                            const SizedBox(height: 10),
+                            _LangOption(
+                              label: tr('settings.languageSpanish'),
+                              flag: '🇪🇸',
+                              selected: preference == 'es',
+                              onTap: () => _setLanguagePreference('es'),
                             ),
                           ],
                         );

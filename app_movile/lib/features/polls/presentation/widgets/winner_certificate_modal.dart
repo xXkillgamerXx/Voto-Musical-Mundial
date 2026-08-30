@@ -5,26 +5,26 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:gal/gal.dart';
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
 
-String formatWinnerCertificateDate(DateTime? value) {
+String formatWinnerCertificateYear(DateTime? value, {int? pollYear}) {
+  if (pollYear != null && pollYear >= 2000) {
+    return '$pollYear';
+  }
   final date = value ?? DateTime.now();
-  final locale = AppLocale.instance.code == 'en' ? 'en' : 'es';
-  final month = DateFormat('MMMM', locale).format(date);
-  final year = DateFormat('yyyy', locale).format(date);
-  return '$month $year';
+  return '${date.year}';
 }
 
 Future<void> showWinnerCertificateModal(
   BuildContext context, {
   required String name,
   String group = '',
-  required String date,
+  String category = '',
+  required String year,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -33,7 +33,8 @@ Future<void> showWinnerCertificateModal(
     builder: (context) => WinnerCertificateModal(
       name: name,
       group: group,
-      date: date,
+      category: category,
+      year: year,
     ),
   );
 }
@@ -43,12 +44,14 @@ class WinnerCertificateModal extends StatefulWidget {
     super.key,
     required this.name,
     this.group = '',
-    required this.date,
+    this.category = '',
+    required this.year,
   });
 
   final String name;
   final String group;
-  final String date;
+  final String category;
+  final String year;
 
   @override
   State<WinnerCertificateModal> createState() => _WinnerCertificateModalState();
@@ -60,12 +63,14 @@ class _WinnerCertificateModalState extends State<WinnerCertificateModal> {
 
   String get _shareText {
     final group = widget.group.trim().isEmpty ? '' : ' (${widget.group.trim()})';
-    final date = widget.date.trim().isEmpty ? '' : ' · ${widget.date.trim()}';
-    return '${widget.name}$group$date';
+    final category =
+        widget.category.trim().isEmpty ? '' : ' · ${widget.category.trim()}';
+    final year = widget.year.trim().isEmpty ? '' : ' ${widget.year.trim()}';
+    return '${widget.name}$group$category$year';
   }
 
   String get _filename {
-    final slug = [widget.name, widget.group, widget.date]
+    final slug = [widget.name, widget.group, widget.category, widget.year]
         .map((part) => part
             .trim()
             .toLowerCase()
@@ -217,7 +222,8 @@ class _WinnerCertificateModalState extends State<WinnerCertificateModal> {
                     child: WinnerCertificateView(
                       name: widget.name,
                       group: widget.group,
-                      date: widget.date,
+                      category: widget.category,
+                      year: widget.year,
                     ),
                   ),
                 ),
@@ -281,96 +287,266 @@ class WinnerCertificateView extends StatelessWidget {
     super.key,
     required this.name,
     this.group = '',
-    required this.date,
+    this.category = '',
+    required this.year,
   });
 
   final String name;
   final String group;
-  final String date;
+  final String category;
+  final String year;
+
+  bool get _isEn => AppLocale.instance.code == 'en';
 
   @override
   Widget build(BuildContext context) {
     final displayName = name.trim().toUpperCase();
     final displayGroup = group.trim().toUpperCase();
-    final displayDate = date.trim().toUpperCase();
+    final displayCategory = category.trim().toUpperCase();
+    final yearText = year.trim().isEmpty
+        ? '${DateTime.now().year}'
+        : year.trim();
+    final title = _isEn ? 'CERTIFICATE' : 'CERTIFICADO';
+    final certifies =
+        _isEn ? 'MUSIC MUNDIAL CERTIFIES THAT' : 'MUSIC MUNDIAL CERTIFICA QUE';
+    final awarded = _isEn
+        ? 'HAS BEEN OFFICIALLY AWARDED'
+        : 'HA SIDO OFICIALMENTE PREMIADO/A';
+    final desc = _isEn
+        ? 'In recognition of outstanding talent, dedication and impact in the music industry.'
+        : 'En reconocimiento a su talento excepcional, dedicación e impacto en la industria musical.';
+    final voted =
+        _isEn ? 'Voted by fans worldwide.' : 'Votado por fans de todo el mundo.';
 
     return AspectRatio(
-      aspectRatio: 819 / 1024,
+      aspectRatio: 3 / 3.85,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final h = constraints.maxHeight;
-            // Mismos % y clamp que public/certificate.html (cqw = % del certificado)
-            final nameSize = (w * 0.092).clamp(21.6, 48.0);
-            final groupSize = (w * 0.045).clamp(13.6, 23.2);
-            final dateSize = (w * 0.028).clamp(10.4, 14.72);
-
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.asset(
-                  'assets/branding/certificate-bg.png',
-                  fit: BoxFit.fill,
-                  filterQuality: FilterQuality.high,
+        borderRadius: BorderRadius.circular(16),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: Color(0xFF070314),
+            border: Border.fromBorderSide(
+              BorderSide(color: Color(0xFF4C1D95)),
+            ),
+            image: DecorationImage(
+              image: AssetImage('assets/branding/certificate-bg.jpg'),
+              fit: BoxFit.cover,
+            ),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(0, -1.05),
+                    radius: 0.9,
+                    colors: [Color(0x517C3AED), Color(0x00000000)],
+                  ),
                 ),
-                if (displayName.isNotEmpty)
-                  Positioned(
-                    top: h * 0.335,
-                    left: w * 0.11,
-                    width: w * 0.78,
-                    child: _GradientText(
-                      displayName,
-                      fontSize: nameSize,
-                      fontWeight: FontWeight.w900,
-                      letterSpacingEm: 0.04,
-                      height: 0.95,
-                      colors: const [
-                        Color(0xFFFFFFFF),
-                        Color(0xFFB789F4),
-                        Color(0xFF9889FB),
-                      ],
-                      stops: const [0, 0.52, 1],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+                child: Column(
+                  children: [
+                    Image.asset(
+                      'assets/branding/certificate-crown.png',
+                      width: 96,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
                     ),
-                  ),
-                if (displayGroup.isNotEmpty)
-                  Positioned(
-                    top: h * 0.412,
-                    left: w * 0.11,
-                    width: w * 0.78,
-                    child: _GradientText(
-                      displayGroup,
-                      fontSize: groupSize,
-                      fontWeight: FontWeight.w800,
-                      letterSpacingEm: 0.18,
-                      height: 1,
-                      colors: const [
-                        Color(0xFFA45DE0),
-                        Color(0xFF7953CA),
-                      ],
-                    ),
-                  ),
-                if (displayDate.isNotEmpty)
-                  Positioned(
-                    top: h * 0.81,
-                    left: w * 0.74 - (w * 0.28) / 2,
-                    width: w * 0.28,
-                    child: Text(
-                      displayDate,
-                      textAlign: TextAlign.center,
+                    const SizedBox(height: 6),
+                    const Text(
+                      'MUSIC MUNDIAL',
                       style: TextStyle(
-                        color: Colors.white,
-                        fontSize: dateSize,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: dateSize * 0.1,
-                        height: 1,
+                        color: Color(0xFFF5F3FF),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 3.2,
                       ),
                     ),
-                  ),
-              ],
-            );
-          },
+                    const SizedBox(height: 2),
+                    const Text(
+                      'VOTING',
+                      style: TextStyle(
+                        color: Color(0xFFC084FC),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 3.8,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.star_rounded,
+                            color: Color(0xFFE9D5FF), size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Color(0xFFF8F7FF),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.8,
+                            fontFamily: 'serif',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.star_rounded,
+                            color: Color(0xFFE9D5FF), size: 18),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '✦',
+                      style: TextStyle(color: Color(0xFFC084FC), fontSize: 10),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      certifies,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFFD8B4FE),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _GradientText(
+                      displayName,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      letterSpacingEm: 0.01,
+                      height: 1.05,
+                      colors: const [
+                        Color(0xFFFFFFFF),
+                        Color(0xFFF3E8FF),
+                        Color(0xFFC084FC),
+                      ],
+                      stops: const [0.08, 0.4, 1],
+                    ),
+                    if (displayGroup.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        displayGroup,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFEDE9FE),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 5,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Text(
+                      awarded,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFFA1A1AA),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0x61E9D5FF),
+                        ),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x0DFFFFFF), Color(0x2E581C87)],
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            displayCategory.isEmpty
+                                ? tr('pollDetail.certificateTitle').toUpperCase()
+                                : displayCategory,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              fontFamily: 'serif',
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '✦  $yearText  ✦',
+                            style: const TextStyle(
+                              color: Color(0xFFE9D5FF),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 2.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      desc,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFFC4C4D0),
+                        fontSize: 11,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      voted,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFFA1A1AA),
+                        fontSize: 10,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '◆ vote.musicmundial.com',
+                          style: TextStyle(
+                            color: Color(0xFFA1A1AA),
+                            fontSize: 9,
+                          ),
+                        ),
+                        const Text(
+                          '✦',
+                          style: TextStyle(
+                            color: Color(0xFFC084FC),
+                            fontSize: 9,
+                          ),
+                        ),
+                        Text(
+                          '#MusicMundialAwards$yearText',
+                          style: const TextStyle(
+                            color: Color(0xFFC084FC),
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -415,6 +591,7 @@ class _GradientText extends StatelessWidget {
           fontWeight: fontWeight,
           letterSpacing: fontSize * letterSpacingEm,
           height: height,
+          fontFamily: 'serif',
         ),
       ),
     );

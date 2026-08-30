@@ -91,6 +91,12 @@ export class UsersService {
     if (Object.prototype.hasOwnProperty.call(body || {}, 'emailCampaigns')) {
       metadata.emailCampaigns = Boolean(body.emailCampaigns);
     }
+    if (Object.prototype.hasOwnProperty.call(body || {}, 'locale')) {
+      const raw = String(body.locale || '')
+        .trim()
+        .toLowerCase();
+      metadata.locale = raw.startsWith('es') ? 'es' : 'en';
+    }
 
     const data: Record<string, unknown> = {
       metadata: metadata as any,
@@ -206,6 +212,12 @@ export class UsersService {
       lastDailyRewardClaimDate: user.lastDailyRewardClaimDate,
       emailVerified: Boolean(user.emailVerifiedAt),
       emailCampaigns: includeEmail ? allowsCampaignEmail(metadata) : undefined,
+      locale: String(metadata.locale || metadata.lang || metadata.language || '')
+        .trim()
+        .toLowerCase()
+        .startsWith('es')
+        ? 'es'
+        : 'en',
       followedArtists,
     });
   }

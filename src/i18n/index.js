@@ -3,12 +3,12 @@ import en from './locales/en'
 import es from './locales/es'
 import { syncLocalizedLocation } from '../utils/localizedRoutes'
 
-export const DEFAULT_LOCALE = 'es'
+export const DEFAULT_LOCALE = 'en'
 export const LOCALE_STORAGE_KEY = 'vmm-locale'
 
 export const availableLocales = [
-  { code: 'es', labelKey: 'common.language.spanish' },
   { code: 'en', labelKey: 'common.language.english' },
+  { code: 'es', labelKey: 'common.language.spanish' },
 ]
 
 const getStoredLocale = () => {

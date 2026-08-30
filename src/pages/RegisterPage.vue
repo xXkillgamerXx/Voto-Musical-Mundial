@@ -471,7 +471,7 @@ const handleRegister = async () => {
       username: normalizedUsername.value,
       displayName: fullName.value,
       referralCode: referralCode.value || undefined,
-      locale: i18n.global.locale.value === 'en' ? 'en' : 'es',
+      locale: i18n.global.locale.value === 'es' ? 'es' : 'en',
       metadata: {
         firstName: firstName.value.trim(),
         lastName: lastName.value.trim(),
@@ -482,7 +482,7 @@ const handleRegister = async () => {
         phoneDialCode: selectedPhoneCountry.value?.dialCode || '',
         phone: phone.value.trim(),
         phoneInternational: phoneForSave.value,
-        locale: i18n.global.locale.value === 'en' ? 'en' : 'es',
+        locale: i18n.global.locale.value === 'es' ? 'es' : 'en',
       },
     })
 

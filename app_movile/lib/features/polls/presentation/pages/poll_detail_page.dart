@@ -1580,12 +1580,21 @@ class _PollDetailPageState extends State<PollDetailPage> {
 
   Future<void> _openWinnerCertificate(_VoteEntry winner) async {
     final artist = winner.artist;
-    final date = formatWinnerCertificateDate(_poll?.endAt ?? _poll?.updatedAt);
+    final poll = _poll;
+    final year = formatWinnerCertificateYear(
+      poll?.endAt ?? poll?.updatedAt,
+      pollYear: poll?.year,
+    );
+    final category = (poll?.categoryName.isNotEmpty == true
+            ? poll!.categoryName
+            : (poll?.title ?? tr('pollDetail.certificateTitle')))
+        .trim();
     await showWinnerCertificateModal(
       context,
       name: artist?.name ?? tr('pollDetail.artist'),
       group: artist?.group ?? '',
-      date: date,
+      category: category,
+      year: year,
     );
   }
 

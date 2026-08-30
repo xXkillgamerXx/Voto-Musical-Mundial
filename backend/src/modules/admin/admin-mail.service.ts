@@ -94,7 +94,7 @@ export class AdminMailService {
     const raw = String(meta.locale || meta.lang || meta.language || '')
       .trim()
       .toLowerCase();
-    return raw.startsWith('en') ? 'en' : 'es';
+    return raw.startsWith('es') ? 'es' : 'en';
   }
 
   private htmlForPreview(html: string) {
@@ -170,7 +170,7 @@ export class AdminMailService {
       const built = buildEmailVerificationEmail({
         name: String(input.name || 'Usuario').trim() || 'Usuario',
         code: String(input.code || '847291').trim() || '847291',
-        locale: input.locale || 'es',
+        locale: input.locale || 'en',
         copy: input.copy,
       });
 
@@ -187,7 +187,7 @@ export class AdminMailService {
       const built = buildPollNotifyEmail({
         subject: input.subject,
         message: input.message,
-        locale: input.locale || 'es',
+        locale: input.locale || 'en',
         ctaUrl: input.ctaUrl,
         ctaLabel: input.ctaLabel,
         coverImageUrl: input.coverImageUrl,
@@ -214,7 +214,7 @@ export class AdminMailService {
       subject: input.subject,
       message: input.message,
       mode,
-      locale: input.locale || 'es',
+      locale: input.locale || 'en',
       ctaUrl: input.ctaUrl,
       ctaLabel: input.ctaLabel,
       vars: {

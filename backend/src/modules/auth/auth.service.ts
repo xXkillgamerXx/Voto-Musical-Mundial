@@ -105,6 +105,7 @@ export class AuthService {
           points: 25,
           metadata: {
             ...(dto.metadata && typeof dto.metadata === 'object' ? dto.metadata : {}),
+            locale: dto.locale === 'es' ? 'es' : 'en',
             ...(signupIpHash ? { signupIpHash } : {}),
           } as Prisma.InputJsonValue,
         },
@@ -168,7 +169,7 @@ export class AuthService {
       throw error;
     });
 
-    const locale = dto.locale === 'en' ? 'en' : 'es';
+    const locale = dto.locale === 'es' ? 'es' : 'en';
     await this.issueEmailVerificationCode(user, locale);
 
     return {
@@ -192,7 +193,7 @@ export class AuthService {
 
     if (!user.emailVerifiedAt) {
       if (user.email) {
-        void this.issueEmailVerificationCode(user, 'es').catch((error) => {
+        void this.issueEmailVerificationCode(user, this.resolveUserLocale(user.metadata)).catch((error) => {
           this.logger.warn(
             `No se pudo reenviar codigo al login de ${user.email}: ${(error as Error).message}`,
           );
@@ -259,7 +260,7 @@ export class AuthService {
       return generic;
     }
 
-    const locale = dto.locale === 'en' ? 'en' : 'es';
+    const locale = dto.locale === 'es' ? 'es' : 'en';
     try {
       await this.issueEmailVerificationCode(user, locale);
     } catch (error) {
@@ -309,7 +310,7 @@ export class AuthService {
       .split(',')[0]
       .trim()
       .replace(/\/$/, '');
-    const locale = dto.locale === 'en' ? 'en' : 'es';
+    const locale = dto.locale === 'es' ? 'es' : 'en';
     const resetPath = locale === 'en' ? '/reset-password' : '/recuperar-contrasena';
     const resetUrl = `${origin}${resetPath}?token=${token}`;
 
@@ -376,6 +377,7 @@ export class AuthService {
   }
 
   private async googleUnsafe(dto: GoogleLoginDto, request?: Request) {
+    const locale = dto.locale === 'es' ? 'es' : 'en';
     const clientId = String(this.config.get<string>('GOOGLE_CLIENT_ID') || '').trim();
     if (!clientId) {
       throw new BadRequestException('Falta configurar GOOGLE_CLIENT_ID.');
@@ -424,6 +426,9 @@ export class AuthService {
             googleEmail: email,
             googlePicture: payload.picture || null,
             authProvider: 'google',
+            ...(!((existing.metadata as Record<string, unknown>) || {}).locale
+              ? { locale }
+              : {}),
           } as any,
         },
       });
@@ -463,6 +468,7 @@ export class AuthService {
             googleEmail: email,
             googlePicture: payload.picture || null,
             authProvider: 'google',
+            locale,
             ...(signupIpHash ? { signupIpHash } : {}),
           } as Prisma.InputJsonValue,
         },
@@ -679,6 +685,17 @@ export class AuthService {
     };
   }
 
+  private resolveUserLocale(metadata: unknown): 'es' | 'en' {
+    const meta =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)
+        : {};
+    const raw = String(meta.locale || meta.lang || meta.language || '')
+      .trim()
+      .toLowerCase();
+    return raw.startsWith('es') ? 'es' : 'en';
+  }
+
   private hashEmailVerificationCode(code: string) {
     return createHash('sha256').update(String(code || '').trim()).digest('hex');
   }
@@ -708,7 +725,7 @@ export class AuthService {
 
   private async issueEmailVerificationCode(
     user: Pick<User, 'id' | 'email' | 'displayName' | 'username'>,
-    locale: 'es' | 'en' = 'es',
+    locale: 'es' | 'en' = 'en',
   ) {
     if (!user.email) {
       throw new BadRequestException('La cuenta no tiene correo.');

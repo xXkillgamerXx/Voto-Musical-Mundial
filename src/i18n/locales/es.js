@@ -942,6 +942,10 @@ export default {
       emailCampaignsHelp:
         'Si lo desactivas, no te llegarán correos de bienvenida, votaciones en vivo, recordatorios, resultados ni comunicados. Sí seguirás recibiendo verificación y recuperación de contraseña.',
       emailCampaignsEnabled: 'Recibir correos',
+      language: 'Idioma de correos y notificaciones',
+      languageHelp: 'Los correos y avisos se enviarán en este idioma.',
+      languageEnglish: 'English',
+      languageSpanish: 'Español',
       changePhoto: 'Cambiar foto',
       changeBanner: 'Cambiar banner',
       uploadingPhoto: 'Subiendo foto...',

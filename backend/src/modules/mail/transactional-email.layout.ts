@@ -14,13 +14,13 @@ export const escapeHtml = (value: string) =>
     return map[char] || char;
   });
 
-export const resolveMailLocale = (value?: string | null): MailLocale =>
-  String(value || '')
+export const resolveMailLocale = (value?: string | null): MailLocale => {
+  const raw = String(value || '')
     .trim()
-    .toLowerCase()
-    .startsWith('en')
-    ? 'en'
-    : 'es';
+    .toLowerCase();
+  if (raw.startsWith('es')) return 'es';
+  return 'en';
+};
 
 export const messageToHtmlParagraphs = (message: string) =>
   message
@@ -51,7 +51,7 @@ export type TransactionalEmailContent = {
 };
 
 export const buildTransactionalEmail = (content: TransactionalEmailContent) => {
-  const locale = content.locale || 'es';
+  const locale = content.locale || 'en';
   const safeTitle = escapeHtml(content.title);
   const safePreheader = escapeHtml(content.preheader);
   const introHtml = content.introHtml || '';

@@ -49,6 +49,7 @@ class UsersApi {
     String? bio,
     String? country,
     bool? emailCampaigns,
+    String? locale,
   }) async {
     final body = <String, dynamic>{};
     if (displayName != null) {
@@ -61,6 +62,7 @@ class UsersApi {
     if (bio != null) body['bio'] = bio;
     if (country != null) body['country'] = country;
     if (emailCampaigns != null) body['emailCampaigns'] = emailCampaigns;
+    if (locale != null) body['locale'] = locale == 'es' ? 'es' : 'en';
 
     final payload = await _client.request(
       '/users/me',

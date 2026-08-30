@@ -6,7 +6,7 @@ import { routePath } from "../../utils/localizedRoutes";
 import AuthModal from "../auth/AuthModal.vue";
 import ThemeToggle from "../theme/ThemeToggle.vue";
 import UserNotificationsMenu from "../UserNotificationsMenu.vue";
-import { getMe, getCurrentApiAuth, logout, peekLoginNotice } from "../../services/api/authApi";
+import { getMe, getCurrentApiAuth, logout, peekLoginNotice, updateMe } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
 
 const { locale } = useI18n();
@@ -123,8 +123,19 @@ const handleAvatarError = () => {
   avatarImageFailed.value = true;
 };
 
-const handleLocaleChange = (nextLocale) => {
+const handleLocaleChange = async (nextLocale) => {
   setLocale(nextLocale);
+  if (!currentUser.value?.id) {
+    return;
+  }
+  try {
+    const updated = await updateMe({ locale: nextLocale === 'es' ? 'es' : 'en' });
+    if (updated) {
+      currentUser.value = { ...currentUser.value, ...updated };
+    }
+  } catch {
+    // Preferencia visual ya aplicada; el sync de cuenta es best-effort.
+  }
 };
 
 const toggleSettingsMenu = () => {

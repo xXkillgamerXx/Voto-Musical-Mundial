@@ -92,7 +92,8 @@ const certificateModal = ref({
   open: false,
   name: "",
   group: "",
-  date: "",
+  category: "",
+  year: "",
 });
 const shareBoostConfig = ref({
   enabled: true,
@@ -1819,17 +1820,28 @@ const shareFinalWinner = async (winner) => {
   }
 };
 
-const formatCertificateDate = (value) => {
-  const raw = value?.toDate?.() || (value ? new Date(value) : new Date());
+const getCertificateCategory = () => {
+  const current = poll.value || {};
+  return (
+    String(
+      current.categoryName ||
+        current.category?.name ||
+        (typeof current.category === "string" ? current.category : "") ||
+        current.title ||
+        "",
+    ).trim() || translate("polls.detail.certificateAwardFallback")
+  );
+};
+
+const getCertificateYear = () => {
+  const fromPoll = Number(poll.value?.year || routeYear);
+  if (Number.isFinite(fromPoll) && fromPoll >= 2000) {
+    return String(fromPoll);
+  }
+  const endAt = poll.value?.endAt || poll.value?.updatedAt;
+  const raw = endAt?.toDate?.() || (endAt ? new Date(endAt) : new Date());
   const date = Number.isNaN(raw.getTime()) ? new Date() : raw;
-  const locale = i18n.global.locale.value === "en" ? "en" : "es";
-  const parts = new Intl.DateTimeFormat(locale, {
-    month: "long",
-    year: "numeric",
-  }).formatToParts(date);
-  const month = parts.find((part) => part.type === "month")?.value || "";
-  const year = parts.find((part) => part.type === "year")?.value || "";
-  return `${month} ${year}`.trim();
+  return String(date.getFullYear());
 };
 
 const openWinnerCertificate = (winnerEntry) => {
@@ -1838,7 +1850,8 @@ const openWinnerCertificate = (winnerEntry) => {
     open: true,
     name: artist.name || translate("polls.detail.voteFallback"),
     group: getArtistGroup(artist),
-    date: formatCertificateDate(poll.value?.endAt || poll.value?.updatedAt),
+    category: getCertificateCategory(),
+    year: getCertificateYear(),
   };
 };
 
@@ -1857,7 +1870,7 @@ watch(
     }
     certificateModal.value = {
       ...certificateModal.value,
-      date: formatCertificateDate(poll.value?.endAt || poll.value?.updatedAt),
+      category: getCertificateCategory(),
     };
   },
 );
@@ -5335,7 +5348,8 @@ onUnmounted(() => {
       :open="certificateModal.open"
       :name="certificateModal.name"
       :group="certificateModal.group"
-      :date="certificateModal.date"
+      :category="certificateModal.category"
+      :year="certificateModal.year"
       @close="closeWinnerCertificate"
     />
 
