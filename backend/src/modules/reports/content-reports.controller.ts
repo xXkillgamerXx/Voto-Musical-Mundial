@@ -12,8 +12,12 @@ export class ContentReportsController {
   constructor(private readonly reports: ReportsService) {}
 
   @Get()
-  list(@Query('status') status?: string, @Query('limit') limit?: string) {
-    return this.reports.listForAdmin(status, Number(limit || 50));
+  list(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+  ) {
+    return this.reports.listForAdmin(status, Number(limit || 20), Number(page || 1));
   }
 
   @Patch(':id')

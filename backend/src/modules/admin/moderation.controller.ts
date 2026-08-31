@@ -50,11 +50,33 @@ export class ModerationController {
 
   @Post('block-user')
   blockUser(@Body() body: any, @Req() request: Request) {
-    return this.moderation.blockUser(body?.userId, body?.reason, this.actorFrom(request));
+    return this.moderation.blockUser(
+      body?.userId,
+      body?.reason,
+      this.actorFrom(request),
+      body?.durationHours,
+    );
   }
 
   @Delete('block-user/:userId')
   unblockUser(@Param('userId') userId: string) {
     return this.moderation.unblockUser(userId);
+  }
+
+  @Get('alerts')
+  async alerts(
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+  ) {
+    return serialize(
+      await this.moderation.listAlertsPaginated({ limitValue: limit, pageValue: page, status, type }),
+    );
+  }
+
+  @Post('alerts/:id/dismiss')
+  dismissAlert(@Param('id') id: string) {
+    return this.moderation.dismissAlert(id);
   }
 }

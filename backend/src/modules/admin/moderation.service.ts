@@ -1,14 +1,52 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { BLOCKED_IPS_KEY, BLOCKED_USERS_KEY } from '../../common/moderation-keys';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import {
+  BLOCKED_IPS_KEY,
+  BLOCKED_USERS_KEY,
+  MOD_ALERT_DEDUPE_PREFIX,
+  MOD_ALERTS_DATA_KEY,
+  MOD_ALERTS_TIMELINE_KEY,
+} from '../../common/moderation-keys';
+import {
+  buildCommentAlertReason,
+  buildSpawnSignupReason,
+  type CommentDictionaryScan,
+  SPAWN_SIGNUP_ALERT_THRESHOLD,
+} from '../../common/moderation-dictionary';
+import {
+  isUserBlockExpired,
+  parseUserBlockMeta,
+  toUserBlockStatus,
+  USER_BLOCKED_ERROR,
+  UserBlockMeta,
+  UserBlockStatus,
+} from '../../common/user-block';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
-type BlockMeta = {
-  reason: string;
+export type ModerationAlertType =
+  | 'comment_promo'
+  | 'comment_diversion'
+  | 'comment_external_link'
+  | 'spawn_signup';
+
+export type ModerationAlertRecord = {
+  id: string;
+  type: ModerationAlertType;
+  status: 'open' | 'dismissed';
   at: string;
-  by: string | null;
-  label?: string | null;
+  reason: string;
+  signals: string[];
+  sample?: string | null;
+  userId?: string | null;
+  userName?: string | null;
+  ipHash?: string | null;
+  ipShort?: string | null;
+  pollId?: string | null;
+  commentId?: string | null;
 };
+
+type BlockMeta = UserBlockMeta;
 
 type IpActivityRow = {
   ipHash: string;
@@ -39,6 +77,13 @@ export class ModerationService {
     return Math.min(limit, max);
   }
 
+  private clampBlockDurationHours(value?: string | number | null) {
+    if (value === null || value === undefined || value === '') return null;
+    const hours = Math.floor(Number(value));
+    if (!Number.isFinite(hours) || hours <= 0) return null;
+    return Math.min(hours, 24 * 365);
+  }
+
   private riskLevel(row: { totalVotes: number; distinctAnon: number; distinctUsers: number }) {
     const identities = row.distinctAnon + row.distinctUsers;
     if (row.distinctAnon >= 8 || row.totalVotes >= 250 || identities >= 12) return 'high';
@@ -57,12 +102,102 @@ export class ModerationService {
   }
 
   private parseMeta(raw?: string): BlockMeta | null {
+    return parseUserBlockMeta(raw);
+  }
+
+  private formatExpiryNotice(expiresAt: string | null) {
+    if (!expiresAt) return 'Tu cuenta está suspendida de forma permanente.';
+    const date = new Date(expiresAt);
+    if (Number.isNaN(date.getTime())) return 'Tu cuenta está suspendida temporalmente.';
+    return `Tu cuenta está suspendida hasta ${date.toLocaleString('es-ES')}.`;
+  }
+
+  async getActiveUserBlock(userId: string): Promise<UserBlockStatus | null> {
+    const value = String(userId || '').trim();
+    if (!value) return null;
+
+    const raw = await this.redis.client.hget(BLOCKED_USERS_KEY, value);
     if (!raw) return null;
-    try {
-      return JSON.parse(raw) as BlockMeta;
-    } catch {
-      return { reason: raw, at: '', by: null };
+
+    const meta = this.parseMeta(raw);
+    if (!meta || isUserBlockExpired(meta)) {
+      await this.redis.client.hdel(BLOCKED_USERS_KEY, value);
+      return null;
     }
+
+    return toUserBlockStatus(meta);
+  }
+
+  async getActiveUserBlocks(userIds: string[]): Promise<Record<string, UserBlockStatus>> {
+    const uniqueIds = [...new Set(userIds.map((id) => String(id || '').trim()).filter(Boolean))];
+    if (!uniqueIds.length) return {};
+
+    const pipeline = this.redis.client.pipeline();
+    for (const id of uniqueIds) {
+      pipeline.hget(BLOCKED_USERS_KEY, id);
+    }
+    const results = await pipeline.exec();
+    const active: Record<string, UserBlockStatus> = {};
+    const expiredIds: string[] = [];
+
+    uniqueIds.forEach((id, index) => {
+      const raw = String(results?.[index]?.[1] || '');
+      if (!raw) return;
+      const meta = this.parseMeta(raw);
+      if (!meta || isUserBlockExpired(meta)) {
+        expiredIds.push(id);
+        return;
+      }
+      const status = toUserBlockStatus(meta);
+      if (status) active[id] = status;
+    });
+
+    if (expiredIds.length) {
+      await this.redis.client.hdel(BLOCKED_USERS_KEY, ...expiredIds);
+    }
+
+    return active;
+  }
+
+  async getActiveBlockedUserIds(): Promise<string[]> {
+    const all = await this.blockedUserSet();
+    const active: string[] = [];
+    const expired: string[] = [];
+
+    for (const [id, raw] of Object.entries(all)) {
+      const meta = this.parseMeta(raw);
+      if (!meta || isUserBlockExpired(meta)) {
+        expired.push(id);
+      } else {
+        active.push(id);
+      }
+    }
+
+    if (expired.length) {
+      await this.redis.client.hdel(BLOCKED_USERS_KEY, ...expired);
+    }
+
+    return active;
+  }
+
+  async isUserBlocked(userId: string | bigint | null | undefined) {
+    if (!userId) return false;
+    const block = await this.getActiveUserBlock(String(userId));
+    return Boolean(block?.blocked);
+  }
+
+  assertUserNotBlocked(userId: string | bigint | null | undefined, scope = 'esta acción') {
+    void scope;
+    return this.getActiveUserBlock(String(userId || '')).then((block) => {
+      if (!block?.blocked) return;
+      throw new ForbiddenException({
+        error: USER_BLOCKED_ERROR,
+        message: 'Tu cuenta está suspendida.',
+        reason: block.reason,
+        expiresAt: block.expiresAt,
+        permanent: block.permanent,
+      });
+    });
   }
 
   async overview(hoursValue?: string) {
@@ -100,6 +235,7 @@ export class ModerationService {
       totalVoteRows: Number(totalLedger || 0),
       blockedIps: Number(blockedIps || 0),
       blockedUsers: Number(blockedUsers || 0),
+      openAlerts: await this.openAlertsCount(),
     };
   }
 
@@ -203,17 +339,22 @@ export class ModerationService {
       : [];
     const userMap = new Map(userRows.map((user) => [user.id.toString(), user]));
 
-    const users = userIds.map((userId) => {
-      const meta = this.parseMeta(usersRaw[userId]);
-      const profile = userMap.get(userId);
-      return {
-        userId,
-        name: profile?.displayName || profile?.username || profile?.email || `#${userId}`,
-        reason: meta?.reason || '',
-        at: meta?.at || '',
-        by: meta?.by || null,
-      };
-    });
+    const users = userIds
+      .map((userId) => {
+        const meta = this.parseMeta(usersRaw[userId]);
+        if (!meta || isUserBlockExpired(meta)) return null;
+        const profile = userMap.get(userId);
+        return {
+          userId,
+          name: profile?.displayName || profile?.username || profile?.email || `#${userId}`,
+          reason: meta?.reason || '',
+          at: meta?.at || '',
+          by: meta?.by || null,
+          expiresAt: meta?.expiresAt || null,
+          permanent: !meta?.expiresAt,
+        };
+      })
+      .filter(Boolean);
 
     return { ips, users };
   }
@@ -243,24 +384,61 @@ export class ModerationService {
     return { ok: true, ipHash: value };
   }
 
-  async blockUser(userId: string, reason: string, by: string | null) {
+  async blockUser(
+    userId: string,
+    reason: string,
+    by: string | null,
+    durationHours?: string | number | null,
+  ) {
     const value = String(userId || '').trim();
     if (!value) {
       throw new BadRequestException('Falta el usuario.');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: BigInt(value) }, select: { id: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: BigInt(value) },
+      select: { id: true, role: true },
+    });
     if (!user) {
       throw new BadRequestException('El usuario no existe.');
     }
+    if (user.role === 'owner') {
+      throw new BadRequestException('No se puede bloquear la cuenta owner.');
+    }
+
+    const hours = this.clampBlockDurationHours(durationHours);
+    const expiresAt = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+    const reasonText = String(reason || '').trim() || 'Bloqueo manual';
 
     const meta: BlockMeta = {
-      reason: String(reason || '').trim() || 'Bloqueo manual',
+      reason: reasonText,
       at: new Date().toISOString(),
       by,
+      expiresAt,
     };
     await this.redis.client.hset(BLOCKED_USERS_KEY, value, JSON.stringify(meta));
-    return { ok: true, userId: value };
+
+    const notice = this.formatExpiryNotice(expiresAt);
+    await this.prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: 'account_suspended',
+        payload: {
+          reason: reasonText,
+          expiresAt,
+          permanent: !expiresAt,
+          title: 'Cuenta suspendida',
+          message: `${notice} Motivo: ${reasonText}`,
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      userId: value,
+      expiresAt,
+      permanent: !expiresAt,
+    };
   }
 
   async unblockUser(userId: string) {
@@ -271,5 +449,303 @@ export class ModerationService {
 
     await this.redis.client.hdel(BLOCKED_USERS_KEY, value);
     return { ok: true, userId: value };
+  }
+
+  private alertDedupeKey(type: string, userId: string | null, fingerprint: string) {
+    return `${MOD_ALERT_DEDUPE_PREFIX}${type}:${userId || 'none'}:${fingerprint}`;
+  }
+
+  private mapCommentAlertType(scan: CommentDictionaryScan): ModerationAlertType {
+    if (scan.primaryType === 'external_link') return 'comment_external_link';
+    if (scan.primaryType === 'diversion') return 'comment_diversion';
+    return 'comment_promo';
+  }
+
+  async createAlert(input: {
+    type: ModerationAlertType;
+    reason: string;
+    signals?: string[];
+    sample?: string | null;
+    userId?: string | bigint | null;
+    userName?: string | null;
+    ipHash?: string | null;
+    pollId?: string | bigint | null;
+    commentId?: string | bigint | null;
+    dedupeFingerprint?: string;
+    dedupeTtlSeconds?: number;
+  }) {
+    const userId = input.userId ? String(input.userId) : null;
+    const fingerprint =
+      input.dedupeFingerprint ||
+      `${input.type}:${(input.signals || []).slice(0, 3).join('|')}:${String(input.sample || '').slice(0, 80)}`;
+    const dedupeKey = this.alertDedupeKey(input.type, userId, fingerprint);
+    const dedupeTtl = Math.max(300, Math.floor(Number(input.dedupeTtlSeconds || 1800)));
+
+    const dedupeOk = await this.redis.client.set(dedupeKey, '1', 'EX', dedupeTtl, 'NX');
+    if (dedupeOk !== 'OK') {
+      return null;
+    }
+
+    const id = randomUUID();
+    const ipHash = input.ipHash ? String(input.ipHash) : null;
+    const record: ModerationAlertRecord = {
+      id,
+      type: input.type,
+      status: 'open',
+      at: new Date().toISOString(),
+      reason: String(input.reason || '').trim() || 'Actividad sospechosa',
+      signals: Array.isArray(input.signals) ? input.signals.filter(Boolean) : [],
+      sample: input.sample ? String(input.sample).slice(0, 400) : null,
+      userId,
+      userName: input.userName || null,
+      ipHash,
+      ipShort: ipHash ? `${ipHash.slice(0, 12)}…` : null,
+      pollId: input.pollId ? String(input.pollId) : null,
+      commentId: input.commentId ? String(input.commentId) : null,
+    };
+
+    const score = Date.now();
+    await this.redis.client
+      .multi()
+      .zadd(MOD_ALERTS_TIMELINE_KEY, score, id)
+      .hset(MOD_ALERTS_DATA_KEY, id, JSON.stringify(record))
+      .exec();
+
+    // Mantener solo las últimas 500 alertas
+    const overflow = await this.redis.client.zcard(MOD_ALERTS_TIMELINE_KEY);
+    if (overflow > 500) {
+      const staleIds = await this.redis.client.zrange(MOD_ALERTS_TIMELINE_KEY, 0, overflow - 501);
+      if (staleIds.length) {
+        await this.redis.client
+          .multi()
+          .zrem(MOD_ALERTS_TIMELINE_KEY, ...staleIds)
+          .hdel(MOD_ALERTS_DATA_KEY, ...staleIds)
+          .exec();
+      }
+    }
+
+    return record;
+  }
+
+  async createCommentSuspicionAlert(input: {
+    text: string;
+    scan: CommentDictionaryScan;
+    userId: bigint;
+    userName: string;
+    pollId: bigint;
+    commentId: bigint;
+    ipHash?: string | null;
+  }) {
+    if (!input.scan.suspicious) return null;
+
+    const alertType = this.mapCommentAlertType(input.scan);
+    // Enlaces externos ya se bloquean al publicar; alerta solo promo/desvío
+    if (alertType === 'comment_external_link') return null;
+
+    return this.createAlert({
+      type: alertType,
+      reason: buildCommentAlertReason(input.scan),
+      signals: input.scan.matches.map((match) => `${match.category}:${match.label}`),
+      sample: input.text,
+      userId: input.userId,
+      userName: input.userName,
+      pollId: input.pollId,
+      commentId: input.commentId,
+      ipHash: input.ipHash || null,
+      dedupeFingerprint: `${alertType}:${input.userId.toString()}:${input.scan.primaryType}`,
+    });
+  }
+
+  async createSpawnSignupAlert(input: {
+    ipHash: string;
+    accountCount: number;
+    userId: bigint;
+    userName?: string | null;
+  }) {
+    if (!input.ipHash || input.accountCount < SPAWN_SIGNUP_ALERT_THRESHOLD) {
+      return null;
+    }
+
+    return this.createAlert({
+      type: 'spawn_signup',
+      reason: buildSpawnSignupReason(`${input.ipHash.slice(0, 12)}…`, input.accountCount),
+      signals: [`spawn:ip_accounts:${input.accountCount}`],
+      userId: input.userId,
+      userName: input.userName || null,
+      ipHash: input.ipHash,
+      dedupeFingerprint: `spawn:${input.ipHash}:${input.accountCount}`,
+      dedupeTtlSeconds: 3600,
+    });
+  }
+
+  async listAlertsPaginated(options?: {
+    limitValue?: string;
+    pageValue?: string;
+    status?: string;
+    type?: string;
+  }) {
+    const limit = this.clampLimit(options?.limitValue, 20, 100);
+    const page = Math.max(Number(options?.pageValue) || 1, 1);
+    const skip = (page - 1) * limit;
+    const statusFilter = String(options?.status || '').trim().toLowerCase();
+    const typeFilter = String(options?.type || '').trim().toLowerCase();
+
+    const ids = await this.redis.client.zrevrange(MOD_ALERTS_TIMELINE_KEY, 0, 999);
+    if (!ids.length) {
+      return { items: [], total: 0, page, pageSize: limit, totalPages: 1 };
+    }
+
+    const rows = await this.redis.client.hmget(MOD_ALERTS_DATA_KEY, ...ids);
+    const alerts: ModerationAlertRecord[] = [];
+
+    ids.forEach((id, index) => {
+      const raw = rows[index];
+      if (!raw) return;
+      try {
+        alerts.push(JSON.parse(raw) as ModerationAlertRecord);
+      } catch {
+        // ignore corrupt row
+      }
+    });
+
+    const filtered = alerts.filter((alert) => {
+      if (statusFilter === 'open' && alert.status !== 'open') return false;
+      if (statusFilter === 'dismissed' && alert.status !== 'dismissed') return false;
+      if (typeFilter && alert.type !== typeFilter) return false;
+      return true;
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const pageItems = filtered.slice(skip, skip + limit);
+
+    const userIds = [...new Set(pageItems.map((a) => a.userId).filter(Boolean))] as string[];
+    const users = userIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds.map((id) => BigInt(id)) } },
+          select: { id: true, username: true, displayName: true, email: true },
+        })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id.toString(), u]));
+
+    const items = pageItems.map((alert) => {
+      const profile = alert.userId ? userMap.get(alert.userId) : null;
+      return {
+        ...alert,
+        userName:
+          alert.userName ||
+          profile?.displayName ||
+          profile?.username ||
+          profile?.email ||
+          (alert.userId ? `#${alert.userId}` : null),
+      };
+    });
+
+    return { items, total, page, pageSize: limit, totalPages };
+  }
+
+  async listAlertsForUser(userId: string, limitValue?: string) {
+    const value = String(userId || '').trim();
+    if (!value) return [];
+
+    const limit = this.clampLimit(limitValue, 80, 200);
+    const ids = await this.redis.client.zrevrange(MOD_ALERTS_TIMELINE_KEY, 0, 499);
+    if (!ids.length) return [];
+
+    const rows = await this.redis.client.hmget(MOD_ALERTS_DATA_KEY, ...ids);
+    const alerts: ModerationAlertRecord[] = [];
+
+    ids.forEach((id, index) => {
+      const raw = rows[index];
+      if (!raw) return;
+      try {
+        const record = JSON.parse(raw) as ModerationAlertRecord;
+        if (record.userId === value) {
+          alerts.push(record);
+        }
+      } catch {
+        // ignore corrupt row
+      }
+    });
+
+    return alerts.slice(0, limit);
+  }
+
+  async listAlerts(limitValue?: string) {
+    const limit = this.clampLimit(limitValue, 80, 200);
+    const ids = await this.redis.client.zrevrange(MOD_ALERTS_TIMELINE_KEY, 0, limit - 1);
+    if (!ids.length) return [];
+
+    const rows = await this.redis.client.hmget(MOD_ALERTS_DATA_KEY, ...ids);
+    const alerts: ModerationAlertRecord[] = [];
+
+    ids.forEach((id, index) => {
+      const raw = rows[index];
+      if (!raw) return;
+      try {
+        alerts.push(JSON.parse(raw) as ModerationAlertRecord);
+      } catch {
+        // ignore corrupt row
+      }
+    });
+
+    const userIds = [...new Set(alerts.map((a) => a.userId).filter(Boolean))] as string[];
+    const users = userIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds.map((id) => BigInt(id)) } },
+          select: { id: true, username: true, displayName: true, email: true },
+        })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id.toString(), u]));
+
+    return alerts.map((alert) => {
+      const profile = alert.userId ? userMap.get(alert.userId) : null;
+      return {
+        ...alert,
+        userName:
+          alert.userName ||
+          profile?.displayName ||
+          profile?.username ||
+          profile?.email ||
+          (alert.userId ? `#${alert.userId}` : null),
+      };
+    });
+  }
+
+  async dismissAlert(alertId: string) {
+    const id = String(alertId || '').trim();
+    if (!id) throw new BadRequestException('Falta la alerta.');
+
+    const raw = await this.redis.client.hget(MOD_ALERTS_DATA_KEY, id);
+    if (!raw) throw new BadRequestException('La alerta no existe.');
+
+    let record: ModerationAlertRecord;
+    try {
+      record = JSON.parse(raw) as ModerationAlertRecord;
+    } catch {
+      throw new BadRequestException('La alerta está corrupta.');
+    }
+
+    record.status = 'dismissed';
+    await this.redis.client.hset(MOD_ALERTS_DATA_KEY, id, JSON.stringify(record));
+    return { ok: true, id };
+  }
+
+  async openAlertsCount() {
+    const ids = await this.redis.client.zrevrange(MOD_ALERTS_TIMELINE_KEY, 0, 199);
+    if (!ids.length) return 0;
+    const rows = await this.redis.client.hmget(MOD_ALERTS_DATA_KEY, ...ids);
+    return rows.filter((raw) => {
+      if (!raw) return false;
+      try {
+        return (JSON.parse(raw) as ModerationAlertRecord).status === 'open';
+      } catch {
+        return false;
+      }
+    }).length;
+  }
+
+  async blockedUsersCount() {
+    return Number(await this.redis.client.hlen(BLOCKED_USERS_KEY));
   }
 }

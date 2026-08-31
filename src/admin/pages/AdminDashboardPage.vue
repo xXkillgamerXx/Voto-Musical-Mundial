@@ -20,7 +20,9 @@ import AdminSettingsView from '../components/AdminSettingsView.vue'
 import AdminPrivacyView from '../components/AdminPrivacyView.vue'
 import AdminTermsView from '../components/AdminTermsView.vue'
 import AdminUsersView from '../components/AdminUsersView.vue'
+import AdminUserProfileView from '../components/AdminUserProfileView.vue'
 import { getCurrentApiAuth, getMe, logout } from '../../services/api/authApi'
+import { getAdminNavCounts } from '../../services/api/adminApi'
 
 const currentPath = window.location.pathname
 const isPollsView = computed(() => currentPath === '/admin/votaciones')
@@ -39,6 +41,11 @@ const isArtistCreateView = computed(() => currentPath === '/admin/artistas/crear
 const isArtistEditView = computed(() => currentPath.startsWith('/admin/artistas/editar/'))
 const artistEditId = computed(() => currentPath.replace('/admin/artistas/editar/', ''))
 const isUsersView = computed(() => currentPath === '/admin/usuarios')
+const isUserProfileView = computed(() => /^\/admin\/usuarios\/[^/]+$/.test(currentPath))
+const userProfileId = computed(() => {
+  const match = currentPath.match(/^\/admin\/usuarios\/([^/]+)$/)
+  return match ? match[1] : ''
+})
 const isMissionsView = computed(() => currentPath === '/admin/misiones')
 const isPushNotificationsView = computed(() => currentPath === '/admin/notificaciones')
 const isMailView = computed(() => currentPath === '/admin/correo')
@@ -93,6 +100,10 @@ const pageTitle = computed(() => {
 
   if (isArtistsView.value) {
     return 'Artistas'
+  }
+
+  if (isUserProfileView.value) {
+    return 'Perfil de usuario'
   }
 
   if (isUsersView.value) {
@@ -150,6 +161,20 @@ const hasAdminAccess = ref(false)
 const currentUser = ref(null)
 const avatarImageFailed = ref(false)
 const isMobileNavOpen = ref(false)
+const navCounts = ref({ openAlerts: 0, pendingDenuncias: 0 })
+
+const navBadge = (item) => {
+  if (!item.badgeKey) return 0
+  return Number(navCounts.value[item.badgeKey] || 0)
+}
+
+const loadNavCounts = async () => {
+  try {
+    navCounts.value = await getAdminNavCounts()
+  } catch {
+    navCounts.value = { openAlerts: 0, pendingDenuncias: 0 }
+  }
+}
 
 const userName = computed(() => currentUser.value?.displayName || 'Admin')
 const userEmail = computed(() => currentUser.value?.email || '')
@@ -163,6 +188,7 @@ const adminRoles = new Set(['admin', 'superadmin', 'owner'])
 
 const navItems = [
   { label: 'Dashboard', href: '/admin', icon: 'fa-solid fa-chart-line' },
+  { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
   { label: 'Votaciones', href: '/admin/votaciones', icon: 'fa-solid fa-check-to-slot' },
   { label: 'Categorías', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
@@ -170,9 +196,8 @@ const navItems = [
   { label: 'Notificaciones', href: '/admin/notificaciones', icon: 'fa-solid fa-bell' },
   { label: 'Correo', href: '/admin/correo', icon: 'fa-solid fa-envelope' },
   { label: 'Programadas', href: '/admin/notificaciones-programadas', icon: 'fa-solid fa-clock-rotate-left' },
-  { label: 'Usuarios', href: '/admin/usuarios', icon: 'fa-solid fa-users' },
-  { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved' },
-  { label: 'Denuncias', href: '/admin/denuncias', icon: 'fa-solid fa-flag' },
+  { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved', badgeKey: 'openAlerts' },
+  { label: 'Denuncias', href: '/admin/denuncias', icon: 'fa-solid fa-flag', badgeKey: 'pendingDenuncias' },
   { label: 'Ajustes', href: '/admin/ajustes', icon: 'fa-solid fa-gear' },
   { label: 'Términos y condiciones', href: '/admin/terminos', icon: 'fa-solid fa-file-contract' },
   { label: 'Política de privacidad', href: '/admin/privacidad', icon: 'fa-solid fa-user-shield' },
@@ -225,6 +250,9 @@ onMounted(() => {
     .then((user) => {
       currentUser.value = user
       hasAdminAccess.value = adminRoles.has(String(user?.role || '').trim().toLowerCase())
+      if (hasAdminAccess.value) {
+        loadNavCounts()
+      }
     })
     .catch(() => {
       hasAdminAccess.value = false
@@ -332,7 +360,13 @@ onUnmounted(() => {
             @click="closeMobileNav"
           >
             <i class="w-5 shrink-0 text-center" :class="item.icon" aria-hidden="true"></i>
-            <span class="truncate">{{ item.label }}</span>
+            <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+            <span
+              v-if="navBadge(item)"
+              class="shrink-0 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-black text-white"
+            >
+              {{ navBadge(item) }}
+            </span>
           </a>
         </nav>
 
@@ -462,6 +496,7 @@ onUnmounted(() => {
           <AdminNotificationCampaignsView v-else-if="isNotificationCampaignsView" />
           <AdminModerationView v-else-if="isModerationView" />
           <AdminContentReportsView v-else-if="isContentReportsView" />
+          <AdminUserProfileView v-else-if="isUserProfileView" :user-id="userProfileId" />
           <AdminUsersView v-else-if="isUsersView" />
           <AdminSettingsView v-else-if="isSettingsView" />
           <AdminTermsView v-else-if="isTermsView" />

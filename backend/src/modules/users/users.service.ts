@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { allowsCampaignEmail } from '../../common/email-preferences';
 import { serialize } from '../../common/serialize';
+import { ModerationService } from '../admin/moderation.service';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -9,6 +10,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly missionProgress: MissionProgressService,
+    private readonly moderation: ModerationService,
   ) {}
 
   private readonly publicSelect = {
@@ -41,7 +43,8 @@ export class UsersService {
     });
 
     if (!user) throw new NotFoundException('Usuario no encontrado.');
-    return this.profilePayload(user);
+    const accountBlock = await this.moderation.getActiveUserBlock(id.toString());
+    return this.profilePayload(user, true, accountBlock);
   }
 
   async findPublicByUsername(username: string) {
@@ -124,7 +127,8 @@ export class UsersService {
 
     void this.missionProgress.trackProfileComplete(updated).catch(() => {});
 
-    return this.profilePayload(updated);
+    const accountBlock = await this.moderation.getActiveUserBlock(id.toString());
+    return this.profilePayload(updated, true, accountBlock);
   }
 
   async checkUsername(username: string, currentUserId: bigint) {
@@ -168,7 +172,7 @@ export class UsersService {
     return serialize(user);
   }
 
-  private profilePayload(user: any, includeEmail = true) {
+  private profilePayload(user: any, includeEmail = true, accountBlock: any = null) {
     const metadata = (user.metadata as Record<string, unknown>) || {};
     const followedArtists = (user.followingArtists || [])
       .map((follow: any) => {
@@ -218,6 +222,8 @@ export class UsersService {
         .startsWith('es')
         ? 'es'
         : 'en',
+      accountStatus: accountBlock?.blocked ? 'blocked' : 'active',
+      accountBlock: accountBlock?.blocked ? accountBlock : null,
       followedArtists,
     });
   }

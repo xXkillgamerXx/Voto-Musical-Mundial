@@ -7,17 +7,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';
 import {
   BLOCKED_LANGUAGE_MESSAGE,
   isCommentLanguageBlocked,
 } from '../../common/comment-profanity';
 import {
   BLOCKED_PROMO_MESSAGE,
-  isCommentPromoBlocked,
+  isCommentHardBlocked,
+  scanCommentDictionary,
 } from '../../common/comment-promo';
+import { getClientIp, hashIp } from '../../common/request';
 import { pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { toPublicComment } from '../../common/public-comment';
+import { ModerationService } from '../admin/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -31,6 +36,8 @@ export class CommentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly moderation: ModerationService,
+    private readonly config: ConfigService,
   ) {}
 
   private async publishComment(pollId: bigint, payload: Record<string, unknown>) {
@@ -65,7 +72,9 @@ export class CommentsService {
     return serialize(comments.map((comment) => toPublicComment(comment as Record<string, unknown>)));
   }
 
-  async create(pollId: string, userId: bigint, body: any) {
+  async create(pollId: string, userId: bigint, body: any, request?: Request) {
+    await this.moderation.assertUserNotBlocked(userId, 'comentar');
+
     const poll = await this.resolvePoll(pollId);
     const text = String(body?.text || '').trim();
     const gif =
@@ -81,9 +90,11 @@ export class CommentsService {
       throw new BadRequestException('El comentario es demasiado largo.');
     }
 
-    if (text && (await isCommentPromoBlocked(text))) {
+    if (text && isCommentHardBlocked(text)) {
       throw new BadRequestException(BLOCKED_PROMO_MESSAGE);
     }
+
+    const promoScan = text ? scanCommentDictionary(text) : null;
 
     if (text && (await isCommentLanguageBlocked(text))) {
       throw new BadRequestException(BLOCKED_LANGUAGE_MESSAGE);
@@ -138,6 +149,25 @@ export class CommentsService {
 
     const payload = toPublicComment(comment as Record<string, unknown>);
     await this.publishComment(poll.id, { action: 'new', comment: payload });
+
+    if (promoScan?.suspicious && !isAdmin) {
+      const clientIp = request ? getClientIp(request) : null;
+      const ipHash =
+        clientIp && clientIp !== 'unknown'
+          ? hashIp(clientIp, this.config.get<string>('IP_HASH_SALT') || 'votomusicamundial')
+          : null;
+      void this.moderation
+        .createCommentSuspicionAlert({
+          text,
+          scan: promoScan,
+          userId,
+          userName: displayName,
+          pollId: poll.id,
+          commentId: comment.id,
+          ipHash,
+        })
+        .catch(() => {});
+    }
 
     return payload;
   }

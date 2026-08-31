@@ -15,6 +15,8 @@ const quickActions = [
   { labelKey: 'admin.dashboard.quickActions.addArtist', href: '/admin/artistas/crear', icon: 'fa-solid fa-microphone-lines' },
   { labelKey: 'admin.dashboard.quickActions.manageUsers', href: '/admin/usuarios', icon: 'fa-solid fa-users-gear' },
   { labelKey: 'admin.dashboard.quickActions.manageCategories', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
+  { label: 'Alertas abiertas', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved' },
+  { label: 'Denuncias pendientes', href: '/admin/denuncias', icon: 'fa-solid fa-flag' },
 ]
 
 const platformLabels = {
@@ -134,6 +136,18 @@ const audienceRows = computed(() => [
 
 const userLabel = (user) =>
   user.displayName || user.username || user.email || `#${user.id}`
+
+const moderation = computed(() => overview.value?.moderation || { openAlerts: 0, blockedUsers: 0, alerts: [] })
+
+const alertTypeLabel = (type) => {
+  const map = {
+    spawn_signup: 'admin.dashboard.alertSpawn',
+    comment_promo: 'admin.dashboard.alertPromo',
+    comment_diversion: 'admin.dashboard.alertDiversion',
+    comment_external_link: 'admin.dashboard.alertExternalLink',
+  }
+  return map[type] || type
+}
 
 onMounted(load)
 </script>
@@ -356,7 +370,12 @@ onMounted(load)
             :key="referrer.id"
             class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-2.5"
           >
-            <span class="truncate text-sm font-bold text-white">{{ userLabel(referrer) }}</span>
+            <a
+              :href="`/admin/usuarios/${referrer.id}`"
+              class="truncate text-sm font-bold text-white transition hover:text-fuchsia-200"
+            >
+              {{ userLabel(referrer) }}
+            </a>
             <span class="shrink-0 text-xs font-black text-emerald-200">
               {{ $t('admin.dashboard.invitedCount', { count: referrer.referralSignups }) }}
             </span>
@@ -385,6 +404,7 @@ onMounted(load)
               :key="user.id"
               class="flex items-center gap-3 border-b border-white/10 pb-3 last:border-0 last:pb-0"
             >
+              <a :href="`/admin/usuarios/${user.id}`" class="flex min-w-0 flex-1 items-center gap-3 transition hover:opacity-90">
               <img
                 v-if="user.photoUrl"
                 :src="user.photoUrl"
@@ -404,10 +424,85 @@ onMounted(load)
                   <span v-if="user.referredById" class="text-emerald-300"> · ref</span>
                 </p>
               </div>
-              <span class="shrink-0 text-xs font-black text-fuchsia-200">{{ formatNumber(user.points) }}</span>
+              <div class="flex shrink-0 flex-col items-end gap-1">
+                <span
+                  class="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase"
+                  :class="
+                    user.accountStatus === 'blocked'
+                      ? 'border-red-300/25 bg-red-500/10 text-red-100'
+                      : 'border-emerald-300/20 bg-emerald-500/10 text-emerald-100'
+                  "
+                >
+                  {{
+                    user.accountStatus === 'blocked'
+                      ? $t('admin.dashboard.userStatusBlocked')
+                      : $t('admin.dashboard.userStatusActive')
+                  }}
+                </span>
+                <span class="text-xs font-black text-fuchsia-200">{{ formatNumber(user.points) }}</span>
+              </div>
+              </a>
             </div>
 
             <p v-if="!overview?.recentUsers?.length" class="rounded-2xl border border-white/10 px-4 py-4 text-sm font-bold text-slate-400">
+              {{ $t('admin.dashboard.noData') }}
+            </p>
+          </div>
+        </article>
+
+        <article class="rounded-3xl border border-amber-300/20 bg-amber-500/5 p-5">
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-amber-200">
+              {{ $t('admin.dashboard.moderationTitle') }}
+            </p>
+            <div class="flex items-center gap-2">
+              <a href="/admin/reportes" class="text-xs font-black text-amber-100 transition hover:text-white">
+                {{ $t('admin.dashboard.moderationViewReports') }}
+              </a>
+              <a href="/admin/denuncias" class="text-xs font-black text-red-200 transition hover:text-white">
+                Denuncias
+              </a>
+            </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                {{ $t('admin.dashboard.moderationAlerts') }}
+              </p>
+              <p class="mt-1 text-2xl font-black text-amber-100">{{ formatNumber(moderation.openAlerts) }}</p>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                {{ $t('admin.dashboard.moderationBlocked') }}
+              </p>
+              <p class="mt-1 text-2xl font-black text-red-100">{{ formatNumber(moderation.blockedUsers) }}</p>
+            </div>
+          </div>
+
+          <p class="mt-4 text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">
+            {{ $t('admin.dashboard.moderationRecentAlerts') }}
+          </p>
+          <div class="mt-2 space-y-2">
+            <a
+              v-for="alert in moderation.alerts || []"
+              :key="alert.id"
+              :href="alert.userId ? `/admin/usuarios/${alert.userId}` : '/admin/reportes'"
+              class="block rounded-2xl border border-white/10 bg-slate-950/45 px-3 py-2.5 transition hover:border-amber-300/30 hover:bg-slate-950/70"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="rounded-full border border-amber-300/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black uppercase text-amber-100">
+                  {{ $t(alertTypeLabel(alert.type)) }}
+                </span>
+                <span class="text-[10px] font-bold text-slate-500">{{ formatDate(alert.at) }}</span>
+              </div>
+              <p class="mt-1 truncate text-xs font-bold text-slate-200">{{ alert.reason }}</p>
+              <p v-if="alert.userName" class="truncate text-[11px] text-slate-500">{{ alert.userName }}</p>
+            </a>
+            <p
+              v-if="!(moderation.alerts || []).length"
+              class="rounded-2xl border border-white/10 px-3 py-4 text-sm font-bold text-slate-400"
+            >
               {{ $t('admin.dashboard.noData') }}
             </p>
           </div>
@@ -425,7 +520,7 @@ onMounted(load)
               class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-black text-white transition hover:border-fuchsia-300/35 hover:bg-white/10"
             >
               <i class="mr-2 text-fuchsia-200" :class="action.icon" aria-hidden="true"></i>
-              {{ $t(action.labelKey) }}
+              {{ action.label || $t(action.labelKey) }}
             </a>
           </div>
         </article>

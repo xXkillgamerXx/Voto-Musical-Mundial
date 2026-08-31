@@ -15,6 +15,7 @@ export const adminFormRequest = (path, options = {}) =>
   })
 
 export const getAdminDashboard = () => adminRequest('/dashboard')
+export const getAdminNavCounts = () => adminRequest('/nav-counts')
 export const getAdminOverview = (days = 30) => adminRequest(`/overview?days=${days}`)
 export const getAdminMetrics = () => adminRequest('/metrics')
 export const getAdminUsers = ({
@@ -23,6 +24,7 @@ export const getAdminUsers = ({
   search = '',
   role = '',
   sort = 'newest',
+  accountStatus = '',
 } = {}) => {
   const params = new URLSearchParams({
     page: String(page),
@@ -31,11 +33,15 @@ export const getAdminUsers = ({
   })
   const query = String(search || '').trim()
   const roleFilter = String(role || '').trim()
+  const statusFilter = String(accountStatus || '').trim()
   if (query) {
     params.set('search', query)
   }
   if (roleFilter) {
     params.set('role', roleFilter)
+  }
+  if (statusFilter) {
+    params.set('accountStatus', statusFilter)
   }
   return adminRequest(`/users?${params.toString()}`)
 }
@@ -43,6 +49,14 @@ export const updateAdminUser = (id, body) => adminRequest(`/users/${encodeURICom
 export const deleteAdminUser = (id) =>
   adminRequest(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
 export const getAdminUserProfile = (id) => adminRequest(`/users/${encodeURIComponent(id)}/profile`)
+export const getAdminUserAlerts = (id, limit = 80) =>
+  adminRequest(`/users/${encodeURIComponent(id)}/alerts?limit=${limit}`)
+export const getAdminUserComments = (id, limit = 50, page = 1) =>
+  adminRequest(`/users/${encodeURIComponent(id)}/comments?limit=${limit}&page=${page}`)
+export const deleteAdminUserComment = (userId, commentId) =>
+  adminRequest(`/users/${encodeURIComponent(userId)}/comments/${encodeURIComponent(commentId)}`, {
+    method: 'DELETE',
+  })
 export const getAdminUserActivity = (id, limit = 120) =>
   adminRequest(`/users/${encodeURIComponent(id)}/activity?limit=${limit}`)
 export const getAdminUserActivityDays = (id, days = 90) =>
@@ -127,9 +141,21 @@ export const getModerationOverview = (hours = 24) => adminRequest(`/moderation/o
 export const getModerationIpActivity = (hours = 24, limit = 50) => adminRequest(`/moderation/ip-activity?hours=${hours}&limit=${limit}`)
 export const getModerationRecentVotes = (limit = 100) => adminRequest(`/moderation/recent-votes?limit=${limit}`)
 export const getModerationBlocks = () => adminRequest('/moderation/blocks')
+export const getModerationAlerts = ({ limit = 20, page = 1, status = '', type = '' } = {}) => {
+  const params = new URLSearchParams({ limit: String(limit), page: String(page) })
+  if (status) params.set('status', status)
+  if (type) params.set('type', type)
+  return adminRequest(`/moderation/alerts?${params.toString()}`)
+}
+export const dismissModerationAlert = (id) =>
+  adminRequest(`/moderation/alerts/${encodeURIComponent(id)}/dismiss`, { method: 'POST', body: {} })
 export const blockModerationIp = (ipHash, reason) => adminRequest('/moderation/block-ip', { method: 'POST', body: { ipHash, reason } })
 export const unblockModerationIp = (ipHash) => adminRequest(`/moderation/block-ip/${encodeURIComponent(ipHash)}`, { method: 'DELETE' })
-export const blockModerationUser = (userId, reason) => adminRequest('/moderation/block-user', { method: 'POST', body: { userId, reason } })
+export const blockModerationUser = (userId, reason, durationHours) =>
+  adminRequest('/moderation/block-user', {
+    method: 'POST',
+    body: { userId, reason, durationHours },
+  })
 export const unblockModerationUser = (userId) => adminRequest(`/moderation/block-user/${encodeURIComponent(userId)}`, { method: 'DELETE' })
 
 export const getAdminPushUsers = (search = '', limit = 50) =>
@@ -196,8 +222,15 @@ export const getAdminPrivacy = () => adminRequest('/settings/privacy')
 export const updateAdminPrivacy = (body) =>
   adminRequest('/settings/privacy', { method: 'PATCH', body })
 
-export const getAdminContentReports = (status = '', limit = 50) => {
-  const params = new URLSearchParams({ limit: String(limit) })
+export const getAdminContentReports = ({
+  status = '',
+  page = 1,
+  limit = 20,
+} = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  })
   if (status) params.set('status', status)
   return adminRequest(`/content-reports?${params.toString()}`)
 }

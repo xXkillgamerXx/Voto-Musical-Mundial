@@ -1,15 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { translate } from '../../i18n'
-import { getAdminUsers, updateAdminUser, deleteAdminUser } from '../../services/api/adminApi'
-import AdminUserActivityModal from './AdminUserActivityModal.vue'
-
-const activityUserId = ref('')
+import { getAdminUsers, updateAdminUser, deleteAdminUser, blockModerationUser, unblockModerationUser } from '../../services/api/adminApi'
 
 const users = ref([])
 const searchInput = ref('')
 const activeSearch = ref('')
 const roleFilter = ref('')
+const accountListFilter = ref('')
 const sortFilter = ref('newest')
 const pageSize = ref(20)
 const currentPage = ref(1)
@@ -23,6 +21,11 @@ const updatingPointsUserId = ref('')
 const updatingRoleUserId = ref('')
 const deleteTarget = ref(null)
 const isDeleting = ref(false)
+const blockTarget = ref(null)
+const blockReason = ref('')
+const blockDuration = ref(24)
+const isBlocking = ref(false)
+const updatingStatusUserId = ref('')
 const roleOptions = [
   { value: 'user', label: 'Usuario' },
   { value: 'admin', label: 'Admin' },
@@ -40,10 +43,43 @@ const sortOptions = [
 
 const pageSizeOptions = [10, 20, 50, 100]
 
+const statusOptions = [
+  { value: 'active', labelKey: 'admin.users.statusActive' },
+  { value: 'blocked', labelKey: 'admin.users.statusBlocked' },
+]
+
+const durationOptions = [
+  { value: 1, labelKey: 'admin.users.blockDuration1h' },
+  { value: 24, labelKey: 'admin.users.blockDuration24h' },
+  { value: 168, labelKey: 'admin.users.blockDuration7d' },
+  { value: 720, labelKey: 'admin.users.blockDuration30d' },
+  { value: 0, labelKey: 'admin.users.blockDurationPermanent' },
+]
+
+const listStatusOptions = [
+  { value: '', labelKey: 'admin.users.filterStatusAll' },
+  { value: 'active', labelKey: 'admin.users.statusActive' },
+  { value: 'blocked', labelKey: 'admin.users.statusBlocked' },
+]
+
 const normalizeRole = (role) => String(role || 'user').trim().toLowerCase()
 
+const accountStatusFor = (user) => (user?.accountStatus === 'blocked' ? 'blocked' : 'active')
+
+const formatBlockExpiry = (user) => {
+  const block = user?.accountBlock
+  if (!block?.blocked) return ''
+  if (block.permanent || !block.expiresAt) return translate('admin.users.blockPermanentBadge')
+  const date = new Date(block.expiresAt)
+  if (Number.isNaN(date.getTime())) return ''
+  return translate('admin.users.blockUntil', { date: date.toLocaleString('es-ES') })
+}
+
 const hasActiveFilters = computed(
-  () => Boolean(activeSearch.value || roleFilter.value || sortFilter.value !== 'newest'),
+  () =>
+    Boolean(
+      activeSearch.value || roleFilter.value || accountListFilter.value || sortFilter.value !== 'newest',
+    ),
 )
 
 const pageWindow = computed(() => {
@@ -77,6 +113,7 @@ const loadUsers = async ({
       search: activeSearch.value,
       role: roleFilter.value,
       sort: sortFilter.value,
+      accountStatus: accountListFilter.value,
     })
 
     const items = Array.isArray(response?.items)
@@ -114,6 +151,7 @@ const clearFilters = () => {
   searchInput.value = ''
   activeSearch.value = ''
   roleFilter.value = ''
+  accountListFilter.value = ''
   sortFilter.value = 'newest'
   pageSize.value = 20
   loadUsers({ page: 1, search: '' })
@@ -209,6 +247,80 @@ const closeDeleteModal = () => {
   deleteTarget.value = null
 }
 
+const closeBlockModal = () => {
+  if (isBlocking.value) return
+  blockTarget.value = null
+  blockReason.value = ''
+  blockDuration.value = 24
+}
+
+const onStatusChange = async (user, nextStatus) => {
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  if (normalizeRole(user.role) === 'owner') return
+
+  const current = accountStatusFor(user)
+  if (nextStatus === current) return
+
+  if (nextStatus === 'active') {
+    updatingStatusUserId.value = user.id
+    try {
+      await unblockModerationUser(user.id)
+      user.accountStatus = 'active'
+      user.accountBlock = null
+      successMessage.value = translate('admin.users.unblocked', { name: userLabel(user) })
+    } catch (error) {
+      errorMessage.value =
+        error?.payload?.message || error?.message || translate('admin.users.errors.updateStatus')
+    } finally {
+      updatingStatusUserId.value = ''
+    }
+    return
+  }
+
+  blockTarget.value = user
+  blockReason.value = ''
+  blockDuration.value = 24
+}
+
+const confirmBlockUser = async () => {
+  if (!blockTarget.value) return
+
+  const reason = String(blockReason.value || '').trim()
+  if (!reason) {
+    errorMessage.value = translate('admin.users.errors.blockReasonRequired')
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  isBlocking.value = true
+
+  const user = blockTarget.value
+  const name = userLabel(user)
+
+  try {
+    const result = await blockModerationUser(user.id, reason, blockDuration.value)
+    user.accountStatus = 'blocked'
+    user.accountBlock = {
+      blocked: true,
+      reason,
+      expiresAt: result?.expiresAt || null,
+      permanent: Boolean(result?.permanent),
+      at: new Date().toISOString(),
+      by: null,
+    }
+    closeBlockModal()
+    successMessage.value = translate('admin.users.blocked', { name })
+  } catch (error) {
+    errorMessage.value =
+      error?.payload?.message || error?.message || translate('admin.users.errors.updateStatus')
+  } finally {
+    isBlocking.value = false
+  }
+}
+
 const confirmDeleteUser = async () => {
   if (!deleteTarget.value) return
 
@@ -285,7 +397,7 @@ onMounted(() => loadUsers())
             </div>
           </div>
 
-          <div class="grid gap-2 sm:grid-cols-3">
+          <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <label class="grid gap-1.5">
               <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">
                 {{ $t('admin.users.filterRole') }}
@@ -304,6 +416,25 @@ onMounted(() => loadUsers())
                   :value="role.value"
                 >
                   {{ role.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="grid gap-1.5">
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                {{ $t('admin.users.filterAccountStatus') }}
+              </span>
+              <select
+                v-model="accountListFilter"
+                class="min-h-11 rounded-2xl border border-white/10 bg-slate-950/60 px-3 text-sm font-bold text-white outline-none transition focus:border-fuchsia-300/50"
+                @change="applyFilters"
+              >
+                <option
+                  v-for="option in listStatusOptions"
+                  :key="option.value || 'all-status'"
+                  :value="option.value"
+                >
+                  {{ $t(option.labelKey) }}
                 </option>
               </select>
             </label>
@@ -366,9 +497,10 @@ onMounted(() => loadUsers())
         </div>
 
         <div v-else class="mt-6 overflow-hidden rounded-2xl border border-white/10">
-          <div class="hidden grid-cols-[1.2fr_1fr_0.45fr_1.15fr_auto] gap-3 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-400 lg:grid">
+          <div class="hidden grid-cols-[1.1fr_1fr_0.7fr_0.45fr_1fr_auto] gap-3 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-400 lg:grid">
             <span>{{ $t('admin.common.user') }}</span>
             <span>{{ $t('admin.common.email') }}</span>
+            <span>{{ $t('admin.users.status') }}</span>
             <span>{{ $t('admin.common.role') }}</span>
             <span>{{ $t('admin.common.points') }}</span>
             <span class="sr-only">{{ $t('admin.users.deleteAction') }}</span>
@@ -376,24 +508,52 @@ onMounted(() => loadUsers())
           <div
             v-for="user in users"
             :key="user.id"
-            class="grid gap-4 border-t border-white/10 px-4 py-4 text-sm text-slate-200 lg:grid-cols-[1.2fr_1fr_0.45fr_1.15fr_auto] lg:items-center lg:gap-3"
+            class="grid gap-4 border-t border-white/10 px-4 py-4 text-sm text-slate-200 lg:grid-cols-[1.1fr_1fr_0.7fr_0.45fr_1fr_auto] lg:items-center lg:gap-3"
           >
             <span>
               <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.user') }}</span>
-              <button
-                type="button"
+              <a
+                :href="`/admin/usuarios/${user.id}`"
                 class="flex items-center gap-2 text-left font-black text-white transition hover:text-fuchsia-200"
-                title="Ver actividad"
-                @click="activityUserId = String(user.id)"
+                title="Ver perfil"
               >
                 {{ user.name || user.displayName || user.username || $t('admin.common.noName') }}
-                <i class="fa-solid fa-clock-rotate-left text-xs text-slate-500" aria-hidden="true"></i>
-              </button>
+                <i class="fa-solid fa-user text-xs text-slate-500" aria-hidden="true"></i>
+              </a>
               <span class="mt-1 block text-[11px] font-bold text-slate-500">#{{ user.id }}</span>
             </span>
             <span class="min-w-0">
               <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.email') }}</span>
               <span class="block truncate">{{ user.email || $t('admin.common.noEmail') }}</span>
+            </span>
+            <span>
+              <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.users.status') }}</span>
+              <select
+                :key="`${user.id}-${accountStatusFor(user)}`"
+                :value="accountStatusFor(user)"
+                class="min-h-10 w-full rounded-2xl border px-3 text-sm font-black outline-none transition disabled:cursor-not-allowed disabled:opacity-60"
+                :class="
+                  accountStatusFor(user) === 'blocked'
+                    ? 'border-red-300/25 bg-red-500/10 text-red-100'
+                    : 'border-emerald-300/20 bg-emerald-500/10 text-emerald-100'
+                "
+                :disabled="normalizeRole(user.role) === 'owner' || updatingStatusUserId === user.id"
+                @change="onStatusChange(user, $event.target.value)"
+              >
+                <option
+                  v-for="option in statusOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ $t(option.labelKey) }}
+                </option>
+              </select>
+              <span
+                v-if="accountStatusFor(user) === 'blocked'"
+                class="mt-1 block text-[10px] font-bold leading-4 text-red-200/80"
+              >
+                {{ formatBlockExpiry(user) }}
+              </span>
             </span>
             <span>
               <span class="block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">{{ $t('admin.common.role') }}</span>
@@ -431,7 +591,14 @@ onMounted(() => loadUsers())
                 {{ updatingPointsUserId === user.id ? $t('admin.common.saving') : $t('admin.common.apply') }}
               </button>
             </form>
-            <div class="flex items-center lg:justify-end">
+            <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+              <a
+                :href="`/admin/usuarios/${user.id}`"
+                class="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-fuchsia-300/25 bg-fuchsia-500/10 px-4 text-xs font-black uppercase tracking-wide text-fuchsia-100 transition hover:bg-fuchsia-500/20"
+              >
+                <i class="fa-solid fa-user" aria-hidden="true"></i>
+                Ver perfil
+              </a>
               <button
                 type="button"
                 class="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-red-300/25 bg-red-500/10 px-4 text-xs font-black uppercase tracking-wide text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
@@ -501,8 +668,6 @@ onMounted(() => loadUsers())
       </article>
     </div>
 
-    <AdminUserActivityModal :user-id="activityUserId" @close="activityUserId = ''" />
-
     <Teleport to="body">
       <div
         v-if="deleteTarget"
@@ -555,6 +720,97 @@ onMounted(() => loadUsers())
                 @click="confirmDeleteUser"
               >
                 {{ isDeleting ? $t('admin.users.deleting') : $t('admin.users.deleteSubmit') }}
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="blockTarget"
+        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 py-6 text-white backdrop-blur-md"
+        @click.self="closeBlockModal"
+      >
+        <article class="relative w-full max-w-lg overflow-hidden rounded-4xl border border-red-300/25 bg-[#090b19] p-6 shadow-2xl shadow-red-950/30">
+          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(248,113,113,0.22),transparent_32%),radial-gradient(circle_at_100%_100%,rgba(217,70,239,0.16),transparent_34%)]"></div>
+
+          <div class="relative z-10">
+            <div class="flex items-start gap-4">
+              <span class="grid size-13 shrink-0 place-items-center rounded-2xl border border-red-300/25 bg-red-500/10 text-xl text-red-100">
+                <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-black uppercase tracking-[0.28em] text-red-200">
+                  {{ $t('admin.users.blockTitle') }}
+                </p>
+                <h3 class="mt-2 text-2xl font-black text-white">
+                  {{ userLabel(blockTarget) }}
+                </h3>
+                <p class="mt-3 text-sm font-bold leading-6 text-slate-300">
+                  {{ $t('admin.users.blockDescription') }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="grid size-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                :aria-label="$t('admin.users.deleteCancel')"
+                :disabled="isBlocking"
+                @click="closeBlockModal"
+              >
+                ×
+              </button>
+            </div>
+
+            <div class="mt-6 grid gap-4">
+              <label class="grid gap-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {{ $t('admin.users.blockReason') }}
+                </span>
+                <textarea
+                  v-model="blockReason"
+                  rows="3"
+                  class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-red-300/40"
+                  :placeholder="$t('admin.users.blockReasonPlaceholder')"
+                />
+              </label>
+
+              <label class="grid gap-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {{ $t('admin.users.blockDuration') }}
+                </span>
+                <select
+                  v-model.number="blockDuration"
+                  class="min-h-11 rounded-2xl border border-white/10 bg-slate-950/60 px-3 text-sm font-bold text-white outline-none transition focus:border-red-300/40"
+                >
+                  <option
+                    v-for="option in durationOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ $t(option.labelKey) }}
+                  </option>
+                </select>
+              </label>
+            </div>
+
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="isBlocking"
+                @click="closeBlockModal"
+              >
+                {{ $t('admin.users.deleteCancel') }}
+              </button>
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl bg-red-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-950/40 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isBlocking"
+                @click="confirmBlockUser"
+              >
+                {{ isBlocking ? $t('admin.common.saving') : $t('admin.users.blockSubmit') }}
               </button>
             </div>
           </div>

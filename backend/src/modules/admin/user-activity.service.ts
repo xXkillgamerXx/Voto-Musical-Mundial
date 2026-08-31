@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 
@@ -23,7 +24,10 @@ const dayKey = (date: Date) => date.toISOString().slice(0, 10);
 
 @Injectable()
 export class UserActivityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   async getProfile(id: string) {
     const userId = toBigInt(id);
@@ -365,6 +369,89 @@ export class UserActivityService {
     events.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
     return serialize({ items: events.slice(0, limit), total: events.length });
+  }
+
+  async getComments(id: string, limitValue?: number, pageValue?: number) {
+    const userId = toBigInt(id);
+    const limit = Math.min(Math.max(Number(limitValue) || 50, 10), MAX_EVENTS);
+    const page = Math.max(Number(pageValue) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('El usuario no existe.');
+    }
+
+    const where = { userId };
+    const [total, rows] = await Promise.all([
+      this.prisma.comment.count({ where }),
+      this.prisma.comment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip,
+        select: {
+          id: true,
+          text: true,
+          createdAt: true,
+          deletedAt: true,
+          pollId: true,
+          poll: { select: { id: true, title: true, slug: true } },
+        },
+      }),
+    ]);
+
+    return serialize({
+      items: rows.map((row) => ({
+        id: row.id.toString(),
+        text: row.text,
+        createdAt: row.createdAt,
+        deletedAt: row.deletedAt,
+        pollId: row.pollId?.toString() || null,
+        pollTitle: row.poll?.title || null,
+        pollSlug: row.poll?.slug || null,
+      })),
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  }
+
+  async deleteUserComment(userId: string, commentId: string) {
+    const uid = toBigInt(userId);
+    const cid = toBigInt(commentId);
+
+    const comment = await this.prisma.comment.findFirst({
+      where: { id: cid, userId: uid, deletedAt: null },
+      select: { id: true, pollId: true },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Comentario no encontrado.');
+    }
+
+    await this.prisma.comment.update({
+      where: { id: comment.id },
+      data: { deletedAt: new Date() },
+    });
+
+    if (comment.pollId) {
+      try {
+        await this.redis.client.publish(
+          `poll:${comment.pollId.toString()}:comment`,
+          JSON.stringify({ action: 'deleted', commentId: comment.id.toString() }),
+        );
+      } catch {
+        // best-effort
+      }
+    }
+
+    return { ok: true, id: comment.id.toString() };
   }
 
   private streakFrom(series: Array<{ day: string; active: boolean }>) {

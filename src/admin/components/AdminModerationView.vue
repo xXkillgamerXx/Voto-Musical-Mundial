@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import {
   blockModerationIp,
   blockModerationUser,
+  dismissModerationAlert,
+  getModerationAlerts,
   getModerationBlocks,
   getModerationIpActivity,
   getModerationOverview,
@@ -10,12 +12,26 @@ import {
   unblockModerationIp,
   unblockModerationUser,
 } from '../../services/api/adminApi'
+import AdminBlockUserModal from './AdminBlockUserModal.vue'
 
 const windowOptions = [
   { value: 1, label: 'Ultima hora' },
   { value: 24, label: 'Ultimas 24h' },
   { value: 72, label: 'Ultimos 3 dias' },
   { value: 168, label: 'Ultimos 7 dias' },
+]
+
+const alertStatusOptions = [
+  { value: '', label: 'Todas' },
+  { value: 'open', label: 'Abiertas' },
+  { value: 'dismissed', label: 'Revisadas' },
+]
+
+const alertTypeOptions = [
+  { value: '', label: 'Todos los tipos' },
+  { value: 'comment_promo', label: 'Promo' },
+  { value: 'comment_diversion', label: 'Diversion' },
+  { value: 'spawn_signup', label: 'Spawn' },
 ]
 
 const selectedHours = ref(24)
@@ -28,6 +44,23 @@ const overview = ref(null)
 const ipActivity = ref([])
 const recentVotes = ref([])
 const blocks = ref({ ips: [], users: [] })
+const alerts = ref([])
+const alertPage = ref(1)
+const alertPageSize = ref(20)
+const alertTotal = ref(0)
+const alertTotalPages = ref(1)
+const alertStatusFilter = ref('open')
+const alertTypeFilter = ref('')
+
+const blockTarget = ref(null)
+const isBlocking = ref(false)
+
+const alertTypeLabels = {
+  comment_promo: 'Promo / red social',
+  comment_diversion: 'Sacar votos afuera',
+  comment_external_link: 'Enlace externo',
+  spawn_signup: 'Spawn (cuentas por IP)',
+}
 
 const riskMeta = {
   high: { label: 'Alto', classes: 'border-red-300/30 bg-red-500/15 text-red-200' },
@@ -45,6 +78,7 @@ const overviewCards = computed(() => {
     { label: 'Usuarios unicos', value: formatNumber(data.distinctUsers), icon: 'fa-solid fa-users', tone: 'text-sky-200' },
     { label: 'IPs bloqueadas', value: formatNumber(data.blockedIps), icon: 'fa-solid fa-ban', tone: 'text-red-200' },
     { label: 'Usuarios bloqueados', value: formatNumber(data.blockedUsers), icon: 'fa-solid fa-user-slash', tone: 'text-red-200' },
+    { label: 'Alertas abiertas', value: formatNumber(data.openAlerts), icon: 'fa-solid fa-triangle-exclamation', tone: 'text-amber-200' },
   ]
 })
 
@@ -55,6 +89,28 @@ const formatDate = (value) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const alertPageWindow = computed(() => {
+  const total = alertTotalPages.value
+  const current = alertPage.value
+  const start = Math.max(1, current - 2)
+  const end = Math.min(total, start + 4)
+  const adjustedStart = Math.max(1, end - 4)
+  return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index)
+})
+
+const loadAlerts = async () => {
+  const data = await getModerationAlerts({
+    limit: alertPageSize.value,
+    page: alertPage.value,
+    status: alertStatusFilter.value,
+    type: alertTypeFilter.value,
+  })
+  alerts.value = data?.items || []
+  alertTotal.value = Number(data?.total ?? alerts.value.length)
+  alertTotalPages.value = Math.max(1, Number(data?.totalPages || 1))
+  alertPage.value = Math.min(Math.max(1, Number(data?.page || alertPage.value)), alertTotalPages.value)
 }
 
 const loadAll = async () => {
@@ -72,6 +128,7 @@ const loadAll = async () => {
     ipActivity.value = ipData?.items || []
     recentVotes.value = recentData || []
     blocks.value = { ips: blocksData?.ips || [], users: blocksData?.users || [] }
+    await loadAlerts()
   } catch (error) {
     errorMessage.value = error?.message || 'No se pudo cargar el panel de moderacion.'
   } finally {
@@ -124,22 +181,49 @@ const unblockIp = async (ipHash) => {
   }
 }
 
-const blockUser = async (vote) => {
-  if (!vote.userId) return
-  busyKey.value = `user:${vote.userId}`
+const openBlockModal = (payload) => {
+  blockTarget.value = payload
+}
+
+const closeBlockModal = () => {
+  if (isBlocking.value) return
+  blockTarget.value = null
+}
+
+const confirmBlockUser = async ({ reason, durationHours }) => {
+  if (!blockTarget.value?.userId) return
+  isBlocking.value = true
   errorMessage.value = ''
   try {
-    await blockModerationUser(vote.userId, 'Bloqueo desde actividad reciente')
+    await blockModerationUser(blockTarget.value.userId, reason, durationHours)
     recentVotes.value.forEach((row) => {
-      if (row.userId === vote.userId) row.userBlocked = true
+      if (row.userId === blockTarget.value.userId) row.userBlocked = true
     })
     flashSuccess('Usuario bloqueado.')
+    closeBlockModal()
     await refreshBlocks()
   } catch (error) {
     errorMessage.value = error?.message || 'No se pudo bloquear el usuario.'
   } finally {
-    busyKey.value = ''
+    isBlocking.value = false
   }
+}
+
+const blockUser = (vote) => {
+  if (!vote.userId) return
+  openBlockModal({
+    userId: vote.userId,
+    label: vote.userName || `#${vote.userId}`,
+  })
+}
+
+const blockUserFromAlert = (alert) => {
+  if (!alert.userId) return
+  openBlockModal({
+    userId: alert.userId,
+    label: alert.userName || `#${alert.userId}`,
+    defaultReason: alert.reason || '',
+  })
 }
 
 const unblockUser = async (userId) => {
@@ -167,10 +251,40 @@ const refreshBlocks = async () => {
     ])
     overview.value = overviewData
     blocks.value = { ips: blocksData?.ips || [], users: blocksData?.users || [] }
+    await loadAlerts()
   } catch {
     // best-effort refresh
   }
 }
+
+const applyAlertFilters = () => {
+  alertPage.value = 1
+  loadAlerts().catch(() => {})
+}
+
+const goToAlertPage = (page) => {
+  alertPage.value = Math.min(Math.max(1, Number(page) || 1), alertTotalPages.value)
+  loadAlerts().catch(() => {})
+}
+
+const dismissAlert = async (alert) => {
+  busyKey.value = `alert:${alert.id}`
+  errorMessage.value = ''
+  try {
+    await dismissModerationAlert(alert.id)
+    alerts.value = alerts.value.map((row) =>
+      row.id === alert.id ? { ...row, status: 'dismissed' } : row,
+    )
+    flashSuccess('Alerta marcada como revisada.')
+    await refreshBlocks()
+  } catch (error) {
+    errorMessage.value = error?.message || 'No se pudo cerrar la alerta.'
+  } finally {
+    busyKey.value = ''
+  }
+}
+
+const openAlerts = computed(() => alerts.value.filter((row) => row.status === 'open'))
 
 onMounted(loadAll)
 </script>
@@ -187,7 +301,7 @@ onMounted(loadAll)
             Anti-abuso y actividad sospechosa
           </h2>
           <p class="mt-1 text-sm text-slate-400">
-            Detecta IPs que votan demasiado, multiples cuentas por IP y bloquea accesos.
+            Diccionario local (sin IA): alertas al admin. El usuario no se bloquea solo por sospecha.
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -243,6 +357,153 @@ onMounted(loadAll)
           <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">{{ card.label }}</p>
         </article>
       </div>
+
+      <article class="rounded-3xl border border-amber-300/20 bg-amber-500/5 p-5 sm:p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 class="text-lg font-black text-white">Alertas automáticas</h3>
+            <p class="mt-1 text-sm text-slate-400">
+              Spawn, promo o intento de llevar votos a otra página. Revisa y bloquea manualmente si hace falta.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <select
+              v-model="alertStatusFilter"
+              class="min-h-10 rounded-2xl border border-white/10 bg-slate-950 px-3 text-xs font-bold text-white"
+              @change="applyAlertFilters"
+            >
+              <option v-for="option in alertStatusOptions" :key="option.value || 'all'" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <select
+              v-model="alertTypeFilter"
+              class="min-h-10 rounded-2xl border border-white/10 bg-slate-950 px-3 text-xs font-bold text-white"
+              @change="applyAlertFilters"
+            >
+              <option v-for="option in alertTypeOptions" :key="option.value || 'all-types'" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <span class="rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-xs font-black text-amber-100">
+              {{ openAlerts.length }} abiertas en página
+            </span>
+          </div>
+        </div>
+
+        <div class="mt-5 overflow-hidden rounded-2xl border border-white/10">
+          <div
+            v-for="alert in alerts"
+            :key="alert.id"
+            class="grid gap-3 border-t border-white/10 px-4 py-4 text-sm text-slate-200 first:border-t-0 lg:grid-cols-[0.9fr_1.2fr_1.4fr_0.8fr_auto] lg:items-start"
+            :class="alert.status === 'dismissed' ? 'opacity-50' : ''"
+          >
+            <div>
+              <span class="rounded-full border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase text-amber-100">
+                {{ alertTypeLabels[alert.type] || alert.type }}
+              </span>
+              <p class="mt-2 text-xs text-slate-400">{{ formatDate(alert.at) }}</p>
+            </div>
+            <div>
+              <a
+                v-if="alert.userId"
+                :href="`/admin/usuarios/${alert.userId}`"
+                class="font-black text-white transition hover:text-fuchsia-200"
+              >
+                {{ alert.userName || `#${alert.userId}` }}
+              </a>
+              <p v-else class="font-black text-white">{{ alert.userName || '—' }}</p>
+              <p v-if="alert.userId" class="text-xs text-slate-500">#{{ alert.userId }}</p>
+              <p v-if="alert.ipShort" class="mt-1 font-mono text-[11px] text-slate-400">{{ alert.ipShort }}</p>
+            </div>
+            <div>
+              <p class="font-bold text-amber-100">{{ alert.reason }}</p>
+              <p v-if="alert.sample" class="mt-2 line-clamp-3 text-xs leading-5 text-slate-300">“{{ alert.sample }}”</p>
+              <p v-if="alert.signals?.length" class="mt-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                {{ alert.signals.slice(0, 4).join(' · ') }}
+              </p>
+            </div>
+            <div class="text-xs text-slate-400">
+              <a
+                v-if="alert.pollId"
+                :href="`/admin/votaciones/editar/${alert.pollId}`"
+                class="font-bold text-fuchsia-200 transition hover:text-fuchsia-100"
+              >
+                Votación #{{ alert.pollId }}
+              </a>
+              <span v-if="alert.commentId" class="block">Comentario #{{ alert.commentId }}</span>
+            </div>
+            <div class="flex flex-col gap-2">
+              <a
+                v-if="alert.userId"
+                :href="`/admin/usuarios/${alert.userId}`"
+                class="inline-flex min-h-9 items-center justify-center rounded-full border border-fuchsia-300/25 bg-fuchsia-500/10 px-3 text-[10px] font-black uppercase text-fuchsia-100 transition hover:bg-fuchsia-500/20"
+              >
+                Ver perfil
+              </a>
+              <button
+                v-if="alert.userId && alert.status === 'open'"
+                type="button"
+                class="inline-flex min-h-9 items-center justify-center rounded-full border border-red-300/30 bg-red-500/10 px-3 text-[10px] font-black uppercase text-red-200 transition hover:bg-red-500/20 disabled:opacity-50"
+                :disabled="isBlocking"
+                @click="blockUserFromAlert(alert)"
+              >
+                Bloquear
+              </button>
+              <button
+                v-if="alert.status === 'open'"
+                type="button"
+                class="inline-flex min-h-10 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10 disabled:opacity-50"
+                :disabled="busyKey === `alert:${alert.id}`"
+                @click="dismissAlert(alert)"
+              >
+                {{ busyKey === `alert:${alert.id}` ? '...' : 'Revisada' }}
+              </button>
+              <span v-else class="text-xs font-bold text-slate-500">Revisada</span>
+            </div>
+          </div>
+          <div v-if="!alerts.length" class="px-4 py-6 text-sm font-bold text-slate-400">
+            Sin alertas por ahora.
+          </div>
+        </div>
+
+        <div
+          v-if="alertTotalPages > 1"
+          class="mt-4 flex flex-wrap items-center justify-between gap-3"
+        >
+          <p class="text-xs font-bold text-slate-400">
+            Página {{ alertPage }} / {{ alertTotalPages }} · {{ alertTotal }} alertas
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="min-h-9 rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-black text-slate-200 disabled:opacity-40"
+              :disabled="alertPage <= 1"
+              @click="goToAlertPage(alertPage - 1)"
+            >
+              Anterior
+            </button>
+            <button
+              v-for="page in alertPageWindow"
+              :key="`alert-page-${page}`"
+              type="button"
+              class="grid size-9 place-items-center rounded-2xl text-xs font-black"
+              :class="page === alertPage ? 'bg-amber-500 text-white' : 'border border-white/10 bg-white/5 text-slate-300'"
+              @click="goToAlertPage(page)"
+            >
+              {{ page }}
+            </button>
+            <button
+              type="button"
+              class="min-h-9 rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-black text-slate-200 disabled:opacity-40"
+              :disabled="alertPage >= alertTotalPages"
+              @click="goToAlertPage(alertPage + 1)"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </article>
 
       <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
         <h3 class="text-lg font-black text-white">Actividad por IP</h3>
@@ -331,7 +592,14 @@ onMounted(loadAll)
             >
               <div class="min-w-0">
                 <p class="truncate text-sm font-bold text-white">
-                  <span v-if="vote.userName">{{ vote.userName }}</span>
+                  <a
+                    v-if="vote.userId"
+                    :href="`/admin/usuarios/${vote.userId}`"
+                    class="transition hover:text-fuchsia-200"
+                  >
+                    {{ vote.userName }}
+                  </a>
+                  <span v-else-if="vote.userName">{{ vote.userName }}</span>
                   <span v-else class="text-slate-300">Anonimo</span>
                   <span class="text-slate-500"> · {{ formatNumber(vote.amount) }} voto(s)</span>
                 </p>
@@ -402,7 +670,12 @@ onMounted(loadAll)
               class="flex items-center justify-between gap-3 rounded-2xl border border-red-300/20 bg-red-500/5 px-4 py-3"
             >
               <div class="min-w-0">
-                <p class="truncate text-sm font-bold text-white">{{ user.name }}</p>
+                <a
+                  :href="`/admin/usuarios/${user.userId}`"
+                  class="truncate text-sm font-bold text-white transition hover:text-fuchsia-200"
+                >
+                  {{ user.name }}
+                </a>
                 <p class="truncate text-[11px] text-slate-400">{{ user.reason }} · {{ formatDate(user.at) }}</p>
               </div>
               <button
@@ -421,5 +694,14 @@ onMounted(loadAll)
         </article>
       </div>
     </template>
+
+    <AdminBlockUserModal
+      :open="Boolean(blockTarget)"
+      :user-label="blockTarget?.label || ''"
+      :default-reason="blockTarget?.defaultReason || ''"
+      :is-submitting="isBlocking"
+      @close="closeBlockModal"
+      @confirm="confirmBlockUser"
+    />
   </section>
 </template>

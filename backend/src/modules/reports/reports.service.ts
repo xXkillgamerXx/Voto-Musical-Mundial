@@ -10,6 +10,7 @@ import {
   ContentReportTargetType,
 } from '@prisma/client';
 import { serialize } from '../../common/serialize';
+import { ModerationService } from '../admin/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -24,6 +25,7 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly moderation: ModerationService,
   ) {}
 
   private parseReason(value: unknown): ContentReportReason {
@@ -168,21 +170,35 @@ export class ReportsService {
     }
   }
 
-  async listForAdmin(status?: string, limit = 50) {
+  async listForAdmin(status?: string, limit = 50, page = 1) {
     const parsedStatus = status && VALID_STATUSES.has(status)
       ? (status as ContentReportStatus)
       : undefined;
 
-    const reports = await this.prisma.contentReport.findMany({
-      where: parsedStatus ? { status: parsedStatus } : undefined,
-      take: Math.min(Math.max(Number(limit) || 50, 1), 200),
-      orderBy: { createdAt: 'desc' },
-      include: {
-        reporter: { select: { id: true, username: true, displayName: true, email: true } },
-        reportedUser: { select: { id: true, username: true, displayName: true } },
-        poll: { select: { id: true, title: true, slug: true } },
-      },
-    });
+    const pageSize = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const currentPage = Math.max(Number(page) || 1, 1);
+    const skip = (currentPage - 1) * pageSize;
+    const where = parsedStatus ? { status: parsedStatus } : undefined;
+
+    const [total, pendingCount, reports] = await Promise.all([
+      this.prisma.contentReport.count({ where }),
+      this.prisma.contentReport.count({ where: { status: ContentReportStatus.pending } }),
+      this.prisma.contentReport.findMany({
+        where,
+        take: pageSize,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          reporter: {
+            select: { id: true, username: true, displayName: true, email: true, photoUrl: true },
+          },
+          reportedUser: {
+            select: { id: true, username: true, displayName: true, email: true, photoUrl: true },
+          },
+          poll: { select: { id: true, title: true, slug: true } },
+        },
+      }),
+    ]);
 
     const enriched = await Promise.all(
       reports.map(async (report) => {
@@ -191,7 +207,7 @@ export class ReportsService {
         if (report.targetType === ContentReportTargetType.comment) {
           const comment = await this.prisma.comment.findUnique({
             where: { id: BigInt(Number(report.targetId) || 0) },
-            select: { text: true, displayName: true, deletedAt: true, gif: true },
+            select: { text: true, displayName: true, deletedAt: true, gif: true, userId: true },
           });
 
           targetPreview = comment
@@ -200,12 +216,13 @@ export class ReportsService {
                 displayName: comment.displayName,
                 deleted: Boolean(comment.deletedAt),
                 gif: comment.gif,
+                userId: comment.userId ? comment.userId.toString() : null,
               }
             : { missing: true };
         } else if (report.reportedUser) {
           const user = await this.prisma.user.findUnique({
             where: { id: report.reportedUser.id },
-            select: { username: true, displayName: true, photoUrl: true, metadata: true },
+            select: { username: true, displayName: true, photoUrl: true, email: true, metadata: true },
           });
 
           targetPreview = user
@@ -213,6 +230,7 @@ export class ReportsService {
                 username: user.username,
                 displayName: user.displayName,
                 photoUrl: user.photoUrl,
+                email: user.email,
                 bio: (user.metadata as Record<string, unknown>)?.bio || '',
               }
             : { missing: true };
@@ -222,7 +240,16 @@ export class ReportsService {
       }),
     );
 
-    return serialize(enriched);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return serialize({
+      items: enriched,
+      total,
+      pendingCount,
+      page: currentPage,
+      pageSize,
+      totalPages,
+    });
   }
 
   async updateStatus(id: string, body: Record<string, unknown>) {
@@ -271,6 +298,46 @@ export class ReportsService {
         } catch {
           // Best-effort realtime sync.
         }
+      }
+
+      if (body.blockUser === true && report.reportedUserId) {
+        await this.moderation.blockUser(
+          report.reportedUserId.toString(),
+          String(body.blockReason || 'Denuncia de comentario'),
+          null,
+          body.durationHours as string | number | null | undefined,
+        );
+      }
+    }
+
+    if (
+      nextStatus === ContentReportStatus.action_taken
+      && report.targetType === ContentReportTargetType.user_profile
+      && report.reportedUserId
+    ) {
+      if (body.clearBio === true) {
+        const user = await this.prisma.user.findUnique({
+          where: { id: report.reportedUserId },
+          select: { metadata: true },
+        });
+        const metadata =
+          user?.metadata && typeof user.metadata === 'object'
+            ? { ...(user.metadata as Record<string, unknown>) }
+            : {};
+        delete metadata.bio;
+        await this.prisma.user.update({
+          where: { id: report.reportedUserId },
+          data: { metadata: metadata as any },
+        });
+      }
+
+      if (body.blockUser === true) {
+        await this.moderation.blockUser(
+          report.reportedUserId.toString(),
+          String(body.blockReason || 'Denuncia de perfil'),
+          null,
+          body.durationHours as string | number | null | undefined,
+        );
       }
     }
 

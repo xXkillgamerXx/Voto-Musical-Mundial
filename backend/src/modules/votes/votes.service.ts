@@ -9,12 +9,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PollStatus, RoundType, UserRole } from '@prisma/client';
 import { Request } from 'express';
-import { BLOCKED_IPS_KEY, BLOCKED_USERS_KEY } from '../../common/moderation-keys';
+import { BLOCKED_IPS_KEY } from '../../common/moderation-keys';
+import { USER_BLOCKED_ERROR } from '../../common/user-block';
 import { pollLookupWhere } from '../../common/poll-lookup';
 import { getClientIp, hashIp } from '../../common/request';
 import { serialize } from '../../common/serialize';
-import { AuthService } from '../auth/auth.service';
+import { ModerationService } from '../admin/moderation.service';
 import { VoteIdentity } from '../auth/auth.types';
+import { AuthService } from '../auth/auth.service';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -50,6 +52,7 @@ export class VotesService {
     private readonly turnstile: TurnstileService,
     private readonly shareVoteBoostConfig: ShareVoteBoostConfigService,
     private readonly missionProgress: MissionProgressService,
+    private readonly moderation: ModerationService,
   ) {}
 
   async castVote(dto: CastVoteDto, request: Request) {
@@ -497,14 +500,22 @@ export class VotesService {
   }
 
   private async enforceNotBlocked(ipHash: string, userId: bigint | null) {
-    const checks: Promise<number>[] = [this.redis.client.hexists(BLOCKED_IPS_KEY, ipHash)];
-    if (userId) {
-      checks.push(this.redis.client.hexists(BLOCKED_USERS_KEY, userId.toString()));
+    const ipBlocked = await this.redis.client.hexists(BLOCKED_IPS_KEY, ipHash);
+    if (ipBlocked) {
+      throw new ForbiddenException('Tu acceso a las votaciones esta bloqueado.');
     }
 
-    const [ipBlocked, userBlocked] = await Promise.all(checks);
-    if (ipBlocked || userBlocked) {
-      throw new ForbiddenException('Tu acceso a las votaciones esta bloqueado.');
+    if (userId) {
+      const block = await this.moderation.getActiveUserBlock(userId.toString());
+      if (block?.blocked) {
+        throw new ForbiddenException({
+          error: USER_BLOCKED_ERROR,
+          message: 'Tu cuenta está suspendida y no puedes votar.',
+          reason: block.reason,
+          expiresAt: block.expiresAt,
+          permanent: block.permanent,
+        });
+      }
     }
   }
 

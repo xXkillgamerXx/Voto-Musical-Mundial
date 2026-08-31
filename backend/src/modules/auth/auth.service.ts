@@ -21,6 +21,7 @@ import { Request } from 'express';
 import { BLOCKED_IPS_KEY } from '../../common/moderation-keys';
 import { getClientIp, hashIp } from '../../common/request';
 import { LifecycleNotifyService } from '../admin/lifecycle-notify.service';
+import { ModerationService } from '../admin/moderation.service';
 import { MailService } from '../mail/mail.service';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -66,6 +67,8 @@ export class AuthService {
     private readonly missionProgress: MissionProgressService,
     @Inject(forwardRef(() => LifecycleNotifyService))
     private readonly lifecycleNotify: LifecycleNotifyService,
+    @Inject(forwardRef(() => ModerationService))
+    private readonly moderation: ModerationService,
   ) {}
 
   async register(dto: RegisterDto, request?: Request) {
@@ -171,6 +174,7 @@ export class AuthService {
 
     const locale = dto.locale === 'es' ? 'es' : 'en';
     await this.issueEmailVerificationCode(user, locale);
+    void this.maybeAlertSpawnSignup(user, signupIpHash).catch(() => {});
 
     return {
       requiresEmailVerification: true as const,
@@ -522,7 +526,28 @@ export class AuthService {
     }
 
     this.lifecycleNotify.notifyWelcomeAsync(user);
+    void this.maybeAlertSpawnSignup(user, signupIpHash).catch(() => {});
     return this.authResponse(user);
+  }
+
+  private async maybeAlertSpawnSignup(user: User, signupIpHash: string | null) {
+    if (!signupIpHash) return;
+
+    const accountCount = await this.prisma.user.count({
+      where: {
+        metadata: {
+          path: ['signupIpHash'],
+          equals: signupIpHash,
+        },
+      },
+    });
+
+    await this.moderation.createSpawnSignupAlert({
+      ipHash: signupIpHash,
+      accountCount,
+      userId: user.id,
+      userName: user.displayName || user.username || user.email,
+    });
   }
 
   private async googlePayloadFromCredential(client: OAuth2Client, clientId: string, credential: string) {

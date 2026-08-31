@@ -45,6 +45,7 @@ import { VoteBotCampaignService } from './vote-bot-campaign.service';
     LifecycleNotifyService,
   ],
   exports: [
+    ModerationService,
     VoteBotCampaignService,
     CommentBotCampaignService,
     NotificationCampaignsService,

@@ -21,6 +21,7 @@ import { PrivacyConfigService } from '../settings/privacy-config.service';
 import { TermsConfigService } from '../settings/terms-config.service';
 import { AdminPushService } from './admin-push.service';
 import { LifecycleNotifyService } from './lifecycle-notify.service';
+import { ModerationService } from './moderation.service';
 import { VoteBotCampaignService } from './vote-bot-campaign.service';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
@@ -67,6 +68,7 @@ export class AdminController {
     private readonly adminPush: AdminPushService,
     private readonly voteBotCampaigns: VoteBotCampaignService,
     private readonly lifecycleNotify: LifecycleNotifyService,
+    private readonly moderation: ModerationService,
   ) {}
 
   @Get('metrics')
@@ -177,6 +179,15 @@ export class AdminController {
     return serialize({ polls, users, artists, missions });
   }
 
+  @Get('nav-counts')
+  async navCounts() {
+    const [openAlerts, pendingDenuncias] = await Promise.all([
+      this.moderation.openAlertsCount(),
+      this.prisma.contentReport.count({ where: { status: 'pending' } }),
+    ]);
+    return serialize({ openAlerts, pendingDenuncias });
+  }
+
   @Get('users')
   async users(
     @Query('limit') limit = '20',
@@ -184,16 +195,18 @@ export class AdminController {
     @Query('search') search = '',
     @Query('role') role = '',
     @Query('sort') sort = 'newest',
+    @Query('accountStatus') accountStatus = '',
   ) {
     const query = String(search || '').trim();
     const roleFilter = String(role || '').trim().toLowerCase();
     const sortKey = String(sort || 'newest').trim().toLowerCase();
+    const statusFilter = String(accountStatus || '').trim().toLowerCase();
     const pageSize = Math.min(Math.max(Number(limit) || 20, 1), 100);
     const currentPage = Math.max(Number(page) || 1, 1);
     const skip = (currentPage - 1) * pageSize;
     const validRoles = new Set(Object.values(UserRole));
 
-    const where = {
+    let where: Record<string, unknown> = {
       ...(validRoles.has(roleFilter as UserRole) ? { role: roleFilter as UserRole } : {}),
       ...(query
         ? {
@@ -206,6 +219,24 @@ export class AdminController {
           }
         : {}),
     };
+
+    if (statusFilter === 'blocked' || statusFilter === 'active') {
+      const blockedIds = await this.moderation.getActiveBlockedUserIds();
+      if (statusFilter === 'blocked') {
+        if (!blockedIds.length) {
+          return serialize({
+            items: [],
+            total: 0,
+            page: currentPage,
+            pageSize,
+            totalPages: 1,
+          });
+        }
+        where = { ...where, id: { in: blockedIds.map((id) => BigInt(id)) } };
+      } else if (blockedIds.length) {
+        where = { ...where, id: { notIn: blockedIds.map((id) => BigInt(id)) } };
+      }
+    }
 
     const orderBy =
       sortKey === 'oldest'
@@ -228,10 +259,23 @@ export class AdminController {
       }),
     ]);
 
+    const blockMap = await this.moderation.getActiveUserBlocks(
+      items.map((user) => user.id.toString()),
+    );
+
+    const enrichedItems = items.map((user) => {
+      const block = blockMap[user.id.toString()] || null;
+      return {
+        ...user,
+        accountStatus: block?.blocked ? 'blocked' : 'active',
+        accountBlock: block,
+      };
+    });
+
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
     return serialize({
-      items,
+      items: enrichedItems,
       total,
       page: currentPage,
       pageSize,

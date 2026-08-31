@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } fr
 import ActivePolls from './components/ActivePolls.vue'
 import AppFooter from './components/layout/AppFooter.vue'
 import AppNavbar from './components/layout/AppNavbar.vue'
+import AccountBlockedBanner from './components/AccountBlockedBanner.vue'
 import BannerFeatures from './components/BannerFeatures.vue'
 import DownloadAppSection from './components/DownloadAppSection.vue'
 import HeroBanner from './components/HeroBanner.vue'
@@ -253,6 +254,7 @@ onUnmounted(() => {
     <div class="app-top-divider pointer-events-none absolute left-1/2 top-0 h-px w-full max-w-352 -translate-x-1/2"></div>
 
     <AppNavbar v-if="!isPlainPage" />
+    <AccountBlockedBanner v-if="!isPlainPage && !isAdminPage" />
     <ThemeToggle
       v-if="isPlainPage && !isVersusEmbedPage && !isEmbeddedPage"
       compact

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PollStatus } from '@prisma/client';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
+import { ModerationService } from './moderation.service';
 
 type DayRow = { day: Date; value: number };
 
@@ -36,7 +37,10 @@ const growth = (current: number, previous: number) => {
 
 @Injectable()
 export class AdminOverviewService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly moderation: ModerationService,
+  ) {}
 
   private toSeries(rows: DayRow[], days: number) {
     const byDay = new Map<string, number>();
@@ -173,6 +177,27 @@ export class AdminOverviewService {
     const votesLast7 = Number(votesLast7Agg._sum.amount || 0);
     const votesPrev7 = Number(votesPrev14Agg._sum.amount || 0);
 
+    const recentUserIds = recentUsers.map((user) => user.id.toString());
+    const [blockMap, openAlerts, openAlertsCount, blockedUsersCount] = await Promise.all([
+      this.moderation.getActiveUserBlocks(recentUserIds),
+      this.moderation.listAlerts('8'),
+      this.moderation.openAlertsCount(),
+      this.moderation.blockedUsersCount(),
+    ]);
+
+    const recentUsersEnriched = recentUsers.map((user) => {
+      const block = blockMap[user.id.toString()] || null;
+      return {
+        ...user,
+        accountStatus: block?.blocked ? 'blocked' : 'active',
+        accountBlock: block,
+      };
+    });
+
+    const moderationAlerts = (openAlerts || [])
+      .filter((alert) => alert.status === 'open')
+      .slice(0, 5);
+
     return serialize({
       generatedAt: new Date().toISOString(),
       rangeDays: days,
@@ -214,8 +239,13 @@ export class AdminOverviewService {
         votes: this.toSeries(votesByDay, days),
       },
       topPolls,
-      recentUsers,
+      recentUsers: recentUsersEnriched,
       topReferrers,
+      moderation: {
+        openAlerts: openAlertsCount,
+        blockedUsers: blockedUsersCount,
+        alerts: moderationAlerts,
+      },
     });
   }
 }

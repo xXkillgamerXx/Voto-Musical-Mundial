@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { Request } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CommentsService } from './comments.service';
@@ -19,8 +20,9 @@ export class CommentsController {
     @Param('pollId') pollId: string,
     @CurrentUser() user: { id: bigint },
     @Body() body: unknown,
+    @Req() request: Request,
   ) {
-    return this.comments.create(pollId, user.id, body);
+    return this.comments.create(pollId, user.id, body, request);
   }
 
   @Delete(':id')
