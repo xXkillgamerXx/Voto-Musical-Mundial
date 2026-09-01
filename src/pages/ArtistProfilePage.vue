@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { getCurrentApiAuth } from "../services/api/authApi";
@@ -14,12 +14,15 @@ import { getArtistsCached } from "../services/firebaseCache";
 import { resolveArtistBanner } from "../utils/artistMedia";
 import { applyArtistLocale, artistUrl as buildArtistUrl } from "../utils/pollLocale";
 import { routePath } from "../utils/localizedRoutes";
+import ArtistSupportersBoard from "../components/ArtistSupportersBoard.vue";
+import { getArtistSupporters } from "../utils/fanMembership";
 
 const { locale } = useI18n();
 const pathParts = window.location.pathname.split("/").filter(Boolean);
 const routeArtistKey = pathParts[1] || "";
 const pollsHref = computed(() => routePath("polls", locale.value));
 const profileHref = computed(() => routePath("profile", locale.value));
+const plansHref = computed(() => routePath("plans", locale.value));
 
 const artist = ref(null);
 const artistPolls = ref([]);
@@ -73,16 +76,24 @@ const averageSupport = computed(() => {
   return `${(totalPercent / pollsWithVotes.length).toFixed(2)}%`;
 });
 
-const popularityScore = computed(() =>
-  Math.round(followersCount.value * 10 + totalVotes.value),
-);
+const supportersCount = ref(0);
+
+const refreshSupportersCount = () => {
+  supportersCount.value = getArtistSupporters(artist.value?.id).length;
+};
+
+watch(() => artist.value?.id, refreshSupportersCount);
 
 const stats = computed(() => [
-  { label: translate("artists.profile.followers"), value: formattedFollowers.value },
-  { label: translate("artists.profile.accumulatedVotes"), value: totalVotes.value.toLocaleString(locale.value) },
-  { label: translate("artists.profile.averageSupport"), value: averageSupport.value },
-  { label: translate("artists.profile.popularity"), value: popularityScore.value.toLocaleString(locale.value) },
+  { key: 'followers', label: translate("artists.profile.followers"), value: formattedFollowers.value },
+  { key: 'supporters', label: translate("artists.profile.supporters"), value: String(supportersCount.value) },
+  { key: 'votes', label: translate("artists.profile.accumulatedVotes"), value: totalVotes.value.toLocaleString(locale.value) },
+  { key: 'average', label: translate("artists.profile.averageSupport"), value: averageSupport.value },
 ]);
+
+const scrollToSupporters = () => {
+  document.getElementById("artist-supporters")?.scrollIntoView({ behavior: "smooth", block: "start" });
+};
 
 const followLabel = computed(() => {
   if (!currentUser.value) {
@@ -281,10 +292,13 @@ onMounted(async () => {
 
   await loadArtist();
   syncFollowStatus();
+  refreshSupportersCount();
+  window.addEventListener("vmm-fan-membership-changed", refreshSupportersCount);
 });
 
 onUnmounted(() => {
   unsubscribeAuth?.();
+  window.removeEventListener("vmm-fan-membership-changed", refreshSupportersCount);
 });
 </script>
 
@@ -340,6 +354,31 @@ onUnmounted(() => {
     </div>
 
     <div
+      v-if="isLoading"
+      class="artist-profile-skeleton mt-8 overflow-hidden rounded-4xl border border-white/10 bg-[#14101f] p-5 sm:p-6"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="h-8 w-48 rounded-full bg-white/10"></div>
+        <div class="h-9 w-64 rounded-full bg-white/10"></div>
+      </div>
+      <div class="mt-5 h-4 w-40 rounded-full bg-white/10"></div>
+      <div class="mt-4 h-28 rounded-3xl border border-white/10 bg-white/5"></div>
+      <div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div v-for="index in 6" :key="`sup-${index}`" class="h-20 rounded-3xl border border-white/10 bg-white/5"></div>
+      </div>
+    </div>
+
+    <div v-if="isLoading" class="mt-6 grid gap-4 lg:grid-cols-3">
+      <div
+        v-for="index in 3"
+        :key="`poll-${index}`"
+        class="artist-profile-skeleton h-40 rounded-3xl border border-violet-300/10 bg-[#090b19]/90"
+      >
+        <div class="h-full rounded-3xl bg-white/5"></div>
+      </div>
+    </div>
+
+    <div
       v-else-if="artist"
       class="mt-6 overflow-hidden rounded-3xl border border-violet-300/15 bg-[#090b19]/90 shadow-2xl shadow-fuchsia-950/20"
     >
@@ -381,11 +420,25 @@ onUnmounted(() => {
                 >
                   {{ $t("artists.profile.eyebrow") }}
                 </p>
-                <h1
-                  class="mt-2 text-4xl font-black leading-none text-white sm:text-6xl"
-                >
-                  {{ artist.name }}
-                </h1>
+                <div class="mt-2 flex items-center gap-3">
+                  <h1
+                    class="text-4xl font-black leading-none text-white sm:text-6xl"
+                  >
+                    {{ artist.name }}
+                  </h1>
+                  <button
+                    class="artist-verified"
+                    type="button"
+                    :aria-label="$t('artists.profile.realFansLabel')"
+                  >
+                    <i class="fa-solid fa-check" aria-hidden="true"></i>
+                    <span class="artist-verified-tip">
+                      {{ $t("artists.profile.realFansTip") }}
+                      <small>{{ $t("artists.profile.realFansTipNote") }}</small>
+                      <a :href="plansHref">{{ $t("artists.profile.realFansCta") }}</a>
+                    </span>
+                  </button>
+                </div>
                 <p class="mt-2 text-lg font-black uppercase text-amber-300">
                   {{ artist.fandom }}
                 </p>
@@ -420,8 +473,10 @@ onUnmounted(() => {
           <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div
               v-for="stat in stats"
-              :key="stat.label"
+              :key="stat.key"
               class="rounded-2xl border border-white/10 bg-black/20 p-4"
+              :class="stat.key === 'supporters' ? 'cursor-pointer border-amber-300/25 bg-amber-400/10' : ''"
+              @click="stat.key === 'supporters' && scrollToSupporters()"
             >
               <p
                 class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500"
@@ -491,7 +546,17 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+    <ArtistSupportersBoard
+      v-if="!isLoading && artist?.id"
+      :artist-id="artist.id"
+      :artist-name="displayArtist?.name || artist.name"
+      :artist-slug="artist.slug || artist.slugEn || ''"
+      :artist-firebase-id="artist.firebaseId || ''"
+      :artist-key="routeArtistKey"
+      @update:count="supportersCount = $event"
+    />
+
+    <div v-if="!isLoading" class="mt-6 grid gap-4 lg:grid-cols-3">
       <article
         v-for="poll in artistPolls"
         :key="poll.title"
@@ -681,5 +746,84 @@ onUnmounted(() => {
     opacity: 0.45;
     transform: translateX(12%);
   }
+}
+
+.artist-verified {
+  position: relative;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe27a, #d4a017);
+  color: #6b4a00;
+  cursor: pointer;
+  box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.18), 0 0 18px rgba(245, 197, 24, 0.35);
+}
+
+.artist-verified i {
+  font-size: 11px;
+}
+
+.artist-verified-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  z-index: 20;
+  width: 240px;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(245, 197, 24, 0.35);
+  border-radius: 12px;
+  background: #1c1408;
+  color: #ffe9a8;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(6px);
+  transition: 0.18s ease;
+}
+
+.artist-verified-tip small {
+  display: block;
+  margin-top: 4px;
+  color: #c9b27a;
+  font-weight: 500;
+}
+
+.artist-verified-tip::after {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid rgba(245, 197, 24, 0.35);
+  border-bottom: 1px solid rgba(245, 197, 24, 0.35);
+  background: #1c1408;
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.artist-verified:hover .artist-verified-tip,
+.artist-verified:focus .artist-verified-tip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.artist-verified-tip a {
+  display: inline-block;
+  margin-top: 8px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #d4a017, #f5c518);
+  padding: 6px 10px;
+  color: #2a1a00;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
 }
 </style>

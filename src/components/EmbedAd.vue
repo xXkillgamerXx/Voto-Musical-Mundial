@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { fanAdsFree, loadFanMe } from '../utils/fanPerks'
 
 const hasPushedAd = ref(false)
 const ADSENSE_SCRIPT_ID = 'google-adsense-script'
@@ -52,7 +53,7 @@ onMounted(() => {
 
 <template>
   <section
-    v-if="shouldRenderAd"
+    v-if="shouldRenderAd && !fanAdsFree"
     class="mt-3 w-full sm:mt-4"
     aria-label="Advertisement"
   >

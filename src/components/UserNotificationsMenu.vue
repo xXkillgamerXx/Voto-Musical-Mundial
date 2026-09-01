@@ -246,8 +246,8 @@ onUnmounted(() => {
           v-for="notification in visibleNotifications"
           :key="notification.id"
           type="button"
-          class="flex w-full gap-3 rounded-2xl p-3 text-left transition hover:bg-white/8"
-          :class="notification.readAt ? 'opacity-70' : 'bg-white/5'"
+          class="flex w-full items-start gap-3 rounded-2xl p-3 text-left transition hover:bg-white/10"
+          :class="notification.readAt ? 'opacity-80' : 'bg-white/5'"
           @click="openNotification(notification)"
         >
           <span class="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/8">

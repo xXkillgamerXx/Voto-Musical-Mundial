@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { fanAdsFree } from "../utils/fanPerks";
 
 const ADSENSE_SCRIPT_ID = "google-adsense-script";
 const ADSENSE_CLIENT = "ca-pub-1078939545517246";
@@ -99,7 +100,7 @@ onUnmounted(() => {
 
 <template>
   <aside
-    v-if="shouldRenderAd && (isLocal || useLiveAdSense)"
+    v-if="shouldRenderAd && !fanAdsFree && (isLocal || useLiveAdSense)"
     class="in-feed-ad w-full max-w-5xl"
     :class="
       isLocal || adFilled

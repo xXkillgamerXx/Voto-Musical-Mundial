@@ -161,6 +161,7 @@ export class LifecycleNotifyService {
           subject: copy.subject,
           message: copy.message,
           mode: 'broadcast',
+          kind: 'lifecycle',
           locale,
           ctaUrl: SITE,
           ctaLabel: copy.ctaLabel,

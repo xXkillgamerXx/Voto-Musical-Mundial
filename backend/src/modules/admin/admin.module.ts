@@ -54,6 +54,7 @@ import { VoteBotCampaignService } from './vote-bot-campaign.service';
     CommentBotCampaignService,
     NotificationCampaignsService,
     LifecycleNotifyService,
+    UserActivityService,
   ],
 })
 export class AdminModule {}

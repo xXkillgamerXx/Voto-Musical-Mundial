@@ -1,11 +1,15 @@
 import { Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { FanService } from '../fan/fan.service';
 import { ArtistsService } from './artists.service';
 
 @Controller('artists')
 export class ArtistsController {
-  constructor(private readonly artists: ArtistsService) {}
+  constructor(
+    private readonly artists: ArtistsService,
+    private readonly fan: FanService,
+  ) {}
 
   @Get()
   findAll(@Query('limit') limit?: string) {
@@ -15,6 +19,11 @@ export class ArtistsController {
   @Get('ranking/popularity')
   popularity(@Query('limit') limit?: string) {
     return this.artists.popularityRanking(Number(limit || 100));
+  }
+
+  @Get(':id/supporters')
+  supporters(@Param('id') id: string) {
+    return this.fan.listSupporters(id);
   }
 
   @Get(':id/follow')

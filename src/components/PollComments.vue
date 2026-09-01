@@ -239,6 +239,7 @@ const normalizeComment = (comment) => ({
   text: comment.text || "",
   gif: comment.gif?.url ? comment.gif : null,
   createdAt: comment.createdAt || null,
+  fanSku: comment.fanSku || '',
 });
 
 const canDeleteComment = (comment) =>
@@ -659,6 +660,22 @@ onUnmounted(() => {
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-sm font-black text-white">
               {{ comment.displayName || 'Fan' }}
+              <span
+                v-if="comment.fanSku"
+                class="ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black tracking-wide"
+                :class="comment.fanSku === 'MEGA'
+                  ? 'bg-linear-to-r from-amber-700 to-amber-300 text-amber-950'
+                  : comment.fanSku === 'SUPER'
+                    ? 'bg-linear-to-r from-violet-600 to-fuchsia-500 text-white'
+                    : 'bg-linear-to-r from-blue-600 to-sky-400 text-white'"
+              >
+                <i
+                  class="fa-solid"
+                  :class="comment.fanSku === 'MEGA' ? 'fa-crown' : comment.fanSku === 'SUPER' ? 'fa-bolt' : 'fa-star'"
+                  aria-hidden="true"
+                ></i>
+                {{ comment.fanSku === 'MEGA' ? 'MEGA FAN' : comment.fanSku === 'SUPER' ? 'SUPER FAN' : 'FAN' }}
+              </span>
               <span class="ml-2 text-[10px] font-bold text-slate-500">
                 {{ formatTime(comment.createdAt) }}
               </span>

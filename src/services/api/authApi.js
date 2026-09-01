@@ -174,6 +174,12 @@ export const updateMe = async (payload) => {
 export const getPublicProfile = (username) =>
   apiRequest(`/users/${encodeURIComponent(username)}`);
 
+export const getMyActivity = async () => {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) throw new Error("No hay sesion activa.");
+  return apiRequest("/users/me/activity", { token: auth.accessToken });
+};
+
 export const checkUsername = async (username) => {
   const auth = getStoredAuth();
   if (!auth?.accessToken) throw new Error("No hay sesion activa.");

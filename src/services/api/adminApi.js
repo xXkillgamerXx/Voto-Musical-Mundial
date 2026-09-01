@@ -175,6 +175,7 @@ export const sendAdminArtistPush = (artistId, body) =>
   adminRequest(`/push/artists/${encodeURIComponent(artistId)}/followers`, { method: 'POST', body })
 
 export const getAdminMailStatus = () => adminRequest('/mail/status')
+export const getAdminMailMetrics = () => adminRequest('/mail/metrics')
 export const getAdminMailUsers = (search = '', limit = 80) =>
   adminRequest(`/mail/users?search=${encodeURIComponent(search)}&limit=${limit}`)
 export const previewAdminMail = (body) =>
@@ -226,6 +227,10 @@ export const updateAdminTerms = (body) =>
 export const getAdminPrivacy = () => adminRequest('/settings/privacy')
 export const updateAdminPrivacy = (body) =>
   adminRequest('/settings/privacy', { method: 'PATCH', body })
+
+export const getAdminFanStore = () => adminRequest('/settings/fan-store')
+export const updateAdminFanStore = (body) =>
+  adminRequest('/settings/fan-store', { method: 'PATCH', body })
 
 export const getAdminContentReports = ({
   status = '',

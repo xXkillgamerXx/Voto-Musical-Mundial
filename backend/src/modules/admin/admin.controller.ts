@@ -17,6 +17,7 @@ import { MetricsService } from '../metrics/metrics.service';
 import { DailyRewardsConfigService } from '../rewards/daily-rewards-config.service';
 import { ShareVoteBoostConfigService } from '../rewards/share-vote-boost-config.service';
 import { AppDownloadConfigService } from '../settings/app-download-config.service';
+import { FanStoreConfigService } from '../settings/fan-store-config.service';
 import { PrivacyConfigService } from '../settings/privacy-config.service';
 import { TermsConfigService } from '../settings/terms-config.service';
 import { AdminPushService } from './admin-push.service';
@@ -65,6 +66,7 @@ export class AdminController {
     private readonly termsConfig: TermsConfigService,
     private readonly privacyConfig: PrivacyConfigService,
     private readonly appDownloadConfig: AppDownloadConfigService,
+    private readonly fanStoreConfig: FanStoreConfigService,
     private readonly adminPush: AdminPushService,
     private readonly voteBotCampaigns: VoteBotCampaignService,
     private readonly lifecycleNotify: LifecycleNotifyService,
@@ -1195,5 +1197,15 @@ export class AdminController {
   @Patch('settings/privacy')
   updatePrivacySettings(@Body() body: any) {
     return this.privacyConfig.updateSettings(body || {});
+  }
+
+  @Get('settings/fan-store')
+  fanStoreSettings() {
+    return this.fanStoreConfig.getAdminPayload();
+  }
+
+  @Patch('settings/fan-store')
+  updateFanStoreSettings(@Body() body: unknown) {
+    return this.fanStoreConfig.updateConfig(body || {});
   }
 }

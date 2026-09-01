@@ -9,6 +9,7 @@ import {
   shareWithOptionalImage,
 } from "../utils/shareMeta";
 import { routePath } from "../utils/localizedRoutes";
+import { isMegaVoter, loadFanMe } from "../utils/fanPerks";
 import { getArtistsCached } from "../services/firebaseCache";
 import { getCurrentApiAuth, getMe } from "../services/api/authApi";
 import {
@@ -4759,6 +4760,10 @@ onUnmounted(() => {
                   'vote-feedback-card',
                 contestantShowsLiveFlash(contestant) &&
                   'live-vote-flash-card',
+                contestantShowsLiveFlash(contestant) &&
+                  voteFeedbacks[getContestantArtistId(contestant)]?.source === 'own' &&
+                  isMegaVoter &&
+                  'live-vote-flash-card-mega',
               ]"
               :style="{ animationDelay: `${Math.min(index, 2) * 90 + 80}ms` }"
             >
@@ -5167,6 +5172,10 @@ onUnmounted(() => {
                   'vote-feedback-card',
                 showsLiveVoteFlash(getContestantArtistId(feedItem.row)) &&
                   'live-vote-flash-card',
+                showsLiveVoteFlash(getContestantArtistId(feedItem.row)) &&
+                  voteFeedbacks[getContestantArtistId(feedItem.row)]?.source === 'own' &&
+                  isMegaVoter &&
+                  'live-vote-flash-card-mega',
               ]"
               :style="{ animationDelay: `${Math.min(feedItem.index, 8) * 70}ms` }"
             >
@@ -6660,6 +6669,11 @@ onUnmounted(() => {
   animation: live-vote-flash-card 1.35s ease-out;
 }
 
+.live-vote-flash-card-mega {
+  animation: live-vote-flash-card-mega 1.45s ease-out;
+  box-shadow: 0 0 0 1px rgba(245, 197, 24, 0.35), 0 16px 40px rgba(245, 197, 24, 0.22);
+}
+
 .live-stat-boost .contestant-stat-votes {
   animation: live-stat-boost 1.1s ease-out;
 }
@@ -6742,6 +6756,25 @@ onUnmounted(() => {
   100% {
     box-shadow: none;
     border-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+@keyframes live-vote-flash-card-mega {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(245, 197, 24, 0.7),
+      0 0 28px rgba(245, 197, 24, 0.35);
+    border-color: rgba(245, 197, 24, 0.8);
+  }
+  45% {
+    box-shadow:
+      0 0 0 14px rgba(245, 197, 24, 0),
+      0 0 40px rgba(245, 197, 24, 0.45);
+    border-color: rgba(251, 191, 36, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 1px rgba(245, 197, 24, 0.2);
+    border-color: rgba(245, 197, 24, 0.35);
   }
 }
 </style>

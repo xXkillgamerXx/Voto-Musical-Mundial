@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import AdminFanStoreView from './AdminFanStoreView.vue'
 import {
   getAdminAppDownload,
   getAdminDailyRewards,
@@ -193,6 +194,8 @@ onMounted(loadSettings)
 
 <template>
   <section class="space-y-6">
+    <AdminFanStoreView />
+
     <article class="rounded-4xl border border-white/10 bg-white/4 p-5 sm:p-6">
       <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
         Ajustes

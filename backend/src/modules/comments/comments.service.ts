@@ -25,6 +25,7 @@ import { ModerationService } from '../admin/moderation.service';
 import { ModerationDictionaryService } from '../admin/moderation-dictionary.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { FanService } from '../fan/fan.service';
 
 const COOLDOWN_MS = 5 * 60 * 1000;
 const MIN_LENGTH = 3;
@@ -39,6 +40,7 @@ export class CommentsService {
     private readonly moderation: ModerationService,
     private readonly dictionary: ModerationDictionaryService,
     private readonly config: ConfigService,
+    private readonly fan: FanService,
   ) {}
 
   private async publishComment(pollId: bigint, payload: Record<string, unknown>) {
@@ -69,8 +71,15 @@ export class CommentsService {
       take: Math.min(Math.max(Number(limit) || 100, 1), 200),
       orderBy: { createdAt: 'desc' },
     });
-
-    return serialize(comments.map((comment) => toPublicComment(comment as Record<string, unknown>)));
+    const skuMap = await this.fan.fanSkuByUserIds(
+      comments.map((comment) => comment.userId).filter((id): id is bigint => Boolean(id)),
+    );
+    return serialize(
+      comments.map((comment) => ({
+        ...toPublicComment(comment as Record<string, unknown>),
+        fanSku: comment.userId ? skuMap.get(comment.userId.toString()) || null : null,
+      })),
+    );
   }
 
   async create(pollId: string, userId: bigint, body: any, request?: Request) {
@@ -148,7 +157,10 @@ export class CommentsService {
       });
     }
 
-    const payload = toPublicComment(comment as Record<string, unknown>);
+    const payload = {
+      ...toPublicComment(comment as Record<string, unknown>),
+      fanSku: (await this.fan.getVoteBoost(userId)).sku,
+    };
     await this.publishComment(poll.id, { action: 'new', comment: payload });
 
     if (promoScan?.suspicious && !isAdmin) {

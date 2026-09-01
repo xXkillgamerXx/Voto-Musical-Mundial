@@ -5,6 +5,7 @@ import { translate } from '../i18n'
 import { getArtistsWithFollowersCached } from '../services/firebaseCache'
 import { resolveArtistBanner } from '../utils/artistMedia'
 import { applyArtistLocale, artistUrl as buildArtistUrl } from '../utils/pollLocale'
+import { getArtistSupporters } from '../utils/fanMembership'
 
 const { locale } = useI18n()
 const artists = ref([])
@@ -20,6 +21,8 @@ const getArtistBanner = (artist) => resolveArtistBanner(artist)
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || ''
 
 const artistUrl = (artist) => buildArtistUrl(artist, locale.value)
+
+const supporterCount = (artist) => getArtistSupporters(artist?.id).length
 
 const getWeeklyRotationIndex = (itemsLength) => {
   if (!itemsLength) {
@@ -193,8 +196,8 @@ onMounted(loadArtists)
                 <p class="mt-1 text-2xl font-black text-white">{{ artist.followersCount.toLocaleString(locale) }}</p>
               </div>
               <div class="rounded-2xl border border-amber-300/15 bg-amber-400/10 p-4">
-                <p class="text-[10px] font-black uppercase tracking-widest text-amber-200/80">{{ $t('artists.list.popularity') }}</p>
-                <p class="mt-1 text-2xl font-black text-white">{{ artist.popularityScore.toLocaleString(locale) }}</p>
+                <p class="text-[10px] font-black uppercase tracking-widest text-amber-200/80">{{ $t('artists.list.supporters') }}</p>
+                <p class="mt-1 text-2xl font-black text-white">{{ supporterCount(artist).toLocaleString(locale) }}</p>
               </div>
             </div>
 

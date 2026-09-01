@@ -4,6 +4,7 @@ import { serialize } from '../../common/serialize';
 import { ModerationService } from '../admin/moderation.service';
 import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FanService } from '../fan/fan.service';
 
 @Injectable()
 export class UsersService {
@@ -11,6 +12,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly missionProgress: MissionProgressService,
     private readonly moderation: ModerationService,
+    private readonly fan: FanService,
   ) {}
 
   private readonly publicSelect = {
@@ -44,7 +46,7 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('Usuario no encontrado.');
     const accountBlock = await this.moderation.getActiveUserBlock(id.toString());
-    return this.profilePayload(user, true, accountBlock);
+    return await this.profilePayload(user, true, accountBlock);
   }
 
   async findPublicByUsername(username: string) {
@@ -54,7 +56,7 @@ export class UsersService {
     });
 
     if (!user) throw new NotFoundException('Usuario no encontrado.');
-    return this.profilePayload(user, false);
+    return await this.profilePayload(user, false);
   }
 
   async updateProfile(id: bigint, body: any) {
@@ -128,7 +130,7 @@ export class UsersService {
     void this.missionProgress.trackProfileComplete(updated).catch(() => {});
 
     const accountBlock = await this.moderation.getActiveUserBlock(id.toString());
-    return this.profilePayload(updated, true, accountBlock);
+    return await this.profilePayload(updated, true, accountBlock);
   }
 
   async checkUsername(username: string, currentUserId: bigint) {
@@ -172,7 +174,7 @@ export class UsersService {
     return serialize(user);
   }
 
-  private profilePayload(user: any, includeEmail = true, accountBlock: any = null) {
+  private async profilePayload(user: any, includeEmail = true, accountBlock: any = null) {
     const metadata = (user.metadata as Record<string, unknown>) || {};
     const followedArtists = (user.followingArtists || [])
       .map((follow: any) => {
@@ -225,6 +227,9 @@ export class UsersService {
       accountStatus: accountBlock?.blocked ? 'blocked' : 'active',
       accountBlock: accountBlock?.blocked ? accountBlock : null,
       followedArtists,
+      fanMembership: includeEmail
+        ? (await this.fan.getMembershipPayload(user.id)).membership
+        : await this.fan.publicMembership(user.id),
     });
   }
 

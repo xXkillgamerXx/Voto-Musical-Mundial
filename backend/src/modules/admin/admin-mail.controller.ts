@@ -61,6 +61,11 @@ export class AdminMailController {
     return this.mail.getPublicStatus();
   }
 
+  @Get('metrics')
+  metrics() {
+    return this.adminMail.getMetrics();
+  }
+
   @Get('users')
   users(@Query('search') search?: string, @Query('limit') limit?: string) {
     return this.adminMail.users(search, limit);

@@ -10,11 +10,14 @@ export const STATIC_ROUTES = {
   news: { es: '/noticias', en: '/news' },
   notifications: { es: '/notificaciones', en: '/notifications' },
   profile: { es: '/perfil', en: '/profile' },
+  profileSettings: { es: '/perfil/configuracion', en: '/profile/settings' },
   register: { es: '/registro', en: '/register' },
   verifyEmail: { es: '/verificar-correo', en: '/verify-email' },
   resetPassword: { es: '/recuperar-contrasena', en: '/reset-password' },
   terms: { es: '/terminos-y-condiciones', en: '/terms-and-conditions' },
   privacy: { es: '/politica-de-privacidad', en: '/privacy-policy' },
+  plans: { es: '/planes', en: '/plans' },
+  checkout: { es: '/pago', en: '/checkout' },
 }
 
 const PREFIX = {

@@ -11,7 +11,8 @@ import HomeAd from './components/HomeAd.vue'
 import MainCategories from './components/MainCategories.vue'
 import ThemeToggle from './components/theme/ThemeToggle.vue'
 import { preloadRouteData } from './services/firebaseCache'
-import { getStoredAuth } from './services/api/client'
+import { getStoredAuth, onStoredAuthChange } from './services/api/client'
+import { loadFanMe, clearFanMe } from './utils/fanPerks'
 import { reportMissionVisitProgress } from './services/api/missionsApi'
 import { trackPageView } from './services/googleAnalytics'
 import { activeTheme, applyTheme } from './theme'
@@ -41,8 +42,11 @@ const ResetPasswordPage = defineAsyncComponent(() => import('./pages/ResetPasswo
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
 const PrivacyPage = defineAsyncComponent(() => import('./pages/PrivacyPage.vue'))
 const UserProfilePage = defineAsyncComponent(() => import('./pages/UserProfilePage.vue'))
+const AccountSettingsPage = defineAsyncComponent(() => import('./pages/AccountSettingsPage.vue'))
 const VersusEmbed = defineAsyncComponent(() => import('./pages/VersusEmbed.vue'))
 const VersusPollPage = defineAsyncComponent(() => import('./pages/VersusPollPage.vue'))
+const SubscriptionsPage = defineAsyncComponent(() => import('./pages/SubscriptionsPage.vue'))
+const CheckoutPage = defineAsyncComponent(() => import('./pages/CheckoutPage.vue'))
 
 const currentPath = ref(window.location.pathname)
 const currentRouteKey = ref(`${window.location.pathname}${window.location.search}${window.location.hash}`)
@@ -63,6 +67,7 @@ const isArtistsPage = computed(() => matchStaticRoute(currentPath.value, 'artist
 const isRankingPopularityPage = computed(() => matchStaticRoute(currentPath.value, 'rankingPopularity'))
 const isNewsPage = computed(() => matchStaticRoute(currentPath.value, 'news'))
 const isNotificationsPage = computed(() => matchStaticRoute(currentPath.value, 'notifications'))
+const isProfileSettingsPage = computed(() => matchStaticRoute(currentPath.value, 'profileSettings'))
 const isUserProfilePage = computed(() => matchStaticRoute(currentPath.value, 'profile'))
 const isPublicUserProfilePage = computed(() => /^\/user\/[a-z0-9_]{3,20}$/.test(canonicalPath.value))
 const isListPollPage = computed(() => canonicalPath.value === '/votacion/lista')
@@ -70,6 +75,8 @@ const isDynamicListPollPage = computed(() => /^\/votacion\/\d{4}\/[^/]+$/.test(c
 const isVersusPollPage = computed(() => canonicalPath.value === '/votacion/versus')
 const isVersusEmbedPage = computed(() => currentPath.value === '/embed/versus')
 const isArtistProfilePage = computed(() => /^\/artista\/[^/]+$/.test(canonicalPath.value))
+const isSubscriptionsPage = computed(() => matchStaticRoute(currentPath.value, 'plans'))
+const isCheckoutPage = computed(() => matchStaticRoute(currentPath.value, 'checkout'))
 const isAdminPage = computed(() => currentPath.value.startsWith('/admin'))
 const isEmbeddedPage = computed(() => {
   currentRouteKey.value
@@ -226,6 +233,8 @@ const preloadAnchorRoute = (event) => {
   preloadRouteData(null, url.pathname).catch(() => {})
 }
 
+let unsubscribeAuth = null
+
 onMounted(() => {
   window.addEventListener('popstate', syncCurrentPath)
   document.addEventListener('click', handleDocumentClick)
@@ -233,6 +242,12 @@ onMounted(() => {
   document.addEventListener('touchstart', preloadAnchorRoute, { passive: true })
   trackPageView()
   reportVisitMissionProgress()
+  const syncFanMe = () => {
+    if (getStoredAuth()?.accessToken) loadFanMe()
+    else clearFanMe()
+  }
+  syncFanMe()
+  unsubscribeAuth = onStoredAuthChange(syncFanMe)
   finishPageLoading()
 })
 
@@ -242,12 +257,13 @@ onUnmounted(() => {
   document.removeEventListener('pointerover', preloadAnchorRoute)
   document.removeEventListener('touchstart', preloadAnchorRoute)
   window.clearTimeout(loadingTimer)
+  unsubscribeAuth?.()
 })
 </script>
 
 <template>
   <div
-    class="app-shell relative min-h-screen overflow-hidden"
+    class="app-shell relative min-h-screen overflow-x-clip"
     :class="{ 'embed-surface dark-surface': shouldForceEmbedDarkTheme }"
   >
     <div class="app-background pointer-events-none absolute inset-0"></div>
@@ -309,12 +325,15 @@ onUnmounted(() => {
       <RankingPopularityPage v-else-if="isRankingPopularityPage" />
       <NewsPage v-else-if="isNewsPage" />
       <NotificationsPage v-else-if="isNotificationsPage" />
+      <AccountSettingsPage v-else-if="isProfileSettingsPage" />
       <UserProfilePage v-else-if="isUserProfilePage || isPublicUserProfilePage" />
       <VersusEmbed v-else-if="isVersusEmbedPage" />
       <AdminDashboardPage v-else-if="isAdminPage" />
       <ListPollPage v-else-if="isListPollPage || isDynamicListPollPage" />
       <VersusPollPage v-else-if="isVersusPollPage" />
       <ArtistProfilePage v-else-if="isArtistProfilePage" />
+      <CheckoutPage v-else-if="isCheckoutPage" />
+      <SubscriptionsPage v-else-if="isSubscriptionsPage" />
 
       <template v-else>
         <section class="mx-auto max-w-352 px-0 py-4 sm:px-6 sm:py-6 lg:py-8">

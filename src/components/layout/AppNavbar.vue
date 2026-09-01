@@ -8,12 +8,17 @@ import ThemeToggle from "../theme/ThemeToggle.vue";
 import UserNotificationsMenu from "../UserNotificationsMenu.vue";
 import { getMe, getCurrentApiAuth, logout, peekLoginNotice, updateMe } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
+import { canSeeFanStore, loadFanStore, onFanStoreChange } from "../../services/fanStore";
 
 const { locale } = useI18n();
+const showPlansNav = ref(true);
 const navItems = computed(() => [
   { labelKey: "nav.home", href: routePath("home", locale.value) },
   { labelKey: "nav.polls", href: routePath("polls", locale.value) },
   { labelKey: "nav.artists", href: routePath("artists", locale.value) },
+  ...(showPlansNav.value
+    ? [{ labelKey: "nav.subscriptions", href: routePath("plans", locale.value) }]
+    : []),
   { labelKey: "nav.rankingPopularity", href: routePath("rankingPopularity", locale.value) },
   { labelKey: "nav.hallOfFame", href: routePath("hallOfFame", locale.value) },
   { labelKey: "nav.news", href: routePath("news", locale.value) },
@@ -33,6 +38,7 @@ const userPoints = ref(0);
 const displayPoints = ref(0);
 const pointsPulse = ref("");
 let unsubscribeAuth = null;
+let stopFanStore = null;
 let pointsAnimationFrame = null;
 let pointsPulseTimer = null;
 const adminRoles = new Set(["admin", "superadmin", "owner"]);
@@ -90,8 +96,9 @@ const formattedUserPoints = computed(() =>
   Number(displayPoints.value || 0).toLocaleString(locale.value),
 );
 const profileHref = computed(() =>
-  userUsername.value ? `/user/${userUsername.value}` : "/perfil",
+  userUsername.value ? `/user/${userUsername.value}` : routePath("profile", locale.value),
 );
+const settingsHref = computed(() => routePath("profileSettings", locale.value));
 const shouldShowAvatarImage = computed(
   () => (currentUser.value?.photoUrl || currentUser.value?.photoURL) && !avatarImageFailed.value,
 );
@@ -192,6 +199,7 @@ const listenUserProfile = (user) => {
       if (userData?.points !== undefined && userData?.points !== null) {
         userPoints.value = Number(userData.points || 0);
       }
+      refreshPlansNav();
     })
     .catch(() => {
       userRole.value = String(user.role || "").trim().toLowerCase();
@@ -199,6 +207,12 @@ const listenUserProfile = (user) => {
       userPoints.value = Number(user.points || 0);
     });
 };
+
+const refreshPlansNav = () => {
+  showPlansNav.value = canSeeFanStore(currentUser.value);
+};
+
+watch(currentUser, refreshPlansNav);
 
 onMounted(() => {
   document.addEventListener("click", handleDocumentClick);
@@ -211,10 +225,13 @@ onMounted(() => {
     isAccountMenuOpen.value = false;
     isSettingsMenuOpen.value = false;
     listenUserProfile(currentUser.value);
+    refreshPlansNav();
   };
 
   syncAuth();
   unsubscribeAuth = onStoredAuthChange(syncAuth);
+  loadFanStore().then(refreshPlansNav);
+  stopFanStore = onFanStoreChange(refreshPlansNav);
 
   if (peekLoginNotice()) {
     isAuthModalOpen.value = true;
@@ -225,6 +242,7 @@ onUnmounted(() => {
   document.removeEventListener("click", handleDocumentClick);
   document.removeEventListener("keydown", handleEscape);
   unsubscribeAuth?.();
+  stopFanStore?.();
   if (pointsAnimationFrame) {
     window.cancelAnimationFrame(pointsAnimationFrame);
   }
@@ -277,14 +295,15 @@ onUnmounted(() => {
       </div>
 
       <div class="flex items-center gap-2">
-        <div
+        <a
           v-if="isSignedInUser"
+          :href="routePath('plans', locale)"
           class="points-chip hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
           :class="pointsPulse === 'up' ? 'points-chip-up' : pointsPulse === 'down' ? 'points-chip-down' : ''"
         >
           <span class="text-amber-300">◆</span>
           <span>{{ $t("common.points", { count: formattedUserPoints }) }}</span>
-        </div>
+        </a>
 
         <UserNotificationsMenu v-if="isSignedInUser" />
 
@@ -384,6 +403,12 @@ onUnmounted(() => {
               class="mt-3 block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
               {{ $t("nav.myProfile") }}
+            </a>
+            <a
+              :href="settingsHref"
+              class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+            >
+              {{ $t("nav.accountSettings") }}
             </a>
             <a
               href="/#misiones"
@@ -536,6 +561,14 @@ onUnmounted(() => {
             @click="isMenuOpen = false"
           >
             {{ $t("nav.myProfile") }}
+          </a>
+          <a
+            v-if="isSignedInUser"
+            :href="settingsHref"
+            class="rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3 text-center text-sm font-black text-amber-100"
+            @click="isMenuOpen = false"
+          >
+            {{ $t("nav.accountSettings") }}
           </a>
           <a
             v-if="isSignedInUser"

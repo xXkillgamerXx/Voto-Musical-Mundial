@@ -24,6 +24,7 @@ type MailJobState = {
   id: string;
   status: 'queued' | 'running' | 'done' | 'failed';
   subject: string;
+  template: 'broadcast' | 'poll';
   sendToAll: boolean;
   total: number;
   processed: number;
@@ -42,6 +43,8 @@ export class AdminMailService {
   private static readonly MAIL_JOB_TTL_SECONDS = 60 * 60;
   private static readonly PREVIEW_LOGO_URL = 'https://vote.musicmundial.com/logo-votos.png';
   private static readonly SEND_DELAY_MS = 80;
+  private static readonly RECENT_JOBS_KEY = 'mail:jobs:recent';
+  private static readonly RECENT_JOBS_TTL_SECONDS = 120 * 24 * 3600;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -60,6 +63,65 @@ export class AdminMailService {
       'EX',
       AdminMailService.MAIL_JOB_TTL_SECONDS,
     );
+  }
+
+  private async archiveMailJob(job: MailJobState) {
+    const summary = {
+      id: job.id,
+      status: job.status,
+      subject: job.subject,
+      template: job.template || 'broadcast',
+      sendToAll: job.sendToAll,
+      total: job.total,
+      sent: job.sent,
+      failed: job.failed,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+      error: job.error,
+    };
+    await this.redis.client.lpush(AdminMailService.RECENT_JOBS_KEY, JSON.stringify(summary));
+    await this.redis.client.ltrim(AdminMailService.RECENT_JOBS_KEY, 0, 39);
+    await this.redis.client.expire(
+      AdminMailService.RECENT_JOBS_KEY,
+      AdminMailService.RECENT_JOBS_TTL_SECONDS,
+    );
+  }
+
+  async getMetrics() {
+    const [stats, withEmail, optedOut, recentRaw] = await Promise.all([
+      this.mail.getSendStats(30),
+      this.prisma.user.count({ where: { email: { not: null } } }),
+      this.prisma.user.count({
+        where: {
+          email: { not: null },
+          metadata: { path: ['emailCampaigns'], equals: false },
+        },
+      }),
+      this.redis.client.lrange(AdminMailService.RECENT_JOBS_KEY, 0, 19),
+    ]);
+
+    const recentJobs = recentRaw
+      .map((row) => {
+        try {
+          return JSON.parse(row) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    return serialize({
+      audience: {
+        withEmail,
+        optedOut,
+        campaignable: Math.max(0, withEmail - optedOut),
+      },
+      today: stats.today,
+      last7: stats.last7,
+      last30: stats.last30,
+      series: stats.series,
+      recentJobs,
+    });
   }
 
   private isValidEmail(value: string) {
@@ -371,6 +433,7 @@ export class AdminMailService {
       id: jobId,
       status: 'queued',
       subject,
+      template,
       sendToAll: Boolean(payload.sendToAll),
       total: recipients.length,
       processed: 0,
@@ -484,12 +547,14 @@ export class AdminMailService {
       job.percent = 100;
       job.finishedAt = new Date().toISOString();
       await this.saveMailJob(job);
+      await this.archiveMailJob(job);
       this.logger.log(`Mail admin job ${jobId}: ${job.sent}/${job.total} enviados`);
     } catch (error) {
       job.status = 'failed';
       job.error = String((error as Error)?.message || 'No se pudo completar el envío.');
       job.finishedAt = new Date().toISOString();
       await this.saveMailJob(job);
+      await this.archiveMailJob(job);
       throw error;
     }
   }

@@ -65,12 +65,12 @@ const loadNotifications = async () => {
 }
 
 const openNotification = async (notification) => {
-  if (!notification?.id || notification.readAt) {
-    return
-  }
+  if (!notification?.id) return
 
-  notification.readAt = new Date().toISOString()
-  await markNotificationRead(notification.id).catch(() => {})
+  if (!notification.readAt) {
+    notification.readAt = new Date().toISOString()
+    await markNotificationRead(notification.id).catch(() => {})
+  }
 
   const url = notification?.payload?.url
   if (url) {
@@ -113,8 +113,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-    <div class="rounded-4xl border border-white/10 bg-slate-950/70 p-5 text-white shadow-2xl shadow-fuchsia-950/20 sm:p-7">
+  <section class="mx-auto max-w-352 px-4 py-8 sm:px-6 lg:py-12">
+    <div class="rounded-3xl border border-violet-300/15 bg-[#090b19]/90 p-5 text-white shadow-2xl shadow-fuchsia-950/20 sm:p-7">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
@@ -185,8 +185,10 @@ onMounted(async () => {
         v-for="notification in visibleNotifications"
         :key="notification.id"
         type="button"
-        class="group flex w-full gap-4 rounded-3xl border border-white/10 bg-slate-950/65 p-4 text-left text-white transition hover:border-fuchsia-300/30 hover:bg-white/7"
-        :class="notification.readAt ? 'opacity-75' : 'shadow-lg shadow-fuchsia-950/10'"
+        class="flex w-full items-start gap-4 rounded-3xl border p-4 text-left text-white transition hover:border-fuchsia-300/35 hover:bg-white/10"
+        :class="notification.readAt
+          ? 'border-white/10 bg-[#090b19]/70'
+          : 'border-fuchsia-300/20 bg-fuchsia-500/8 shadow-lg shadow-fuchsia-950/10'"
         @click="openNotification(notification)"
       >
         <span class="grid size-12 shrink-0 place-items-center rounded-2xl bg-white/8 ring-1 ring-white/10">
@@ -197,7 +199,7 @@ onMounted(async () => {
             <span class="text-base font-black text-white">{{ titleFor(notification) }}</span>
             <span
               v-if="!notification.readAt"
-              class="mt-1 rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
+              class="shrink-0 rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white"
             >
               {{ $t('notifications.new') }}
             </span>
@@ -209,7 +211,7 @@ onMounted(async () => {
         </span>
         <span
           v-if="notification?.payload?.url"
-          class="hidden shrink-0 items-center gap-2 rounded-full border border-fuchsia-300/25 bg-linear-to-r from-fuchsia-500/20 to-cyan-400/20 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/20 transition group-hover:inline-flex group-hover:scale-[1.02]"
+          class="mt-1 hidden shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/8 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 sm:inline-flex"
         >
           {{ $t('notifications.open') }}
           <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>

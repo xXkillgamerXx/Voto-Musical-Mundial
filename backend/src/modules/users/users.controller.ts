@@ -6,6 +6,7 @@ import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { UserActivityService } from '../admin/user-activity.service';
 import { UsersService } from './users.service';
 
 const profileUploadsPath = join(process.cwd(), 'uploads', 'profile');
@@ -13,7 +14,10 @@ const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly activity: UserActivityService,
+  ) {}
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
@@ -73,6 +77,12 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   referral(@CurrentUser() user: { id: bigint }) {
     return this.users.referral(user.id);
+  }
+
+  @Get('me/activity')
+  @UseGuards(JwtAuthGuard)
+  myActivity(@CurrentUser() user: { id: bigint }) {
+    return this.activity.getActivity(user.id.toString(), 300);
   }
 
   @Get(':username')

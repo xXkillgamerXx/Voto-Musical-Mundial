@@ -21,6 +21,7 @@ import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { ShareVoteBoostConfigService } from '../rewards/share-vote-boost-config.service';
+import { FanService } from '../fan/fan.service';
 import { CastVoteDto } from './dto/cast-vote.dto';
 import { VoteStatusDto } from './dto/vote-status.dto';
 import { TurnstileService } from './turnstile.service';
@@ -53,6 +54,7 @@ export class VotesService {
     private readonly shareVoteBoostConfig: ShareVoteBoostConfigService,
     private readonly missionProgress: MissionProgressService,
     private readonly moderation: ModerationService,
+    private readonly fan: FanService,
   ) {}
 
   async castVote(dto: CastVoteDto, request: Request) {
@@ -115,9 +117,14 @@ export class VotesService {
     }
 
     const shareBoost = await this.getActiveShareBoost(identity);
+    const planBoost =
+      identity.type === 'user' && identity.userId
+        ? await this.fan.getVoteBoost(identity.userId)
+        : { multiplier: 1, sku: null, mega: false };
+    const voteMultiplier = Math.max(1, Number(planBoost.multiplier || 1)) * Math.max(1, shareBoost?.multiplier || 1);
     const countedAmount = Math.min(
-      MAX_BATCH_VOTES * Math.max(1, shareBoost?.multiplier || 1),
-      amount * Math.max(1, shareBoost?.multiplier || 1),
+      MAX_BATCH_VOTES * voteMultiplier,
+      amount * voteMultiplier,
     );
 
     const roundKey = context.round?.id?.toString() || '_root';
@@ -190,6 +197,8 @@ export class VotesService {
           isAnonymous: identity.type === 'anonymous',
           staffVote: isStaffVote,
           shareBoost: Boolean(shareBoost),
+          fanSku: planBoost.sku || '',
+          megaVote: Boolean(planBoost.mega),
           createdAt: now.toISOString(),
         }),
       )
@@ -212,7 +221,8 @@ export class VotesService {
       artistId: context.contestant.artistId.toString(),
       amount: countedAmount,
       spentAmount: amount,
-      multiplier: shareBoost?.multiplier || 1,
+      multiplier: voteMultiplier,
+      planMultiplier: Number(planBoost.multiplier || 1),
       shareBoostActive: Boolean(shareBoost),
       shareBoostEndsAt: shareBoost?.endsAt || null,
       user,

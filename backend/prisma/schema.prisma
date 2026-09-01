@@ -65,6 +65,8 @@ model User {
   missionCompletions         MissionCompletion[]
   referralCodes              ReferralCode[]
   activityDays               UserActivityDay[]
+  fanPurchases               FanPurchase[]
+  artistSupports             ArtistSupporter[]
 
   @@map("users")
 }
@@ -102,6 +104,7 @@ model Artist {
 
   contestants      Contestant[]
   followers        ArtistFollower[]
+  supporters       ArtistSupporter[]
 
   @@map("artists")
 }
@@ -505,3 +508,79 @@ model PushToken {
   @@index([userId])
   @@map("push_tokens")
 }
+
+enum FanItemType {
+  plan
+  pack
+}
+
+enum FanPurchaseStatus {
+  paid
+  cancelled
+}
+
+model FanPurchase {
+  id                BigInt            @id @default(autoincrement())
+  userId            BigInt            @map("user_id")
+  invoiceId         String            @unique @map("invoice_id")
+  sku               String
+  name              String
+  type              FanItemType
+  status            FanPurchaseStatus @default(paid)
+  icon              String?
+  yearly            Boolean           @default(false)
+  currency          String
+  method            String?
+  country           String?
+  countryName       String?           @map("country_name")
+  phone             String?
+  base              Float
+  tax               Float
+  total             Float
+  pointsAwarded     Int               @default(0) @map("points_awarded")
+  multiplier        Int               @default(1)
+  maxArtists        Int               @default(0) @map("max_artists")
+  featured          Boolean           @default(false)
+  mega              Boolean           @default(false)
+  artists           Json              @default("[]")
+  startedAt         DateTime          @map("started_at")
+  expiresAt         DateTime?         @map("expires_at")
+  cancelledAt       DateTime?         @map("cancelled_at")
+  lastBonusMonth    String?           @map("last_bonus_month")
+  threeMonthBonusAt DateTime?         @map("three_month_bonus_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supporters        ArtistSupporter[]
+
+  @@index([userId, type, status])
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("fan_purchases")
+}
+
+model ArtistSupporter {
+  id          BigInt       @id @default(autoincrement())
+  artistId    BigInt       @map("artist_id")
+  userId      BigInt       @map("user_id")
+  purchaseId  BigInt?      @map("purchase_id")
+  sku         String
+  tier        String
+  points      Int          @default(0)
+  pinnedUntil DateTime?    @map("pinned_until")
+  startedAt   DateTime     @map("started_at")
+  expiresAt   DateTime?    @map("expires_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  artist      Artist       @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchase    FanPurchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  @@unique([artistId, userId])
+  @@index([artistId, startedAt])
+  @@index([artistId, points])
+  @@map("artist_supporters")
+}
+

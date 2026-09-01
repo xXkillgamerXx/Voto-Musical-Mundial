@@ -1,14 +1,36 @@
 <script setup>
+import { computed, onMounted, ref } from 'vue'
+import { checkoutPath, formatStoreMoney, getFanPacks, canSeeFanStore, loadFanStore, onFanStoreChange } from '../services/fanStore'
+import { getCurrentApiAuth } from '../services/api/authApi'
+import { routePath } from '../utils/localizedRoutes'
+import { useI18n } from 'vue-i18n'
+
+const { locale } = useI18n()
+const storeTick = ref(0)
+const showPlans = computed(() => {
+  storeTick.value
+  return canSeeFanStore(getCurrentApiAuth()?.user)
+})
+const plansHref = computed(() => routePath('plans', locale.value))
+const pointPacks = computed(() => {
+  storeTick.value
+  return getFanPacks().map((pack, index) => ({
+    sku: pack.sku,
+    points: String(pack.pts),
+    price: formatStoreMoney(pack.usd, 'USD'),
+    popular: index === 1,
+  }))
+})
+
+onMounted(() => {
+  loadFanStore().then(() => { storeTick.value += 1 })
+  onFanStoreChange(() => { storeTick.value += 1 })
+})
+
 const missions = [
   { title: 'Vota 1 vez', reward: '+25 pts', progress: '1/1', done: true },
   { title: 'Comparte una votacion', reward: '+50 pts', progress: '0/1', done: false },
   { title: 'Entra 3 dias seguidos', reward: '+120 pts', progress: '2/3', done: false },
-]
-
-const pointPacks = [
-  { points: '100', price: '$0.99' },
-  { points: '500', price: '$3.99', popular: true },
-  { points: '1000', price: '$6.99' },
 ]
 </script>
 
@@ -73,7 +95,7 @@ const pointPacks = [
           <a
             v-for="pack in pointPacks"
             :key="pack.points"
-            href="#"
+            :href="checkoutPath(pack.sku)"
             class="flex items-center justify-between rounded-2xl border p-4 transition hover:bg-white/10"
             :class="pack.popular ? 'border-fuchsia-300/40 bg-fuchsia-500/10' : 'border-white/10 bg-black/25'"
           >
@@ -87,8 +109,12 @@ const pointPacks = [
           </a>
         </div>
 
-        <a href="#" class="mt-5 flex min-h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase text-slate-200">
-          Gana puntos extra
+        <a
+          v-if="showPlans"
+          :href="plansHref"
+          class="mt-5 flex min-h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase text-slate-200"
+        >
+          Ver planes
         </a>
       </article>
     </div>

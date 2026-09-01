@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   getAdminMailJob,
+  getAdminMailMetrics,
   getAdminMailStatus,
   getAdminMailUsers,
   getAdminVerificationMailTemplate,
@@ -11,6 +12,7 @@ import {
   sendAdminTestEmail,
   sendAdminVerificationTestEmail,
 } from '../../services/api/adminApi'
+import AdminTrendChart from './AdminTrendChart.vue'
 
 const mailTab = ref('broadcast')
 const mailTabs = [
@@ -19,12 +21,14 @@ const mailTabs = [
 ]
 
 const status = ref(null)
+const metrics = ref(null)
 const users = ref([])
 const totalWithEmail = ref(0)
 const selectedUserIds = ref([])
 const search = ref('')
 const sendToAll = ref(false)
 const isLoadingStatus = ref(true)
+const isLoadingMetrics = ref(true)
 const isLoadingUsers = ref(true)
 const isSendingTest = ref(false)
 const isSendingBulk = ref(false)
@@ -99,6 +103,55 @@ let previewTimer = null
 
 const selectedCount = computed(() => selectedUserIds.value.length)
 
+const formatNumber = (value) => Number(value || 0).toLocaleString('es')
+
+const formatDateTime = (value) => {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const mailKindLabels = {
+  verification: 'Verificación',
+  password_reset: 'Recuperar clave',
+  broadcast: 'Comunicados',
+  poll: 'Votaciones',
+  lifecycle: 'Bienvenida',
+  test: 'Pruebas',
+}
+
+const metricsCards = computed(() => {
+  const data = metrics.value
+  if (!data) return []
+  return [
+    { label: 'Enviados hoy', value: formatNumber(data.today?.sent), tone: 'text-emerald-200' },
+    { label: 'Fallidos hoy', value: formatNumber(data.today?.failed), tone: 'text-red-200' },
+    { label: 'Últimos 7 días', value: formatNumber(data.last7?.sent), tone: 'text-cyan-200' },
+    { label: 'Últimos 30 días', value: formatNumber(data.last30?.sent), tone: 'text-fuchsia-200' },
+    { label: 'Con correo', value: formatNumber(data.audience?.withEmail), tone: 'text-white' },
+    { label: 'Reciben campañas', value: formatNumber(data.audience?.campaignable), tone: 'text-amber-200' },
+  ]
+})
+
+const kindRows = computed(() => {
+  const byKind = metrics.value?.last30?.byKind || {}
+  return Object.keys(mailKindLabels).map((kind) => ({
+    kind,
+    label: mailKindLabels[kind],
+    sent: Number(byKind[kind]?.sent || 0),
+    failed: Number(byKind[kind]?.failed || 0),
+  }))
+})
+
+const sentSeries = computed(() => metrics.value?.series || [])
+
+const jobStatusLabel = (statusValue) => {
+  if (statusValue === 'running' || statusValue === 'queued') return 'En curso'
+  if (statusValue === 'failed') return 'Fallido'
+  return 'Enviado'
+}
+
 const jobPercent = computed(() => {
   const job = activeJob.value
   if (!job) return 0
@@ -133,7 +186,8 @@ const applyFinishedJob = (job) => {
     return
   }
 
-  successMessage.value = `Correo enviado: ${job.sent || 0}/${job.total || 0} correctos. Revisa Mailtrap.`
+  successMessage.value = `Correo enviado: ${job.sent || 0}/${job.total || 0} correctos.`
+  loadMetrics()
 }
 
 const pollJob = async (jobId) => {
@@ -159,6 +213,19 @@ const startJobPolling = (jobId) => {
   jobTimer = setInterval(() => {
     pollJob(jobId)
   }, 1000)
+}
+
+const loadMetrics = async () => {
+  isLoadingMetrics.value = true
+  try {
+    metrics.value = await getAdminMailMetrics()
+  } catch (error) {
+    if (!errorMessage.value) {
+      errorMessage.value = error?.message || 'No se pudieron cargar las métricas de correo.'
+    }
+  } finally {
+    isLoadingMetrics.value = false
+  }
 }
 
 const loadStatus = async () => {
@@ -438,7 +505,7 @@ watch(
 )
 
 onMounted(async () => {
-  await Promise.all([loadStatus(), loadUsers(), loadVerificationTemplate()])
+  await Promise.all([loadStatus(), loadMetrics(), loadUsers(), loadVerificationTemplate()])
   await refreshPreview()
 })
 
@@ -476,30 +543,13 @@ onUnmounted(() => {
           <button
             type="button"
             class="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white"
-            :disabled="isLoadingStatus"
-            @click="loadStatus"
+            :disabled="isLoadingStatus || isLoadingMetrics"
+            @click="() => Promise.all([loadStatus(), loadMetrics()])"
           >
             <i class="fa-solid fa-rotate-right mr-2" aria-hidden="true"></i>
-            Actualizar SMTP
+            Actualizar
           </button>
         </div>
-      </div>
-
-      <div class="mt-5 flex flex-wrap gap-2">
-        <button
-          v-for="tab in mailTabs"
-          :key="tab.value"
-          type="button"
-          class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
-          :class="
-            mailTab === tab.value
-              ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
-              : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
-          "
-          @click="mailTab = tab.value"
-        >
-          {{ tab.label }}
-        </button>
       </div>
 
       <div
@@ -508,10 +558,9 @@ onUnmounted(() => {
       >
         Comprobando SMTP...
       </div>
-
       <div
         v-else-if="status"
-        class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        class="mt-5 grid gap-3 sm:grid-cols-3"
       >
         <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
           <p class="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">SMTP</p>
@@ -532,15 +581,127 @@ onUnmounted(() => {
           </p>
         </div>
         <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p class="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Usuarios con email</p>
-          <p class="mt-2 text-lg font-black text-white">{{ totalWithEmail }}</p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
           <p class="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Servidor</p>
           <p class="mt-2 text-sm font-black text-white">
             {{ status.host || '—' }}<span v-if="status.port">:{{ status.port }}</span>
           </p>
         </div>
+      </div>
+
+      <div
+        v-if="isLoadingMetrics && !metrics"
+        class="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-5 text-sm font-bold text-slate-400"
+      >
+        Cargando métricas de envío...
+      </div>
+      <div v-else-if="metricsCards.length" class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <div
+          v-for="card in metricsCards"
+          :key="card.label"
+          class="rounded-2xl border border-white/10 bg-white/5 p-4"
+        >
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">{{ card.label }}</p>
+          <p class="mt-2 text-2xl font-black" :class="card.tone">{{ card.value }}</p>
+        </div>
+      </div>
+
+      <div
+        v-if="metrics"
+        class="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr]"
+      >
+        <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Envíos últimos 30 días</p>
+          <AdminTrendChart :points="sentSeries" type="bars" color="#67e8f9" :height="140" />
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Por tipo (30 días)</p>
+          <div class="mt-3 space-y-2">
+            <div
+              v-for="row in kindRows"
+              :key="row.kind"
+              class="flex items-center justify-between gap-3 text-sm"
+            >
+              <span class="font-bold text-slate-300">{{ row.label }}</span>
+              <span class="font-black text-white">
+                {{ formatNumber(row.sent) }}
+                <span class="ml-1 text-[11px] font-bold text-slate-500">ok</span>
+                <span v-if="row.failed" class="ml-2 text-[11px] font-bold text-red-300">
+                  {{ formatNumber(row.failed) }} fail
+                </span>
+              </span>
+            </div>
+          </div>
+          <p class="mt-3 text-[11px] font-bold text-slate-500">
+            Opt-out campañas: {{ formatNumber(metrics.audience?.optedOut) }}
+          </p>
+        </div>
+      </div>
+
+      <div v-if="metrics?.recentJobs?.length" class="mt-4 overflow-hidden rounded-2xl border border-white/10">
+        <p class="bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          Últimos envíos masivos
+        </p>
+        <div class="overflow-x-auto">
+          <table class="min-w-[640px] w-full text-left">
+            <thead class="text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <tr>
+                <th class="px-4 py-2">Fecha</th>
+                <th class="px-4 py-2">Asunto</th>
+                <th class="px-4 py-2">Tipo</th>
+                <th class="px-4 py-2">Enviados</th>
+                <th class="px-4 py-2">Estado</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/10 text-sm text-slate-300">
+              <tr v-for="job in metrics.recentJobs" :key="job.id">
+                <td class="whitespace-nowrap px-4 py-2 text-xs font-bold text-slate-400">
+                  {{ formatDateTime(job.finishedAt || job.startedAt) }}
+                </td>
+                <td class="max-w-64 truncate px-4 py-2 font-bold text-white">{{ job.subject || '—' }}</td>
+                <td class="px-4 py-2 text-xs font-black uppercase">
+                  {{ job.template === 'poll' ? 'Votación' : 'Comunicado' }}
+                </td>
+                <td class="px-4 py-2 font-black text-white">
+                  {{ formatNumber(job.sent) }}/{{ formatNumber(job.total) }}
+                  <span v-if="job.failed" class="ml-1 text-[11px] font-bold text-red-300">
+                    · {{ formatNumber(job.failed) }} fail
+                  </span>
+                </td>
+                <td class="px-4 py-2">
+                  <span
+                    class="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase"
+                    :class="
+                      job.status === 'failed'
+                        ? 'border-red-300/30 bg-red-500/15 text-red-200'
+                        : job.status === 'done'
+                          ? 'border-emerald-300/30 bg-emerald-500/15 text-emerald-200'
+                          : 'border-amber-300/30 bg-amber-500/15 text-amber-200'
+                    "
+                  >
+                    {{ jobStatusLabel(job.status) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="mt-5 flex flex-wrap gap-2">
+        <button
+          v-for="tab in mailTabs"
+          :key="tab.value"
+          type="button"
+          class="min-h-10 rounded-2xl px-4 text-xs font-black uppercase tracking-wide transition"
+          :class="
+            mailTab === tab.value
+              ? 'bg-linear-to-r from-violet-500 to-fuchsia-500 text-white'
+              : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+          "
+          @click="mailTab = tab.value"
+        >
+          {{ tab.label }}
+        </button>
       </div>
 
       <p

@@ -32,6 +32,24 @@ export type MailPublicStatus = {
   verified: boolean;
 };
 
+export const MAIL_METRIC_KINDS = [
+  'verification',
+  'password_reset',
+  'broadcast',
+  'poll',
+  'lifecycle',
+  'test',
+] as const;
+
+export type MailMetricKind = (typeof MAIL_METRIC_KINDS)[number];
+
+type MailKindTotals = Record<MailMetricKind, { sent: number; failed: number }>;
+
+const emptyKindTotals = (): MailKindTotals =>
+  Object.fromEntries(MAIL_METRIC_KINDS.map((kind) => [kind, { sent: 0, failed: 0 }])) as MailKindTotals;
+
+const MAIL_METRICS_TTL_SECONDS = 120 * 24 * 3600;
+
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
@@ -134,6 +152,7 @@ export class MailService implements OnModuleInit {
       subject,
       text,
       html,
+      kind: 'password_reset',
       attachments: this.logoPath
         ? [
             {
@@ -197,6 +216,7 @@ export class MailService implements OnModuleInit {
       subject,
       text,
       html,
+      kind: 'verification',
       attachments: this.logoPath
         ? [
             {
@@ -234,6 +254,7 @@ export class MailService implements OnModuleInit {
       subject,
       text,
       html,
+      kind: 'test',
       attachments: this.logoPath
         ? [
             {
@@ -259,6 +280,7 @@ export class MailService implements OnModuleInit {
     subject?: string;
     message?: string;
     mode?: 'test' | 'broadcast' | 'poll';
+    kind?: MailMetricKind;
     locale?: string | null;
     ctaUrl?: string | null;
     ctaLabel?: string | null;
@@ -297,6 +319,9 @@ export class MailService implements OnModuleInit {
       subject,
       text,
       html,
+      kind:
+        input.kind ||
+        (input.mode === 'poll' ? 'poll' : input.mode === 'broadcast' ? 'broadcast' : 'test'),
       attachments: this.logoPath
         ? [
             {
@@ -317,11 +342,105 @@ export class MailService implements OnModuleInit {
     };
   }
 
+  private metricsDayKey(isoDay: string) {
+    return `mail:metrics:${isoDay}`;
+  }
+
+  private todayUtc(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private utcDaysBack(days: number): string[] {
+    const out: string[] = [];
+    const now = Date.now();
+    for (let i = days - 1; i >= 0; i -= 1) {
+      out.push(new Date(now - i * 86400000).toISOString().slice(0, 10));
+    }
+    return out;
+  }
+
+  private parseKindTotals(hash: Record<string, string>): { sent: number; failed: number; byKind: MailKindTotals } {
+    const byKind = emptyKindTotals();
+    for (const kind of MAIL_METRIC_KINDS) {
+      byKind[kind] = {
+        sent: Number(hash[`sent:${kind}`] || 0),
+        failed: Number(hash[`failed:${kind}`] || 0),
+      };
+    }
+    return {
+      sent: Number(hash.sent || 0),
+      failed: Number(hash.failed || 0),
+      byKind,
+    };
+  }
+
+  private sumTotals(rows: Array<{ sent: number; failed: number; byKind: MailKindTotals }>) {
+    const byKind = emptyKindTotals();
+    let sent = 0;
+    let failed = 0;
+    for (const row of rows) {
+      sent += row.sent;
+      failed += row.failed;
+      for (const kind of MAIL_METRIC_KINDS) {
+        byKind[kind].sent += row.byKind[kind].sent;
+        byKind[kind].failed += row.byKind[kind].failed;
+      }
+    }
+    return { sent, failed, byKind };
+  }
+
+  private async recordSend(kind: MailMetricKind, ok: boolean) {
+    try {
+      const day = this.todayUtc();
+      const key = this.metricsDayKey(day);
+      const resultField = ok ? 'sent' : 'failed';
+      await this.redis.client
+        .multi()
+        .hincrby(key, resultField, 1)
+        .hincrby(key, `${resultField}:${kind}`, 1)
+        .expire(key, MAIL_METRICS_TTL_SECONDS)
+        .exec();
+    } catch (error) {
+      this.logger.warn(`No se pudo guardar métrica de correo: ${(error as Error).message}`);
+    }
+  }
+
+  async getSendStats(days = 30) {
+    const windowDays = Math.min(Math.max(Number(days) || 30, 1), 90);
+    const dates = this.utcDaysBack(windowDays);
+    const pipeline = this.redis.client.multi();
+    for (const date of dates) {
+      pipeline.hgetall(this.metricsDayKey(date));
+    }
+    const raw = (await pipeline.exec()) || [];
+    const series = dates.map((date, index) => {
+      const hash = (raw[index]?.[1] || {}) as Record<string, string>;
+      const parsed = this.parseKindTotals(hash);
+      return { date, ...parsed };
+    });
+    const last7 = this.sumTotals(series.slice(-7));
+    const last30 = this.sumTotals(series.slice(-30));
+    const today = series[series.length - 1] || { date: this.todayUtc(), sent: 0, failed: 0, byKind: emptyKindTotals() };
+
+    return {
+      today: { sent: today.sent, failed: today.failed, byKind: today.byKind },
+      last7,
+      last30,
+      series: series.map((row) => ({
+        date: row.date,
+        sent: row.sent,
+        failed: row.failed,
+        value: row.sent,
+      })),
+    };
+  }
+
   private async sendMail(input: {
     to: string;
     subject: string;
     text: string;
     html: string;
+    kind?: MailMetricKind;
     attachments?: Array<{
       filename: string;
       path: string;
@@ -333,13 +452,24 @@ export class MailService implements OnModuleInit {
       throw new Error('SMTP no configurado.');
     }
 
-    return this.transporter.sendMail({
-      from: this.from,
-      to: input.to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-      attachments: input.attachments,
-    });
+    const kind: MailMetricKind = MAIL_METRIC_KINDS.includes(input.kind as MailMetricKind)
+      ? (input.kind as MailMetricKind)
+      : 'test';
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to: input.to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+        attachments: input.attachments,
+      });
+      await this.recordSend(kind, true);
+      return info;
+    } catch (error) {
+      await this.recordSend(kind, false);
+      throw error;
+    }
   }
 }

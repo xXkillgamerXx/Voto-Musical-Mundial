@@ -21,6 +21,7 @@ import { RewardsModule } from './modules/rewards/rewards.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
 import { VotesModule } from './modules/votes/votes.module';
+import { FanModule } from './modules/fan/fan.module';
 import { WorkersModule } from './workers/workers.module';
 
 @Module({
@@ -44,6 +45,7 @@ import { WorkersModule } from './workers/workers.module';
     MissionsModule,
     RewardsModule,
     SettingsModule,
+    FanModule,
     NotificationsModule,
     WorkersModule,
   ],
