@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { reporterTrustFromStatusRows } from '../../common/reporter-trust';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -57,6 +58,7 @@ export class UserActivityService {
       referralsCount,
       reportsSent,
       reportsReceived,
+      reportsByStatus,
       followingCount,
       activeDaysCount,
       firstActivity,
@@ -73,6 +75,11 @@ export class UserActivityService {
       this.prisma.referralSignup.count({ where: { referrerId: userId } }),
       this.prisma.contentReport.count({ where: { reporterId: userId } }),
       this.prisma.contentReport.count({ where: { reportedUserId: userId } }),
+      this.prisma.contentReport.groupBy({
+        by: ['status'],
+        where: { reporterId: userId },
+        _count: { _all: true },
+      }),
       this.prisma.artistFollower.count({ where: { userId } }),
       this.prisma.userActivityDay.count({ where: { userId } }),
       this.prisma.userActivityDay.findFirst({
@@ -140,6 +147,7 @@ export class UserActivityService {
         referrals: referralsCount,
         reportsSent,
         reportsReceived,
+        reporterTrust: reporterTrustFromStatusRows(reportsByStatus),
         followingArtists: followingCount,
         activeDays: activeDaysCount,
         firstActiveDay: firstActivity?.day || null,

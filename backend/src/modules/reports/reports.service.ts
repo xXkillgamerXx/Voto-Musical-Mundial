@@ -9,7 +9,9 @@ import {
   ContentReportStatus,
   ContentReportTargetType,
 } from '@prisma/client';
+import { emptyReporterTrust, reporterTrustFromStatusRows } from '../../common/reporter-trust';
 import { serialize } from '../../common/serialize';
+import { AdminPushService } from '../admin/admin-push.service';
 import { ModerationService } from '../admin/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -19,6 +21,22 @@ const VALID_TARGET_TYPES = new Set<string>(Object.values(ContentReportTargetType
 const VALID_STATUSES = new Set<string>(Object.values(ContentReportStatus));
 const MAX_DETAILS_LENGTH = 500;
 const MAX_REPORTS_PER_HOUR = 10;
+const MAX_THANKS_POINTS = 500;
+
+const THANKS_COPY = {
+  es: {
+    title: 'Gracias por tu reporte',
+    message: 'Gracias por reportar. Denuncias como la tuya hacen la comunidad más segura.',
+    withPoints: (points: number) =>
+      `Gracias por reportar. Denuncias como la tuya hacen la comunidad más segura. Te dimos ${points} puntos por colaborar.`,
+  },
+  en: {
+    title: 'Thanks for your report',
+    message: 'Thanks for reporting. Reports like yours help keep the community safer.',
+    withPoints: (points: number) =>
+      `Thanks for reporting. Reports like yours help keep the community safer. We gave you ${points} points for helping out.`,
+  },
+} as const;
 
 @Injectable()
 export class ReportsService {
@@ -26,7 +44,78 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly moderation: ModerationService,
+    private readonly adminPush: AdminPushService,
   ) {}
+
+  private resolveUserLocale(metadata: unknown): 'es' | 'en' {
+    const meta =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)
+        : {};
+    const raw = String(meta.locale || meta.lang || meta.language || '')
+      .trim()
+      .toLowerCase();
+    return raw.startsWith('es') ? 'es' : 'en';
+  }
+
+  private reportMetadata(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {};
+  }
+
+  private thanksFromMetadata(metadata: Record<string, unknown>) {
+    const thanks = metadata.thanks;
+    if (!thanks || typeof thanks !== 'object' || Array.isArray(thanks)) {
+      return null;
+    }
+
+    const data = thanks as Record<string, unknown>;
+    const at = String(data.at || '').trim();
+    if (!at) {
+      return null;
+    }
+
+    return {
+      at,
+      points: Math.max(0, Number(data.points || 0)),
+      locale: String(data.locale || '') === 'es' ? 'es' : 'en',
+    };
+  }
+
+  private clipText(value: unknown, max: number) {
+    return String(value || '').trim().slice(0, max);
+  }
+
+  private buildThanksCopy(
+    locale: 'es' | 'en',
+    points: number,
+    body: Record<string, unknown> = {},
+  ) {
+    const esMessage = points > 0 ? THANKS_COPY.es.withPoints(points) : THANKS_COPY.es.message;
+    const enMessage = points > 0 ? THANKS_COPY.en.withPoints(points) : THANKS_COPY.en.message;
+    const titleEs = this.clipText(body.titleEs, 120) || THANKS_COPY.es.title;
+    const titleEn = this.clipText(body.titleEn, 120) || THANKS_COPY.en.title;
+    const messageEs = this.clipText(body.messageEs, 800) || esMessage;
+    const messageEn = this.clipText(body.messageEn, 800) || enMessage;
+    const customTitle = this.clipText(body.title, 120);
+    const customMessage = this.clipText(body.message, 800);
+
+    const resolvedTitleEs = locale === 'es' && customTitle ? customTitle : titleEs;
+    const resolvedTitleEn = locale === 'en' && customTitle ? customTitle : titleEn;
+    const resolvedMessageEs = locale === 'es' && customMessage ? customMessage : messageEs;
+    const resolvedMessageEn = locale === 'en' && customMessage ? customMessage : messageEn;
+
+    return {
+      locale,
+      title: locale === 'en' ? resolvedTitleEn : resolvedTitleEs,
+      message: locale === 'en' ? resolvedMessageEn : resolvedMessageEs,
+      titleEs: resolvedTitleEs,
+      titleEn: resolvedTitleEn,
+      messageEs: resolvedMessageEs,
+      messageEn: resolvedMessageEn,
+    };
+  }
 
   private parseReason(value: unknown): ContentReportReason {
     const reason = String(value || '').trim().toLowerCase();
@@ -190,7 +279,14 @@ export class ReportsService {
         orderBy: { createdAt: 'desc' },
         include: {
           reporter: {
-            select: { id: true, username: true, displayName: true, email: true, photoUrl: true },
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              email: true,
+              photoUrl: true,
+              metadata: true,
+            },
           },
           reportedUser: {
             select: { id: true, username: true, displayName: true, email: true, photoUrl: true },
@@ -199,6 +295,27 @@ export class ReportsService {
         },
       }),
     ]);
+
+    const reporterIds = [...new Set(reports.map((report) => report.reporterId))];
+    const statusRows = reporterIds.length
+      ? await this.prisma.contentReport.groupBy({
+          by: ['reporterId', 'status'],
+          where: { reporterId: { in: reporterIds } },
+          _count: { _all: true },
+        })
+      : [];
+    const trustByReporter = new Map<string, ReturnType<typeof reporterTrustFromStatusRows>>();
+
+    for (const reporterId of reporterIds) {
+      trustByReporter.set(
+        reporterId.toString(),
+        reporterTrustFromStatusRows(
+          statusRows
+            .filter((row) => row.reporterId === reporterId)
+            .map((row) => ({ status: row.status, _count: row._count })),
+        ),
+      );
+    }
 
     const enriched = await Promise.all(
       reports.map(async (report) => {
@@ -236,7 +353,17 @@ export class ReportsService {
             : { missing: true };
         }
 
-        return { ...report, targetPreview };
+        const metadata = this.reportMetadata(report.metadata);
+        const { metadata: reporterMetadata, ...reporter } = report.reporter;
+
+        return {
+          ...report,
+          reporter,
+          reporterLocale: this.resolveUserLocale(reporterMetadata),
+          reporterTrust: trustByReporter.get(report.reporterId.toString()) || emptyReporterTrust(),
+          thanks: this.thanksFromMetadata(metadata),
+          targetPreview,
+        };
       }),
     );
 
@@ -342,5 +469,114 @@ export class ReportsService {
     }
 
     return serialize(updated);
+  }
+
+  async thankReporter(id: string, body: Record<string, unknown>) {
+    const report = await this.prisma.contentReport.findUnique({
+      where: { id: BigInt(Number(id) || 0) },
+      include: {
+        reporter: {
+          select: { id: true, points: true, metadata: true, displayName: true },
+        },
+      },
+    });
+
+    if (!report) {
+      throw new NotFoundException('Reporte no encontrado.');
+    }
+
+    const metadata = this.reportMetadata(report.metadata);
+    if (this.thanksFromMetadata(metadata)) {
+      throw new ConflictException('Ya se envió un agradecimiento por esta denuncia.');
+    }
+
+    const points = Math.max(0, Math.min(MAX_THANKS_POINTS, Math.floor(Number(body.points ?? 0) || 0)));
+    const requestedLocale = String(body.locale || '').trim().toLowerCase();
+    const locale = requestedLocale === 'es' || requestedLocale === 'en'
+      ? requestedLocale
+      : this.resolveUserLocale(report.reporter.metadata);
+    const copy = this.buildThanksCopy(locale, points, body);
+    const thanksAt = new Date().toISOString();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let pointsAfter = report.reporter.points;
+
+      if (points > 0) {
+        const updatedUser = await tx.user.update({
+          where: { id: report.reporterId },
+          data: { points: { increment: BigInt(points) } },
+          select: { points: true },
+        });
+        pointsAfter = updatedUser.points;
+      }
+
+      await tx.notification.create({
+        data: {
+          userId: report.reporterId,
+          type: 'report_thanks',
+          payload: {
+            reportId: report.id.toString(),
+            amount: points.toString(),
+            title: copy.titleEs,
+            titleEn: copy.titleEn,
+            message: copy.messageEs,
+            messageEn: copy.messageEn,
+          },
+        },
+      });
+
+      const updatedReport = await tx.contentReport.update({
+        where: { id: report.id },
+        data: {
+          metadata: {
+            ...metadata,
+            thanks: {
+              at: thanksAt,
+              points,
+              locale,
+              title: copy.title,
+              message: copy.message,
+            },
+          } as any,
+        },
+      });
+
+      return { updatedReport, pointsAfter };
+    });
+
+    try {
+      await this.redis.client.publish(
+        `user:${report.reporterId.toString()}:events`,
+        JSON.stringify({
+          type: points > 0 ? 'points_gift' : 'report_thanks',
+          amount: points.toString(),
+          points: Number(result.pointsAfter),
+          title: copy.title,
+          message: copy.message,
+          at: thanksAt,
+        }),
+      );
+    } catch {
+      // Best-effort realtime.
+    }
+
+    await this.adminPush.sendGiftToUser(report.reporterId, {
+      title: copy.title,
+      body: copy.message,
+      amount: points > 0 ? points.toString() : undefined,
+      type: 'report_thanks',
+    });
+
+    return serialize({
+      ok: true,
+      report: {
+        ...result.updatedReport,
+        thanks: { at: thanksAt, points, locale },
+      },
+      locale,
+      pointsAwarded: points,
+      title: copy.title,
+      message: copy.message,
+    });
   }
 }

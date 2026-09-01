@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   getAdminContentReports,
+  thankAdminContentReporter,
   updateAdminContentReport,
 } from '../../services/api/adminApi'
 
@@ -52,7 +53,19 @@ const actionBlockUser = ref(false)
 const actionClearBio = ref(false)
 const actionBlockReason = ref('')
 const actionDuration = ref(24)
+const actionThankReporter = ref(true)
+const thankTarget = ref(null)
+const thankPoints = ref(10)
+const thankLocale = ref('es')
+const thankTitle = ref('')
+const thankMessage = ref('')
+const thankDrafts = ref({
+  es: { title: '', message: '' },
+  en: { title: '', message: '' },
+})
 const noteDrafts = ref({})
+
+const pointPresets = [0, 10, 25, 50]
 
 const durationOptions = [
   { value: 1, label: '1 hora' },
@@ -61,6 +74,29 @@ const durationOptions = [
   { value: 720, label: '30 días' },
   { value: 0, label: 'Permanente' },
 ]
+
+const trustMeta = {
+  nuevo: {
+    label: 'Nuevo',
+    hint: 'Poca historia todavía',
+    classes: 'border-slate-300/20 bg-slate-500/15 text-slate-300',
+  },
+  confiable: {
+    label: 'Confiable',
+    hint: 'Reporta bien',
+    classes: 'border-emerald-300/30 bg-emerald-500/15 text-emerald-200',
+  },
+  regular: {
+    label: 'Regular',
+    hint: 'Resultados mixtos',
+    classes: 'border-amber-300/30 bg-amber-500/15 text-amber-200',
+  },
+  sospechoso: {
+    label: 'Sospechoso',
+    hint: 'Reporta por reportar',
+    classes: 'border-red-300/30 bg-red-500/15 text-red-200',
+  },
+}
 
 const pageWindow = computed(() => {
   const total = totalPages.value
@@ -84,6 +120,71 @@ const userLabel = (user, fallbackId = '') =>
 const reporterId = (report) => report.reporter?.id || report.reporterId || ''
 const reportedUserId = (report) =>
   report.reportedUser?.id || report.reportedUserId || report.targetPreview?.userId || ''
+
+const trustOf = (report) => report.reporterTrust || { score: 50, label: 'nuevo', total: 0, actionTaken: 0, dismissed: 0, helpfulRate: null }
+
+const resolveThanksLocale = (report) => (report?.reporterLocale === 'en' ? 'en' : 'es')
+
+const defaultThanksTitle = (locale) =>
+  locale === 'en' ? 'Thanks for your report' : 'Gracias por tu reporte'
+
+const defaultThanksMessage = (locale, points = 0) => {
+  const amount = Math.max(0, Number(points) || 0)
+  if (locale === 'en') {
+    return amount > 0
+      ? `Thanks for reporting. Reports like yours help keep the community safer. We gave you ${amount} points for helping out.`
+      : 'Thanks for reporting. Reports like yours help keep the community safer.'
+  }
+  return amount > 0
+    ? `Gracias por reportar. Denuncias como la tuya hacen la comunidad más segura. Te dimos ${amount} puntos por colaborar.`
+    : 'Gracias por reportar. Denuncias como la tuya hacen la comunidad más segura.'
+}
+
+const emptyThanksDrafts = (points = 0) => ({
+  es: { title: defaultThanksTitle('es'), message: defaultThanksMessage('es', points) },
+  en: { title: defaultThanksTitle('en'), message: defaultThanksMessage('en', points) },
+})
+
+const syncThankDraft = () => {
+  const locale = thankLocale.value === 'en' ? 'en' : 'es'
+  thankDrafts.value = {
+    ...thankDrafts.value,
+    [locale]: {
+      title: thankTitle.value,
+      message: thankMessage.value,
+    },
+  }
+}
+
+const applyThankDraft = (locale) => {
+  const nextLocale = locale === 'en' ? 'en' : 'es'
+  const draft = thankDrafts.value[nextLocale] || emptyThanksDrafts(thankPoints.value)[nextLocale]
+  thankTitle.value = draft.title
+  thankMessage.value = draft.message
+}
+
+const initThanksForm = (report, points = 10) => {
+  const locale = resolveThanksLocale(report)
+  thankPoints.value = points
+  thankLocale.value = locale
+  thankDrafts.value = emptyThanksDrafts(points)
+  applyThankDraft(locale)
+}
+
+const setThankLocale = (locale) => {
+  const nextLocale = locale === 'en' ? 'en' : 'es'
+  if (nextLocale === thankLocale.value) return
+  syncThankDraft()
+  thankLocale.value = nextLocale
+  applyThankDraft(nextLocale)
+}
+
+const restoreThankDefault = () => {
+  const locale = thankLocale.value === 'en' ? 'en' : 'es'
+  thankTitle.value = defaultThanksTitle(locale)
+  thankMessage.value = defaultThanksMessage(locale, thankPoints.value)
+  syncThankDraft()
+}
 
 const previewText = (report) => {
   if (report.targetType === 'comment') {
@@ -169,11 +270,60 @@ const openActionModal = (report) => {
   actionClearBio.value = report.targetType === 'user_profile'
   actionBlockReason.value = ''
   actionDuration.value = 24
+  actionThankReporter.value = !report.thanks
+  initThanksForm(report, report.thanks ? 0 : 10)
 }
 
 const closeActionModal = () => {
   if (busyId.value) return
   actionTarget.value = null
+}
+
+const openThankModal = (report) => {
+  thankTarget.value = report
+  initThanksForm(report, 10)
+}
+
+const closeThankModal = () => {
+  if (busyId.value) return
+  thankTarget.value = null
+}
+
+const sendThanks = async (report, points) => {
+  syncThankDraft()
+  const locale = thankLocale.value === 'en' ? 'en' : 'es'
+  await thankAdminContentReporter(report.id, {
+    points: Math.max(0, Math.floor(Number(points) || 0)),
+    locale,
+    title: thankTitle.value,
+    message: thankMessage.value,
+    titleEs: thankDrafts.value.es.title,
+    titleEn: thankDrafts.value.en.title,
+    messageEs: thankDrafts.value.es.message,
+    messageEn: thankDrafts.value.en.message,
+  })
+}
+
+const confirmThanks = async () => {
+  if (!thankTarget.value) return
+  if (!String(thankMessage.value || '').trim()) {
+    restoreThankDefault()
+  }
+  const report = thankTarget.value
+  busyId.value = report.id
+  errorMessage.value = ''
+  try {
+    await sendThanks(report, thankPoints.value)
+    successMessage.value = Number(thankPoints.value) > 0
+      ? `Agradecimiento enviado (${thankPoints.value} puntos).`
+      : 'Agradecimiento enviado.'
+    thankTarget.value = null
+    await loadReports({ page: currentPage.value, keepMessages: true })
+  } catch (error) {
+    errorMessage.value = error?.message || 'No se pudo enviar el agradecimiento.'
+  } finally {
+    busyId.value = ''
+  }
 }
 
 const confirmAction = async () => {
@@ -194,7 +344,17 @@ const confirmAction = async () => {
       blockReason: actionBlockReason.value,
       durationHours: actionDuration.value,
     })
-    successMessage.value = 'Acción aplicada.'
+    if (actionThankReporter.value && !report.thanks) {
+      try {
+        await sendThanks(report, thankPoints.value)
+        successMessage.value = 'Acción aplicada y agradecimiento enviado.'
+      } catch (thankError) {
+        successMessage.value = 'Acción aplicada, pero no se pudo enviar el agradecimiento.'
+        errorMessage.value = thankError?.message || 'No se pudo enviar el agradecimiento.'
+      }
+    } else {
+      successMessage.value = 'Acción aplicada.'
+    }
     actionTarget.value = null
     await loadReports({ page: currentPage.value, keepMessages: true })
   } catch (error) {
@@ -206,6 +366,38 @@ const confirmAction = async () => {
 
 watch(selectedStatus, () => applyFilters())
 watch(pageSize, () => applyFilters())
+watch(thankPoints, (next, prev) => {
+  if (prev === undefined || Number(next) === Number(prev)) return
+  syncThankDraft()
+  thankDrafts.value = {
+    es: {
+      ...thankDrafts.value.es,
+      message:
+        thankDrafts.value.es.message === defaultThanksMessage('es', prev)
+          ? defaultThanksMessage('es', next)
+          : thankDrafts.value.es.message,
+    },
+    en: {
+      ...thankDrafts.value.en,
+      message:
+        thankDrafts.value.en.message === defaultThanksMessage('en', prev)
+          ? defaultThanksMessage('en', next)
+          : thankDrafts.value.en.message,
+    },
+  }
+  applyThankDraft(thankLocale.value)
+})
+
+const userInitial = (user, fallbackId = '') =>
+  userLabel(user, fallbackId).charAt(0).toUpperCase() || '?'
+
+const expandedId = ref('')
+
+const toggleExpanded = (id) => {
+  expandedId.value = expandedId.value === String(id) ? '' : String(id)
+}
+
+const isExpanded = (id) => expandedId.value === String(id)
 
 onMounted(() => loadReports())
 </script>
@@ -221,7 +413,7 @@ onMounted(() => loadReports())
           Denuncias de usuarios
         </h2>
         <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-          Revisa comentarios y perfiles reportados. Cada fila indica quién denunció y a quién denunció.
+          Una fila por denuncia. Clic para ver el texto completo, la nota y la colaboración del denunciante.
         </p>
       </div>
 
@@ -256,19 +448,10 @@ onMounted(() => loadReports())
       </div>
     </div>
 
-    <div class="grid gap-3 sm:grid-cols-3">
-      <article class="rounded-3xl border border-amber-300/20 bg-amber-400/10 p-4">
-        <p class="text-xs font-black uppercase tracking-widest text-amber-200">Pendientes (total)</p>
-        <p class="mt-2 text-3xl font-black text-white">{{ pendingCount }}</p>
-      </article>
-      <article class="rounded-3xl border border-white/10 bg-white/5 p-4">
-        <p class="text-xs font-black uppercase tracking-widest text-slate-400">En este filtro</p>
-        <p class="mt-2 text-3xl font-black text-white">{{ totalReports }}</p>
-      </article>
-      <article class="rounded-3xl border border-white/10 bg-white/5 p-4">
-        <p class="text-xs font-black uppercase tracking-widest text-slate-400">Página</p>
-        <p class="mt-2 text-3xl font-black text-white">{{ currentPage }} / {{ totalPages }}</p>
-      </article>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold">
+      <p class="text-amber-200">{{ pendingCount }} pendientes</p>
+      <p class="text-slate-400">{{ totalReports }} en este filtro</p>
+      <p class="text-slate-400">Pág. {{ currentPage }} / {{ totalPages }}</p>
     </div>
 
     <p
@@ -299,194 +482,245 @@ onMounted(() => loadReports())
       <p class="mt-2 text-sm text-slate-400">Cuando un usuario reporte contenido, aparecerá aquí.</p>
     </div>
 
-    <div v-else class="space-y-4">
-      <article
-        v-for="report in reports"
-        :key="report.id"
-        class="rounded-3xl border border-white/10 bg-[#090b19] p-5 shadow-xl shadow-black/20"
-      >
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                class="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest"
-                :class="statusMeta[report.status]?.classes || statusMeta.pending.classes"
+    <div v-else class="overflow-hidden rounded-3xl border border-white/10 bg-[#090b19]">
+      <div class="overflow-x-auto">
+        <table class="min-w-[980px] w-full text-left">
+          <thead class="bg-white/5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3">Fecha</th>
+              <th class="px-4 py-3">Tipo</th>
+              <th class="px-4 py-3">Denunció</th>
+              <th class="px-4 py-3">Denunciado</th>
+              <th class="px-4 py-3">Contenido</th>
+              <th class="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/10">
+            <template v-for="report in reports" :key="report.id">
+              <tr
+                class="cursor-pointer align-top text-sm text-slate-300 transition hover:bg-white/4"
+                :class="isExpanded(report.id) ? 'bg-white/4' : ''"
+                @click="toggleExpanded(report.id)"
               >
-                {{ statusMeta[report.status]?.label || report.status }}
-              </span>
-              <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300">
-                {{ targetLabels[report.targetType] || report.targetType }}
-              </span>
-              <span class="rounded-full border border-red-300/20 bg-red-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red-200">
-                {{ reasonLabels[report.reason] || report.reason }}
-              </span>
-            </div>
-
-            <div class="mt-4 grid gap-3 lg:grid-cols-2">
-              <div class="rounded-2xl border border-cyan-300/15 bg-cyan-500/5 p-4">
-                <p class="text-[10px] font-black uppercase tracking-widest text-cyan-200/80">Denunció</p>
-                <div class="mt-2 flex items-center gap-3">
-                  <img
-                    v-if="report.reporter?.photoUrl"
-                    :src="report.reporter.photoUrl"
-                    :alt="userLabel(report.reporter)"
-                    class="size-10 shrink-0 rounded-full object-cover"
-                  />
-                  <span
-                    v-else
-                    class="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-black text-white"
-                  >
-                    {{ userLabel(report.reporter, reporterId(report)).charAt(0).toUpperCase() }}
-                  </span>
-                  <div class="min-w-0">
-                    <a
-                      v-if="reporterId(report)"
-                      :href="`/admin/usuarios/${reporterId(report)}`"
-                      class="block truncate text-sm font-black text-white transition hover:text-cyan-200"
+                <td class="whitespace-nowrap px-4 py-3 text-xs font-bold text-slate-400">
+                  {{ formatDate(report.createdAt) }}
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex w-max flex-col items-start gap-1">
+                    <span
+                      class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest"
+                      :class="statusMeta[report.status]?.classes || statusMeta.pending.classes"
                     >
-                      {{ userLabel(report.reporter, reporterId(report)) }}
-                    </a>
-                    <p v-else class="text-sm font-black text-white">{{ userLabel(report.reporter) }}</p>
-                    <p v-if="report.reporter?.email" class="truncate text-xs font-bold text-slate-400">
-                      {{ report.reporter.email }}
-                    </p>
-                    <p v-if="reporterId(report)" class="text-[11px] font-bold text-slate-500">
-                      #{{ reporterId(report) }}
-                      <span v-if="report.reporter?.username"> · @{{ report.reporter.username }}</span>
-                    </p>
+                      {{ statusMeta[report.status]?.label || report.status }}
+                    </span>
+                    <span class="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-300">
+                      {{ targetLabels[report.targetType] || report.targetType }}
+                    </span>
+                    <span class="rounded-full border border-red-300/20 bg-red-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-red-200">
+                      {{ reasonLabels[report.reason] || report.reason }}
+                    </span>
                   </div>
-                </div>
-              </div>
-
-              <div class="rounded-2xl border border-red-300/15 bg-red-500/5 p-4">
-                <p class="text-[10px] font-black uppercase tracking-widest text-red-200/80">Denunciado</p>
-                <div class="mt-2 flex items-center gap-3">
-                  <img
-                    v-if="report.reportedUser?.photoUrl || report.targetPreview?.photoUrl"
-                    :src="report.reportedUser?.photoUrl || report.targetPreview?.photoUrl"
-                    :alt="userLabel(report.reportedUser)"
-                    class="size-10 shrink-0 rounded-full object-cover"
-                  />
-                  <span
-                    v-else
-                    class="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-black text-white"
-                  >
-                    {{ userLabel(report.reportedUser, reportedUserId(report)).charAt(0).toUpperCase() }}
-                  </span>
-                  <div class="min-w-0">
+                </td>
+                <td class="max-w-52 px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <img
+                      v-if="report.reporter?.photoUrl"
+                      :src="report.reporter.photoUrl"
+                      :alt="userLabel(report.reporter)"
+                      class="size-8 shrink-0 rounded-full object-cover"
+                    />
+                    <span
+                      v-else
+                      class="grid size-8 shrink-0 place-items-center rounded-full bg-cyan-500/20 text-[11px] font-black text-cyan-100"
+                    >
+                      {{ userInitial(report.reporter, reporterId(report)) }}
+                    </span>
+                    <div class="min-w-0">
+                      <a
+                        v-if="reporterId(report)"
+                        :href="`/admin/usuarios/${reporterId(report)}`"
+                        class="block truncate text-sm font-black text-white hover:text-cyan-200"
+                        @click.stop
+                      >
+                        {{ userLabel(report.reporter, reporterId(report)) }}
+                      </a>
+                      <p v-else class="truncate text-sm font-black text-white">
+                        {{ userLabel(report.reporter) }}
+                      </p>
+                      <p class="truncate text-[11px] font-bold text-slate-500">
+                        <span
+                          class="rounded px-1 py-px uppercase"
+                          :class="trustMeta[trustOf(report).label]?.classes || trustMeta.nuevo.classes"
+                        >
+                          {{ trustOf(report).score }}
+                        </span>
+                        · {{ report.reporterLocale === 'en' ? 'EN' : 'ES' }}
+                        <span v-if="report.thanks"> · agr.</span>
+                      </p>
+                    </div>
+                  </div>
+                </td>
+                <td class="max-w-44 px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <img
+                      v-if="report.reportedUser?.photoUrl || report.targetPreview?.photoUrl"
+                      :src="report.reportedUser?.photoUrl || report.targetPreview?.photoUrl"
+                      :alt="userLabel(report.reportedUser)"
+                      class="size-8 shrink-0 rounded-full object-cover"
+                    />
+                    <span
+                      v-else
+                      class="grid size-8 shrink-0 place-items-center rounded-full bg-red-500/20 text-[11px] font-black text-red-100"
+                    >
+                      {{ userInitial(report.reportedUser, reportedUserId(report)) }}
+                    </span>
                     <a
                       v-if="reportedUserId(report)"
                       :href="`/admin/usuarios/${reportedUserId(report)}`"
-                      class="block truncate text-sm font-black text-white transition hover:text-red-200"
+                      class="truncate text-sm font-black text-white hover:text-red-200"
+                      @click.stop
                     >
                       {{ userLabel(report.reportedUser, reportedUserId(report)) }}
                     </a>
-                    <p v-else class="text-sm font-black text-white">—</p>
-                    <p
-                      v-if="report.reportedUser?.email || report.targetPreview?.email"
-                      class="truncate text-xs font-bold text-slate-400"
-                    >
-                      {{ report.reportedUser?.email || report.targetPreview?.email }}
-                    </p>
-                    <p v-if="reportedUserId(report)" class="text-[11px] font-bold text-slate-500">
-                      #{{ reportedUserId(report) }}
-                      <span v-if="report.reportedUser?.username || report.targetPreview?.username">
-                        · @{{ report.reportedUser?.username || report.targetPreview?.username }}
-                      </span>
-                    </p>
+                    <p v-else class="truncate text-sm font-black text-white">—</p>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <p class="mt-4 text-sm font-bold leading-6 text-slate-200">
-              {{ previewText(report) }}
-            </p>
-
-            <div
-              v-if="report.targetPreview?.gif?.url"
-              class="mt-3 max-w-xs overflow-hidden rounded-2xl border border-white/10"
-            >
-              <img
-                :src="report.targetPreview.gif.url"
-                alt="GIF reportado"
-                class="max-h-40 w-full object-cover"
-              />
-            </div>
-
-            <dl class="mt-4 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
-              <div>
-                <dt class="font-black uppercase tracking-widest">Fecha</dt>
-                <dd class="mt-1 font-bold text-slate-200">{{ formatDate(report.createdAt) }}</dd>
-              </div>
-              <div v-if="report.poll?.title">
-                <dt class="font-black uppercase tracking-widest">Votación</dt>
-                <dd class="mt-1 font-bold text-slate-200">
-                  <a
-                    v-if="report.poll?.id"
-                    :href="`/admin/votaciones/editar/${report.poll.id}`"
-                    class="text-fuchsia-200 transition hover:text-fuchsia-100"
-                  >
+                </td>
+                <td class="max-w-sm px-4 py-3">
+                  <p class="line-clamp-2 text-sm font-bold leading-5 text-slate-200">
+                    {{ previewText(report) }}
+                  </p>
+                  <p v-if="report.poll?.title" class="mt-1 truncate text-[11px] font-bold text-fuchsia-200/80">
                     {{ report.poll.title }}
-                  </a>
-                  <span v-else>{{ report.poll.title }}</span>
-                </dd>
-              </div>
-              <div v-if="report.targetType === 'comment' && report.targetId">
-                <dt class="font-black uppercase tracking-widest">Comentario</dt>
-                <dd class="mt-1 font-bold text-slate-200">#{{ report.targetId }}</dd>
-              </div>
-            </dl>
-
-            <label class="mt-3 grid gap-2">
-              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Nota interna (admin)</span>
-              <textarea
-                v-model="noteDrafts[report.id]"
-                rows="2"
-                class="rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm font-bold text-white outline-none focus:border-cyan-300/40"
-                placeholder="Contexto para otros moderadores..."
-              />
-            </label>
-
-            <p
-              v-if="report.details"
-              class="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300"
-            >
-              {{ report.details }}
-            </p>
-          </div>
-
-          <div
-            v-if="report.status === 'pending'"
-            class="flex shrink-0 flex-wrap gap-2 lg:w-52 lg:flex-col"
-          >
-            <button
-              type="button"
-              class="min-h-10 rounded-2xl bg-red-500/15 px-4 py-2 text-xs font-black uppercase text-red-200 transition hover:bg-red-500/25 disabled:opacity-50"
-              :disabled="busyId === report.id"
-              @click="openActionModal(report)"
-            >
-              Eliminar / acción
-            </button>
-            <button
-              type="button"
-              class="min-h-10 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs font-black uppercase text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
-              :disabled="busyId === report.id"
-              @click="updateReport(report, 'reviewed')"
-            >
-              Marcar revisada
-            </button>
-            <button
-              type="button"
-              class="min-h-10 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase text-slate-300 transition hover:bg-white/10 disabled:opacity-50"
-              :disabled="busyId === report.id"
-              @click="updateReport(report, 'dismissed')"
-            >
-              Descartar
-            </button>
-          </div>
-        </div>
-      </article>
+                  </p>
+                </td>
+                <td class="px-4 py-3" @click.stop>
+                  <div class="flex flex-wrap justify-end gap-1.5">
+                    <button
+                      v-if="!report.thanks"
+                      type="button"
+                      class="min-h-8 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-2.5 text-[10px] font-black uppercase text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-50"
+                      :disabled="busyId === report.id"
+                      @click="openThankModal(report)"
+                    >
+                      Agradecer
+                    </button>
+                    <template v-if="report.status === 'pending'">
+                      <button
+                        type="button"
+                        class="min-h-8 rounded-xl bg-red-500/15 px-2.5 text-[10px] font-black uppercase text-red-200 hover:bg-red-500/25 disabled:opacity-50"
+                        :disabled="busyId === report.id"
+                        @click="openActionModal(report)"
+                      >
+                        Acción
+                      </button>
+                      <button
+                        type="button"
+                        class="min-h-8 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-2.5 text-[10px] font-black uppercase text-cyan-100 hover:bg-cyan-400/20 disabled:opacity-50"
+                        :disabled="busyId === report.id"
+                        @click="updateReport(report, 'reviewed')"
+                      >
+                        Revisada
+                      </button>
+                      <button
+                        type="button"
+                        class="min-h-8 rounded-xl border border-white/10 bg-white/5 px-2.5 text-[10px] font-black uppercase text-slate-300 hover:bg-white/10 disabled:opacity-50"
+                        :disabled="busyId === report.id"
+                        @click="updateReport(report, 'dismissed')"
+                      >
+                        Descartar
+                      </button>
+                    </template>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="isExpanded(report.id)" class="bg-slate-950/50">
+                <td colspan="6" class="px-4 py-4">
+                  <div class="grid gap-4 lg:grid-cols-[1fr_16rem]">
+                    <div>
+                      <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Texto reportado</p>
+                      <p class="mt-2 whitespace-pre-wrap text-sm font-bold leading-6 text-slate-200">
+                        {{ previewText(report) }}
+                      </p>
+                      <div
+                        v-if="report.targetPreview?.gif?.url"
+                        class="mt-3 max-w-xs overflow-hidden rounded-2xl border border-white/10"
+                      >
+                        <img
+                          :src="report.targetPreview.gif.url"
+                          alt="GIF reportado"
+                          class="max-h-40 w-full object-cover"
+                        />
+                      </div>
+                      <p
+                        v-if="report.details"
+                        class="mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300"
+                      >
+                        {{ report.details }}
+                      </p>
+                      <p class="mt-3 text-xs font-bold text-slate-500">
+                        {{ formatDate(report.createdAt) }}
+                        <span v-if="report.poll?.title">
+                          ·
+                          <a
+                            v-if="report.poll?.id"
+                            :href="`/admin/votaciones/editar/${report.poll.id}`"
+                            class="text-fuchsia-200 hover:text-fuchsia-100"
+                          >
+                            {{ report.poll.title }}
+                          </a>
+                          <span v-else>{{ report.poll.title }}</span>
+                        </span>
+                        <span v-if="report.targetType === 'comment' && report.targetId">
+                          · comentario #{{ report.targetId }}
+                        </span>
+                      </p>
+                      <label class="mt-3 grid gap-1.5">
+                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Nota interna</span>
+                        <textarea
+                          v-model="noteDrafts[report.id]"
+                          rows="2"
+                          class="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm font-bold text-white outline-none focus:border-cyan-300/40"
+                          placeholder="Contexto para otros moderadores..."
+                        />
+                      </label>
+                    </div>
+                    <div class="space-y-3 text-xs">
+                      <div class="rounded-xl border border-cyan-300/15 bg-cyan-500/5 p-3">
+                        <p class="font-black uppercase tracking-widest text-cyan-200/80">Denunció</p>
+                        <p class="mt-1 font-black text-white">{{ userLabel(report.reporter, reporterId(report)) }}</p>
+                        <p v-if="report.reporter?.email" class="truncate text-slate-400">{{ report.reporter.email }}</p>
+                        <p class="mt-2 font-bold text-slate-300">
+                          {{ trustMeta[trustOf(report).label]?.label }} · {{ trustOf(report).score }}
+                        </p>
+                        <p class="text-slate-500">
+                          {{ trustOf(report).actionTaken }} útiles · {{ trustOf(report).dismissed }} descartadas · {{ trustOf(report).total }} total
+                          <span v-if="trustOf(report).helpfulRate !== null"> · {{ trustOf(report).helpfulRate }}%</span>
+                        </p>
+                        <p v-if="report.thanks" class="mt-1 font-bold text-emerald-300/80">
+                          Agradecido{{ report.thanks.points > 0 ? ` · +${report.thanks.points} pts` : '' }}
+                        </p>
+                      </div>
+                      <div class="rounded-xl border border-red-300/15 bg-red-500/5 p-3">
+                        <p class="font-black uppercase tracking-widest text-red-200/80">Denunciado</p>
+                        <p class="mt-1 font-black text-white">{{ userLabel(report.reportedUser, reportedUserId(report)) }}</p>
+                        <p
+                          v-if="report.reportedUser?.email || report.targetPreview?.email"
+                          class="truncate text-slate-400"
+                        >
+                          {{ report.reportedUser?.email || report.targetPreview?.email }}
+                        </p>
+                        <p v-if="reportedUserId(report)" class="text-slate-500">
+                          #{{ reportedUserId(report) }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div
@@ -536,7 +770,7 @@ onMounted(() => loadReports())
         class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 py-6 backdrop-blur-md"
         @click.self="closeActionModal"
       >
-        <article class="w-full max-w-lg rounded-4xl border border-red-300/25 bg-[#090b19] p-6 text-white shadow-2xl">
+        <article class="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-4xl border border-red-300/25 bg-[#090b19] p-6 text-white shadow-2xl">
           <h3 class="text-xl font-black">Aplicar acción</h3>
           <p class="mt-2 text-sm text-slate-400">
             {{ targetLabels[actionTarget.targetType] || actionTarget.targetType }}
@@ -584,6 +818,106 @@ onMounted(() => loadReports())
                 </select>
               </label>
             </template>
+
+            <label v-if="!actionTarget.thanks" class="flex items-center gap-2 text-sm font-bold">
+              <input v-model="actionThankReporter" type="checkbox" class="size-4 rounded" />
+              Agradecer al denunciante
+            </label>
+
+            <template v-if="!actionTarget.thanks && actionThankReporter">
+              <div class="rounded-2xl border border-emerald-300/20 bg-emerald-500/5 p-4">
+                <p class="text-[10px] font-black uppercase tracking-widest text-emerald-200/80">
+                  Recompensa para
+                </p>
+                <div class="mt-2 flex items-center gap-3">
+                  <img
+                    v-if="actionTarget.reporter?.photoUrl"
+                    :src="actionTarget.reporter.photoUrl"
+                    :alt="userLabel(actionTarget.reporter)"
+                    class="size-10 shrink-0 rounded-full object-cover"
+                  />
+                  <span
+                    v-else
+                    class="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-black text-white"
+                  >
+                    {{ userLabel(actionTarget.reporter, reporterId(actionTarget)).charAt(0).toUpperCase() }}
+                  </span>
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-black text-white">
+                      {{ userLabel(actionTarget.reporter, reporterId(actionTarget)) }}
+                    </p>
+                    <p class="truncate text-xs font-bold text-slate-400">
+                      <span v-if="actionTarget.reporter?.username">@{{ actionTarget.reporter.username }}</span>
+                      <span v-if="actionTarget.reporter?.email">
+                        <span v-if="actionTarget.reporter?.username"> · </span>{{ actionTarget.reporter.email }}
+                      </span>
+                    </p>
+                    <p class="mt-1 text-[11px] font-bold text-emerald-200">
+                      {{ Number(thankPoints) > 0 ? `+${thankPoints} puntos` : 'Sin puntos, solo mensaje' }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="min-h-10 flex-1 rounded-2xl border text-xs font-black uppercase transition"
+                  :class="thankLocale === 'es' ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-300'"
+                  @click="setThankLocale('es')"
+                >
+                  Español
+                </button>
+                <button
+                  type="button"
+                  class="min-h-10 flex-1 rounded-2xl border text-xs font-black uppercase transition"
+                  :class="thankLocale === 'en' ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-300'"
+                  @click="setThankLocale('en')"
+                >
+                  English
+                </button>
+              </div>
+              <p class="text-[11px] font-bold text-slate-500">
+                Por defecto: {{ resolveThanksLocale(actionTarget) === 'en' ? 'inglés' : 'español' }}
+                (idioma de la cuenta). Puedes cambiarlo y editar el texto.
+              </p>
+
+              <label class="grid gap-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Título</span>
+                <input
+                  v-model="thankTitle"
+                  maxlength="120"
+                  class="min-h-11 rounded-2xl border border-white/10 bg-slate-950/60 px-3 text-sm font-bold text-white outline-none"
+                />
+              </label>
+              <label class="grid gap-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Mensaje</span>
+                <textarea
+                  v-model="thankMessage"
+                  rows="4"
+                  maxlength="800"
+                  class="rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm font-bold leading-6 text-white outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                class="justify-self-start text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-white"
+                @click="restoreThankDefault"
+              >
+                Restaurar texto por defecto
+              </button>
+
+              <label class="grid gap-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Puntos</span>
+                <input
+                  v-model.number="thankPoints"
+                  type="number"
+                  min="0"
+                  max="500"
+                  class="min-h-11 rounded-2xl border border-white/10 bg-slate-950/60 px-3 text-sm font-bold text-white outline-none"
+                />
+              </label>
+            </template>
           </div>
 
           <div class="mt-6 flex justify-end gap-3">
@@ -602,6 +936,156 @@ onMounted(() => loadReports())
               @click="confirmAction"
             >
               {{ busyId ? 'Aplicando...' : 'Confirmar acción' }}
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <div
+        v-if="thankTarget"
+        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 py-6 backdrop-blur-md"
+        @click.self="closeThankModal"
+      >
+        <article class="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-4xl border border-emerald-300/25 bg-[#090b19] p-6 text-white shadow-2xl">
+          <h3 class="text-xl font-black">Agradecer al denunciante</h3>
+          <p class="mt-2 text-sm text-slate-400">
+            Elige español o inglés, edita el mensaje y confirma a quién se le dan los puntos.
+          </p>
+
+          <div class="mt-5 space-y-4">
+            <div class="rounded-2xl border border-emerald-300/20 bg-emerald-500/5 p-4">
+              <p class="text-[10px] font-black uppercase tracking-widest text-emerald-200/80">
+                Recompensa para
+              </p>
+              <div class="mt-2 flex items-center gap-3">
+                <img
+                  v-if="thankTarget.reporter?.photoUrl"
+                  :src="thankTarget.reporter.photoUrl"
+                  :alt="userLabel(thankTarget.reporter)"
+                  class="size-12 shrink-0 rounded-full object-cover"
+                />
+                <span
+                  v-else
+                  class="grid size-12 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-black text-white"
+                >
+                  {{ userLabel(thankTarget.reporter, reporterId(thankTarget)).charAt(0).toUpperCase() }}
+                </span>
+                <div class="min-w-0">
+                  <p class="truncate text-base font-black text-white">
+                    {{ userLabel(thankTarget.reporter, reporterId(thankTarget)) }}
+                  </p>
+                  <p class="truncate text-xs font-bold text-slate-400">
+                    <span v-if="thankTarget.reporter?.username">@{{ thankTarget.reporter.username }}</span>
+                    <span v-if="thankTarget.reporter?.email">
+                      <span v-if="thankTarget.reporter?.username"> · </span>{{ thankTarget.reporter.email }}
+                    </span>
+                    <span v-if="reporterId(thankTarget)"> · #{{ reporterId(thankTarget) }}</span>
+                  </p>
+                  <p class="mt-1 text-sm font-black text-emerald-200">
+                    {{ Number(thankPoints) > 0 ? `+${thankPoints} puntos` : 'Sin puntos, solo mensaje' }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Idioma del mensaje</p>
+              <div class="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  class="min-h-11 flex-1 rounded-2xl border text-sm font-black uppercase transition"
+                  :class="thankLocale === 'es' ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+                  @click="setThankLocale('es')"
+                >
+                  Español
+                </button>
+                <button
+                  type="button"
+                  class="min-h-11 flex-1 rounded-2xl border text-sm font-black uppercase transition"
+                  :class="thankLocale === 'en' ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+                  @click="setThankLocale('en')"
+                >
+                  English
+                </button>
+              </div>
+              <p class="mt-2 text-[11px] font-bold text-slate-500">
+                Por defecto: {{ resolveThanksLocale(thankTarget) === 'en' ? 'inglés' : 'español' }}
+                (idioma de la cuenta). Cada idioma tiene su texto por defecto y se puede editar.
+              </p>
+            </div>
+
+            <label class="grid gap-2">
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Título</span>
+              <input
+                v-model="thankTitle"
+                maxlength="120"
+                class="min-h-11 rounded-2xl border border-white/10 bg-slate-950/60 px-3 text-sm font-bold text-white outline-none focus:border-emerald-300/40"
+              />
+            </label>
+
+            <label class="grid gap-2">
+              <span class="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <span>Mensaje</span>
+                <button
+                  type="button"
+                  class="text-emerald-300/80 hover:text-emerald-200"
+                  @click="restoreThankDefault"
+                >
+                  Restaurar defecto
+                </button>
+              </span>
+              <textarea
+                v-model="thankMessage"
+                rows="5"
+                maxlength="800"
+                class="rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm font-bold leading-6 text-white outline-none focus:border-emerald-300/40"
+              />
+            </label>
+
+            <label class="grid gap-2">
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Puntos de colaboración</span>
+              <input
+                v-model.number="thankPoints"
+                type="number"
+                min="0"
+                max="500"
+                class="min-h-11 rounded-2xl border border-white/10 bg-slate-950/60 px-3 text-sm font-bold text-white outline-none"
+              />
+            </label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="preset in pointPresets"
+                :key="`thanks-pts-${preset}`"
+                type="button"
+                class="min-h-9 rounded-xl border px-3 text-xs font-black uppercase transition"
+                :class="
+                  Number(thankPoints) === preset
+                    ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100'
+                    : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                "
+                @click="thankPoints = preset"
+              >
+                {{ preset === 0 ? 'Sin puntos' : `+${preset}` }}
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              class="min-h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black text-slate-200"
+              :disabled="Boolean(busyId)"
+              @click="closeThankModal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="min-h-11 rounded-2xl bg-emerald-500 px-4 text-sm font-black text-slate-950 disabled:opacity-50"
+              :disabled="Boolean(busyId)"
+              @click="confirmThanks"
+            >
+              {{ busyId ? 'Enviando...' : 'Enviar agradecimiento' }}
             </button>
           </div>
         </article>

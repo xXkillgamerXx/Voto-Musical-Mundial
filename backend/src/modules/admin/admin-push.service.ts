@@ -299,7 +299,7 @@ export class AdminPushService {
 
   async sendGiftToUser(
     userId: bigint | string,
-    payload: { title: string; body: string; amount?: string },
+    payload: { title: string; body: string; amount?: string; type?: string },
   ) {
     try {
       const tokenRows = await this.prisma.pushToken.findMany({
@@ -319,7 +319,7 @@ export class AdminPushService {
           title: payload.title,
           body: payload.body,
           url: '/',
-          type: 'admin_points_gift',
+          type: payload.type || 'admin_points_gift',
           extraData: {
             amount: String(payload.amount || ''),
           },

@@ -16,13 +16,13 @@ import {
 import {
   BLOCKED_PROMO_MESSAGE,
   isCommentHardBlocked,
-  scanCommentDictionary,
 } from '../../common/comment-promo';
 import { getClientIp, hashIp } from '../../common/request';
 import { pollLookupWhere } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { toPublicComment } from '../../common/public-comment';
 import { ModerationService } from '../admin/moderation.service';
+import { ModerationDictionaryService } from '../admin/moderation-dictionary.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -37,6 +37,7 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly moderation: ModerationService,
+    private readonly dictionary: ModerationDictionaryService,
     private readonly config: ConfigService,
   ) {}
 
@@ -94,7 +95,7 @@ export class CommentsService {
       throw new BadRequestException(BLOCKED_PROMO_MESSAGE);
     }
 
-    const promoScan = text ? scanCommentDictionary(text) : null;
+    const promoScan = text ? await this.dictionary.scanComment(text) : null;
 
     if (text && (await isCommentLanguageBlocked(text))) {
       throw new BadRequestException(BLOCKED_LANGUAGE_MESSAGE);

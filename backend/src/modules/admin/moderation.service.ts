@@ -261,25 +261,88 @@ export class ModerationService {
     `;
 
     const blocked = await this.blockedIpSet();
+    const ipHashes = rows.map((row) => String(row.ipHash || '').trim()).filter(Boolean);
+
+    const [voteUserRows, relatedBySignupIp] = await Promise.all([
+      ipHashes.length
+        ? this.prisma.voteLedger.findMany({
+            where: {
+              ipHash: { in: ipHashes },
+              userId: { not: null },
+              createdAt: { gte: since },
+            },
+            select: {
+              ipHash: true,
+              userId: true,
+              amount: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  email: true,
+                  photoUrl: true,
+                  createdAt: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      this.accountsForSignupIps(ipHashes),
+    ]);
+
+    const accountsByIp = new Map<string, Array<ReturnType<ModerationService['formatRelatedAccount']> & { votes: number }>>();
+
+    const addAccount = (
+      ipHash: string,
+      account: ReturnType<ModerationService['formatRelatedAccount']>,
+      votes = 0,
+    ) => {
+      const list = accountsByIp.get(ipHash) || [];
+      const existing = list.find((item) => item.id === account.id);
+      if (existing) {
+        existing.votes += votes;
+        return;
+      }
+      list.push({ ...account, votes });
+      accountsByIp.set(ipHash, list);
+    };
+
+    for (const row of voteUserRows) {
+      const hash = String(row.ipHash || '').trim();
+      if (!hash || !row.user) continue;
+      addAccount(hash, this.formatRelatedAccount(row.user), Number(row.amount || 0));
+    }
+
+    for (const [hash, accounts] of relatedBySignupIp.entries()) {
+      for (const account of accounts) {
+        addAccount(hash, account, 0);
+      }
+    }
 
     return {
       windowHours: hours,
-      items: rows.map((row) => ({
-        ipHash: row.ipHash,
-        ipShort: row.ipHash ? `${row.ipHash.slice(0, 12)}…` : '',
-        voteRows: Number(row.voteRows || 0),
-        totalVotes: Number(row.totalVotes || 0),
-        distinctAnon: Number(row.distinctAnon || 0),
-        distinctUsers: Number(row.distinctUsers || 0),
-        lastVoteAt: row.lastVoteAt,
-        firstVoteAt: row.firstVoteAt,
-        risk: this.riskLevel({
+      items: rows.map((row) => {
+        const accounts = (accountsByIp.get(row.ipHash) || []).sort((a, b) => b.votes - a.votes);
+        return {
+          ipHash: row.ipHash,
+          ipShort: row.ipHash ? `${row.ipHash.slice(0, 12)}…` : '',
+          voteRows: Number(row.voteRows || 0),
           totalVotes: Number(row.totalVotes || 0),
           distinctAnon: Number(row.distinctAnon || 0),
           distinctUsers: Number(row.distinctUsers || 0),
-        }),
-        blocked: Boolean(blocked[row.ipHash]),
-      })),
+          accounts,
+          accountCount: accounts.length,
+          lastVoteAt: row.lastVoteAt,
+          firstVoteAt: row.firstVoteAt,
+          risk: this.riskLevel({
+            totalVotes: Number(row.totalVotes || 0),
+            distinctAnon: Number(row.distinctAnon || 0),
+            distinctUsers: Number(row.distinctUsers || 0),
+          }),
+          blocked: Boolean(blocked[row.ipHash]),
+        };
+      }),
     };
   }
 
@@ -578,6 +641,64 @@ export class ModerationService {
     });
   }
 
+  private formatRelatedAccount(user: {
+    id: bigint;
+    username: string | null;
+    displayName: string | null;
+    email: string | null;
+    photoUrl: string | null;
+    createdAt: Date;
+  }) {
+    return {
+      id: user.id.toString(),
+      username: user.username,
+      displayName: user.displayName,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      createdAt: user.createdAt.toISOString(),
+      name: user.displayName || user.username || user.email || `#${user.id.toString()}`,
+    };
+  }
+
+  private async accountsForSignupIps(ipHashes: string[]) {
+    const unique = [...new Set(ipHashes.map((hash) => String(hash || '').trim()).filter(Boolean))];
+    const byIp = new Map<string, Array<ReturnType<ModerationService['formatRelatedAccount']>>>();
+    if (!unique.length) return byIp;
+
+    const relatedUsers = await this.prisma.user.findMany({
+      where: {
+        OR: unique.map((hash) => ({
+          metadata: { path: ['signupIpHash'], equals: hash },
+        })),
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        email: true,
+        photoUrl: true,
+        createdAt: true,
+        metadata: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    for (const user of relatedUsers) {
+      const meta =
+        user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)
+          ? (user.metadata as Record<string, unknown>)
+          : {};
+      const hash = String(meta.signupIpHash || '').trim();
+      if (!hash) continue;
+      const list = byIp.get(hash) || [];
+      list.push(this.formatRelatedAccount(user));
+      byIp.set(hash, list);
+    }
+
+    return byIp;
+  }
+
   async listAlertsPaginated(options?: {
     limitValue?: string;
     pageValue?: string;
@@ -620,16 +741,46 @@ export class ModerationService {
     const pageItems = filtered.slice(skip, skip + limit);
 
     const userIds = [...new Set(pageItems.map((a) => a.userId).filter(Boolean))] as string[];
-    const users = userIds.length
-      ? await this.prisma.user.findMany({
-          where: { id: { in: userIds.map((id) => BigInt(id)) } },
-          select: { id: true, username: true, displayName: true, email: true },
-        })
-      : [];
+    const pollIds = [...new Set(pageItems.map((a) => a.pollId).filter(Boolean))] as string[];
+    const ipHashes = [...new Set(pageItems.map((a) => a.ipHash).filter(Boolean))] as string[];
+
+    const [users, polls, relatedByIp, blockedIps] = await Promise.all([
+      userIds.length
+        ? this.prisma.user.findMany({
+            where: { id: { in: userIds.map((id) => BigInt(id)) } },
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              email: true,
+              photoUrl: true,
+              createdAt: true,
+            },
+          })
+        : Promise.resolve([] as Array<{
+            id: bigint;
+            username: string | null;
+            displayName: string | null;
+            email: string | null;
+            photoUrl: string | null;
+            createdAt: Date;
+          }>),
+      pollIds.length
+        ? this.prisma.poll.findMany({
+            where: { id: { in: pollIds.map((id) => BigInt(id)) } },
+            select: { id: true, title: true },
+          })
+        : Promise.resolve([] as Array<{ id: bigint; title: string }>),
+      this.accountsForSignupIps(ipHashes),
+      this.blockedIpSet(),
+    ]);
     const userMap = new Map(users.map((u) => [u.id.toString(), u]));
+    const pollMap = new Map(polls.map((p) => [p.id.toString(), p]));
 
     const items = pageItems.map((alert) => {
       const profile = alert.userId ? userMap.get(alert.userId) : null;
+      const poll = alert.pollId ? pollMap.get(alert.pollId) : null;
+      const relatedAccounts = alert.ipHash ? relatedByIp.get(alert.ipHash) || [] : [];
       return {
         ...alert,
         userName:
@@ -638,6 +789,14 @@ export class ModerationService {
           profile?.username ||
           profile?.email ||
           (alert.userId ? `#${alert.userId}` : null),
+        userEmail: profile?.email || null,
+        userUsername: profile?.username || null,
+        userPhotoUrl: profile?.photoUrl || null,
+        userCreatedAt: profile?.createdAt?.toISOString() || null,
+        pollTitle: poll?.title || null,
+        relatedAccounts,
+        relatedAccountCount: relatedAccounts.length,
+        ipBlocked: alert.ipHash ? Boolean(blockedIps[alert.ipHash]) : false,
       };
     });
 

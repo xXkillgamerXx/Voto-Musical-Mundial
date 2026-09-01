@@ -4,6 +4,7 @@ import { getCurrentApiAuth } from '../services/api/authApi'
 import { getStoredAuth, onStoredAuthChange, setStoredAuth } from '../services/api/client'
 import { getNotifications, markNotificationRead } from '../services/api/notificationsApi'
 import { subscribeUserRealtime } from '../services/api/realtimeApi'
+import { getNotificationBody } from '../utils/notificationDisplay'
 
 const SEEN_GIFTS_KEY = 'vmm-seen-gift-notifications'
 const MAX_GIFT_AGE_MS = 7 * 24 * 60 * 60 * 1000
@@ -62,7 +63,9 @@ const shouldShowGiftNotification = (notification) => {
     return false
   }
 
-  return notification.type === 'admin_points_gift' || notification.type === 'mission_completed'
+  return notification.type === 'admin_points_gift' || notification.type === 'mission_completed' || (
+    notification.type === 'report_thanks' && Number(notification.payload?.amount || 0) > 0
+  )
 }
 
 const applyGiftPoints = (points) => {
@@ -114,7 +117,9 @@ const giftAmount = computed(() =>
   ).toLocaleString('es'),
 )
 const isMissionGift = computed(() => giftNotification.value?.type === 'mission_completed')
+const isReportThanks = computed(() => giftNotification.value?.type === 'report_thanks')
 const giftMessage = computed(() =>
+  getNotificationBody(giftNotification.value) ||
   giftNotification.value?.payload?.message ||
   (isMissionGift.value
     ? `Completaste una misión y ganaste ${giftAmount.value} puntos.`
@@ -123,6 +128,9 @@ const giftMessage = computed(() =>
 const giftSender = computed(() =>
   isMissionGift.value
     ? 'Sistema de misiones'
+    :
+  isReportThanks.value
+    ? 'Moderación'
     :
   giftNotification.value?.payload?.senderName ||
   giftNotification.value?.payload?.adminName ||

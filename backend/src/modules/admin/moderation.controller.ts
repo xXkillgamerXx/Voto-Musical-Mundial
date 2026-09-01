@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Request } from 'express';
 import { serialize } from '../../common/serialize';
@@ -6,12 +6,20 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ModerationService } from './moderation.service';
+import { ModerationDictionaryService } from './moderation-dictionary.service';
+import {
+  TestModerationDictionaryDto,
+  UpdateModerationDictionaryDto,
+} from './dto/update-moderation-dictionary.dto';
 
 @Controller('admin/moderation')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.admin, UserRole.superadmin, UserRole.owner)
 export class ModerationController {
-  constructor(private readonly moderation: ModerationService) {}
+  constructor(
+    private readonly moderation: ModerationService,
+    private readonly dictionary: ModerationDictionaryService,
+  ) {}
 
   private actorFrom(request: Request) {
     const user = (request as any).user;
@@ -78,5 +86,20 @@ export class ModerationController {
   @Post('alerts/:id/dismiss')
   dismissAlert(@Param('id') id: string) {
     return this.moderation.dismissAlert(id);
+  }
+
+  @Get('dictionary')
+  dictionaryView() {
+    return this.dictionary.getAdminView();
+  }
+
+  @Put('dictionary')
+  updateDictionary(@Body() body: UpdateModerationDictionaryDto) {
+    return this.dictionary.updateConfig(body);
+  }
+
+  @Post('dictionary/test')
+  testDictionary(@Body() body: TestModerationDictionaryDto) {
+    return this.dictionary.testPhrase(body?.text);
   }
 }

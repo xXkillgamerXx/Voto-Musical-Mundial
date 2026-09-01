@@ -120,6 +120,13 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es')
 }
 
+function reporterTrustLabel(label) {
+  if (label === 'confiable') return 'Confiable'
+  if (label === 'regular') return 'Regular'
+  if (label === 'sospechoso') return 'Sospechoso'
+  return 'Nuevo'
+}
+
 const formatNumber = (value) => Number(value || 0).toLocaleString('es')
 
 const cellTone = (entry) => {
@@ -408,6 +415,14 @@ watch(
         <div class="rounded-2xl border border-white/10 bg-white/4 p-4">
           <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Denuncias recibidas</p>
           <p class="mt-1 text-2xl font-black">{{ formatNumber(profile.stats.reportsReceived) }}</p>
+        </div>
+        <div class="rounded-2xl border border-cyan-300/20 bg-cyan-500/5 p-4">
+          <p class="text-[10px] font-black uppercase tracking-widest text-cyan-200/80">Denuncias enviadas</p>
+          <p class="mt-1 text-2xl font-black text-cyan-100">{{ formatNumber(profile.stats.reportsSent) }}</p>
+          <p v-if="profile.stats.reporterTrust" class="mt-1 text-[11px] font-bold text-slate-400">
+            Colaboración {{ profile.stats.reporterTrust.score }}
+            · {{ reporterTrustLabel(profile.stats.reporterTrust.label) }}
+          </p>
         </div>
         <div class="rounded-2xl border border-amber-300/20 bg-amber-500/5 p-4">
           <p class="text-[10px] font-black uppercase tracking-widest text-amber-200/80">Alertas abiertas</p>

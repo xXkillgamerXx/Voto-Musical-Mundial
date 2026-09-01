@@ -45,6 +45,8 @@ const ipActivity = ref([])
 const recentVotes = ref([])
 const blocks = ref({ ips: [], users: [] })
 const alerts = ref([])
+const mainTab = ref('alerts')
+const expandedIpHash = ref('')
 const alertPage = ref(1)
 const alertPageSize = ref(20)
 const alertTotal = ref(0)
@@ -90,6 +92,18 @@ const formatDate = (value) => {
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
+
+const signalLabel = (signal) => {
+  const value = String(signal || '')
+  const spawnMatch = value.match(/^spawn:ip_accounts:(\d+)$/)
+  if (spawnMatch) return `${spawnMatch[1]} cuentas desde la misma IP`
+  if (value.startsWith('promo_')) return value.replace(/^[^:]+:/, 'Promo · ')
+  if (value.startsWith('divert_')) return value.replace(/^[^:]+:/, 'Desvío · ')
+  return value
+}
+
+const accountLabel = (account) =>
+  account?.name || account?.displayName || account?.username || account?.email || (account?.id ? `#${account.id}` : '—')
 
 const alertPageWindow = computed(() => {
   const total = alertTotalPages.value
@@ -286,6 +300,21 @@ const dismissAlert = async (alert) => {
 
 const openAlerts = computed(() => alerts.value.filter((row) => row.status === 'open'))
 
+const expandedAlertId = ref('')
+
+const toggleAlertExpanded = (id) => {
+  expandedAlertId.value = expandedAlertId.value === String(id) ? '' : String(id)
+}
+
+const isAlertExpanded = (id) => expandedAlertId.value === String(id)
+
+const toggleIpExpanded = (ipHash) => {
+  const key = String(ipHash || '')
+  expandedIpHash.value = expandedIpHash.value === key ? '' : key
+}
+
+const isIpExpanded = (ipHash) => expandedIpHash.value === String(ipHash || '')
+
 onMounted(loadAll)
 </script>
 
@@ -305,6 +334,13 @@ onMounted(loadAll)
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <a
+            href="/admin/diccionario"
+            class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-slate-200 transition hover:bg-white/10"
+          >
+            <i class="fa-solid fa-book"></i>
+            Diccionario
+          </a>
           <button
             v-for="option in windowOptions"
             :key="option.value"
@@ -358,7 +394,26 @@ onMounted(loadAll)
         </article>
       </div>
 
-      <article class="rounded-3xl border border-amber-300/20 bg-amber-500/5 p-5 sm:p-6">
+      <div class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="rounded-full px-4 py-2 text-xs font-black transition"
+          :class="mainTab === 'alerts' ? 'bg-amber-500 text-white' : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+          @click="mainTab = 'alerts'"
+        >
+          Alertas automáticas
+        </button>
+        <button
+          type="button"
+          class="rounded-full px-4 py-2 text-xs font-black transition"
+          :class="mainTab === 'ips' ? 'bg-amber-500 text-white' : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
+          @click="mainTab = 'ips'"
+        >
+          Actividad por IP
+        </button>
+      </div>
+
+      <article v-if="mainTab === 'alerts'" class="rounded-3xl border border-amber-300/20 bg-amber-500/5 p-5 sm:p-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 class="text-lg font-black text-white">Alertas automáticas</h3>
@@ -392,78 +447,224 @@ onMounted(loadAll)
         </div>
 
         <div class="mt-5 overflow-hidden rounded-2xl border border-white/10">
-          <div
-            v-for="alert in alerts"
-            :key="alert.id"
-            class="grid gap-3 border-t border-white/10 px-4 py-4 text-sm text-slate-200 first:border-t-0 lg:grid-cols-[0.9fr_1.2fr_1.4fr_0.8fr_auto] lg:items-start"
-            :class="alert.status === 'dismissed' ? 'opacity-50' : ''"
-          >
-            <div>
-              <span class="rounded-full border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase text-amber-100">
-                {{ alertTypeLabels[alert.type] || alert.type }}
-              </span>
-              <p class="mt-2 text-xs text-slate-400">{{ formatDate(alert.at) }}</p>
-            </div>
-            <div>
-              <a
-                v-if="alert.userId"
-                :href="`/admin/usuarios/${alert.userId}`"
-                class="font-black text-white transition hover:text-fuchsia-200"
-              >
-                {{ alert.userName || `#${alert.userId}` }}
-              </a>
-              <p v-else class="font-black text-white">{{ alert.userName || '—' }}</p>
-              <p v-if="alert.userId" class="text-xs text-slate-500">#{{ alert.userId }}</p>
-              <p v-if="alert.ipShort" class="mt-1 font-mono text-[11px] text-slate-400">{{ alert.ipShort }}</p>
-            </div>
-            <div>
-              <p class="font-bold text-amber-100">{{ alert.reason }}</p>
-              <p v-if="alert.sample" class="mt-2 line-clamp-3 text-xs leading-5 text-slate-300">“{{ alert.sample }}”</p>
-              <p v-if="alert.signals?.length" class="mt-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                {{ alert.signals.slice(0, 4).join(' · ') }}
-              </p>
-            </div>
-            <div class="text-xs text-slate-400">
-              <a
-                v-if="alert.pollId"
-                :href="`/admin/votaciones/editar/${alert.pollId}`"
-                class="font-bold text-fuchsia-200 transition hover:text-fuchsia-100"
-              >
-                Votación #{{ alert.pollId }}
-              </a>
-              <span v-if="alert.commentId" class="block">Comentario #{{ alert.commentId }}</span>
-            </div>
-            <div class="flex flex-col gap-2">
-              <a
-                v-if="alert.userId"
-                :href="`/admin/usuarios/${alert.userId}`"
-                class="inline-flex min-h-9 items-center justify-center rounded-full border border-fuchsia-300/25 bg-fuchsia-500/10 px-3 text-[10px] font-black uppercase text-fuchsia-100 transition hover:bg-fuchsia-500/20"
-              >
-                Ver perfil
-              </a>
-              <button
-                v-if="alert.userId && alert.status === 'open'"
-                type="button"
-                class="inline-flex min-h-9 items-center justify-center rounded-full border border-red-300/30 bg-red-500/10 px-3 text-[10px] font-black uppercase text-red-200 transition hover:bg-red-500/20 disabled:opacity-50"
-                :disabled="isBlocking"
-                @click="blockUserFromAlert(alert)"
-              >
-                Bloquear
-              </button>
-              <button
-                v-if="alert.status === 'open'"
-                type="button"
-                class="inline-flex min-h-10 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black text-slate-200 transition hover:bg-white/10 disabled:opacity-50"
-                :disabled="busyKey === `alert:${alert.id}`"
-                @click="dismissAlert(alert)"
-              >
-                {{ busyKey === `alert:${alert.id}` ? '...' : 'Revisada' }}
-              </button>
-              <span v-else class="text-xs font-bold text-slate-500">Revisada</span>
-            </div>
-          </div>
           <div v-if="!alerts.length" class="px-4 py-6 text-sm font-bold text-slate-400">
             Sin alertas por ahora.
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="min-w-[920px] w-full text-left">
+              <thead class="bg-white/5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <tr>
+                  <th class="px-4 py-3">Fecha</th>
+                  <th class="px-4 py-3">Tipo</th>
+                  <th class="px-4 py-3">Usuario</th>
+                  <th class="px-4 py-3">Motivo</th>
+                  <th class="px-4 py-3">Votación</th>
+                  <th class="px-4 py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/10">
+                <template v-for="alert in alerts" :key="alert.id">
+                  <tr
+                    class="cursor-pointer align-top text-sm text-slate-300 transition hover:bg-white/4"
+                    :class="[
+                      isAlertExpanded(alert.id) ? 'bg-white/4' : '',
+                      alert.status === 'dismissed' ? 'opacity-50' : '',
+                    ]"
+                    @click="toggleAlertExpanded(alert.id)"
+                  >
+                    <td class="whitespace-nowrap px-4 py-3 text-xs font-bold text-slate-400">
+                      {{ formatDate(alert.at) }}
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="flex w-max flex-col items-start gap-1">
+                        <span class="rounded-full border border-amber-300/25 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-100">
+                          {{ alertTypeLabels[alert.type] || alert.type }}
+                        </span>
+                        <span
+                          class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest"
+                          :class="
+                            alert.status === 'open'
+                              ? 'border border-amber-300/30 bg-amber-500/15 text-amber-200'
+                              : 'border border-white/10 bg-white/5 text-slate-400'
+                          "
+                        >
+                          {{ alert.status === 'open' ? 'Abierta' : 'Revisada' }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="max-w-44 px-4 py-3">
+                      <a
+                        v-if="alert.userId"
+                        :href="`/admin/usuarios/${alert.userId}`"
+                        class="block truncate text-sm font-black text-white hover:text-fuchsia-200"
+                        @click.stop
+                      >
+                        {{ alert.userName || `#${alert.userId}` }}
+                      </a>
+                      <p v-else class="truncate text-sm font-black text-white">{{ alert.userName || '—' }}</p>
+                      <p v-if="alert.userId" class="text-[11px] font-bold text-slate-500">#{{ alert.userId }}</p>
+                    </td>
+                    <td class="max-w-sm px-4 py-3">
+                      <p class="line-clamp-2 text-sm font-bold leading-5 text-amber-100">{{ alert.reason }}</p>
+                      <p v-if="alert.sample" class="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">
+                        “{{ alert.sample }}”
+                      </p>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-xs font-bold text-slate-400">
+                      <a
+                        v-if="alert.pollId"
+                        :href="`/admin/votaciones/editar/${alert.pollId}`"
+                        class="text-fuchsia-200 hover:text-fuchsia-100"
+                        @click.stop
+                      >
+                        #{{ alert.pollId }}
+                      </a>
+                      <span v-else>—</span>
+                      <p v-if="alert.poll?.title || alert.pollTitle" class="mt-1 truncate text-[11px] font-bold text-fuchsia-200/80">
+                        {{ alert.pollTitle }}
+                      </p>
+                      <p v-if="alert.type === 'spawn_signup' && alert.relatedAccountCount" class="mt-1 text-[11px] font-bold text-amber-200">
+                        {{ alert.relatedAccountCount }} cuentas
+                      </p>
+                    </td>
+                    <td class="px-4 py-3" @click.stop>
+                      <div class="flex flex-wrap justify-end gap-1.5">
+                        <a
+                          v-if="alert.userId"
+                          :href="`/admin/usuarios/${alert.userId}`"
+                          class="inline-flex min-h-8 items-center rounded-xl border border-fuchsia-300/25 bg-fuchsia-500/10 px-2.5 text-[10px] font-black uppercase text-fuchsia-100 hover:bg-fuchsia-500/20"
+                        >
+                          Perfil
+                        </a>
+                        <button
+                          v-if="alert.userId && alert.status === 'open'"
+                          type="button"
+                          class="min-h-8 rounded-xl border border-red-300/30 bg-red-500/10 px-2.5 text-[10px] font-black uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+                          :disabled="isBlocking"
+                          @click="blockUserFromAlert(alert)"
+                        >
+                          Bloquear
+                        </button>
+                        <button
+                          v-if="alert.status === 'open'"
+                          type="button"
+                          class="min-h-8 rounded-xl border border-white/10 bg-white/5 px-2.5 text-[10px] font-black uppercase text-slate-300 hover:bg-white/10 disabled:opacity-50"
+                          :disabled="busyKey === `alert:${alert.id}`"
+                          @click="dismissAlert(alert)"
+                        >
+                          {{ busyKey === `alert:${alert.id}` ? '...' : 'Revisada' }}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="isAlertExpanded(alert.id)" class="bg-slate-950/50">
+                    <td colspan="6" class="px-4 py-4">
+                      <div class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                        <div class="space-y-4">
+                          <div>
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Motivo</p>
+                            <p class="mt-1 text-sm font-bold text-amber-100">{{ alert.reason }}</p>
+                            <p v-if="alert.sample" class="mt-3 whitespace-pre-wrap rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-slate-200">
+                              “{{ alert.sample }}”
+                            </p>
+                            <p v-if="alert.signals?.length" class="mt-2 text-xs font-bold text-slate-400">
+                              {{ alert.signals.map(signalLabel).join(' · ') }}
+                            </p>
+                          </div>
+
+                          <div v-if="alert.relatedAccounts?.length">
+                            <p class="text-[10px] font-black uppercase tracking-widest text-amber-200/80">
+                              Cuentas de esta IP ({{ alert.relatedAccounts.length }})
+                            </p>
+                            <div class="mt-2 divide-y divide-white/10 overflow-hidden rounded-xl border border-amber-300/20">
+                              <a
+                                v-for="account in alert.relatedAccounts"
+                                :key="account.id"
+                                :href="`/admin/usuarios/${account.id}`"
+                                class="flex items-center gap-3 px-3 py-2 transition hover:bg-white/5"
+                              >
+                                <img
+                                  v-if="account.photoUrl"
+                                  :src="account.photoUrl"
+                                  :alt="accountLabel(account)"
+                                  class="size-8 shrink-0 rounded-full object-cover"
+                                />
+                                <span
+                                  v-else
+                                  class="grid size-8 shrink-0 place-items-center rounded-full bg-amber-500/20 text-[11px] font-black text-amber-100"
+                                >
+                                  {{ accountLabel(account).charAt(0).toUpperCase() }}
+                                </span>
+                                <div class="min-w-0 flex-1">
+                                  <p class="truncate text-sm font-black text-white">{{ accountLabel(account) }}</p>
+                                  <p class="truncate text-[11px] font-bold text-slate-400">
+                                    <span v-if="account.username">@{{ account.username }}</span>
+                                    <span v-if="account.email">
+                                      <span v-if="account.username"> · </span>{{ account.email }}
+                                    </span>
+                                    <span> · #{{ account.id }}</span>
+                                  </p>
+                                </div>
+                                <p class="shrink-0 text-[11px] font-bold text-slate-500">
+                                  {{ formatDate(account.createdAt) }}
+                                </p>
+                              </a>
+                            </div>
+                          </div>
+                          <p
+                            v-else-if="alert.type === 'spawn_signup'"
+                            class="text-xs font-bold text-slate-500"
+                          >
+                            No se encontraron cuentas ligadas a esta IP (pueden ser anteriores a que se guardara el hash).
+                          </p>
+                        </div>
+
+                        <div class="space-y-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs font-bold text-slate-300">
+                          <div v-if="alert.userId">
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Usuario de la alerta</p>
+                            <a
+                              :href="`/admin/usuarios/${alert.userId}`"
+                              class="mt-1 block truncate text-sm font-black text-white hover:text-fuchsia-200"
+                            >
+                              {{ alert.userName || `#${alert.userId}` }}
+                            </a>
+                            <p v-if="alert.userUsername" class="text-slate-400">@{{ alert.userUsername }}</p>
+                            <p v-if="alert.userEmail" class="truncate text-slate-400">{{ alert.userEmail }}</p>
+                            <p class="text-slate-500">#{{ alert.userId }}</p>
+                          </div>
+                          <div>
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">IP</p>
+                            <p class="mt-1 break-all font-mono text-slate-200">{{ alert.ipHash || alert.ipShort || '—' }}</p>
+                            <p v-if="alert.ipBlocked" class="mt-1 text-red-300">Esta IP ya está bloqueada</p>
+                          </div>
+                          <p v-if="alert.pollTitle || alert.pollId">
+                            Votación:
+                            <a
+                              v-if="alert.pollId"
+                              :href="`/admin/votaciones/editar/${alert.pollId}`"
+                              class="text-fuchsia-200 hover:text-fuchsia-100"
+                            >
+                              {{ alert.pollTitle || `#${alert.pollId}` }}
+                            </a>
+                          </p>
+                          <p v-if="alert.commentId">Comentario #{{ alert.commentId }}</p>
+                          <p>{{ formatDate(alert.at) }}</p>
+                          <button
+                            v-if="alert.ipHash && !alert.ipBlocked"
+                            type="button"
+                            class="mt-1 inline-flex min-h-8 w-full items-center justify-center rounded-xl border border-red-300/30 bg-red-500/10 px-3 text-[10px] font-black uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+                            :disabled="busyKey === `ip:${alert.ipHash}`"
+                            @click="blockIp({ ipHash: alert.ipHash, risk: 'high' })"
+                          >
+                            {{ busyKey === `ip:${alert.ipHash}` ? '...' : 'Bloquear esta IP' }}
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -505,83 +706,137 @@ onMounted(loadAll)
         </div>
       </article>
 
-      <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
+      <article v-else-if="mainTab === 'ips'" class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
         <h3 class="text-lg font-black text-white">Actividad por IP</h3>
         <p class="mt-1 text-sm text-slate-400">
-          Una IP con muchos anonimos distintos o demasiados votos suele indicar abuso.
+          Cuentas reales que votaron o se registraron desde esa IP. Los anónimos no son usuarios: solo se cuenta cuántos votos anónimos hay.
         </p>
 
         <div class="mt-5 overflow-hidden rounded-2xl border border-white/10">
-          <div class="hidden grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr_0.9fr] gap-3 bg-white/5 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-slate-400 lg:grid">
-            <span>IP (hash)</span>
-            <span>Votos</span>
-            <span>Anon</span>
-            <span>Users</span>
-            <span>Riesgo</span>
-            <span>Ultimo</span>
-            <span>Accion</span>
-          </div>
-          <div
-            v-for="row in ipActivity"
-            :key="row.ipHash"
-            class="grid gap-3 border-t border-white/10 px-4 py-4 text-sm text-slate-200 lg:grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr_0.9fr] lg:items-center lg:py-3"
-          >
-            <span>
-              <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">IP</span>
-              <span class="font-mono text-xs text-slate-300" :title="row.ipHash">{{ row.ipShort }}</span>
-            </span>
-            <div class="grid grid-cols-3 gap-3 lg:contents">
-              <span>
-                <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Votos</span>
-                <span class="font-black text-white">{{ formatNumber(row.totalVotes) }}</span>
-              </span>
-              <span>
-                <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Anon</span>
-                <span :class="row.distinctAnon >= 4 ? 'font-black text-amber-200' : ''">{{ formatNumber(row.distinctAnon) }}</span>
-              </span>
-              <span>
-                <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Users</span>
-                <span>{{ formatNumber(row.distinctUsers) }}</span>
-              </span>
-            </div>
-            <span>
-              <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Riesgo</span>
-              <span class="rounded-full border px-2 py-1 text-[10px] font-black uppercase" :class="riskMeta[row.risk]?.classes">
-                {{ riskMeta[row.risk]?.label || row.risk }}
-              </span>
-            </span>
-            <span>
-              <span class="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 lg:hidden">Ultimo</span>
-              <span class="text-xs text-slate-400">{{ formatDate(row.lastVoteAt) }}</span>
-            </span>
-            <span class="pt-1 lg:pt-0">
-              <button
-                v-if="!row.blocked"
-                type="button"
-                class="inline-flex min-h-10 w-full items-center justify-center rounded-full border border-red-300/30 bg-red-500/10 px-3 py-1.5 text-xs font-black text-red-200 transition hover:bg-red-500/20 disabled:opacity-50 lg:w-auto"
-                :disabled="busyKey === `ip:${row.ipHash}`"
-                @click="blockIp(row)"
-              >
-                {{ busyKey === `ip:${row.ipHash}` ? '...' : 'Bloquear' }}
-              </button>
-              <button
-                v-else
-                type="button"
-                class="inline-flex min-h-10 w-full items-center justify-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-black text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50 lg:w-auto"
-                :disabled="busyKey === `ip:${row.ipHash}`"
-                @click="unblockIp(row.ipHash)"
-              >
-                {{ busyKey === `ip:${row.ipHash}` ? '...' : 'Desbloquear' }}
-              </button>
-            </span>
-          </div>
-          <div v-if="!ipActivity.length" class="border-t border-white/10 px-4 py-6 text-sm font-bold text-slate-400">
+          <div v-if="!ipActivity.length" class="px-4 py-6 text-sm font-bold text-slate-400">
             No hay actividad de votos en esta ventana.
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="min-w-[920px] w-full text-left">
+              <thead class="bg-white/5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <tr>
+                  <th class="px-4 py-3">IP</th>
+                  <th class="px-4 py-3">Votos</th>
+                  <th class="px-4 py-3">Cuentas</th>
+                  <th class="px-4 py-3">Votos anónimos</th>
+                  <th class="px-4 py-3">Riesgo</th>
+                  <th class="px-4 py-3">Último</th>
+                  <th class="px-4 py-3 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/10">
+                <template v-for="row in ipActivity" :key="row.ipHash">
+                  <tr
+                    class="cursor-pointer align-top text-sm text-slate-300 transition hover:bg-white/4"
+                    :class="isIpExpanded(row.ipHash) ? 'bg-white/4' : ''"
+                    @click="toggleIpExpanded(row.ipHash)"
+                  >
+                    <td class="px-4 py-3">
+                      <span class="font-mono text-xs text-slate-300" :title="row.ipHash">{{ row.ipShort }}</span>
+                    </td>
+                    <td class="px-4 py-3 font-black text-white">{{ formatNumber(row.totalVotes) }}</td>
+                    <td class="max-w-72 px-4 py-3">
+                      <p class="text-sm font-black text-white">{{ formatNumber(row.accountCount || row.accounts?.length || 0) }} cuentas</p>
+                      <p v-if="row.accounts?.length" class="mt-1 line-clamp-2 text-[11px] font-bold text-slate-400">
+                        {{ row.accounts.slice(0, 3).map(accountLabel).join(' · ') }}
+                        <span v-if="row.accounts.length > 3"> +{{ row.accounts.length - 3 }}</span>
+                      </p>
+                      <p class="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        {{ isIpExpanded(row.ipHash) ? 'Clic para cerrar' : 'Clic para ver cuentas' }}
+                      </p>
+                    </td>
+                    <td class="px-4 py-3">
+                      <span :class="row.distinctAnon >= 4 ? 'font-black text-amber-200' : 'font-bold text-slate-300'">
+                        {{ formatNumber(row.distinctAnon) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <span class="rounded-full border px-2 py-1 text-[10px] font-black uppercase" :class="riskMeta[row.risk]?.classes">
+                        {{ riskMeta[row.risk]?.label || row.risk }}
+                      </span>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-xs font-bold text-slate-400">
+                      {{ formatDate(row.lastVoteAt) }}
+                    </td>
+                    <td class="px-4 py-3" @click.stop>
+                      <button
+                        v-if="!row.blocked"
+                        type="button"
+                        class="min-h-8 rounded-xl border border-red-300/30 bg-red-500/10 px-2.5 text-[10px] font-black uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+                        :disabled="busyKey === `ip:${row.ipHash}`"
+                        @click="blockIp(row)"
+                      >
+                        {{ busyKey === `ip:${row.ipHash}` ? '...' : 'Bloquear' }}
+                      </button>
+                      <button
+                        v-else
+                        type="button"
+                        class="min-h-8 rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-2.5 text-[10px] font-black uppercase text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                        :disabled="busyKey === `ip:${row.ipHash}`"
+                        @click="unblockIp(row.ipHash)"
+                      >
+                        {{ busyKey === `ip:${row.ipHash}` ? '...' : 'Quitar' }}
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="isIpExpanded(row.ipHash)" class="bg-slate-950/50">
+                    <td colspan="7" class="px-4 py-4">
+                      <p class="text-[10px] font-black uppercase tracking-widest text-amber-200/80">
+                        Cuentas de esta IP ({{ row.accounts?.length || 0 }})
+                      </p>
+                      <div v-if="row.accounts?.length" class="mt-2 divide-y divide-white/10 overflow-hidden rounded-xl border border-amber-300/20">
+                        <a
+                          v-for="account in row.accounts"
+                          :key="account.id"
+                          :href="`/admin/usuarios/${account.id}`"
+                          class="flex items-center gap-3 px-3 py-2 transition hover:bg-white/5"
+                        >
+                          <img
+                            v-if="account.photoUrl"
+                            :src="account.photoUrl"
+                            :alt="accountLabel(account)"
+                            class="size-8 shrink-0 rounded-full object-cover"
+                          />
+                          <span
+                            v-else
+                            class="grid size-8 shrink-0 place-items-center rounded-full bg-amber-500/20 text-[11px] font-black text-amber-100"
+                          >
+                            {{ accountLabel(account).charAt(0).toUpperCase() }}
+                          </span>
+                          <div class="min-w-0 flex-1">
+                            <p class="truncate text-sm font-black text-white">{{ accountLabel(account) }}</p>
+                            <p class="truncate text-[11px] font-bold text-slate-400">
+                              <span v-if="account.username">@{{ account.username }}</span>
+                              <span v-if="account.email">
+                                <span v-if="account.username"> · </span>{{ account.email }}
+                              </span>
+                              <span> · #{{ account.id }}</span>
+                            </p>
+                          </div>
+                          <p class="shrink-0 text-[11px] font-bold text-slate-500">
+                            {{ account.votes ? `${account.votes} votos` : 'Alta en esta IP' }}
+                            · {{ formatDate(account.createdAt) }}
+                          </p>
+                        </a>
+                      </div>
+                      <p v-else class="mt-2 text-sm font-bold text-slate-400">
+                        No hay cuentas registradas. Solo votos anónimos ({{ formatNumber(row.distinctAnon) }}).
+                      </p>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
           </div>
         </div>
       </article>
 
-      <div class="grid gap-6 xl:grid-cols-2">
+      <div v-if="mainTab === 'ips'" class="grid gap-6 xl:grid-cols-2">
         <article class="rounded-3xl border border-white/10 bg-white/4 p-5 sm:p-6">
           <h3 class="text-lg font-black text-white">Votos recientes</h3>
           <div class="mt-4 space-y-2">

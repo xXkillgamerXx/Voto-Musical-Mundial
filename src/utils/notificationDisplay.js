@@ -42,6 +42,8 @@ export const getNotificationTitle = (notification) => {
   switch (notification?.type) {
     case 'admin_points_gift':
       return 'Tienes un regalo'
+    case 'report_thanks':
+      return resolveUiLocale() === 'en' ? 'Thanks for your report' : 'Gracias por tu reporte'
     case 'mission_completed':
       return payload.missionTitle ? `Misión completada: ${payload.missionTitle}` : 'Misión completada'
     case 'artist_push':
@@ -71,6 +73,17 @@ export const getNotificationBody = (notification) => {
       return amount > 0
         ? `Recibiste ${amount.toLocaleString('es')} puntos de regalo.`
         : 'Recibiste puntos de regalo.'
+    }
+    case 'report_thanks': {
+      const amount = Number(payload.amount || 0)
+      if (resolveUiLocale() === 'en') {
+        return amount > 0
+          ? `Thanks for reporting. We gave you ${amount.toLocaleString('en')} points for helping keep the community safer.`
+          : 'Thanks for reporting. Reports like yours help keep the community safer.'
+      }
+      return amount > 0
+        ? `Gracias por reportar. Te dimos ${amount.toLocaleString('es')} puntos por ayudar a hacer la comunidad más segura.`
+        : 'Gracias por reportar. Denuncias como la tuya hacen la comunidad más segura.'
     }
     case 'mission_completed': {
       const amount = Number(payload.rewardPoints || 0)
@@ -105,6 +118,8 @@ export const getNotificationIcon = (notification) => {
   switch (notification?.type) {
     case 'admin_points_gift':
       return 'fa-solid fa-gift text-amber-200'
+    case 'report_thanks':
+      return 'fa-solid fa-shield-halved text-emerald-200'
     case 'mission_completed':
       return 'fa-solid fa-bullseye text-emerald-200'
     case 'artist_push':

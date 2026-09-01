@@ -361,13 +361,41 @@ const extractExternalUrls = (text: string) => {
   return found.filter((url) => !isOwnHost(url));
 };
 
+export type DictionaryOverrides = {
+  customPromo?: Array<{ id: string; phrase: string }>;
+  customDiversion?: Array<{ id: string; phrase: string }>;
+  disabledKeys?: Set<string>;
+};
+
+export const dictionaryPhraseKey = (category: string, phrase: string) =>
+  `${category}|${normalize(phrase)}`;
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  promo_follow: 'Promo · seguir',
+  promo_go: 'Promo · ir / visitar',
+  promo_channel: 'Promo · canal / página',
+  promo_social: 'Promo · red social / dominio',
+  divert_vote: 'Diversion · votar en otro sitio',
+  divert_fake: 'Diversion · votación falsa',
+  divert_link: 'Diversion · link de votación',
+  divert_pattern: 'Diversion · patrón regex',
+  external_link: 'Enlace externo (bloqueo duro)',
+};
+
+const filterPhraseList = (
+  entries: Array<{ id: string; phrase: string }>,
+  disabledKeys?: Set<string>,
+) =>
+  entries.filter((entry) => !disabledKeys?.has(dictionaryPhraseKey(entry.id, entry.phrase)));
+
 const matchPhraseList = (
   normalized: string,
   compacted: string,
   entries: Array<{ id: string; phrase: string }>,
+  disabledKeys?: Set<string>,
 ) => {
   const matches: DictionaryMatch[] = [];
-  for (const entry of entries) {
+  for (const entry of filterPhraseList(entries, disabledKeys)) {
     const phrase = normalize(entry.phrase);
     const phraseCompact = phrase.replace(/\s+/g, '');
     if (normalized.includes(phrase) || compacted.includes(phraseCompact)) {
@@ -384,7 +412,35 @@ export type CommentDictionaryScan = {
   primaryType: 'none' | 'external_link' | 'promo' | 'diversion';
 };
 
-export const scanCommentDictionary = (text: string): CommentDictionaryScan => {
+export const listBuiltinDictionaryEntries = () => {
+  const promo = PROMO_PHRASES.map((entry) => ({
+    ...entry,
+    type: 'promo' as const,
+    key: dictionaryPhraseKey(entry.id, entry.phrase),
+    categoryLabel: CATEGORY_LABELS[entry.id] || entry.id,
+    source: 'builtin' as const,
+  }));
+  const diversion = DIVERSION_PHRASES.map((entry) => ({
+    ...entry,
+    type: 'diversion' as const,
+    key: dictionaryPhraseKey(entry.id, entry.phrase),
+    categoryLabel: CATEGORY_LABELS[entry.id] || entry.id,
+    source: 'builtin' as const,
+  }));
+  const regexes = DIVERSION_REGEXES.map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    pattern: entry.pattern.source,
+    categoryLabel: CATEGORY_LABELS[entry.id] || entry.id,
+    source: 'regex' as const,
+  }));
+  return { promo, diversion, regexes };
+};
+
+export const scanCommentDictionary = (
+  text: string,
+  overrides?: DictionaryOverrides,
+): CommentDictionaryScan => {
   const raw = String(text || '').trim();
   if (!raw) {
     return { suspicious: false, matches: [], externalUrls: [], primaryType: 'none' };
@@ -399,8 +455,18 @@ export const scanCommentDictionary = (text: string): CommentDictionaryScan => {
     matches.push({ category: 'external_link', label: 'enlace externo' });
   }
 
-  matches.push(...matchPhraseList(normalized, compacted, PROMO_PHRASES));
-  matches.push(...matchPhraseList(normalized, compacted, DIVERSION_PHRASES));
+  const disabledKeys = overrides?.disabledKeys;
+  const promoPhrases = [
+    ...filterPhraseList(PROMO_PHRASES, disabledKeys),
+    ...filterPhraseList(overrides?.customPromo || [], disabledKeys),
+  ];
+  const diversionPhrases = [
+    ...filterPhraseList(DIVERSION_PHRASES, disabledKeys),
+    ...filterPhraseList(overrides?.customDiversion || [], disabledKeys),
+  ];
+
+  matches.push(...matchPhraseList(normalized, compacted, promoPhrases, disabledKeys));
+  matches.push(...matchPhraseList(normalized, compacted, diversionPhrases, disabledKeys));
 
   for (const entry of DIVERSION_REGEXES) {
     if (entry.pattern.test(normalized) || entry.pattern.test(raw)) {

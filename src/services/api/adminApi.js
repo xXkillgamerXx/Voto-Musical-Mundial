@@ -157,6 +157,11 @@ export const blockModerationUser = (userId, reason, durationHours) =>
     body: { userId, reason, durationHours },
   })
 export const unblockModerationUser = (userId) => adminRequest(`/moderation/block-user/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+export const getModerationDictionary = () => adminRequest('/moderation/dictionary')
+export const updateModerationDictionary = (body) =>
+  adminRequest('/moderation/dictionary', { method: 'PUT', body })
+export const testModerationDictionary = (text) =>
+  adminRequest('/moderation/dictionary/test', { method: 'POST', body: { text } })
 
 export const getAdminPushUsers = (search = '', limit = 50) =>
   adminRequest(`/push/users?search=${encodeURIComponent(search)}&limit=${limit}`)
@@ -236,3 +241,8 @@ export const getAdminContentReports = ({
 }
 export const updateAdminContentReport = (id, body) =>
   adminRequest(`/content-reports/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const thankAdminContentReporter = (id, body = {}) =>
+  adminRequest(`/content-reports/${encodeURIComponent(id)}/thank-reporter`, {
+    method: 'POST',
+    body,
+  })

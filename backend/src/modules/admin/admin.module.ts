@@ -15,6 +15,7 @@ import { CommentBotCampaignService } from './comment-bot-campaign.service';
 import { LifecycleNotifyService } from './lifecycle-notify.service';
 import { ModerationController } from './moderation.controller';
 import { ModerationService } from './moderation.service';
+import { ModerationDictionaryService } from './moderation-dictionary.service';
 import { NotificationCampaignsController } from './notification-campaigns.controller';
 import { NotificationCampaignsService } from './notification-campaigns.service';
 import { UserActivityController } from './user-activity.controller';
@@ -36,6 +37,7 @@ import { VoteBotCampaignService } from './vote-bot-campaign.service';
   providers: [
     UserActivityService,
     ModerationService,
+    ModerationDictionaryService,
     AdminPushService,
     AdminMailService,
     AdminOverviewService,
@@ -46,6 +48,8 @@ import { VoteBotCampaignService } from './vote-bot-campaign.service';
   ],
   exports: [
     ModerationService,
+    ModerationDictionaryService,
+    AdminPushService,
     VoteBotCampaignService,
     CommentBotCampaignService,
     NotificationCampaignsService,

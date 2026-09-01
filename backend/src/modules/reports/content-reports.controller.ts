@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -18,6 +18,11 @@ export class ContentReportsController {
     @Query('page') page?: string,
   ) {
     return this.reports.listForAdmin(status, Number(limit || 20), Number(page || 1));
+  }
+
+  @Post(':id/thank-reporter')
+  thankReporter(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.reports.thankReporter(id, body);
   }
 
   @Patch(':id')

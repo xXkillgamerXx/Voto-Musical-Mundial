@@ -7,6 +7,7 @@ import AdminDashboardView from '../components/AdminDashboardView.vue'
 import AdminMailView from '../components/AdminMailView.vue'
 import AdminMissionsView from '../components/AdminMissionsView.vue'
 import AdminModerationView from '../components/AdminModerationView.vue'
+import AdminDictionaryView from '../components/AdminDictionaryView.vue'
 import AdminPollCategoriesView from '../components/AdminPollCategoriesView.vue'
 import AdminPollContestantsView from '../components/AdminPollContestantsView.vue'
 import AdminPollFormView from '../components/AdminPollFormView.vue'
@@ -51,6 +52,7 @@ const isPushNotificationsView = computed(() => currentPath === '/admin/notificac
 const isMailView = computed(() => currentPath === '/admin/correo')
 const isNotificationCampaignsView = computed(() => currentPath === '/admin/notificaciones-programadas')
 const isModerationView = computed(() => currentPath === '/admin/reportes')
+const isDictionaryView = computed(() => currentPath === '/admin/diccionario')
 const isContentReportsView = computed(() => currentPath === '/admin/denuncias')
 const isSettingsView = computed(() => currentPath === '/admin/ajustes')
 const isTermsView = computed(() => currentPath === '/admin/terminos')
@@ -130,6 +132,10 @@ const pageTitle = computed(() => {
     return 'Reportes / Moderación'
   }
 
+  if (isDictionaryView.value) {
+    return 'Diccionario de moderación'
+  }
+
   if (isContentReportsView.value) {
     return 'Denuncias de contenido'
   }
@@ -197,6 +203,7 @@ const navItems = [
   { label: 'Correo', href: '/admin/correo', icon: 'fa-solid fa-envelope' },
   { label: 'Programadas', href: '/admin/notificaciones-programadas', icon: 'fa-solid fa-clock-rotate-left' },
   { label: 'Reportes', href: '/admin/reportes', icon: 'fa-solid fa-shield-halved', badgeKey: 'openAlerts' },
+  { label: 'Diccionario', href: '/admin/diccionario', icon: 'fa-solid fa-book' },
   { label: 'Denuncias', href: '/admin/denuncias', icon: 'fa-solid fa-flag', badgeKey: 'pendingDenuncias' },
   { label: 'Ajustes', href: '/admin/ajustes', icon: 'fa-solid fa-gear' },
   { label: 'Términos y condiciones', href: '/admin/terminos', icon: 'fa-solid fa-file-contract' },
@@ -495,6 +502,7 @@ onUnmounted(() => {
           <AdminMailView v-else-if="isMailView" />
           <AdminNotificationCampaignsView v-else-if="isNotificationCampaignsView" />
           <AdminModerationView v-else-if="isModerationView" />
+          <AdminDictionaryView v-else-if="isDictionaryView" />
           <AdminContentReportsView v-else-if="isContentReportsView" />
           <AdminUserProfileView v-else-if="isUserProfileView" :user-id="userProfileId" />
           <AdminUsersView v-else-if="isUsersView" />
