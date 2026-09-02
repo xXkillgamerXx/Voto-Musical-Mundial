@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { availableLocales, translate } from '../../i18n'
 import { getAdminFanStore, updateAdminFanStore } from '../../services/api/adminApi'
-import { applyFanStore } from '../../services/fanStore'
+import { applyFanStore, loadFanStore } from '../../services/fanStore'
 
 const store = ref(null)
 const isLoading = ref(true)
@@ -19,9 +19,9 @@ const localeTabs = computed(() =>
 )
 
 const visibilityOptions = [
-  { id: 'public', label: 'Público', hint: 'Todos ven /planes y el link del menú.' },
-  { id: 'admin', label: 'Solo admin', hint: 'Solo cuentas admin, superadmin u owner.' },
-  { id: 'hidden', label: 'Oculto', hint: 'Nadie lo ve en la web. Tú sí puedes previsualizarlo.' },
+  { id: 'public', label: 'Público', hint: 'Todos ven Planes en el menú y pueden entrar a /planes.' },
+  { id: 'admin', label: 'Solo admin', hint: 'El menú Planes solo sale para admin. Un usuario normal no entra a /planes.' },
+  { id: 'hidden', label: 'Oculto', hint: 'Nadie ve Planes en el menú. Un usuario normal no entra. Tú sí puedes abrir /planes.' },
 ]
 
 const ensureLocaleMap = (map, locale, empty) => {
@@ -91,12 +91,19 @@ const saveStore = async () => {
     store.value = await updateAdminFanStore(payload)
     availableLocales.forEach((item) => ensureStoreLocale(item.code))
     applyFanStore(store.value)
+    await loadFanStore({ force: true })
     successMessage.value = `Planes guardados. Visibilidad: ${visibilityLabel.value}.`
   } catch (error) {
     errorMessage.value = error?.message || 'No se pudo guardar Planes.'
   } finally {
     isSaving.value = false
   }
+}
+
+const setVisibility = async (id) => {
+  if (!store.value || store.value.visibility === id || isSaving.value) return
+  store.value.visibility = id
+  await saveStore()
 }
 
 watch(activeLocale, (locale) => ensureStoreLocale(locale))
@@ -163,12 +170,22 @@ onMounted(loadStore)
           :class="store.visibility === option.id
             ? 'border-amber-300/40 bg-amber-400/15 text-amber-100'
             : 'border-white/10 bg-slate-950/45 text-slate-300 hover:bg-white/5'"
-          @click="store.visibility = option.id"
+          @click="setVisibility(option.id)"
         >
           <span class="block text-sm font-black uppercase">{{ option.label }}</span>
           <span class="mt-2 block text-xs leading-5 text-slate-400">{{ option.hint }}</span>
         </button>
       </div>
+      <p class="mt-3 text-sm font-bold text-amber-100/90">
+        Modo actual: {{ visibilityLabel }}.
+        {{
+          store.visibility === 'public'
+            ? 'El público ve Planes en el menú.'
+            : store.visibility === 'admin'
+              ? 'Solo admin ve Planes en el menú. Un usuario normal no entra a /planes.'
+              : 'Nadie ve Planes en el menú. Un usuario normal no entra. Tú sí puedes abrir /planes.'
+        }}
+      </p>
 
       <div class="mt-6 flex flex-wrap gap-2">
         <button

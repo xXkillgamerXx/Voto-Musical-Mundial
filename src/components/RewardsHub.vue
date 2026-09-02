@@ -91,7 +91,7 @@ const missions = [
         <p class="text-xs font-black uppercase tracking-[0.28em] text-violet-300">
           Comprar puntos
         </p>
-        <div class="mt-4 space-y-3">
+        <div v-if="showPlans" class="mt-4 space-y-3">
           <a
             v-for="pack in pointPacks"
             :key="pack.points"

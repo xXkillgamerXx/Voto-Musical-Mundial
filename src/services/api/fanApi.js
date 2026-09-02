@@ -5,6 +5,13 @@ const authToken = () => getStoredAuth()?.accessToken
 export const getFanMe = () =>
   apiRequest('/fan-store/me', { token: authToken() })
 
+export const checkoutFanStore = (body) =>
+  apiRequest('/fan-store/checkout', {
+    method: 'POST',
+    token: authToken(),
+    body,
+  })
+
 export const importFanPlan = (body) =>
   apiRequest('/fan-store/checkout', {
     method: 'POST',

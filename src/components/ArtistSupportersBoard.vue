@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { applyLiveSupporterPhoto, getArtistSupporters, mergeArtistSupporters, syncMembershipSupportForArtist } from '../utils/fanMembership'
 import { getArtistSupportersApi } from '../services/api/fanApi'
+import { canSeeFanStore, loadFanStore, onFanStoreChange } from '../services/fanStore'
 import { getCurrentApiAuth, getMe } from '../services/api/authApi'
 import { routePath } from '../utils/localizedRoutes'
 
@@ -19,6 +20,11 @@ const lang = computed(() => (String(locale.value || 'es').startsWith('en') ? 'en
 const tab = ref('recent')
 const rows = ref([])
 const plansHref = computed(() => routePath('plans', locale.value))
+const storeTick = ref(0)
+const showPlansCta = computed(() => {
+  storeTick.value
+  return canSeeFanStore(getCurrentApiAuth()?.user)
+})
 const emit = defineEmits(['update:count'])
 const hasMega = computed(() =>
   rows.value.some((row) => row.tier === 'mega' || row.sku === 'MEGA'),
@@ -78,12 +84,16 @@ const onPhotoError = (rowId) => {
 
 watch(() => [props.artistId, props.artistSlug, props.artistFirebaseId, props.artistKey], loadRows)
 
+let stopFanStore = null
 onMounted(() => {
   loadRows()
+  loadFanStore().then(() => { storeTick.value += 1 })
+  stopFanStore = onFanStoreChange(() => { storeTick.value += 1 })
   window.addEventListener('vmm-fan-membership-changed', loadRows)
 })
 
 onUnmounted(() => {
+  stopFanStore?.()
   window.removeEventListener('vmm-fan-membership-changed', loadRows)
 })
 
@@ -481,6 +491,7 @@ const dotClass = (row) => {
         }}
       </p>
       <a
+        v-if="showPlansCta"
         :href="plansHref"
         class="rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-xs font-black uppercase tracking-wide text-white"
       >

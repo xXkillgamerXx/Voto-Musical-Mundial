@@ -2,13 +2,12 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { routePath } from '../../utils/localizedRoutes'
-import { getCurrentApiAuth } from '../../services/api/authApi'
-import { canSeeFanStore, loadFanStore, onFanStoreChange } from '../../services/fanStore'
+import { canSeeFanStoreNav, getFanStoreViewer, loadFanStore, onFanStoreChange } from '../../services/fanStore'
 
 const { locale } = useI18n()
-const showPlans = ref(true)
+const showPlans = ref(false)
 const refreshPlans = () => {
-  showPlans.value = canSeeFanStore(getCurrentApiAuth()?.user)
+  showPlans.value = canSeeFanStoreNav(getFanStoreViewer())
 }
 
 const footerLinks = computed(() => [

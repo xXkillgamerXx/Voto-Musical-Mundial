@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { FanItemType, FanPurchase, FanPurchaseStatus, Prisma } from '@prisma/client';
+import { FanItemType, FanPurchase, FanPurchaseStatus, Prisma, UserRole } from '@prisma/client';
 import { artistLookupWhere } from '../../common/artist-lookup';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,6 +16,7 @@ const MONTHLY_BONUS: Record<string, number> = { FAN: 20, SUPER: 50, MEGA: 0 };
 const THREE_MONTH_BONUS: Record<string, number> = { FAN: 80, SUPER: 200, MEGA: 400 };
 const THREE_MONTH_MS = 90 * 86400000;
 const PIN_MS = 24 * 60 * 60 * 1000;
+const STORE_ADMIN_ROLES = new Set<UserRole>([UserRole.admin, UserRole.superadmin, UserRole.owner]);
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -33,6 +35,19 @@ export class FanService {
     private readonly prisma: PrismaService,
     private readonly store: FanStoreConfigService,
   ) {}
+
+  private async assertCheckoutAllowed(userId: bigint) {
+    const catalog = await this.store.getConfig();
+    if (catalog.visibility === 'public') return catalog;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!user || !STORE_ADMIN_ROLES.has(user.role)) {
+      throw new ForbiddenException('Este apartado no está disponible.');
+    }
+    return catalog;
+  }
 
   private makeInvoiceId() {
     const now = new Date();
@@ -219,12 +234,11 @@ export class FanService {
   }
 
   async checkout(userId: bigint, dto: FanCheckoutDto) {
+    const catalog = await this.assertCheckoutAllowed(userId);
     if (dto.adopt) {
       const existing = await this.getActivePlan(userId);
       if (existing) return this.checkoutPayload(existing, userId);
     }
-
-    const catalog = await this.store.getConfig();
     const sku = String(dto.sku || '').trim().toUpperCase();
     const plan = catalog.plans.find((item) => item.sku === sku && item.enabled);
     const pack = catalog.packs.find((item) => item.sku === sku && item.enabled);

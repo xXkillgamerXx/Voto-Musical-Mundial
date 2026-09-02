@@ -8,7 +8,7 @@ import { cancelFanPurchase } from '../services/api/fanApi'
 import { loadFanMe, clearFanMe } from '../utils/fanPerks'
 import { clearFanMembership, hydrateMembership } from '../utils/fanMembership'
 import { downloadFanInvoice } from '../utils/fanInvoice'
-import { findStoreItem } from '../services/fanStore'
+import { canSeeFanStore, findStoreItem, loadFanStore } from '../services/fanStore'
 import { pickLocalizedList } from '../utils/localizedCopy'
 import { routePath } from '../utils/localizedRoutes'
 
@@ -57,6 +57,11 @@ let usernameCheckTimer = null
 
 const isSignedIn = computed(() => Boolean(getCurrentApiAuth()?.accessToken))
 const plansHref = computed(() => routePath('plans', locale.value))
+const storeTick = ref(0)
+const canOpenPlans = computed(() => {
+  storeTick.value
+  return canSeeFanStore(getCurrentApiAuth()?.user)
+})
 const notificationsHref = computed(() => routePath('notifications', locale.value))
 const publicProfileHref = computed(() => {
   const username = me.value?.username || getCurrentApiAuth()?.user?.username
@@ -375,6 +380,7 @@ onMounted(() => {
   window.addEventListener('hashchange', readHash)
   unsubscribeAuth = onStoredAuthChange(load)
   load()
+  loadFanStore().then(() => { storeTick.value += 1 })
 })
 
 onUnmounted(() => {
@@ -638,6 +644,7 @@ onUnmounted(() => {
               </div>
               <div class="flex flex-wrap gap-2">
                 <a
+                  v-if="canOpenPlans"
                   :href="plansHref"
                   class="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-white/8"
                 >
@@ -684,6 +691,7 @@ onUnmounted(() => {
           <div v-else class="mt-6">
             <p class="text-sm text-slate-300">{{ $t('profile.membership.noPlan') }}</p>
             <a
+              v-if="canOpenPlans"
               :href="plansHref"
               class="mt-4 inline-flex rounded-lg border border-white/15 px-4 py-2 text-sm text-fuchsia-200 hover:bg-white/8"
             >

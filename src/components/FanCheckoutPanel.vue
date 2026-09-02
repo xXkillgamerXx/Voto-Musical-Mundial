@@ -4,9 +4,11 @@ import { useI18n } from 'vue-i18n'
 import {
   CHECKOUT_COUNTRIES,
   checkoutTotals,
+  canSeeFanStore,
   findStoreItem,
   formatStoreMoney,
   getFanStore,
+  getFanStoreViewer,
   loadFanStore,
 } from '../services/fanStore'
 import { getArtistsCached } from '../services/firebaseCache'
@@ -266,6 +268,10 @@ const goToBenefits = () => {
 
 const pay = async () => {
   errorMessage.value = ''
+  if (!canSeeFanStore(getFanStoreViewer())) {
+    errorMessage.value = lang.value === 'en' ? 'This section is not available.' : 'Este apartado no está disponible.'
+    return
+  }
   if (!getCurrentApiAuth()?.accessToken) {
     errorMessage.value = lang.value === 'en' ? 'Log in to buy.' : 'Inicia sesión para comprar.'
     return

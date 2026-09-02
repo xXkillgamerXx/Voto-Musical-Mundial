@@ -2,33 +2,31 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FanCheckoutPanel from '../components/FanCheckoutPanel.vue'
-import { getCurrentApiAuth } from '../services/api/authApi'
 import {
   canSeeFanStore,
   formatStoreMoney,
   getFanPacks,
   getFanPlans,
   getFanStore,
+  getFanStoreViewer,
   isFanStoreAdmin,
   loadFanStore,
   onFanStoreChange,
   storeDisplayPrice,
+  waitForFanStore,
 } from '../services/fanStore'
 import { pickLocalized, pickLocalizedList } from '../utils/localizedCopy'
+import { routePath } from '../utils/localizedRoutes'
 
 const yearly = ref(false)
 const currency = ref('USD')
 const storeVersion = ref(0)
+const ready = ref(false)
 const { locale } = useI18n()
 const formatPrice = (amount) => formatStoreMoney(amount, currency.value)
-const currentUser = computed(() => getCurrentApiAuth()?.user || null)
-const allowed = computed(() => {
-  storeVersion.value
-  return canSeeFanStore(currentUser.value)
-})
 const isAdminPreview = computed(() => {
   storeVersion.value
-  return isFanStoreAdmin(currentUser.value) && getFanStore().visibility !== 'public'
+  return isFanStoreAdmin(getFanStoreViewer()) && getFanStore().visibility !== 'public'
 })
 const copy = computed(() => {
   storeVersion.value
@@ -91,12 +89,34 @@ onUnmounted(() => {
   stopStore?.()
 })
 
+const bounceHome = () => {
+  window.location.replace(routePath('home', locale.value))
+}
+
 let stopStore = null
 onMounted(async () => {
-  await loadFanStore()
+  const viewer = getFanStoreViewer()
+  if (isFanStoreAdmin(viewer)) {
+    ready.value = true
+    loadFanStore().then(() => {
+      storeVersion.value += 1
+    })
+    stopStore = onFanStoreChange(() => {
+      storeVersion.value += 1
+    })
+    return
+  }
+
+  await waitForFanStore()
   storeVersion.value += 1
+  if (!canSeeFanStore(viewer)) {
+    bounceHome()
+    return
+  }
+  ready.value = true
   stopStore = onFanStoreChange(() => {
     storeVersion.value += 1
+    if (!canSeeFanStore(getFanStoreViewer())) bounceHome()
   })
 })
 
@@ -126,23 +146,7 @@ const planTone = (plan) => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-352 px-4 py-8 text-white sm:px-6 lg:py-12">
-    <article
-      v-if="!allowed"
-      class="rounded-4xl border border-white/10 bg-[#060713] p-8 text-center shadow-2xl shadow-fuchsia-950/20 sm:p-12"
-    >
-      <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">
-        {{ $t('plans.eyebrow') }}
-      </p>
-      <h1 class="mt-3 text-3xl font-black text-white sm:text-5xl">
-        {{ $t('plans.comingSoonTitle') }}
-      </h1>
-      <p class="mx-auto mt-4 max-w-xl text-sm font-bold leading-6 text-slate-400">
-        {{ $t('plans.comingSoonBody') }}
-      </p>
-    </article>
-
-    <template v-else>
+  <section v-if="ready" class="mx-auto max-w-352 px-4 py-8 text-white sm:px-6 lg:py-12">
     <header
       class="relative overflow-hidden rounded-4xl border border-fuchsia-300/15 bg-[#060713] p-6 shadow-2xl shadow-fuchsia-950/25 sm:p-8 lg:p-10"
     >
@@ -390,6 +394,5 @@ const planTone = (plan) => {
         </div>
       </div>
     </Teleport>
-    </template>
   </section>
 </template>

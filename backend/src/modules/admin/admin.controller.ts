@@ -1205,7 +1205,7 @@ export class AdminController {
   }
 
   @Patch('settings/fan-store')
-  updateFanStoreSettings(@Body() body: unknown) {
+  updateFanStoreSettings(@Body() body: any) {
     return this.fanStoreConfig.updateConfig(body || {});
   }
 }

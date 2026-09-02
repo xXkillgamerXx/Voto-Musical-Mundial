@@ -8,10 +8,10 @@ import ThemeToggle from "../theme/ThemeToggle.vue";
 import UserNotificationsMenu from "../UserNotificationsMenu.vue";
 import { getMe, getCurrentApiAuth, logout, peekLoginNotice, updateMe } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
-import { canSeeFanStore, loadFanStore, onFanStoreChange } from "../../services/fanStore";
+import { canSeeFanStoreNav, getFanStoreViewer, loadFanStore, onFanStoreChange } from "../../services/fanStore";
 
 const { locale } = useI18n();
-const showPlansNav = ref(true);
+const showPlansNav = ref(false);
 const navItems = computed(() => [
   { labelKey: "nav.home", href: routePath("home", locale.value) },
   { labelKey: "nav.polls", href: routePath("polls", locale.value) },
@@ -209,7 +209,7 @@ const listenUserProfile = (user) => {
 };
 
 const refreshPlansNav = () => {
-  showPlansNav.value = canSeeFanStore(currentUser.value);
+  showPlansNav.value = canSeeFanStoreNav(getFanStoreViewer() || currentUser.value);
 };
 
 watch(currentUser, refreshPlansNav);
@@ -297,7 +297,7 @@ onUnmounted(() => {
       <div class="flex items-center gap-2">
         <a
           v-if="isSignedInUser"
-          :href="routePath('plans', locale)"
+          :href="showPlansNav ? routePath('plans', locale) : routePath('profile', locale)"
           class="points-chip hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
           :class="pointsPulse === 'up' ? 'points-chip-up' : pointsPulse === 'down' ? 'points-chip-down' : ''"
         >

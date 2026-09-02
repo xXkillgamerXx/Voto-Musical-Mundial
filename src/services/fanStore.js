@@ -1,4 +1,4 @@
-import { apiRequest } from './api/client'
+import { apiRequest, getStoredAuth } from './api/client'
 import {
   FAN_PLANS as DEFAULT_PLANS,
   POINT_PACKS as DEFAULT_PACKS,
@@ -20,8 +20,48 @@ const ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
+const jwtRole = (token) => {
+  try {
+    const payloadPart = String(token || '').split('.')[1]
+    if (!payloadPart) return ''
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
+    const payload = JSON.parse(window.atob(padded))
+    return String(payload?.role || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+export const getFanStoreViewer = () => {
+  const auth = getStoredAuth()
+  const user = auth?.user && !auth.user.isAnonymous ? auth.user : null
+  const role = String(user?.role || jwtRole(auth?.accessToken) || '').trim()
+  if (!user && !role) return null
+  return { ...(user || {}), role }
+}
+
+export const isFanStoreAdmin = (user = getFanStoreViewer()) =>
+  ADMIN_ROLES.has(String(user?.role || '').trim().toLowerCase())
+
+export const canSeeFanStore = (user = getFanStoreViewer()) => {
+  if (store.visibility === 'public') return true
+  return isFanStoreAdmin(user)
+}
+
+export const canSeeFanStoreNav = (user = getFanStoreViewer()) => {
+  if (store.visibility === 'hidden') return false
+  return canSeeFanStore(user)
+}
+
+export const waitForFanStore = (ms = 4000) =>
+  Promise.race([
+    loadFanStore(),
+    new Promise((resolve) => window.setTimeout(() => resolve(getFanStore()), ms)),
+  ])
+
 const fallback = () => ({
-  visibility: 'public',
+  visibility: 'hidden',
   headline: {
     es: 'Potencia tu voto',
     en: 'Boost your vote',
@@ -42,13 +82,6 @@ export const getFanStore = () => store
 export const getFanPlans = () => (store.plans || []).filter((plan) => plan.enabled !== false)
 
 export const getFanPacks = () => (store.packs || []).filter((pack) => pack.enabled !== false)
-
-export const isFanStoreAdmin = (user) => ADMIN_ROLES.has(String(user?.role || '').trim().toLowerCase())
-
-export const canSeeFanStore = (user) => {
-  if (store.visibility === 'public') return true
-  return isFanStoreAdmin(user)
-}
 
 export const findStoreItem = (sku) => {
   const key = String(sku || '').trim().toUpperCase()

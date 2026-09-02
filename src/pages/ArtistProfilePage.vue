@@ -13,6 +13,7 @@ import { getPoll, getPolls } from "../services/api/pollsApi";
 import { getArtistsCached } from "../services/firebaseCache";
 import { resolveArtistBanner } from "../utils/artistMedia";
 import { applyArtistLocale, artistUrl as buildArtistUrl } from "../utils/pollLocale";
+import { canSeeFanStore, loadFanStore } from "../services/fanStore";
 import { routePath } from "../utils/localizedRoutes";
 import ArtistSupportersBoard from "../components/ArtistSupportersBoard.vue";
 import { getArtistSupporters } from "../utils/fanMembership";
@@ -23,6 +24,11 @@ const routeArtistKey = pathParts[1] || "";
 const pollsHref = computed(() => routePath("polls", locale.value));
 const profileHref = computed(() => routePath("profile", locale.value));
 const plansHref = computed(() => routePath("plans", locale.value));
+const storeTick = ref(0);
+const showPlansLink = computed(() => {
+  storeTick.value;
+  return canSeeFanStore(getCurrentApiAuth()?.user);
+});
 
 const artist = ref(null);
 const artistPolls = ref([]);
@@ -291,6 +297,8 @@ onMounted(async () => {
   unsubscribeAuth = onStoredAuthChange(syncAuth);
 
   await loadArtist();
+  await loadFanStore();
+  storeTick.value += 1;
   syncFollowStatus();
   refreshSupportersCount();
   window.addEventListener("vmm-fan-membership-changed", refreshSupportersCount);
@@ -435,7 +443,7 @@ onUnmounted(() => {
                     <span class="artist-verified-tip">
                       {{ $t("artists.profile.realFansTip") }}
                       <small>{{ $t("artists.profile.realFansTipNote") }}</small>
-                      <a :href="plansHref">{{ $t("artists.profile.realFansCta") }}</a>
+                      <a v-if="showPlansLink" :href="plansHref">{{ $t("artists.profile.realFansCta") }}</a>
                     </span>
                   </button>
                 </div>
