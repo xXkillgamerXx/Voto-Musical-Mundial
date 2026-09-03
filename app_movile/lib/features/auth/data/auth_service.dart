@@ -1,4 +1,8 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_config.dart';
@@ -94,34 +98,105 @@ class AuthService {
 
     if (!_isGoogleInitialized) {
       await googleSignIn.initialize(
+        // En iOS el clientId es obligatorio; en Android se toma de google-services.json.
+        clientId: (!kIsWeb && Platform.isIOS)
+            ? ApiConfig.googleIosClientId
+            : null,
         serverClientId: ApiConfig.googleServerClientId,
       );
       _isGoogleInitialized = true;
     }
 
-    final googleUser = await googleSignIn.authenticate();
-    final googleAuth = googleUser.authentication;
-    final idToken = googleAuth.idToken;
+    try {
+      final googleUser = await googleSignIn.authenticate();
+      final googleAuth = googleUser.authentication;
+      final idToken = googleAuth.idToken;
 
-    if (idToken == null || idToken.isEmpty) {
-      throw ApiException(tr('data.googleTokenFailed'));
+      if (idToken == null || idToken.isEmpty) {
+        throw ApiException(tr('data.googleTokenFailed'));
+      }
+
+      final payload = await _client.request(
+        '/auth/google',
+        method: 'POST',
+        body: {
+          'credential': idToken,
+          'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
+          if (referralCode != null && referralCode.trim().isNotEmpty)
+            'referralCode': referralCode.trim().toLowerCase(),
+        },
+        retryOnUnauthorized: false,
+      );
+
+      final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
+      await _session.setAuth(auth);
+      return auth;
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        throw ApiException(tr('auth.cancel'));
+      }
+      throw ApiException(
+        error.description?.trim().isNotEmpty == true
+            ? error.description!
+            : tr('data.googleTokenFailed'),
+      );
+    }
+  }
+
+  Future<ApiAuth> signInWithApple({String? referralCode}) async {
+    if (kIsWeb || !Platform.isIOS) {
+      throw ApiException(tr('auth.appleNotAvailable'));
     }
 
-    final payload = await _client.request(
-      '/auth/google',
-      method: 'POST',
-      body: {
-        'credential': idToken,
-        'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
-        if (referralCode != null && referralCode.trim().isNotEmpty)
-          'referralCode': referralCode.trim().toLowerCase(),
-      },
-      retryOnUnauthorized: false,
-    );
+    final available = await SignInWithApple.isAvailable();
+    if (!available) {
+      throw ApiException(tr('auth.appleNotAvailable'));
+    }
 
-    final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
-    await _session.setAuth(auth);
-    return auth;
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final idToken = credential.identityToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw ApiException(tr('auth.appleTokenFailed'));
+      }
+
+      final fullName = [
+        credential.givenName,
+        credential.familyName,
+      ].whereType<String>().map((part) => part.trim()).where((part) => part.isNotEmpty).join(' ');
+
+      final payload = await _client.request(
+        '/auth/apple',
+        method: 'POST',
+        body: {
+          'credential': idToken,
+          'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
+          if (fullName.isNotEmpty) 'fullName': fullName,
+          if (referralCode != null && referralCode.trim().isNotEmpty)
+            'referralCode': referralCode.trim().toLowerCase(),
+        },
+        retryOnUnauthorized: false,
+      );
+
+      final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
+      await _session.setAuth(auth);
+      return auth;
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code == AuthorizationErrorCode.canceled) {
+        throw ApiException(tr('auth.cancel'));
+      }
+      throw ApiException(
+        error.message.trim().isNotEmpty
+            ? error.message
+            : tr('auth.appleTokenFailed'),
+      );
+    }
   }
 
   Future<ApiUser?> getMe() async {

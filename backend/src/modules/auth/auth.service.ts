@@ -16,6 +16,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma, User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'crypto';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { OAuth2Client, TokenInfo } from 'google-auth-library';
 import { Request } from 'express';
 import { BLOCKED_IPS_KEY } from '../../common/moderation-keys';
@@ -27,6 +28,7 @@ import { MissionProgressService } from '../missions/mission-progress.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { AnonymousTokenDto } from './dto/anonymous-token.dto';
+import { AppleLoginDto } from './dto/apple-login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
@@ -35,6 +37,10 @@ import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ResendEmailVerificationDto, VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtPayload, VoteIdentity } from './auth.types';
+
+const APPLE_ISSUER = 'https://appleid.apple.com';
+const APPLE_JWKS = createRemoteJWKSet(new URL(`${APPLE_ISSUER}/auth/keys`));
+const DEFAULT_APPLE_CLIENT_ID = 'vote.musicmundial.com';
 
 const REFERRAL_SIGNUP_POINTS = 50;
 const REFERRAL_MILESTONE_BONUSES: Record<number, number> = {
@@ -528,6 +534,207 @@ export class AuthService {
     this.lifecycleNotify.notifyWelcomeAsync(user);
     void this.maybeAlertSpawnSignup(user, signupIpHash).catch(() => {});
     return this.authResponse(user);
+  }
+
+  async apple(dto: AppleLoginDto, request?: Request) {
+    try {
+      return await this.appleUnsafe(dto, request);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const message = (error as Error)?.message || 'error desconocido';
+      this.logger.error(`Apple login fallo: ${message}`, (error as Error)?.stack);
+      if (this.config.get('NODE_ENV') !== 'production') {
+        throw new BadRequestException(`No se pudo completar el inicio con Apple: ${message}`);
+      }
+      throw new UnauthorizedException('No se pudo completar el inicio con Apple.');
+    }
+  }
+
+  private async appleUnsafe(dto: AppleLoginDto, request?: Request) {
+    const locale = dto.locale === 'es' ? 'es' : 'en';
+    const clientId = String(
+      this.config.get<string>('APPLE_CLIENT_ID') || DEFAULT_APPLE_CLIENT_ID,
+    ).trim();
+    if (!clientId) {
+      throw new BadRequestException('Falta configurar APPLE_CLIENT_ID.');
+    }
+
+    const payload = await this.applePayloadFromCredential(dto.credential, clientId);
+    const appleSub = String(payload.sub || '').trim();
+    const emailFromToken = String(payload.email || '')
+      .toLowerCase()
+      .trim();
+    const fullName = String(dto.fullName || '').trim();
+    const referrer = await this.findReferrer(dto.referralCode);
+    const rawVerified = payload.email_verified;
+    const emailVerified =
+      rawVerified === true || rawVerified === 'true' || rawVerified === '1' || !emailFromToken;
+
+    if (!appleSub) {
+      throw new UnauthorizedException('No se pudo validar la cuenta de Apple.');
+    }
+
+    const existingBySub = await this.prisma.user.findFirst({
+      where: { metadata: { path: ['appleSub'], equals: appleSub } },
+    });
+    const existingByEmail = emailFromToken
+      ? await this.prisma.user.findFirst({ where: { email: emailFromToken } })
+      : null;
+    const existing = existingBySub || existingByEmail;
+
+    if (existing) {
+      const email = emailFromToken || existing.email;
+      if (!email) {
+        throw new UnauthorizedException(
+          'Apple no envio email. Usa la misma Apple ID que compartio el correo la primera vez.',
+        );
+      }
+
+      const emailTaken =
+        existing.email !== email
+          ? await this.prisma.user.findFirst({
+              where: { email, id: { not: existing.id } },
+              select: { id: true },
+            })
+          : null;
+
+      const wasUnverified = !existing.emailVerifiedAt;
+      const updated = await this.prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          email: emailTaken ? existing.email : email,
+          displayName:
+            existing.displayName || fullName || usernameFromEmail(email),
+          emailVerifiedAt: existing.emailVerifiedAt || (emailVerified ? new Date() : null),
+          metadata: {
+            ...((existing.metadata as Record<string, unknown>) || {}),
+            appleSub,
+            appleEmail: email,
+            authProvider: 'apple',
+            ...(!((existing.metadata as Record<string, unknown>) || {}).locale
+              ? { locale }
+              : {}),
+          } as any,
+        },
+      });
+
+      if (wasUnverified && updated.emailVerifiedAt) {
+        this.lifecycleNotify.notifyWelcomeAsync(updated);
+      }
+
+      return this.authResponse(updated);
+    }
+
+    if (!emailFromToken) {
+      throw new UnauthorizedException(
+        'Apple no compartio el email. Activa "Compartir email" al iniciar sesion con Apple.',
+      );
+    }
+
+    const email = emailFromToken;
+    const baseUsername = usernameFromEmail(email);
+    const username = await this.availableUsername(baseUsername, appleSub.slice(-6));
+    const signupIpHash = this.resolveSignupIpHash(request);
+    let signupSlotReserved = false;
+
+    if (signupIpHash) {
+      await this.reserveSignupSlot(signupIpHash);
+      signupSlotReserved = true;
+    }
+
+    let user: User;
+    try {
+      user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email,
+            username,
+            displayName: fullName || username,
+            photoUrl: null,
+            referralCode: username,
+            referredById: referrer?.userId || null,
+            points: 25,
+            emailVerifiedAt: new Date(),
+            metadata: {
+              appleSub,
+              appleEmail: email,
+              authProvider: 'apple',
+              locale,
+              ...(signupIpHash ? { signupIpHash } : {}),
+            } as Prisma.InputJsonValue,
+          },
+        });
+        await tx.referralCode.create({
+          data: {
+            code: username,
+            userId: created.id,
+            username,
+          },
+        });
+
+        let createdUser = created;
+
+        if (referrer && referrer.userId !== created.id) {
+          const referrerUser = await tx.user.findUnique({ where: { id: referrer.userId } });
+          const nextSignupCount = Number(referrerUser?.referralSignups || 0) + 1;
+          const milestoneBonus = REFERRAL_MILESTONE_BONUSES[nextSignupCount] || 0;
+          const pointsAwarded = REFERRAL_SIGNUP_POINTS + milestoneBonus;
+
+          const referralSignup = await tx.referralSignup.create({
+            data: {
+              userId: created.id,
+              referrerId: referrer.userId,
+              referralCode: referrer.code,
+              pointsAwarded,
+              signupPoints: REFERRAL_SIGNUP_POINTS,
+              milestoneBonus,
+              milestone: milestoneBonus ? nextSignupCount : null,
+            },
+          });
+          await tx.user.update({
+            where: { id: referrer.userId },
+            data: {
+              points: { increment: pointsAwarded },
+              referralPoints: { increment: pointsAwarded },
+              referralSignups: { increment: 1 },
+            },
+          });
+          createdUser = await this.applyReferralSignupBonus(tx, created, referralSignup.id);
+          await this.applyReferralSignupMissions(tx, referrer.userId);
+        }
+
+        return createdUser;
+      });
+    } catch (error) {
+      if (signupSlotReserved && signupIpHash) {
+        void this.releaseSignupSlot(signupIpHash).catch(() => {});
+      }
+      throw error;
+    }
+
+    this.lifecycleNotify.notifyWelcomeAsync(user);
+    void this.maybeAlertSpawnSignup(user, signupIpHash).catch(() => {});
+    return this.authResponse(user);
+  }
+
+  private async applePayloadFromCredential(credential: string, clientId: string) {
+    try {
+      const { payload } = await jwtVerify(credential, APPLE_JWKS, {
+        issuer: APPLE_ISSUER,
+        audience: clientId,
+      });
+      return payload as {
+        sub?: string;
+        email?: string;
+        email_verified?: boolean | string;
+      };
+    } catch (error) {
+      this.logger.warn(`Apple jwtVerify fallo: ${(error as Error)?.message}`);
+      throw new UnauthorizedException('El token de Apple no es valido o ya expiro.');
+    }
   }
 
   private async maybeAlertSpawnSignup(user: User, signupIpHash: string | null) {

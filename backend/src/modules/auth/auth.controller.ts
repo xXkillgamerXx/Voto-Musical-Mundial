@@ -6,6 +6,7 @@ import { CurrentUser } from './current-user.decorator';
 import { AnonymousTokenDto } from './dto/anonymous-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
+import { AppleLoginDto } from './dto/apple-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -65,6 +66,12 @@ export class AuthController {
   @Throttle({ name: 'auth-google', limit: 20, windowSec: 60 })
   google(@Body() dto: GoogleLoginDto, @Req() request: Request) {
     return this.auth.google(dto, request);
+  }
+
+  @Post('apple')
+  @Throttle({ name: 'auth-apple', limit: 20, windowSec: 60 })
+  apple(@Body() dto: AppleLoginDto, @Req() request: Request) {
+    return this.auth.apple(dto, request);
   }
 
   @Post('refresh')

@@ -18,10 +18,18 @@ class ApiConfig {
   static bool get isProduction =>
       baseUrl.contains('vote.musicmundial.com');
 
+  /// Web / server OAuth client (aud del idToken que valida el backend).
   static const googleServerClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
     defaultValue:
         '927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com',
+  );
+
+  /// iOS OAuth client (GoogleService-Info.plist → CLIENT_ID).
+  static const googleIosClientId = String.fromEnvironment(
+    'GOOGLE_IOS_CLIENT_ID',
+    defaultValue:
+        '927668152816-qth0gukdhrja9lrd6ejcf88ttlo8154t.apps.googleusercontent.com',
   );
 
   /// Misma clave que `VITE_GIPHY_API_KEY` en la web (`.env`).

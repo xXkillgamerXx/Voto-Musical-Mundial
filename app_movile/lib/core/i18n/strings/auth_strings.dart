@@ -301,6 +301,21 @@ const Map<String, Map<String, String>> authStrings = {
     'en': 'Continue with Google',
     'ko': 'Google로 계속하기',
   },
+  'auth.continueWithApple': {
+    'es': 'Continuar con Apple',
+    'en': 'Continue with Apple',
+    'ko': 'Apple로 계속하기',
+  },
+  'auth.appleNotAvailable': {
+    'es': 'Sign in with Apple solo está disponible en iOS.',
+    'en': 'Sign in with Apple is only available on iOS.',
+    'ko': 'Apple 로그인은 iOS에서만 사용할 수 있습니다.',
+  },
+  'auth.appleTokenFailed': {
+    'es': 'No se pudo completar el inicio con Apple.',
+    'en': 'Could not complete Sign in with Apple.',
+    'ko': 'Apple 로그인을 완료할 수 없습니다.',
+  },
   'auth.orDivider': {'es': 'o', 'en': 'or', 'ko': '또는'},
 
   // Brand

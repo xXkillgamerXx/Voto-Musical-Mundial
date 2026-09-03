@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -70,6 +72,26 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final referralCode = await ReferralStorage.read();
       await widget.authService.signInWithGoogle(referralCode: referralCode);
+      await ReferralStorage.clear();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleAppleLogin() async {
+    setState(() {
+      _errorMessage = '';
+      _isLoading = true;
+    });
+
+    try {
+      final referralCode = await ReferralStorage.read();
+      await widget.authService.signInWithApple(referralCode: referralCode);
       await ReferralStorage.clear();
     } catch (error) {
       if (!mounted) return;
@@ -160,6 +182,13 @@ class _LoginPageState extends State<LoginPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (!kIsWeb && Platform.isIOS) ...[
+            AuthAppleButton(
+              onPressed: _handleAppleLogin,
+              isLoading: _isLoading,
+            ),
+            const SizedBox(height: 10),
+          ],
           AuthGoogleButton(
             onPressed: _handleGoogleLogin,
             isLoading: _isLoading,

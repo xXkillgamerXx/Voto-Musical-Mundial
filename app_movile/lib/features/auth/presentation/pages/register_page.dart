@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/tr.dart';
@@ -90,6 +93,54 @@ class _RegisterPageState extends State<RegisterPage> {
   String get _fullName =>
       '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
           .trim();
+
+  Future<void> _handleAppleLogin() async {
+    setState(() {
+      _errorMessage = '';
+      _isLoading = true;
+    });
+
+    try {
+      final referralCode = _referralController.text.trim().isNotEmpty
+          ? _referralController.text.trim()
+          : await ReferralStorage.read();
+      await widget.authService.signInWithApple(referralCode: referralCode);
+      await ReferralStorage.clear();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleGoogleLogin() async {
+    setState(() {
+      _errorMessage = '';
+      _isLoading = true;
+    });
+
+    try {
+      final referralCode = _referralController.text.trim().isNotEmpty
+          ? _referralController.text.trim()
+          : await ReferralStorage.read();
+      await widget.authService.signInWithGoogle(referralCode: referralCode);
+      await ReferralStorage.clear();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   Future<void> _goNext() async {
     setState(() => _errorMessage = '');
@@ -250,6 +301,22 @@ class _RegisterPageState extends State<RegisterPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_currentStep == 1) ...[
+              if (!kIsWeb && Platform.isIOS) ...[
+                AuthAppleButton(
+                  onPressed: _handleAppleLogin,
+                  isLoading: _isLoading,
+                ),
+                const SizedBox(height: 10),
+              ],
+              AuthGoogleButton(
+                onPressed: _handleGoogleLogin,
+                isLoading: _isLoading,
+              ),
+              const SizedBox(height: 10),
+              const AuthDivider(),
+              const SizedBox(height: 14),
+            ],
             Text(
               tr('auth.registerIntro'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
