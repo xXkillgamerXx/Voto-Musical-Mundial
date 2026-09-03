@@ -8,8 +8,10 @@ import { FanItemType, FanPurchase, FanPurchaseStatus, Prisma, UserRole } from '@
 import { artistLookupWhere } from '../../common/artist-lookup';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { FanStoreConfigService } from '../settings/fan-store-config.service';
 import { FanCheckoutDto } from './dto/checkout.dto';
+import { PaypalService } from './paypal.service';
 
 const IVA_CO = 0.19;
 const MONTHLY_BONUS: Record<string, number> = { FAN: 20, SUPER: 50, MEGA: 0 };
@@ -17,6 +19,10 @@ const THREE_MONTH_BONUS: Record<string, number> = { FAN: 80, SUPER: 200, MEGA: 4
 const THREE_MONTH_MS = 90 * 86400000;
 const PIN_MS = 24 * 60 * 60 * 1000;
 const STORE_ADMIN_ROLES = new Set<UserRole>([UserRole.admin, UserRole.superadmin, UserRole.owner]);
+const PAYPAL_ORDER_TTL_SEC = 60 * 60;
+const PAYPAL_DONE_TTL_SEC = 7 * 24 * 60 * 60;
+const paypalOrderKey = (orderId: string) => `fan:paypal:order:${orderId}`;
+const paypalDoneKey = (orderId: string) => `fan:paypal:done:${orderId}`;
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -34,7 +40,13 @@ export class FanService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly store: FanStoreConfigService,
+    private readonly redis: RedisService,
+    private readonly paypal: PaypalService,
   ) {}
+
+  paypalPublicConfig() {
+    return this.paypal.publicConfig();
+  }
 
   private async assertCheckoutAllowed(userId: bigint) {
     const catalog = await this.store.getConfig();
@@ -233,11 +245,61 @@ export class FanService {
     });
   }
 
-  async checkout(userId: bigint, dto: FanCheckoutDto) {
+  private mapCheckoutArtist(
+    artist: {
+      id: bigint
+      name: string
+      photoUrl: string | null
+      slug: string | null
+      firebaseId: string | null
+      metadata: unknown
+    },
+    fallback?: { name?: string; image?: string },
+  ) {
+    const metadata = (artist.metadata || {}) as Record<string, unknown>
+    return {
+      id: artist.id.toString(),
+      name: String(fallback?.name || artist.name),
+      image: String(fallback?.image || artist.photoUrl || metadata.image || ''),
+      slug: String(artist.slug || artist.firebaseId || ''),
+    }
+  }
+
+  private async listActiveSupportedArtists(userId: bigint) {
+    const now = new Date()
+    const previous = await this.prisma.artistSupporter.findMany({
+      where: { userId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      include: {
+        artist: {
+          select: { id: true, name: true, photoUrl: true, slug: true, firebaseId: true, metadata: true },
+        },
+      },
+    })
+    const artists: Array<{ id: string; name: string; image: string; slug: string }> = []
+    const seen = new Set<string>()
+    for (const row of previous) {
+      if (!row.artist) continue
+      const mapped = this.mapCheckoutArtist(row.artist)
+      if (seen.has(mapped.id)) continue
+      seen.add(mapped.id)
+      artists.push(mapped)
+    }
+    return artists
+  }
+
+  async checkout(userId: bigint, dto: FanCheckoutDto, opts?: { paypalOrderId?: string }) {
     const catalog = await this.assertCheckoutAllowed(userId);
     if (dto.adopt) {
       const existing = await this.getActivePlan(userId);
       if (existing) return this.checkoutPayload(existing, userId);
+    }
+    const method = String(dto.method || 'paypal').slice(0, 40);
+    if (method !== 'paypal' || !opts?.paypalOrderId) {
+      throw new BadRequestException(
+        method === 'paypal'
+          ? 'El pago con PayPal debe confirmarse en PayPal.'
+          : 'Por ahora el pago es solo con PayPal.',
+      );
     }
     const sku = String(dto.sku || '').trim().toUpperCase();
     const plan = catalog.plans.find((item) => item.sku === sku && item.enabled);
@@ -274,26 +336,29 @@ export class FanService {
     const total = Number((base + tax).toFixed(2));
 
     const maxArtists = isPack ? 0 : Number(plan!.maxArtists || 1);
-    const requested = isPack ? [] : (dto.artists || []).slice(0, Math.max(1, maxArtists));
-    if (!isPack && !requested.length) {
-      throw new BadRequestException('Elige un artista para apoyar.');
-    }
-
+    const requested = isPack ? [] : dto.artists || [];
     const artists: Array<{ id: string; name: string; image: string; slug: string }> = [];
+    const seen = new Set<string>();
+    const pushArtist = (row: { id: string; name: string; image: string; slug: string }) => {
+      if (!row.id || seen.has(row.id)) return;
+      seen.add(row.id);
+      artists.push(row);
+    };
+
+    if (!isPack) {
+      for (const row of await this.listActiveSupportedArtists(userId)) pushArtist(row);
+    }
+    const previousCount = artists.length;
+    const cap = Math.max(maxArtists, previousCount);
+
     for (const row of requested) {
+      if (artists.length >= cap) break;
       const artist = await this.resolveCheckoutArtist(row);
       if (!artist) continue;
-      const metadata = (artist.metadata || {}) as Record<string, unknown>;
-      const image = String(row.image || artist.photoUrl || metadata.image || '');
-      artists.push({
-        id: artist.id.toString(),
-        name: String(row.name || artist.name),
-        image,
-        slug: String(artist.slug || artist.firebaseId || ''),
-      });
+      pushArtist(this.mapCheckoutArtist(artist, row));
     }
     if (!isPack && !artists.length) {
-      throw new BadRequestException('No encontramos ese artista.');
+      throw new BadRequestException('Elige un artista para apoyar.');
     }
 
     const now = new Date();
@@ -324,8 +389,13 @@ export class FanService {
             expiresAt: now,
           },
         });
+        const keepIds = artists.map((row) => BigInt(row.id));
         await tx.artistSupporter.updateMany({
-          where: { userId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+          where: {
+            userId,
+            ...(keepIds.length ? { artistId: { notIn: keepIds } } : {}),
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
           data: { expiresAt: now },
         });
       }
@@ -400,6 +470,137 @@ export class FanService {
     });
 
     return this.checkoutPayload(purchase, userId, { pointsAwarded, packDiscount });
+  }
+
+  async createPaypalOrder(userId: bigint, dto: FanCheckoutDto) {
+    const quote = await this.quoteCheckout(userId, { ...dto, method: 'paypal' });
+    const currency = quote.currency === 'COP' ? 'COP' : 'USD';
+    const created = await this.paypal.createOrder({
+      amount: quote.total,
+      currency,
+      description: `Vote Music Mundial — ${quote.skuName}`,
+      customId: userId.toString(),
+    });
+    const payload = {
+      userId: userId.toString(),
+      dto: { ...dto, method: 'paypal', currency },
+      total: quote.total,
+      currency,
+    };
+    await this.redis.client.set(
+      paypalOrderKey(created.orderId),
+      JSON.stringify(payload),
+      'EX',
+      PAYPAL_ORDER_TTL_SEC,
+    );
+    return { orderId: created.orderId, mode: this.paypal.mode() };
+  }
+
+  async capturePaypalOrder(userId: bigint, orderId: string) {
+    const id = String(orderId || '').trim();
+    if (!id) throw new BadRequestException('Falta el id de PayPal.');
+
+    const doneRaw = await this.redis.client.get(paypalDoneKey(id));
+    if (doneRaw) {
+      const done = JSON.parse(doneRaw) as { invoiceId?: string; userId?: string };
+      if (done.userId && done.userId !== userId.toString()) {
+        throw new BadRequestException('Esa orden de PayPal no es tuya.');
+      }
+      if (done.invoiceId) {
+        const purchase = await this.prisma.fanPurchase.findUnique({ where: { invoiceId: done.invoiceId } });
+        if (purchase && purchase.userId === userId) {
+          return this.checkoutPayload(purchase, userId);
+        }
+      }
+    }
+
+    const pendingRaw = await this.redis.client.get(paypalOrderKey(id));
+    if (!pendingRaw) {
+      throw new BadRequestException('La orden de PayPal expiró. Vuelve a intentarlo.');
+    }
+    const pending = JSON.parse(pendingRaw) as {
+      userId: string;
+      dto: FanCheckoutDto;
+      total: number;
+      currency: string;
+    };
+    if (pending.userId !== userId.toString()) {
+      throw new BadRequestException('Esa orden de PayPal no es tuya.');
+    }
+
+    let order: Record<string, unknown>;
+    try {
+      order = await this.paypal.captureOrder(id);
+    } catch {
+      order = await this.paypal.getOrder(id);
+    }
+    const paid = this.paypal.capturedAmount(order);
+    const customId = paid.customId || this.paypal.orderCustomId(order);
+    if (customId && customId !== userId.toString()) {
+      throw new BadRequestException('Esa orden de PayPal no es tuya.');
+    }
+    if (paid.status !== 'COMPLETED' || paid.value <= 0) {
+      throw new BadRequestException('PayPal todavía no confirmó el pago.');
+    }
+    if (
+      paid.currency !== pending.currency ||
+      Math.round(paid.value * 100) !== Math.round(Number(pending.total) * 100)
+    ) {
+      throw new BadRequestException('El monto de PayPal no coincide con el checkout.');
+    }
+
+    const result = (await this.checkout(userId, { ...pending.dto, method: 'paypal' }, { paypalOrderId: id })) as {
+      invoiceId?: string;
+    };
+    await this.redis.client.set(
+      paypalDoneKey(id),
+      JSON.stringify({ invoiceId: result.invoiceId, userId: userId.toString() }),
+      'EX',
+      PAYPAL_DONE_TTL_SEC,
+    );
+    await this.redis.client.del(paypalOrderKey(id));
+    return result;
+  }
+
+  private async quoteCheckout(userId: bigint, dto: FanCheckoutDto) {
+    const catalog = await this.assertCheckoutAllowed(userId);
+    const sku = String(dto.sku || '').trim().toUpperCase();
+    const plan = catalog.plans.find((item) => item.sku === sku && item.enabled);
+    const pack = catalog.packs.find((item) => item.sku === sku && item.enabled);
+    if (!plan && !pack) {
+      throw new BadRequestException('Ese plan o pack no está disponible.');
+    }
+    const isPack = Boolean(pack);
+    const yearly = Boolean(dto.yearly);
+    const currency = dto.currency === 'COP' ? 'COP' : 'USD';
+    const country = String(dto.country || 'CO').trim().toUpperCase() || 'CO';
+    const active = isPack ? null : await this.getActivePlan(userId);
+    const packDiscount =
+      isPack && (active?.sku === 'SUPER' || active?.sku === 'MEGA' || active?.featured) ? 0.1 : 0;
+    let base = 0;
+    if (isPack) {
+      base = currency === 'COP' ? pack!.cop : pack!.usd;
+    } else if (yearly) {
+      base = currency === 'COP' ? plan!.copYTotal : plan!.usdYTotal;
+    } else {
+      base = currency === 'COP' ? plan!.copM : plan!.usdM;
+    }
+    if (packDiscount) base = Number((base * (1 - packDiscount)).toFixed(2));
+    const tax = country === 'CO' ? Number((base * IVA_CO).toFixed(2)) : 0;
+    const total = Number((base + tax).toFixed(2));
+    const skuName = isPack ? `${Number(pack!.pts || 0)} pts` : plan!.name;
+    if (!isPack) {
+      const requested = dto.artists || [];
+      let found = 0;
+      for (const row of requested) {
+        if (await this.resolveCheckoutArtist(row)) found += 1;
+      }
+      if (!found) {
+        const previous = await this.listActiveSupportedArtists(userId);
+        if (!previous.length) throw new BadRequestException('Elige un artista para apoyar.');
+      }
+    }
+    return { total, currency, skuName, sku };
   }
 
   async cancel(userId: bigint, purchaseId: string) {

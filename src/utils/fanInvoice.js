@@ -306,7 +306,7 @@ const buildInvoiceNode = (invoice, lang = 'es') => {
           <p>
             ${en ? 'Date' : 'Fecha'}: <b>${escapeHtml(formatDate(invoice.startedAt, lang))}</b><br/>
             ${en ? 'Currency' : 'Moneda'}: <b>${currency}</b><br/>
-            ${en ? 'Method' : 'Medio'}: <b>Wompi · ${escapeHtml(invoice.method || (en ? 'Card' : 'Tarjeta'))}</b><br/>
+            ${en ? 'Method' : 'Medio'}: <b>${escapeHtml(invoice.method === 'paypal' ? 'PayPal' : `Wompi · ${invoice.method || (en ? 'Card' : 'Tarjeta')}`)}</b><br/>
             ${en ? 'Reference' : 'Referencia'}: <b>MMV-${escapeHtml(invoice.sku || 'FAN')}-${folio.replace('FV-', '')}</b>
           </p>
         </div>

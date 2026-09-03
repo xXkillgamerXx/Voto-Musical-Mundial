@@ -12,6 +12,22 @@ export const checkoutFanStore = (body) =>
     body,
   })
 
+export const getPaypalConfig = () => apiRequest('/fan-store/paypal/config')
+
+export const createPaypalOrder = (body) =>
+  apiRequest('/fan-store/paypal/order', {
+    method: 'POST',
+    token: authToken(),
+    body,
+  })
+
+export const capturePaypalOrder = (orderId) =>
+  apiRequest('/fan-store/paypal/capture', {
+    method: 'POST',
+    token: authToken(),
+    body: { orderId },
+  })
+
 export const importFanPlan = (body) =>
   apiRequest('/fan-store/checkout', {
     method: 'POST',

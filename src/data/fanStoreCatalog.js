@@ -157,13 +157,13 @@ export const POINT_PACKS = [
 ]
 
 export const CHECKOUT_COUNTRIES = [
-  { code: 'CO', name: 'Colombia', dial: '+57' },
-  { code: 'DO', name: 'República Dominicana', dial: '+1' },
-  { code: 'MX', name: 'México', dial: '+52' },
-  { code: 'US', name: 'Estados Unidos', dial: '+1' },
-  { code: 'ES', name: 'España', dial: '+34' },
-  { code: 'KR', name: 'Corea del Sur', dial: '+82' },
-  { code: 'AR', name: 'Argentina', dial: '+54' },
+  { code: 'CO', name: 'Colombia', dial: '+57', maxDigits: 10, groups: [3, 3, 4], example: '300 000-0000' },
+  { code: 'DO', name: 'República Dominicana', dial: '+1', maxDigits: 10, groups: [3, 3, 4], example: '(809) 000-0000' },
+  { code: 'MX', name: 'México', dial: '+52', maxDigits: 10, groups: [2, 4, 4], example: '55 0000-0000' },
+  { code: 'US', name: 'Estados Unidos', dial: '+1', maxDigits: 10, groups: [3, 3, 4], example: '(555) 000-0000' },
+  { code: 'ES', name: 'España', dial: '+34', maxDigits: 9, groups: [3, 3, 3], example: '600 000 000' },
+  { code: 'KR', name: 'Corea del Sur', dial: '+82', maxDigits: 10, groups: [2, 4, 4], example: '10 1234-5678' },
+  { code: 'AR', name: 'Argentina', dial: '+54', maxDigits: 10, groups: [2, 4, 4], example: '11 0000-0000' },
 ]
 
 export const planDurationDays = (yearly = false) => (yearly ? 365 : 30)

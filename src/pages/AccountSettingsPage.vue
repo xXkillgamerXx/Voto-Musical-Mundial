@@ -8,9 +8,10 @@ import { cancelFanPurchase } from '../services/api/fanApi'
 import { loadFanMe, clearFanMe } from '../utils/fanPerks'
 import { clearFanMembership, hydrateMembership } from '../utils/fanMembership'
 import { downloadFanInvoice } from '../utils/fanInvoice'
-import { canSeeFanStore, findStoreItem, loadFanStore } from '../services/fanStore'
-import { pickLocalizedList } from '../utils/localizedCopy'
+import { canSeeFanStore, checkoutPath, findStoreItem, getFanPlans, loadFanStore } from '../services/fanStore'
+import { pickLocalized, pickLocalizedList } from '../utils/localizedCopy'
 import { routePath } from '../utils/localizedRoutes'
+import MegaUpgradePills from '../components/MegaUpgradePills.vue'
 
 const SECTIONS = ['profile', 'plan', 'payments', 'activity']
 const ACTIVITY_PAGE_SIZE = 10
@@ -35,6 +36,8 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const isCancelling = ref(false)
 const isCancelOpen = ref(false)
+const isCancelDoneOpen = ref(false)
+const cancelledPlan = ref(null)
 const downloadingInvoiceId = ref('')
 const isSavingProfile = ref(false)
 const isUploadingPhoto = ref(false)
@@ -143,7 +146,50 @@ const planArtists = computed(() =>
   (membership.value?.artists || []).map((row) => row?.name).filter(Boolean),
 )
 const planExpiresLabel = computed(() => formatPlanDate(membership.value?.expiresAt))
-const planStartedLabel = computed(() => formatPlanDate(membership.value?.startedAt || membership.value?.createdAt))
+const planDescription = computed(() => {
+  const item = planStoreItem.value
+  if (!item) return ''
+  const yearly = Boolean(membership.value?.yearly)
+  return pickLocalized(yearly ? item.descYear || item.desc : item.desc, locale.value)
+})
+const previewPlans = computed(() => {
+  storeTick.value
+  return getFanPlans().slice(0, 3)
+})
+const featuredPreview = computed(() =>
+  previewPlans.value.find((plan) => plan.featured) || previewPlans.value[1] || previewPlans.value[0] || null,
+)
+const megaPreview = computed(() =>
+  previewPlans.value.find((plan) => plan.sku === 'MEGA' || plan.mega) || null,
+)
+
+const planCheckoutHref = (sku) =>
+  checkoutPath(sku, { locale: String(locale.value || 'es').startsWith('en') ? 'en' : 'es' })
+
+const planBadgeClass = (sku) => {
+  const key = String(sku || '').toUpperCase()
+  if (key === 'MEGA') return 'bg-linear-to-r from-amber-700 to-amber-300 text-amber-950'
+  if (key === 'SUPER') return 'bg-linear-to-r from-violet-600 to-fuchsia-500 text-white'
+  return 'bg-linear-to-r from-blue-600 to-sky-400 text-white'
+}
+
+const planBadgeIcon = (sku) => {
+  const key = String(sku || '').toUpperCase()
+  if (key === 'MEGA') return 'fa-solid fa-crown'
+  if (key === 'SUPER') return 'fa-solid fa-bolt'
+  return 'fa-solid fa-star'
+}
+
+const snapshotPlan = (record) => {
+  if (!record) return null
+  const item = findStoreItem(record.sku)
+  return {
+    name: record.name || item?.name || 'FAN',
+    sku: record.sku || item?.sku || 'FAN',
+    multiplier: Number(record.multiplier || item?.multiplier || 1),
+    welcomePts: Number(record.welcomePts || item?.welcomePts || 0),
+  }
+}
 
 const activityWhen = (row) => {
   if (!row?.at) return ''
@@ -326,11 +372,12 @@ const confirmCancel = async () => {
   isCancelling.value = true
   errorMessage.value = ''
   try {
+    cancelledPlan.value = snapshotPlan(membership.value)
     if (id) await cancelFanPurchase(id)
     clearFanMembership()
     clearFanMe()
     isCancelOpen.value = false
-    successMessage.value = translate('profile.membership.cancelled')
+    isCancelDoneOpen.value = true
     await load()
   } catch (error) {
     errorMessage.value = error?.message || translate('profile.membership.cancelError')
@@ -620,43 +667,77 @@ onUnmounted(() => {
         </section>
 
         <section v-else-if="section === 'plan'" class="min-h-[min(36rem,calc(100vh-12rem))] p-5 sm:p-6">
-          <h2 class="text-lg font-semibold text-white">{{ $t('accountSettings.navPlan') }}</h2>
-          <p class="mt-1 text-sm text-slate-500">{{ $t('accountSettings.planHelp') }}</p>
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-fuchsia-300">{{ $t('plans.eyebrow') }}</p>
+          <h2 class="mt-2 text-2xl font-black text-white">{{ $t('accountSettings.navPlan') }}</h2>
+          <p class="mt-1 text-sm font-bold text-slate-500">{{ $t('accountSettings.planHelp') }}</p>
 
           <div v-if="membership && !membership.expired" class="mt-6 space-y-6">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p class="text-2xl font-black text-white">{{ membership.name }}</p>
-                <p class="mt-1 text-sm text-slate-300">
-                  {{ $t('accountSettings.days', { n: membership.daysLeft }) }}
-                  · {{ $t('profile.membership.votes', { n: membership.multiplier }) }}
-                </p>
-                <p class="mt-2 text-sm text-slate-400">
-                  {{ membership.yearly ? $t('accountSettings.planYearly') : $t('accountSettings.planMonthly') }}
-                  <span v-if="planExpiresLabel"> · {{ $t('accountSettings.planExpires', { date: planExpiresLabel }) }}</span>
-                </p>
-                <p v-if="planStartedLabel" class="mt-1 text-sm text-slate-500">
-                  {{ $t('accountSettings.planStarted', { date: planStartedLabel }) }}
-                </p>
-                <p v-if="Number(membership.welcomePts || 0) > 0" class="mt-2 text-sm font-bold text-amber-200">
-                  {{ $t('profile.membership.points', { pts: membership.welcomePts }) }}
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <a
-                  v-if="canOpenPlans"
-                  :href="plansHref"
-                  class="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-white/8"
-                >
-                  {{ $t('profile.membership.changePlan') }}
-                </a>
-                <button
-                  type="button"
-                  class="rounded-lg px-3 py-2 text-sm text-red-200 hover:bg-red-500/15"
-                  @click="openCancel"
-                >
-                  {{ $t('profile.membership.cancel') }}
-                </button>
+            <div class="relative overflow-hidden rounded-4xl border border-fuchsia-300/20 bg-[#060713] p-5 shadow-xl shadow-fuchsia-950/20 sm:p-6">
+              <div class="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-fuchsia-500/18 blur-3xl"></div>
+              <div class="pointer-events-none absolute -bottom-20 left-0 size-44 rounded-full bg-amber-400/10 blur-3xl"></div>
+              <div class="relative">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-3">
+                      <span class="flex size-12 shrink-0 items-center justify-center rounded-3xl border border-white/10 bg-white/7 text-xl">
+                        <i class="fa-fw" :class="planStoreItem?.icon || planBadgeIcon(membership.sku)" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="text-3xl font-black uppercase tracking-tight text-white">{{ membership.name }}</h3>
+                    </div>
+                    <p v-if="planDescription" class="mt-3 max-w-xl text-sm font-bold leading-6 text-fuchsia-200">
+                      {{ planDescription }}
+                    </p>
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                      <span
+                        class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black italic tracking-wide"
+                        :class="planBadgeClass(membership.sku)"
+                      >
+                        <i class="fa-solid" :class="planBadgeIcon(membership.sku)" aria-hidden="true"></i>
+                        {{ membership.name }}
+                      </span>
+                      <span
+                        v-if="Number(membership.welcomePts || 0) > 0"
+                        class="rounded-full border border-amber-300/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200"
+                      >
+                        {{ $t('accountSettings.pointsPill', { n: membership.welcomePts }) }}
+                      </span>
+                    </div>
+                    <p class="mt-3 text-sm font-bold text-slate-400">
+                      {{ $t('accountSettings.days', { n: membership.daysLeft }) }}
+                      · {{ membership.yearly ? $t('accountSettings.planYearly') : $t('accountSettings.planMonthly') }}
+                      <span v-if="planExpiresLabel"> · {{ $t('accountSettings.planExpires', { date: planExpiresLabel }) }}</span>
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <a
+                      v-if="canOpenPlans"
+                      :href="plansHref"
+                      class="inline-flex min-h-11 items-center justify-center rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.01]"
+                    >
+                      {{ $t('profile.membership.changePlan') }}
+                    </a>
+                    <button
+                      type="button"
+                      class="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
+                      @click="openCancel"
+                    >
+                      {{ $t('profile.membership.cancel') }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="mt-5 grid grid-cols-2 gap-3">
+                  <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                    <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.eachVote') }}</p>
+                    <p class="mt-1 text-2xl font-black text-white">×{{ membership.multiplier }}</p>
+                  </div>
+                  <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                    <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.welcome') }}</p>
+                    <p class="mt-1 text-2xl font-black text-fuchsia-200">+{{ membership.welcomePts || 0 }} pts</p>
+                  </div>
+                </div>
+
+                <MegaUpgradePills class="mt-5" :sku="membership.sku" />
               </div>
             </div>
 
@@ -688,15 +769,48 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-else class="mt-6">
-            <p class="text-sm text-slate-300">{{ $t('profile.membership.noPlan') }}</p>
-            <a
-              v-if="canOpenPlans"
-              :href="plansHref"
-              class="mt-4 inline-flex rounded-lg border border-white/15 px-4 py-2 text-sm text-fuchsia-200 hover:bg-white/8"
-            >
-              {{ $t('accountSettings.seePlans') }}
-            </a>
+          <div
+            v-else
+            class="relative mt-6 overflow-hidden rounded-4xl border border-fuchsia-300/20 bg-[#060713] px-5 py-8 text-center shadow-xl shadow-fuchsia-950/20 sm:px-8 sm:py-10"
+          >
+            <div class="pointer-events-none absolute -left-16 -top-20 size-56 rounded-full bg-fuchsia-500/20 blur-3xl"></div>
+            <div class="pointer-events-none absolute -bottom-24 right-0 size-64 rounded-full bg-amber-400/10 blur-3xl"></div>
+            <div class="relative mx-auto max-w-xl">
+              <div class="mx-auto grid size-16 place-items-center rounded-3xl border border-fuchsia-300/30 bg-fuchsia-400/10 text-2xl text-fuchsia-100 shadow-xl shadow-fuchsia-950/25">
+                <i class="fa-solid fa-crown" aria-hidden="true"></i>
+              </div>
+              <p class="mt-5 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+                {{ $t('accountSettings.navPlan') }}
+              </p>
+              <h3 class="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">
+                {{ $t('profile.membership.noPlan') }}
+              </h3>
+              <p class="mx-auto mt-3 max-w-md text-sm font-bold leading-6 text-slate-300">
+                {{ $t('accountSettings.noPlanHelp') }}
+              </p>
+
+              <div v-if="featuredPreview" class="mt-6 grid grid-cols-2 gap-3 text-left">
+                <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                  <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.eachVote') }}</p>
+                  <p class="mt-1 text-2xl font-black text-white">×{{ featuredPreview.multiplier }}</p>
+                </div>
+                <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                  <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.welcome') }}</p>
+                  <p class="mt-1 text-2xl font-black text-fuchsia-200">+{{ featuredPreview.welcomePts }} pts</p>
+                </div>
+              </div>
+
+              <MegaUpgradePills v-if="featuredPreview" class="mt-5" :sku="featuredPreview.sku" />
+
+              <a
+                v-if="canOpenPlans"
+                :href="plansHref"
+                class="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01]"
+              >
+                {{ $t('accountSettings.seePlans') }}
+                <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
+              </a>
+            </div>
           </div>
         </section>
 
@@ -809,28 +923,144 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="isCancelOpen"
-        class="fixed inset-0 z-90 flex items-center justify-center bg-black/70 px-4"
+        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="'cancel-plan-title'"
         @click.self="closeCancel"
       >
-        <article class="w-full max-w-sm rounded-xl border border-white/10 bg-[#12141c] p-5 text-white shadow-xl">
-          <h3 class="text-lg font-semibold">{{ $t('accountSettings.cancelTitle') }}</h3>
-          <p class="mt-2 text-sm leading-6 text-slate-300">{{ $t('profile.membership.cancelConfirm') }}</p>
-          <div class="mt-5 flex justify-end gap-2">
+        <article
+          class="relative w-full max-w-md overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#090b19] p-6 text-white shadow-2xl shadow-fuchsia-950/50"
+          @click.stop
+        >
+          <div class="pointer-events-none absolute -right-20 -top-20 size-56 rounded-full bg-fuchsia-500/20 blur-3xl"></div>
+          <div class="pointer-events-none absolute -bottom-24 left-0 size-64 rounded-full bg-cyan-400/10 blur-3xl"></div>
+          <div class="relative text-center">
+            <div class="mx-auto grid size-16 place-items-center rounded-3xl border border-fuchsia-300/30 bg-fuchsia-400/10 text-2xl text-fuchsia-100">
+              <i class="fa-solid fa-crown" aria-hidden="true"></i>
+            </div>
+            <p class="mt-5 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+              {{ $t('accountSettings.plan') }}
+            </p>
+            <h2 id="cancel-plan-title" class="mt-3 text-3xl font-black tracking-tight text-white">
+              {{ $t('accountSettings.cancelTitle') }}
+            </h2>
+            <p v-if="membership?.name" class="mt-2 text-sm font-black uppercase tracking-wide text-amber-200">
+              {{ membership.name }}
+              <span v-if="membership.daysLeft" class="text-slate-400">
+                · {{ $t('accountSettings.days', { n: membership.daysLeft }) }}
+              </span>
+            </p>
+            <div v-if="membership" class="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <span
+                class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black italic tracking-wide"
+                :class="planBadgeClass(membership.sku)"
+              >
+                <i class="fa-solid" :class="planBadgeIcon(membership.sku)" aria-hidden="true"></i>
+                {{ membership.name }}
+              </span>
+              <span
+                v-if="Number(membership.welcomePts || 0) > 0"
+                class="rounded-full border border-amber-300/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200"
+              >
+                {{ $t('accountSettings.pointsPill', { n: membership.welcomePts }) }}
+              </span>
+            </div>
+            <div v-if="membership" class="mt-4 grid grid-cols-2 gap-3 text-left">
+              <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.eachVote') }}</p>
+                <p class="mt-1 text-2xl font-black">×{{ membership.multiplier }}</p>
+              </div>
+              <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.welcome') }}</p>
+                <p class="mt-1 text-2xl font-black text-fuchsia-200">+{{ membership.welcomePts || 0 }} pts</p>
+              </div>
+            </div>
+            <p class="mx-auto mt-3 max-w-sm text-sm font-bold leading-6 text-slate-300">
+              {{ $t('profile.membership.cancelConfirm') }}
+            </p>
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isCancelling"
+                @click="closeCancel"
+              >
+                {{ $t('accountSettings.keep') }}
+              </button>
+              <button
+                type="button"
+                class="min-h-12 rounded-2xl bg-linear-to-r from-pink-500 to-fuchsia-600 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/35 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isCancelling"
+                @click="confirmCancel"
+              >
+                {{ isCancelling ? $t('profile.membership.cancelling') : $t('accountSettings.cancelConfirm') }}
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="isCancelDoneOpen"
+        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cancel-plan-done-title"
+        @click.self="isCancelDoneOpen = false"
+      >
+        <article
+          class="relative w-full max-w-md overflow-hidden rounded-4xl border border-fuchsia-300/25 bg-[#090b19] p-6 text-white shadow-2xl shadow-fuchsia-950/50"
+          @click.stop
+        >
+          <div class="pointer-events-none absolute -left-20 -top-20 size-56 rounded-full bg-fuchsia-500/20 blur-3xl"></div>
+          <div class="pointer-events-none absolute -bottom-24 right-0 size-64 rounded-full bg-amber-400/10 blur-3xl"></div>
+          <div class="relative text-center">
+            <div class="mx-auto grid size-16 place-items-center rounded-3xl border border-emerald-300/30 bg-emerald-400/10 text-2xl text-emerald-100">
+              <i class="fa-solid fa-check" aria-hidden="true"></i>
+            </div>
+            <p class="mt-5 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-300">
+              {{ $t('accountSettings.plan') }}
+            </p>
+            <h2 id="cancel-plan-done-title" class="mt-3 text-3xl font-black tracking-tight text-white">
+              {{ $t('profile.membership.cancelled') }}
+            </h2>
+            <div v-if="cancelledPlan" class="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <span
+                class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black italic tracking-wide"
+                :class="planBadgeClass(cancelledPlan.sku)"
+              >
+                <i class="fa-solid" :class="planBadgeIcon(cancelledPlan.sku)" aria-hidden="true"></i>
+                {{ cancelledPlan.name }}
+              </span>
+              <span
+                v-if="Number(cancelledPlan.welcomePts || 0) > 0"
+                class="rounded-full border border-amber-300/50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200"
+              >
+                {{ $t('accountSettings.pointsPill', { n: cancelledPlan.welcomePts }) }}
+              </span>
+            </div>
+            <div v-if="cancelledPlan" class="mt-4 grid grid-cols-2 gap-3 text-left">
+              <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.eachVote') }}</p>
+                <p class="mt-1 text-2xl font-black">×{{ cancelledPlan.multiplier }}</p>
+              </div>
+              <div class="rounded-3xl border border-white/10 bg-black/25 p-4">
+                <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{{ $t('plans.welcome') }}</p>
+                <p class="mt-1 text-2xl font-black text-fuchsia-200">+{{ cancelledPlan.welcomePts || 0 }} pts</p>
+              </div>
+            </div>
+            <p class="mx-auto mt-3 max-w-sm text-sm font-bold leading-6 text-slate-300">
+              {{ $t('profile.membership.cancelledHelp') }}
+            </p>
             <button
               type="button"
-              class="rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-white/8"
-              :disabled="isCancelling"
-              @click="closeCancel"
+              class="mt-6 min-h-12 w-full rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/35 transition hover:scale-[1.01]"
+              @click="isCancelDoneOpen = false"
             >
-              {{ $t('accountSettings.keep') }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md bg-red-500 px-3 py-2 text-sm font-semibold text-white hover:bg-red-400 disabled:opacity-60"
-              :disabled="isCancelling"
-              @click="confirmCancel"
-            >
-              {{ isCancelling ? $t('profile.membership.cancelling') : $t('accountSettings.cancelConfirm') }}
+              {{ $t('profile.membership.cancelledOk') }}
             </button>
           </div>
         </article>
