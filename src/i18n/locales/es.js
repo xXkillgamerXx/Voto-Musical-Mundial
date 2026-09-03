@@ -916,6 +916,15 @@ export default {
     eachVote: 'Cada voto',
     welcome: 'Bienvenida',
     choose: 'Elegir {name}',
+    upgradeTo: 'Mejorar a {name}',
+    lockedCta: 'Te queda {n} día | Te quedan {n} días',
+    lockedCtaSoon: 'Menos de 1 día',
+    lockedBody:
+      'Ya eres {name}. {time} de suscripción. No puedes comprar un plan igual o inferior hasta que termine o lo canceles. El apoyo a los artistas dura solo ese período; para seguir apoyándolos, mantén la suscripción.',
+    supportPeriod:
+      'El apoyo a los artistas dura solo este período. Si quieres seguir apareciendo en su perfil, mantén la suscripción.',
+    keepSupport:
+      'Sigues apoyando a tus artistas actuales durante este nuevo período. Si cancelas o se acaba, dejas de aparecer en su perfil.',
     packsEyebrow: 'Paquetes de votos',
     packsTitle: 'Solo votar ahora',
     packsBody: 'Puntos ya, sin bono, sin multiplicador y sin apoyar artista.',
@@ -1006,10 +1015,12 @@ export default {
       votes: 'Votos ×{n}',
       points: '+{pts} pts',
       cancel: 'Cancelar plan',
-      cancelConfirm: '¿Cancelar este plan ahora? Los puntos ya acreditados se quedan.',
+      cancelConfirm:
+        '¿Cancelar este plan ahora? Dejas de apoyar a tus artistas en este período. Los puntos ya acreditados se quedan.',
       cancelling: 'Cancelando...',
       cancelled: 'Plan cancelado',
-      cancelledHelp: 'Ya no tienes membresía activa. Los puntos que ya tenías se quedan en tu cuenta.',
+      cancelledHelp:
+        'Ya no tienes membresía activa y dejaste de aparecer en los artistas que apoyabas. Los puntos que ya tenías se quedan en tu cuenta.',
       cancelledOk: 'Entendido',
       cancelError: 'No se pudo cancelar el plan.',
       history: 'Historial de pagos',

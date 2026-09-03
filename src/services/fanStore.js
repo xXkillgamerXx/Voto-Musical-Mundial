@@ -7,10 +7,12 @@ import {
 export {
   CHECKOUT_COUNTRIES,
   IVA_CO,
+  canBuyPlan,
   checkoutPath,
   checkoutTotals,
   formatStoreMoney,
   planDurationDays,
+  planRank,
   storeDisplayPrice,
   storeItemPrice,
 } from '../data/fanStoreCatalog'

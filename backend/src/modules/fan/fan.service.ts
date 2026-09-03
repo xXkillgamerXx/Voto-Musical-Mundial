@@ -18,6 +18,8 @@ const MONTHLY_BONUS: Record<string, number> = { FAN: 20, SUPER: 50, MEGA: 0 };
 const THREE_MONTH_BONUS: Record<string, number> = { FAN: 80, SUPER: 200, MEGA: 400 };
 const THREE_MONTH_MS = 90 * 86400000;
 const PIN_MS = 24 * 60 * 60 * 1000;
+const PLAN_RANK: Record<string, number> = { FAN: 1, SUPER: 2, MEGA: 3 };
+const planRank = (sku: string) => PLAN_RANK[String(sku || '').toUpperCase()] || 0;
 const STORE_ADMIN_ROLES = new Set<UserRole>([UserRole.admin, UserRole.superadmin, UserRole.owner]);
 const PAYPAL_ORDER_TTL_SEC = 60 * 60;
 const PAYPAL_DONE_TTL_SEC = 7 * 24 * 60 * 60;
@@ -287,6 +289,15 @@ export class FanService {
     return artists
   }
 
+  private assertPlanChange(active: FanPurchase | null, nextSku: string) {
+    if (!active) return;
+    if (planRank(nextSku) <= planRank(active.sku)) {
+      throw new BadRequestException(
+        `Ya eres ${active.name}. No puedes comprar un plan igual o inferior hasta que termine o lo canceles. El apoyo a tus artistas dura solo mientras sigas suscrito.`,
+      );
+    }
+  }
+
   async checkout(userId: bigint, dto: FanCheckoutDto, opts?: { paypalOrderId?: string }) {
     const catalog = await this.assertCheckoutAllowed(userId);
     if (dto.adopt) {
@@ -318,7 +329,8 @@ export class FanService {
     const yearly = Boolean(dto.yearly);
     const currency = dto.currency === 'COP' ? 'COP' : 'USD';
     const country = String(dto.country || 'CO').trim().toUpperCase() || 'CO';
-    const active = isPack ? null : await this.getActivePlan(userId);
+    const active = await this.getActivePlan(userId);
+    if (!isPack) this.assertPlanChange(active, sku);
     const packDiscount = isPack && (active?.sku === 'SUPER' || active?.sku === 'MEGA' || active?.featured)
       ? 0.1
       : 0;
@@ -348,14 +360,16 @@ export class FanService {
     if (!isPack) {
       for (const row of await this.listActiveSupportedArtists(userId)) pushArtist(row);
     }
-    const previousCount = artists.length;
-    const cap = Math.max(maxArtists, previousCount);
-
+    const extraCap = Math.max(0, maxArtists - artists.length);
+    let addedNew = 0;
     for (const row of requested) {
-      if (artists.length >= cap) break;
+      if (addedNew >= extraCap) break;
       const artist = await this.resolveCheckoutArtist(row);
       if (!artist) continue;
-      pushArtist(this.mapCheckoutArtist(artist, row));
+      const mapped = this.mapCheckoutArtist(artist, row);
+      if (seen.has(mapped.id)) continue;
+      pushArtist(mapped);
+      addedNew += 1;
     }
     if (!isPack && !artists.length) {
       throw new BadRequestException('Elige un artista para apoyar.');
@@ -574,7 +588,8 @@ export class FanService {
     const yearly = Boolean(dto.yearly);
     const currency = dto.currency === 'COP' ? 'COP' : 'USD';
     const country = String(dto.country || 'CO').trim().toUpperCase() || 'CO';
-    const active = isPack ? null : await this.getActivePlan(userId);
+    const active = await this.getActivePlan(userId);
+    if (!isPack) this.assertPlanChange(active, sku);
     const packDiscount =
       isPack && (active?.sku === 'SUPER' || active?.sku === 'MEGA' || active?.featured) ? 0.1 : 0;
     let base = 0;

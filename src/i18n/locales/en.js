@@ -902,6 +902,15 @@ export default {
     eachVote: 'Each vote',
     welcome: 'Welcome',
     choose: 'Choose {name}',
+    upgradeTo: 'Upgrade to {name}',
+    lockedCta: '{n} day left | {n} days left',
+    lockedCtaSoon: 'Less than 1 day',
+    lockedBody:
+      "You're already {name}. {time} on your subscription. You can't buy the same or a lower plan until it ends or you cancel. Artist support lasts only for that period — to keep supporting them, stay subscribed.",
+    supportPeriod:
+      'Artist support lasts only for this period. To keep appearing on their profile, stay subscribed.',
+    keepSupport:
+      'You keep supporting your current artists for this new period. If you cancel or it ends, you leave their profile.',
     packsEyebrow: 'Point packs',
     packsTitle: 'Just vote now',
     packsBody: 'Points now, no bonus, multiplier, or supported artist.',
@@ -989,10 +998,12 @@ export default {
       votes: 'Votes ×{n}',
       points: '+{pts} pts',
       cancel: 'Cancel plan',
-      cancelConfirm: 'Cancel this plan now? Points already credited stay in your balance.',
+      cancelConfirm:
+        'Cancel this plan now? You will stop supporting your artists for this period. Points already credited stay in your balance.',
       cancelling: 'Cancelling...',
       cancelled: 'Plan cancelled',
-      cancelledHelp: 'You no longer have an active membership. Points already credited stay in your account.',
+      cancelledHelp:
+        'You no longer have an active membership and you left the artists you were supporting. Points already credited stay in your account.',
       cancelledOk: 'Got it',
       cancelError: 'Could not cancel the plan.',
       history: 'Payment history',

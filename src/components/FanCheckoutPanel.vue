@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   CHECKOUT_COUNTRIES,
+  canBuyPlan,
   checkoutTotals,
   findStoreItem,
   formatStoreMoney,
@@ -29,7 +30,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 const lang = computed(() => (String(locale.value || 'es').startsWith('en') ? 'en' : 'es'))
 const plansHref = computed(() => routePath('plans', locale.value))
 const profileHref = computed(() => {
@@ -49,6 +50,7 @@ const search = ref('')
 const page = ref(0)
 const picked = ref([])
 const errorMessage = ref('')
+const noticeTone = ref('error')
 const isPaying = ref(false)
 const paid = ref(null)
 const paidStep = ref('invoice')
@@ -69,32 +71,10 @@ const resetForSku = () => {
   paid.value = null
   paidStep.value = 'invoice'
   errorMessage.value = ''
+  noticeTone.value = 'error'
   search.value = ''
   page.value = 0
-  prefillSupportedArtists()
 }
-
-const prefillSupportedArtists = () => {
-  if (item.value.type === 'pack' || picked.value.length) return
-  const current = fanMembershipState.value?.membership
-  if (!current || current.expired || current.type === 'pack') return
-  const next = (current.artists || [])
-    .map((row) => ({
-      id: String(row.id || ''),
-      name: row.name,
-      image: row.image || '',
-    }))
-    .filter((row) => row.id)
-  if (next.length) picked.value = next
-}
-
-const lockedArtistIds = computed(() => {
-  const current = fanMembershipState.value?.membership
-  if (!current || current.expired || current.type === 'pack') return new Set()
-  return new Set((current.artists || []).map((row) => String(row.id || '')).filter(Boolean))
-})
-
-const isLockedArtist = (id) => lockedArtistIds.value.has(String(id))
 
 watch(() => [props.sku, props.currency, props.yearly], resetForSku)
 
@@ -158,11 +138,11 @@ const localizedArtists = computed(() =>
 )
 
 const filteredArtists = computed(() => {
+  const taken = new Set(alreadySupported.value.map((row) => row.id))
+  const available = localizedArtists.value.filter((artist) => !taken.has(String(artist.id)))
   const query = search.value.trim().toLowerCase()
-  if (!query) return localizedArtists.value
-  return localizedArtists.value.filter((artist) =>
-    String(artist.name || '').toLowerCase().includes(query),
-  )
+  if (!query) return available
+  return available.filter((artist) => String(artist.name || '').toLowerCase().includes(query))
 })
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredArtists.value.length / PER)))
@@ -220,9 +200,10 @@ const planTone = computed(() => {
 })
 
 const checkoutReady = computed(() => {
+  if (planLocked.value) return false
   if (!paypalConfig.value.enabled || !paypalConfig.value.clientId) return false
   if (!getCurrentApiAuth()?.accessToken) return false
-  if (item.value.type === 'plan' && !picked.value.length) return false
+  if (item.value.type === 'plan' && !picked.value.length && !alreadySupported.value.length) return false
   if (!phoneReady.value) return false
   return true
 })
@@ -234,7 +215,12 @@ const payBlockedReason = computed(() => {
   if (!getCurrentApiAuth()?.accessToken) {
     return lang.value === 'en' ? 'Log in to buy.' : 'Inicia sesión para comprar.'
   }
-  if (item.value.type === 'plan' && !picked.value.length) {
+  if (planLocked.value) {
+    return lang.value === 'en'
+      ? `You're already ${activeMembership.value?.name}. ${lockedTimeLabel.value} on your subscription.`
+      : `Ya eres ${activeMembership.value?.name}. ${lockedTimeLabel.value} de suscripción.`
+  }
+  if (item.value.type === 'plan' && remainingSlots.value > 0 && !picked.value.length && !alreadySupported.value.length) {
     return lang.value === 'en' ? 'Pick an artist first.' : 'Elige un artista primero.'
   }
   if (!phoneReady.value) {
@@ -289,28 +275,56 @@ const pickedDisplay = computed(() =>
   }),
 )
 
-const supportTitle = computed(() => (lang.value === 'en' ? 'Support' : 'Apoyar a'))
+const alreadySupported = computed(() => {
+  const current = fanMembershipState.value?.membership
+  if (!current || current.expired || current.type === 'pack') return []
+  return (current.artists || [])
+    .map((row) => {
+      const full = localizedArtists.value.find((artist) => String(artist.id) === String(row.id))
+      return {
+        id: String(row.id || ''),
+        name: full?.name || row.name,
+        image: artistImage(full) || row.image || '',
+      }
+    })
+    .filter((row) => row.id)
+})
 
-const pickedNames = computed(() =>
-  pickedDisplay.value.map((row) => row.name).filter(Boolean).join(', '),
+const remainingSlots = computed(() =>
+  Math.max(0, Number(item.value.maxArtists || 1) - alreadySupported.value.length),
 )
+
+const activeMembership = computed(() => {
+  const current = fanMembershipState.value?.membership
+  if (!current || current.expired || current.type === 'pack') return null
+  return current
+})
+
+const planLocked = computed(() => {
+  if (item.value.type === 'pack') return false
+  return !canBuyPlan(activeMembership.value?.sku, item.value.sku)
+})
+
+const remainingDays = computed(() => Math.max(0, Number(activeMembership.value?.daysLeft || 0)))
+
+const lockedTimeLabel = computed(() => {
+  const days = remainingDays.value
+  if (!days) return t('plans.lockedCtaSoon')
+  return t('plans.lockedCta', days, { n: days })
+})
+
+const supportTitle = computed(() => (lang.value === 'en' ? 'Support' : 'Apoyar a'))
 
 const toggleArtist = (artist) => {
   const id = String(artist.id)
+  if (alreadySupported.value.some((row) => row.id === id)) return
   const exists = picked.value.find((row) => row.id === id)
   if (exists) {
-    if (isLockedArtist(id)) return
     picked.value = picked.value.filter((row) => row.id !== id)
     return
   }
-  const max = Number(item.value.maxArtists || 1)
-  const lockedCount = picked.value.filter((row) => isLockedArtist(row.id)).length
-  const cap = Math.max(max, lockedCount)
-  if (picked.value.length >= cap) {
-    const unlocked = picked.value.find((row) => !isLockedArtist(row.id))
-    if (!unlocked) return
-    picked.value = picked.value.filter((row) => row.id !== unlocked.id)
-  }
+  if (!remainingSlots.value) return
+  if (picked.value.length >= remainingSlots.value) picked.value = picked.value.slice(1)
   picked.value = [
     ...picked.value,
     { id, name: artist.name, image: artistImage(artist) },
@@ -318,7 +332,6 @@ const toggleArtist = (artist) => {
 }
 
 const removePicked = (id) => {
-  if (isLockedArtist(id)) return
   picked.value = picked.value.filter((row) => row.id !== String(id))
 }
 
@@ -519,9 +532,11 @@ const mountPaypalButtons = async () => {
       style: {
         layout: 'vertical',
         color: 'gold',
-        shape: 'rect',
+        shape: 'pill',
         label: 'paypal',
-        height: 48,
+        height: 55,
+        tagline: false,
+        disableMaxWidth: true,
       },
       onClick: (_data, actions) => {
         if (!checkoutReady.value) return actions.reject()
@@ -529,6 +544,7 @@ const mountPaypalButtons = async () => {
       },
       createOrder: async () => {
         errorMessage.value = ''
+        noticeTone.value = 'error'
         if (!checkoutReady.value) {
           throw new Error(payBlockedReason.value)
         }
@@ -536,6 +552,7 @@ const mountPaypalButtons = async () => {
           const created = await createPaypalOrder(checkoutBody())
           return created.orderId
         } catch (error) {
+          noticeTone.value = 'error'
           errorMessage.value =
             error?.message || (lang.value === 'en' ? 'Could not connect to PayPal.' : 'No se pudo conectar con PayPal.')
           throw error
@@ -544,10 +561,12 @@ const mountPaypalButtons = async () => {
       onApprove: async (data) => {
         isPaying.value = true
         errorMessage.value = ''
+        noticeTone.value = 'error'
         try {
           const result = await capturePaypalOrder(data.orderID)
           await applyPaidResult(result)
         } catch (error) {
+          noticeTone.value = 'error'
           errorMessage.value =
             error?.message || (lang.value === 'en' ? 'PayPal could not confirm the payment.' : 'PayPal no pudo confirmar el pago.')
         } finally {
@@ -555,9 +574,14 @@ const mountPaypalButtons = async () => {
         }
       },
       onCancel: () => {
-        errorMessage.value = lang.value === 'en' ? 'PayPal payment cancelled.' : 'Pago de PayPal cancelado.'
+        noticeTone.value = 'cancel'
+        errorMessage.value =
+          lang.value === 'en'
+            ? 'You cancelled the PayPal payment. You can try again whenever you want.'
+            : 'Cancelaste el pago de PayPal. Puedes intentarlo de nuevo cuando quieras.'
       },
       onError: (err) => {
+        noticeTone.value = 'error'
         errorMessage.value =
           err?.message || (lang.value === 'en' ? 'PayPal error.' : 'Error de PayPal.')
       },
@@ -673,11 +697,21 @@ onBeforeUnmount(() => {
 
         <MegaUpgradePills v-if="item.type === 'plan'" class="mt-5" :sku="item.sku" />
 
-        <div v-if="item.type === 'plan'">
-        <p class="mt-6 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span class="text-xs font-black uppercase tracking-[0.28em] text-slate-400">{{ supportTitle }}</span>
-          <span v-if="pickedNames" class="text-sm font-black leading-5" :class="planTone">{{ pickedNames }}</span>
+        <p
+          v-if="planLocked"
+          class="mt-5 text-sm font-bold leading-6 text-amber-200"
+        >
+          {{ $t('plans.lockedBody', { name: activeMembership?.name, time: lockedTimeLabel }) }}
         </p>
+        <p
+          v-else-if="item.type === 'plan'"
+          class="mt-5 text-sm font-bold leading-6 text-slate-400"
+        >
+          {{ remainingSlots === 0 && alreadySupported.length ? $t('plans.keepSupport') : $t('plans.supportPeriod') }}
+        </p>
+
+        <div v-if="item.type === 'plan' && !planLocked && remainingSlots > 0">
+        <p class="mt-6 text-xs font-black uppercase tracking-[0.28em] text-slate-400">{{ supportTitle }}</p>
         <div v-if="pickedDisplay.length" class="mt-3 flex flex-wrap gap-2">
           <button
             v-for="artist in pickedDisplay"
@@ -685,7 +719,7 @@ onBeforeUnmount(() => {
             type="button"
             class="flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1.5 text-left text-sm font-bold"
             :class="item.sku === 'MEGA' || megaNow ? 'border-amber-300/35 bg-amber-300/10 text-amber-100' : 'border-fuchsia-300/35 bg-fuchsia-500/15 text-fuchsia-100'"
-            :title="isLockedArtist(artist.id) ? (lang === 'en' ? 'Already supporting' : 'Ya lo apoyas') : (lang === 'en' ? 'Remove' : 'Quitar')"
+            :title="lang === 'en' ? 'Remove' : 'Quitar'"
             @click="removePicked(artist.id)"
           >
             <img
@@ -698,7 +732,7 @@ onBeforeUnmount(() => {
               {{ String(artist.name || '?').charAt(0) }}
             </span>
             <span class="truncate">{{ artist.name }}</span>
-            <span v-if="!isLockedArtist(artist.id)" class="text-white/50">×</span>
+            <span class="text-white/50">×</span>
           </button>
         </div>
         <input
@@ -750,13 +784,14 @@ onBeforeUnmount(() => {
         </div>
         <p class="mt-3 text-xs leading-5 text-slate-500">
           {{
-            Number(item.maxArtists || 1) > 1
-              ? (lang === 'en' ? `You can pick up to ${item.maxArtists} artists.` : `Puedes elegir hasta ${item.maxArtists} artistas.`)
-              : (lang === 'en' ? 'Pick 1 artist to appear on their profile.' : 'Elige 1 artista para salir en su perfil.')
+            alreadySupported.length
+              ? (lang === 'en'
+                ? `Artists you already support are hidden. Pick others — up to ${remainingSlots}.`
+                : `Los que ya apoyas no salen. Elige otros: hasta ${remainingSlots}.`)
+              : remainingSlots > 1
+                ? (lang === 'en' ? `You can pick up to ${remainingSlots} artists.` : `Puedes elegir hasta ${remainingSlots} artistas.`)
+                : (lang === 'en' ? 'Pick 1 artist to appear on their profile.' : 'Elige 1 artista para salir en su perfil.')
           }}
-          <span v-if="lockedArtistIds.size" class="mt-1 block">
-            {{ lang === 'en' ? 'Artists you already support stay supported.' : 'El artista que ya apoyas se queda. No se quita al comprar otro plan.' }}
-          </span>
         </p>
         </div>
       </div>
@@ -820,7 +855,35 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <p v-if="errorMessage" class="mt-3 text-sm font-bold text-red-300">{{ errorMessage }}</p>
+        <div
+          v-if="errorMessage"
+          class="mt-4 flex items-start gap-3 rounded-2xl border px-4 py-3.5"
+          :class="noticeTone === 'cancel'
+            ? 'border-amber-300/30 bg-amber-400/12 text-amber-50'
+            : 'border-red-300/30 bg-red-500/12 text-red-50'"
+        >
+          <span
+            class="mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl border"
+            :class="noticeTone === 'cancel'
+              ? 'border-amber-300/25 bg-amber-400/15 text-amber-100'
+              : 'border-red-300/25 bg-red-500/15 text-red-100'"
+          >
+            <i
+              class="fa-fw text-sm leading-none"
+              :class="noticeTone === 'cancel' ? 'fa-solid fa-rotate-left' : 'fa-solid fa-circle-exclamation'"
+              aria-hidden="true"
+            ></i>
+          </span>
+          <p class="min-w-0 flex-1 pt-1 text-sm font-bold leading-5">{{ errorMessage }}</p>
+          <button
+            type="button"
+            class="grid size-8 shrink-0 place-items-center rounded-full text-lg leading-none text-white/50 transition hover:bg-white/10 hover:text-white"
+            :aria-label="lang === 'en' ? 'Dismiss' : 'Cerrar'"
+            @click="errorMessage = ''"
+          >
+            ×
+          </button>
+        </div>
 
         <div class="mt-5">
           <button
@@ -837,9 +900,9 @@ onBeforeUnmount(() => {
           </p>
           <div
             v-if="checkoutReady"
-            class="paypal-gold-btn overflow-hidden rounded-2xl shadow-[0_10px_28px_rgba(255,196,57,0.22)]"
+            class="paypal-btn-wrap"
           >
-            <div ref="paypalHost" class="paypal-gold-btn__host w-full"></div>
+            <div ref="paypalHost" class="paypal-btn-wrap__host"></div>
           </div>
           <p v-if="paypalConfig.enabled && paypalConfig.mode !== 'live'" class="mt-2 text-center text-[11px] text-amber-200/80">
             {{ lang === 'en' ? 'Test mode. Use a PayPal sandbox buyer account.' : 'Modo prueba. Usa una cuenta comprador de PayPal sandbox.' }}
@@ -1070,13 +1133,33 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.paypal-gold-btn {
-  background: #ffc439;
-  min-height: 48px;
+.paypal-btn-wrap {
+  position: relative;
+  z-index: 20;
+  width: 100%;
+  min-height: 55px;
+  overflow: hidden;
+  border-radius: 1rem;
 }
-.paypal-gold-btn__host :deep(.paypal-buttons),
-.paypal-gold-btn__host :deep(iframe) {
-  min-height: 48px !important;
-  background: #ffc439 !important;
+.paypal-btn-wrap__host {
+  position: relative;
+  z-index: 21;
+  display: block;
+  width: 100%;
+  min-height: 55px;
+  overflow: hidden;
+  border-radius: 1rem;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.paypal-btn-wrap__host :deep(.paypal-buttons),
+.paypal-btn-wrap__host :deep(iframe) {
+  position: relative;
+  z-index: 22;
+  max-width: none;
+  overflow: hidden;
+  border-radius: 1rem;
+  cursor: pointer !important;
+  pointer-events: auto !important;
 }
 </style>

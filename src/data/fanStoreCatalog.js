@@ -206,6 +206,21 @@ export const storeDisplayPrice = (item, { currency = 'USD', yearly = false } = {
   return currency === 'COP' ? item.copM : item.usdM
 }
 
+export const planRank = (sku) => {
+  const key = String(sku || '').toUpperCase()
+  if (key === 'MEGA') return 3
+  if (key === 'SUPER') return 2
+  if (key === 'FAN') return 1
+  return 0
+}
+
+export const canBuyPlan = (activeSku, nextSku) => {
+  if (!activeSku) return true
+  const next = planRank(nextSku)
+  if (!next) return true
+  return next > planRank(activeSku)
+}
+
 export const checkoutTotals = (item, { currency = 'USD', yearly = false, country = 'CO', packDiscount = 0 } = {}) => {
   let base = Number(storeItemPrice(item, { currency, yearly }) || 0)
   if (item?.type === 'pack' && Number(packDiscount) > 0) {

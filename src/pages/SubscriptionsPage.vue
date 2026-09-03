@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FanCheckoutPanel from '../components/FanCheckoutPanel.vue'
 import {
+  canBuyPlan,
   canSeeFanStore,
   formatStoreMoney,
   getFanPacks,
@@ -12,17 +13,19 @@ import {
   isFanStoreAdmin,
   loadFanStore,
   onFanStoreChange,
+  planRank,
   storeDisplayPrice,
   waitForFanStore,
 } from '../services/fanStore'
 import { pickLocalized, pickLocalizedList } from '../utils/localizedCopy'
 import { routePath } from '../utils/localizedRoutes'
+import { fanMembershipState, loadFanMe } from '../utils/fanPerks'
 
 const yearly = ref(false)
 const currency = ref('USD')
 const storeVersion = ref(0)
 const ready = ref(false)
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 const formatPrice = (amount) => formatStoreMoney(amount, currency.value)
 const isAdminPreview = computed(() => {
   storeVersion.value
@@ -60,8 +63,33 @@ const packs = computed(() => {
 })
 
 const checkout = ref(null)
+const membershipTick = ref(0)
+
+const activeMembership = computed(() => {
+  membershipTick.value
+  const current = fanMembershipState.value?.membership
+  if (!current || current.expired || current.type === 'pack') return null
+  return current
+})
+
+const planAction = (plan) => {
+  const current = activeMembership.value
+  if (!current) return 'buy'
+  if (!canBuyPlan(current.sku, plan.sku)) return 'locked'
+  return 'upgrade'
+}
+
+const remainingDays = computed(() => Math.max(0, Number(activeMembership.value?.daysLeft || 0)))
+
+const lockedTimeLabel = computed(() => {
+  const days = remainingDays.value
+  if (!days) return t('plans.lockedCtaSoon')
+  return t('plans.lockedCta', days, { n: days })
+})
 
 const openCheckout = (sku) => {
+  const current = activeMembership.value
+  if (planRank(sku) && current && !canBuyPlan(current.sku, sku)) return
   checkout.value = {
     sku,
     currency: currency.value,
@@ -98,6 +126,8 @@ onMounted(async () => {
   const viewer = getFanStoreViewer()
   if (isFanStoreAdmin(viewer)) {
     ready.value = true
+    await loadFanMe()
+    membershipTick.value += 1
     loadFanStore().then(() => {
       storeVersion.value += 1
     })
@@ -114,6 +144,8 @@ onMounted(async () => {
     return
   }
   ready.value = true
+  await loadFanMe()
+  membershipTick.value += 1
   stopStore = onFanStoreChange(() => {
     storeVersion.value += 1
     if (!canSeeFanStore(getFanStoreViewer())) bounceHome()
@@ -166,6 +198,9 @@ const planTone = (plan) => {
         </h1>
         <p class="mx-auto mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
           {{ copy.subhead }}
+        </p>
+        <p class="mx-auto mt-3 max-w-2xl text-xs font-bold leading-6 text-slate-500 sm:text-sm">
+          {{ $t('plans.supportPeriod') }}
         </p>
 
         <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -277,12 +312,22 @@ const planTone = (plan) => {
 
         <button
           type="button"
-          class="relative mt-7 rounded-2xl px-5 py-4 text-sm font-black uppercase tracking-wide shadow-lg transition hover:scale-[1.02]"
+          class="relative mt-7 rounded-2xl px-5 py-4 text-sm font-black uppercase tracking-wide shadow-lg transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
           :class="planCta(plan)"
+          :disabled="planAction(plan) === 'locked'"
           @click="openCheckout(plan.sku)"
         >
-          {{ $t('plans.choose', { name: plan.name }) }}
+          {{
+            planAction(plan) === 'locked'
+              ? lockedTimeLabel
+              : planAction(plan) === 'upgrade'
+                ? $t('plans.upgradeTo', { name: plan.name })
+                : $t('plans.choose', { name: plan.name })
+          }}
         </button>
+        <p v-if="planAction(plan) === 'locked'" class="relative mt-3 text-xs font-bold leading-5 text-slate-400">
+          {{ $t('plans.lockedBody', { name: activeMembership.name, time: lockedTimeLabel }) }}
+        </p>
       </article>
     </div>
 
