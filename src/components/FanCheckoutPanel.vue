@@ -532,7 +532,7 @@ const mountPaypalButtons = async () => {
       style: {
         layout: 'vertical',
         color: 'gold',
-        shape: 'pill',
+        shape: 'rect',
         label: 'paypal',
         height: 55,
         tagline: false,
@@ -1140,6 +1140,7 @@ onBeforeUnmount(() => {
   min-height: 55px;
   overflow: hidden;
   border-radius: 1rem;
+  background: #ffc439;
 }
 .paypal-btn-wrap__host {
   position: relative;
@@ -1149,16 +1150,21 @@ onBeforeUnmount(() => {
   min-height: 55px;
   overflow: hidden;
   border-radius: 1rem;
+  background: #ffc439;
   cursor: pointer;
   pointer-events: auto;
 }
 .paypal-btn-wrap__host :deep(.paypal-buttons),
+.paypal-btn-wrap__host :deep(.paypal-buttons > div),
 .paypal-btn-wrap__host :deep(iframe) {
   position: relative;
   z-index: 22;
   max-width: none;
   overflow: hidden;
   border-radius: 1rem;
+  background: #ffc439 !important;
+  background-color: #ffc439 !important;
+  color-scheme: normal;
   cursor: pointer !important;
   pointer-events: auto !important;
 }

@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import 'poll.dart';
 
 class PollCategoryItem {
@@ -37,7 +39,61 @@ class PollsCategoryFilter {
   }
 }
 
-const _fallbackIcons = ['⭐', '👑', '🏆', '🎤', '❤️', '🔥', '⚡'];
+const _fallbackIcons = [
+  'fa-solid fa-star',
+  'fa-solid fa-crown',
+  'fa-solid fa-trophy',
+  'fa-solid fa-microphone-lines',
+  'fa-solid fa-heart',
+  'fa-solid fa-fire',
+  'fa-solid fa-bolt',
+];
+
+bool isFontAwesomeCategoryIcon(String icon) {
+  return icon.toLowerCase().contains('fa-');
+}
+
+IconData categoryIconData(String icon) {
+  final key = icon.toLowerCase();
+  if (key.contains('crown')) return Icons.workspace_premium_rounded;
+  if (key.contains('trophy')) return Icons.emoji_events_rounded;
+  if (key.contains('microphone') || key.contains('mic')) {
+    return Icons.mic_rounded;
+  }
+  if (key.contains('heart')) return Icons.favorite_rounded;
+  if (key.contains('fire')) return Icons.local_fire_department_rounded;
+  if (key.contains('bolt')) return Icons.bolt_rounded;
+  if (key.contains('music')) return Icons.music_note_rounded;
+  if (key.contains('medal')) return Icons.military_tech_rounded;
+  return Icons.star_rounded;
+}
+
+class CategoryGlyph extends StatelessWidget {
+  const CategoryGlyph({
+    required this.icon,
+    required this.size,
+    required this.color,
+    super.key,
+  });
+
+  final String icon;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = icon.trim();
+    if (value.isNotEmpty &&
+        !isFontAwesomeCategoryIcon(value) &&
+        value.length <= 3) {
+      return Text(
+        value,
+        style: TextStyle(fontSize: size, height: 1, color: color),
+      );
+    }
+    return Icon(categoryIconData(value), size: size, color: color);
+  }
+}
 
 bool _pollHasVotingData(Poll poll) {
   return poll.status == 'live' ||

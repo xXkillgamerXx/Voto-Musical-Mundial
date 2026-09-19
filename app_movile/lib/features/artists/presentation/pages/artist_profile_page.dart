@@ -7,6 +7,7 @@ import '../../../auth/data/auth_service.dart';
 import '../../../hall_of_fame/data/hall_of_fame_api.dart';
 import '../../../home/data/polls_api.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
+import '../../../fan/presentation/widgets/supporters_board.dart';
 import '../../data/artist.dart';
 import '../../data/artists_api.dart';
 import '../widgets/artist_avatar.dart';
@@ -172,6 +173,11 @@ class _ArtistProfilePageState extends State<ArtistProfilePage> {
                                   value: _formatProfileCount(popularity),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 16),
+                            SupportersBoard(
+                              artistId: widget.artist.id,
+                              authService: widget.authService,
                             ),
                             const SizedBox(height: 16),
                             _InfoPanel(artist: widget.artist),

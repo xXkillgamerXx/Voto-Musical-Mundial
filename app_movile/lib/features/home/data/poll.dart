@@ -317,9 +317,13 @@ class Poll {
       if (category is Map<String, dynamic>) category['name'],
       categoryNameEs,
     ]);
-    final categoryIcon = category is Map<String, dynamic>
-        ? _stringValue([category['icon']])
-        : _stringValue([metadata['categoryIcon'], json['categoryIcon']]);
+    final categoryIcon = _stringValue([
+      if (category is Map<String, dynamic>) category['icon'],
+      categoryMeta['icon'],
+      metadata['categoryIcon'],
+      json['categoryIcon'],
+      config['categoryIcon'],
+    ]);
     final rounds = (json['rounds'] as List<dynamic>? ?? const [])
         .whereType<Map>()
         .map((item) => PollRound.fromJson(Map<String, dynamic>.from(item)))

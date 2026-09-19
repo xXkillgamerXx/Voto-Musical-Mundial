@@ -9,6 +9,8 @@ import '../../../auth/data/auth_service.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/widgets/points_chip.dart';
+import '../../../fan/presentation/widgets/fan_badge.dart';
+import '../../../reports/presentation/report_sheet.dart';
 import '../../data/user_profile.dart';
 import '../../data/users_api.dart';
 
@@ -124,6 +126,19 @@ class _UserProfilePageState extends State<UserProfilePage> {
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          if (!_isOwnProfileRequest)
+            IconButton(
+              tooltip: tr('report.profile'),
+              onPressed: () {
+                showReportSheet(
+                  context,
+                  authService: widget.authService,
+                  targetType: 'user_profile',
+                  targetId: widget.username ?? '',
+                );
+              },
+              icon: const Icon(Icons.flag_outlined),
+            ),
           AppBarPointsAction(session: widget.authService.session),
         ],
       ),
@@ -250,6 +265,13 @@ class _UserProfilePageState extends State<UserProfilePage> {
                                                 fontWeight: FontWeight.w900,
                                               ),
                                             ),
+                                            if (profile.fanMembership != null &&
+                                                !profile.fanMembership!.expired) ...[
+                                              const SizedBox(height: 6),
+                                              FanBadge(
+                                                sku: profile.fanMembership!.sku,
+                                              ),
+                                            ],
                                             const SizedBox(height: 4),
                                             Text(
                                               profile.username.isEmpty

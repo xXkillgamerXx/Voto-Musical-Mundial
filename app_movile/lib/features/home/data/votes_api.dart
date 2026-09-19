@@ -185,6 +185,28 @@ class VotesApi {
         .map(VoteActivity.fromJson)
         .toList(growable: false);
   }
+
+  Future<ShareBoostStatus> getShareBoost() async {
+    final payload = await _client.request(
+      '/votes/share-boost',
+      token: _client.accessToken,
+    );
+    return ShareBoostStatus.fromJson(
+      payload is Map<String, dynamic> ? payload : const {},
+    );
+  }
+
+  Future<ShareBoostStatus> claimShareBoost({String platform = 'more'}) async {
+    final payload = await _client.request(
+      '/votes/share-boost',
+      method: 'POST',
+      token: _client.accessToken,
+      body: {'platform': platform},
+    );
+    return ShareBoostStatus.fromJson(
+      payload is Map<String, dynamic> ? payload : const {},
+    );
+  }
 }
 
 class FreeVoteStatus {
@@ -272,6 +294,34 @@ int _intValue(Object? value, [int fallback = 0]) {
   }
 
   return int.tryParse('$value') ?? fallback;
+}
+
+class ShareBoostStatus {
+  const ShareBoostStatus({
+    required this.enabled,
+    required this.multiplier,
+    required this.canClaim,
+    required this.claimedToday,
+    this.endsAt,
+  });
+
+  final bool enabled;
+  final int multiplier;
+  final bool canClaim;
+  final bool claimedToday;
+  final DateTime? endsAt;
+
+  factory ShareBoostStatus.fromJson(Map<String, dynamic> json) {
+    final active = json['active'];
+    final activeMap = active is Map ? Map<String, dynamic>.from(active) : null;
+    return ShareBoostStatus(
+      enabled: json['enabled'] == true,
+      multiplier: _intValue(json['multiplier'], 1),
+      canClaim: json['canClaim'] == true,
+      claimedToday: json['claimedToday'] == true,
+      endsAt: DateTime.tryParse('${activeMap?['endsAt'] ?? ''}'),
+    );
+  }
 }
 
 DateTime? _parseDate(Object? value) {

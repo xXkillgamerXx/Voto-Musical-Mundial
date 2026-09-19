@@ -2,6 +2,7 @@ import 'strings/auth_strings.dart';
 import 'strings/catalog_strings.dart';
 import 'strings/common_strings.dart';
 import 'strings/data_strings.dart';
+import 'strings/fan_strings.dart';
 import 'strings/home_strings.dart';
 import 'strings/misc_strings.dart';
 import 'strings/poll_detail_strings.dart';
@@ -20,4 +21,5 @@ void initI18n() {
   registerStrings(catalogStrings);
   registerStrings(miscStrings);
   registerStrings(settingsStrings);
+  registerStrings(fanStrings);
 }

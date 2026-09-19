@@ -6,6 +6,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_service.dart';
 import 'admob_config.dart';
+import '../fan/fan_perks.dart';
 
 /// Banner adaptativo con esquinas redondeadas. Si falla la carga, no ocupa espacio.
 class BannerAdWidget extends StatefulWidget {
@@ -117,20 +118,25 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (!AdMobConfig.adsEnabled || !_loaded || _banner == null) {
-      return const SizedBox.shrink();
-    }
+    return ListenableBuilder(
+      listenable: FanPerks.instance,
+      builder: (context, _) {
+        if (!AdMobConfig.adsEnabled || !_loaded || _banner == null) {
+          return const SizedBox.shrink();
+        }
 
-    return Padding(
-      padding: widget.padding,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: double.infinity,
-          height: _banner!.size.height.toDouble(),
-          child: AdWidget(ad: _banner!),
-        ),
-      ),
+        return Padding(
+          padding: widget.padding,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: double.infinity,
+              height: _banner!.size.height.toDouble(),
+              child: AdWidget(ad: _banner!),
+            ),
+          ),
+        );
+      },
     );
   }
 }

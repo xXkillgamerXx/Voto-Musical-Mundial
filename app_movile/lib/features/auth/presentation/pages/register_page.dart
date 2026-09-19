@@ -9,6 +9,7 @@ import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
 import 'terms_conditions_page.dart';
+import 'verify_email_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({required this.authService, super.key});
@@ -243,7 +244,7 @@ class _RegisterPageState extends State<RegisterPage> {
           ? '${selectedPhoneCountry!.dialCode} $phone'
           : phone;
 
-      await widget.authService.register(
+      final outcome = await widget.authService.register(
         email: _emailController.text.trim().toLowerCase(),
         password: _passwordController.text,
         username: _normalizedUsername,
@@ -265,6 +266,17 @@ class _RegisterPageState extends State<RegisterPage> {
       await ReferralStorage.clear();
 
       if (!mounted) return;
+      if (outcome.requiresVerification) {
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => VerifyEmailPage(
+              authService: widget.authService,
+              email: outcome.email,
+            ),
+          ),
+        );
+        return;
+      }
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {
       if (!mounted) return;

@@ -5,6 +5,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_service.dart';
 import 'admob_config.dart';
+import '../fan/fan_perks.dart';
 
 /// Native Advanced in-feed. Si falla la carga, no ocupa espacio.
 class NativeAdWidget extends StatefulWidget {
@@ -86,25 +87,30 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (!AdMobConfig.nativeAdsEnabled || !_loaded || _ad == null) {
-      return const SizedBox.shrink();
-    }
+    return ListenableBuilder(
+      listenable: FanPerks.instance,
+      builder: (context, _) {
+        if (!AdMobConfig.nativeAdsEnabled || !_loaded || _ad == null) {
+          return const SizedBox.shrink();
+        }
 
-    final height = widget.height ?? AdMobConfig.nativeAdHeight;
+        final height = widget.height ?? AdMobConfig.nativeAdHeight;
 
-    return Padding(
-      padding: widget.padding,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: ColoredBox(
-          color: const Color(0xFF120A2B),
-          child: SizedBox(
-            width: double.infinity,
-            height: height,
-            child: AdWidget(ad: _ad!),
+        return Padding(
+          padding: widget.padding,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: ColoredBox(
+              color: const Color(0xFF120A2B),
+              child: SizedBox(
+                width: double.infinity,
+                height: height,
+                child: AdWidget(ad: _ad!),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

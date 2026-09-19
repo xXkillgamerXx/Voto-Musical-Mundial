@@ -22,6 +22,14 @@ class ArtistsApi {
     return _mapArtists(payload);
   }
 
+  Future<List<Artist>> listAll({int limit = 250}) async {
+    final payload = await _client.cachedRequest(
+      '/artists?limit=$limit',
+      ttl: _artistTtl,
+    );
+    return _mapArtists(payload);
+  }
+
   Future<Artist> getArtist(String id, {bool forceRefresh = false}) async {
     final payload = await _client.cachedRequest(
       '/artists/${Uri.encodeComponent(id)}',

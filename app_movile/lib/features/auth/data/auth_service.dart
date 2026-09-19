@@ -11,6 +11,37 @@ import '../../../core/auth/auth_models.dart';
 import '../../../core/auth/auth_session.dart';
 import '../../../core/i18n/app_locale.dart';
 import '../../../core/i18n/tr.dart';
+import '../../../core/fan/fan_perks.dart';
+
+class EmailNotVerifiedException implements Exception {
+  const EmailNotVerifiedException(this.email);
+
+  final String email;
+}
+
+class RegisterOutcome {
+  const RegisterOutcome._({
+    required this.email,
+    required this.requiresVerification,
+    this.auth,
+  });
+
+  factory RegisterOutcome.signedIn(ApiAuth auth) {
+    return RegisterOutcome._(
+      email: auth.user.email,
+      requiresVerification: false,
+      auth: auth,
+    );
+  }
+
+  factory RegisterOutcome.needsVerification(String email) {
+    return RegisterOutcome._(email: email, requiresVerification: true);
+  }
+
+  final String email;
+  final bool requiresVerification;
+  final ApiAuth? auth;
+}
 
 class AuthService {
   AuthService(this._session) : _client = ApiClient(_session);
@@ -34,22 +65,35 @@ class AuthService {
     required String identifier,
     required String password,
   }) async {
-    final payload = await _client.request(
-      '/auth/login',
-      method: 'POST',
-      body: {
-        'identifier': identifier.trim().toLowerCase(),
-        'password': password,
-      },
-      retryOnUnauthorized: false,
-    );
+    try {
+      final payload = await _client.request(
+        '/auth/login',
+        method: 'POST',
+        body: {
+          'identifier': identifier.trim().toLowerCase(),
+          'password': password,
+        },
+        retryOnUnauthorized: false,
+      );
 
-    final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
-    await _session.setAuth(auth);
-    return auth;
+      final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
+      await _session.setAuth(auth);
+      return auth;
+    } on ApiException catch (error) {
+      if (error.statusCode == 403) {
+        final payload = error.payload;
+        if (payload is Map && '${payload['error']}' == 'EMAIL_NOT_VERIFIED') {
+          final email = '${payload['email'] ?? identifier}'.trim();
+          throw EmailNotVerifiedException(
+            email.isEmpty ? identifier.trim().toLowerCase() : email,
+          );
+        }
+      }
+      rethrow;
+    }
   }
 
-  Future<ApiAuth> register({
+  Future<RegisterOutcome> register({
     required String email,
     required String password,
     required String username,
@@ -76,9 +120,61 @@ class AuthService {
       retryOnUnauthorized: false,
     );
 
+    final map = payload is Map<String, dynamic> ? payload : <String, dynamic>{};
+    if (map['requiresEmailVerification'] == true) {
+      return RegisterOutcome.needsVerification(
+        '${map['email'] ?? email}'.trim().toLowerCase(),
+      );
+    }
+
+    final auth = ApiAuth.fromJson(map);
+    await _session.setAuth(auth);
+    return RegisterOutcome.signedIn(auth);
+  }
+
+  Future<ApiAuth> verifyEmail({
+    required String email,
+    required String code,
+  }) async {
+    final payload = await _client.request(
+      '/auth/verify-email',
+      method: 'POST',
+      body: {
+        'email': email.trim().toLowerCase(),
+        'code': code.trim(),
+      },
+      retryOnUnauthorized: false,
+    );
     final auth = ApiAuth.fromJson(payload as Map<String, dynamic>);
     await _session.setAuth(auth);
     return auth;
+  }
+
+  Future<void> resendVerification({required String email}) async {
+    await _client.request(
+      '/auth/resend-verification',
+      method: 'POST',
+      body: {
+        'email': email.trim().toLowerCase(),
+        'locale': AppLocale.instance.code == 'es' ? 'es' : 'en',
+      },
+      retryOnUnauthorized: false,
+    );
+  }
+
+  Future<void> resetPassword({
+    required String token,
+    required String password,
+  }) async {
+    await _client.request(
+      '/auth/reset-password',
+      method: 'POST',
+      body: {
+        'token': token.trim().toLowerCase(),
+        'password': password,
+      },
+      retryOnUnauthorized: false,
+    );
   }
 
   Future<void> requestPasswordReset({required String email}) async {
@@ -232,5 +328,6 @@ class AuthService {
     }
 
     await _session.signOut();
+    FanPerks.instance.clear();
   }
 }

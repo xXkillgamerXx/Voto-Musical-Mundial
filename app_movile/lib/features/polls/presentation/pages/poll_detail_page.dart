@@ -1561,6 +1561,19 @@ class _PollDetailPageState extends State<PollDetailPage> {
         title: poll.title,
       ),
     );
+    await _claimShareBoost(    );
+  }
+
+  Future<void> _claimShareBoost() async {
+    try {
+      final status = await _votesApi.claimShareBoost();
+      if (!mounted || !status.enabled) return;
+      if (status.multiplier > 1) {
+        _showMessage(tr('pollDetail.shareBoostClaimed'));
+      }
+    } catch (_) {
+      // Sharing still succeeded; boost is best-effort.
+    }
   }
 
   Future<void> _shareWinner(_VoteEntry winner) async {
@@ -4187,7 +4200,6 @@ class _VersusMatch extends StatelessWidget {
                     Expanded(
                       child: _VersusImage(
                         entry: entries[i],
-                        label: '${tr('pollDetail.option')} ${String.fromCharCode(65 + i)}',
                         showFeedback: feedbackId == entries[i].contestantId,
                         isWinner: winnerRankFor(entries[i]) != null,
                       ),
@@ -4290,13 +4302,11 @@ class _VersusBadge extends StatelessWidget {
 class _VersusImage extends StatelessWidget {
   const _VersusImage({
     required this.entry,
-    required this.label,
     required this.showFeedback,
     this.isWinner = false,
   });
 
   final _VoteEntry entry;
-  final String label;
   final bool showFeedback;
   final bool isWinner;
 
@@ -4374,32 +4384,6 @@ class _VersusImage extends StatelessWidget {
                       Color(0x22000000),
                       Color(0x88000000),
                     ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 8,
-                top: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0B0620).withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.18),
-                    ),
-                  ),
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1,
-                    ),
                   ),
                 ),
               ),

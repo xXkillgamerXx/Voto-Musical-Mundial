@@ -192,8 +192,8 @@ const Map<String, Map<String, String>> homeStrings = {
     'ko': '남은 시간',
   },
   'home.noCloseDefined': {
-    'es': 'SIN CIERRE DEFINIDO',
-    'en': 'NO DEFINED CLOSE',
+    'es': 'Sin cierre definido',
+    'en': 'No defined end time',
     'ko': '마감일 미정',
   },
 
@@ -428,6 +428,16 @@ const Map<String, Map<String, String>> homeStrings = {
     'ko': '미션을 불러올 수 없습니다.',
   },
   'home.retry': {'es': 'Reintentar', 'en': 'Retry', 'ko': '다시 시도'},
+  'home.buyEyebrow': {
+    'es': 'COMPRAR',
+    'en': 'BUY',
+    'ko': '구매',
+  },
+  'home.buyPlansTitle': {
+    'es': 'Planes fan',
+    'en': 'Fan plans',
+    'ko': '팬 플랜',
+  },
   'home.earnExtraPoints': {
     'es': 'GANA PUNTOS EXTRA',
     'en': 'EARN EXTRA POINTS',

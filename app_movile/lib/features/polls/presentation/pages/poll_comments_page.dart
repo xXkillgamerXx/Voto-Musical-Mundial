@@ -8,6 +8,8 @@ import '../../../../core/i18n/i18n_registry.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../fan/presentation/widgets/fan_badge.dart';
+import '../../../reports/presentation/report_sheet.dart';
 import '../../data/comments_api.dart';
 import '../../data/giphy_api.dart';
 import '../../data/poll_comment.dart';
@@ -457,6 +459,16 @@ class _PollCommentsPageState extends State<PollCommentsPage> {
                             timeLabel: _formatCommentDate(comment.createdAt),
                             canDelete: _canDelete(comment),
                             onDelete: () => _delete(comment),
+                            onReport: _canDelete(comment)
+                                ? null
+                                : () => showReportSheet(
+                                      context,
+                                      authService: widget.authService,
+                                      targetType: 'comment',
+                                      targetId: comment.id,
+                                      reportedUserId: comment.userId,
+                                      pollId: widget.pollId,
+                                    ),
                           ),
                         ),
                       ),
@@ -1008,12 +1020,14 @@ class _CommentCard extends StatelessWidget {
     required this.timeLabel,
     required this.canDelete,
     required this.onDelete,
+    this.onReport,
   });
 
   final PollComment comment;
   final String timeLabel;
   final bool canDelete;
   final VoidCallback onDelete;
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -1036,15 +1050,25 @@ class _CommentCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        comment.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13,
-                        ),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              comment.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          if (comment.fanSku.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            FanBadge(sku: comment.fanSku, compact: true),
+                          ],
+                        ],
                       ),
                     ),
                     if (timeLabel.isNotEmpty)
@@ -1082,6 +1106,17 @@ class _CommentCard extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                             fontSize: 11,
                           ),
+                        ),
+                      )
+                    else if (onReport != null)
+                      IconButton(
+                        onPressed: onReport,
+                        tooltip: tr('report.comment'),
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          Icons.flag_outlined,
+                          size: 18,
+                          color: Colors.white.withValues(alpha: 0.55),
                         ),
                       ),
                   ],

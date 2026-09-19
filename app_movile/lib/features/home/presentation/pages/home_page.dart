@@ -23,6 +23,7 @@ import '../../data/poll_category.dart';
 import '../../data/polls_api.dart';
 import '../../data/votes_api.dart';
 import '../widgets/community_section.dart';
+import '../widgets/home_fan_plans_section.dart';
 import '../widgets/missions_section.dart';
 import '../widgets/news_card.dart';
 import '../../../rewards/presentation/widgets/daily_reward_banner.dart';
@@ -447,14 +448,15 @@ class _HomePageState extends State<HomePage> {
                     onCategoryTap: widget.onOpenCategory,
                   ),
                 ),
-              SliverToBoxAdapter(
-                child: _TopRankingSection(
-                  artists: data.topWeekly,
-                  onArtistTap: _openProfile,
-                  onViewArtistsTap: () =>
-                      widget.onNavigateToSection('Artistas'),
+              if (data.topWeekly.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _TopRankingSection(
+                    artists: data.topWeekly,
+                    onArtistTap: _openProfile,
+                    onViewArtistsTap: () =>
+                        widget.onNavigateToSection('Artistas'),
+                  ),
                 ),
-              ),
               SliverToBoxAdapter(
                 child: ListenableBuilder(
                   listenable: _liveActivityFeed,
@@ -482,6 +484,9 @@ class _HomePageState extends State<HomePage> {
 
               SliverToBoxAdapter(
                 child: DailyRewardBanner(authService: widget.authService),
+              ),
+              SliverToBoxAdapter(
+                child: HomeFanPlansSection(authService: widget.authService),
               ),
               SliverToBoxAdapter(
                 child: MissionsSection(
@@ -1071,6 +1076,34 @@ class _HeroStatBlock extends StatelessWidget {
   }
 }
 
+bool _pollShowsCountdown(Poll poll) {
+  if (poll.status == 'selecting_winners') return true;
+  if (poll.hideCountdown) return false;
+  return poll.countdownEndAt != null;
+}
+
+bool _pollShowsLiveBox(Poll poll) {
+  if (poll.status == 'selecting_winners') return false;
+  if (poll.status == 'closed') return false;
+  if (poll.hideCountdown) return true;
+  return poll.countdownEndAt == null;
+}
+
+double _openPollCardHeight(Poll poll) {
+  if (_pollShowsCountdown(poll)) return 472;
+  if (_pollShowsLiveBox(poll)) return 416;
+  return 392;
+}
+
+double _openPollsCarouselHeight(List<Poll> polls) {
+  var height = 392.0;
+  for (final poll in polls) {
+    final next = _openPollCardHeight(poll);
+    if (next > height) height = next;
+  }
+  return height;
+}
+
 class _ActivePollsSection extends StatelessWidget {
   const _ActivePollsSection({
     required this.openPolls,
@@ -1125,13 +1158,14 @@ class _ActivePollsSection extends StatelessWidget {
           _HomePollsBlockTitle(
             title: tr('home.openPollsSection'),
             count: openPolls.length,
+            trailing: openPolls.length > 1 ? const _SwipePollsHint() : null,
           ),
           const SizedBox(height: 12),
           if (openPolls.isEmpty)
             _ActivePollsEmpty(onRankingTap: onRankingTap)
           else
             _PollsHorizontalCarousel(
-              height: 472,
+              height: _openPollsCarouselHeight(openPolls),
               cardWidthFactor: 0.82,
               polls: openPolls,
               compact: false,
@@ -1163,7 +1197,7 @@ class _ActivePollsSection extends StatelessWidget {
             const _ClosedPollsEmptyCard()
           else
             _PollsHorizontalCarousel(
-              height: 308,
+              height: 252,
               cardWidthFactor: 0.74,
               polls: closedPolls,
               compact: true,
@@ -1232,33 +1266,6 @@ class _PollsHorizontalCarouselState extends State<_PollsHorizontalCarousel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showHint) ...[
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 10, right: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tr('home.swipePollsHint'),
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: Colors.white.withValues(alpha: 0.45),
-                    size: 12,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
         SizedBox(
           height: widget.height,
           child: Stack(
@@ -1271,15 +1278,21 @@ class _PollsHorizontalCarouselState extends State<_PollsHorizontalCarousel> {
                 itemCount: widget.polls.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 14),
                 itemBuilder: (context, index) {
-                  return SizedBox(
+                  final poll = widget.polls[index];
+                  final card = SizedBox(
                     width: cardWidth,
+                    height: widget.compact
+                        ? widget.height
+                        : _openPollCardHeight(poll),
                     child: _ActivePollCard(
-                      poll: widget.polls[index],
+                      poll: poll,
                       visualIndex: index,
                       compact: widget.compact,
-                      onVoteTap: () => widget.onVoteTap(widget.polls[index]),
+                      onVoteTap: () => widget.onVoteTap(poll),
                     ),
                   );
+                  if (widget.compact) return card;
+                  return Align(alignment: Alignment.topCenter, child: card);
                 },
               ),
               if (showHint && _index < widget.polls.length - 1)
@@ -1352,6 +1365,7 @@ class _HomePollsBlockTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           title,
@@ -1380,6 +1394,33 @@ class _HomePollsBlockTitle extends StatelessWidget {
         ),
         const Spacer(),
         if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+class _SwipePollsHint extends StatelessWidget {
+  const _SwipePollsHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          tr('home.swipePollsHint'),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Icon(
+          Icons.arrow_forward_ios_rounded,
+          color: Colors.white.withValues(alpha: 0.45),
+          size: 12,
+        ),
       ],
     );
   }
@@ -1464,6 +1505,12 @@ class _ActivePollCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (poll.status == 'live' && !_pollShowsLiveBox(poll))
+                  const Positioned(
+                    top: 10,
+                    left: 10,
+                    child: _LivePill(),
+                  ),
               ],
             ),
           ),
@@ -1501,19 +1548,20 @@ class _ActivePollCard extends StatelessWidget {
                         height: 1.3,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     _PollCountdown(poll: poll),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                   ] else ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
+                    const Spacer(),
                   ],
-                  const Spacer(),
                   _GradientButton(
                     label: isClosed
                         ? tr('catalog.pollActionViewResults')
                         : isSelecting
                             ? tr('home.viewProcess')
                             : tr('home.vote'),
+                    compact: compact,
                     onTap: onVoteTap,
                   ),
                 ],
@@ -1575,17 +1623,17 @@ class _PollCountdownState extends State<_PollCountdown> {
     }
 
     if (poll.hideCountdown) {
-      return const _LiveBadge();
+      return const _NoCloseDateBanner();
     }
 
     final endDate = poll.countdownEndAt;
     if (endDate == null) {
-      return const _LiveBadge();
+      return const _NoCloseDateBanner();
     }
 
     final remaining = endDate.difference(_now);
-    if (remaining.isNegative && poll.status == 'live') {
-      return const _LiveBadge();
+    if (remaining.isNegative) {
+      return const _NoCloseDateBanner();
     }
 
     final days = remaining.inDays.clamp(0, 999);
@@ -1634,82 +1682,126 @@ class _PollCountdownState extends State<_PollCountdown> {
 }
 
 class _PollCountdownShell extends StatelessWidget {
-  const _PollCountdownShell({required this.child});
+  const _PollCountdownShell({
+    required this.child,
+    this.borderColor = const Color(0xFFFDE68A),
+  });
 
   final Widget child;
+  final Color borderColor;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1A1230), Color(0xFF0C0818)],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SizedBox(
+        width: double.infinity,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF1A1230), Color(0xFF0C0818)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: borderColor.withValues(alpha: 0.28),
+            ),
           ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFFDE68A).withValues(alpha: 0.28),
-          ),
+          child: child,
         ),
-        child: child,
       ),
     );
   }
 }
 
-class _LiveBadge extends StatelessWidget {
-  const _LiveBadge();
+class _NoCloseDateBanner extends StatelessWidget {
+  const _NoCloseDateBanner();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: const Color(0xFF34D399).withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: const Color(0xFF6EE7B7).withValues(alpha: 0.2),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF34D399).withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF6EE7B7).withValues(alpha: 0.45),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: Color(0xFF34D399),
+              shape: BoxShape.circle,
+            ),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              tr('home.liveNow'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFFD1FAE5),
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
               tr('home.noCloseDefined'),
-              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFF6EE7B7),
-                fontSize: 10,
+                color: Color(0xFFECFDF5),
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1,
+                height: 1.2,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LivePill extends StatelessWidget {
+  const _LivePill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xE6102A1F),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(
+              color: Color(0xFF34D399),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            tr('home.liveTag'),
+            style: const TextStyle(
+              color: Color(0xFFD1FAE5),
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2191,11 +2283,12 @@ class _MainCategoriesSection extends StatelessWidget {
                                           ],
                                         ),
                                         alignment: Alignment.center,
-                                        child: Text(
-                                          category.iconLabel.length <= 2
-                                              ? category.iconLabel
-                                              : '⭐',
-                                          style: const TextStyle(fontSize: 32),
+                                        child: CategoryGlyph(
+                                          icon: category.iconLabel,
+                                          size: 34,
+                                          color: Colors.white.withValues(
+                                            alpha: 0.92,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -2207,14 +2300,10 @@ class _MainCategoriesSection extends StatelessWidget {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      category.iconLabel.length <= 2
-                                          ? category.iconLabel
-                                          : '⭐',
-                                      style: const TextStyle(
-                                        color: Color(0xFFF0ABFC),
-                                        fontSize: 22,
-                                      ),
+                                    CategoryGlyph(
+                                      icon: category.iconLabel,
+                                      size: 22,
+                                      color: const Color(0xFFF0ABFC),
                                     ),
                                     const SizedBox(height: 6),
                                     Text(

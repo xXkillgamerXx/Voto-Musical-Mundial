@@ -4,6 +4,7 @@ import '../../../../core/i18n/tr.dart';
 import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
+import 'reset_password_page.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({
@@ -100,6 +101,21 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
             label: tr('auth.sendLink'),
             onPressed: _handleResetPassword,
             isLoading: _isLoading,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _isLoading
+                ? null
+                : () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ResetPasswordPage(
+                          authService: widget.authService,
+                        ),
+                      ),
+                    );
+                  },
+            child: Text(tr('auth.haveResetLink')),
           ),
           const SizedBox(height: 16),
           TextButton(

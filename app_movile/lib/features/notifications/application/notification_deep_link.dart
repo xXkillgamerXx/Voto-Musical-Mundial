@@ -4,6 +4,8 @@ import '../../artists/data/artists_api.dart';
 import '../../artists/presentation/pages/artist_profile_page.dart';
 import '../../artists/presentation/pages/ranking_popularity_page.dart';
 import '../../auth/data/auth_service.dart';
+import '../../fan/presentation/pages/fan_store_page.dart';
+import '../../legal/presentation/pages/privacy_page.dart';
 import '../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../home/presentation/pages/news_page.dart';
 import '../../polls/presentation/pages/poll_detail_page.dart';
@@ -117,6 +119,24 @@ class NotificationDeepLink {
       case 'misiones':
       case 'missions':
         onSelectSection?.call('Misiones');
+        return;
+      case 'planes':
+      case 'fan-store':
+      case 'membresia':
+      case 'membership':
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => FanStorePage(authService: authService),
+          ),
+        );
+        return;
+      case 'privacidad':
+      case 'privacy':
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => PrivacyPage(authService: authService),
+          ),
+        );
         return;
       case 'salon-de-la-fama':
       case 'hall-of-fame':

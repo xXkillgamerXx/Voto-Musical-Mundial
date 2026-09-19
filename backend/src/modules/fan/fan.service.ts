@@ -507,7 +507,7 @@ export class FanService {
       'EX',
       PAYPAL_ORDER_TTL_SEC,
     );
-    return { orderId: created.orderId, mode: this.paypal.mode() };
+    return { orderId: created.orderId, approveUrl: created.approveUrl, mode: this.paypal.mode() };
   }
 
   async capturePaypalOrder(userId: bigint, orderId: string) {

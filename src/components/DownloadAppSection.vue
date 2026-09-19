@@ -3,8 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getAppDownloadConfig } from '../services/api/appDownloadApi'
 import {
+  APP_STORE_URL,
   getGooglePlayOpenUrl,
   normalizePlayStoreWebUrl,
+  showAppStoreBadge,
+  showPlayStoreBadge,
 } from '../utils/openGooglePlay'
 
 const DEFAULT_PLAY_URL =
@@ -17,12 +20,20 @@ const firstOpenRewardEnabled = ref(true)
 const firstOpenRewardPoints = ref(15)
 
 const playOpenUrl = computed(() => getGooglePlayOpenUrl(playStoreUrl.value))
+const isEnglish = computed(() =>
+  String(locale.value || 'es').toLowerCase().startsWith('en'),
+)
 
 const playBadgeSrc = computed(() =>
-  String(locale.value || 'es').toLowerCase().startsWith('en')
-    ? '/google-play-badge-en.png'
-    : '/google-play-badge-es.png',
+  isEnglish.value ? '/google-play-badge-en.png' : '/google-play-badge-es.png',
 )
+
+const appStoreBadgeSrc = computed(() =>
+  isEnglish.value ? '/app-store-badge-en.svg' : '/app-store-badge-es.svg',
+)
+
+const showPlay = showPlayStoreBadge()
+const showAppStore = showAppStoreBadge()
 
 onMounted(async () => {
   try {
@@ -121,19 +132,38 @@ onMounted(async () => {
             </span>
           </div>
 
-          <a
-            :href="playOpenUrl"
-            class="download-app__badge group mt-7 inline-flex focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300/70"
-            :aria-label="$t('home.downloadApp.ctaAria')"
-          >
-            <img
-              :src="playBadgeSrc"
-              :alt="$t('home.downloadApp.badgeAlt')"
-              class="download-app__badge-img relative z-10 h-[4.5rem] w-auto sm:h-[5.5rem] lg:h-[6.25rem]"
-              width="280"
-              height="100"
-            />
-          </a>
+          <div class="mt-7 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+            <a
+              v-if="showPlay"
+              :href="playOpenUrl"
+              class="download-app__badge group inline-flex focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300/70"
+              :aria-label="$t('home.downloadApp.ctaAria')"
+            >
+              <img
+                :src="playBadgeSrc"
+                :alt="$t('home.downloadApp.badgeAlt')"
+                class="download-app__badge-img relative z-10 h-[3.35rem] w-auto sm:h-[4.15rem] lg:h-[4.65rem]"
+                width="280"
+                height="100"
+              />
+            </a>
+            <a
+              v-if="showAppStore"
+              :href="APP_STORE_URL"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="download-app__badge group inline-flex focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300/70"
+              :aria-label="$t('home.downloadApp.appStoreCtaAria')"
+            >
+              <img
+                :src="appStoreBadgeSrc"
+                :alt="$t('home.downloadApp.appStoreBadgeAlt')"
+                class="download-app__badge-img relative z-10 h-[3.35rem] w-auto sm:h-[4.15rem] lg:h-[4.65rem]"
+                width="120"
+                height="40"
+              />
+            </a>
+          </div>
         </div>
 
         <div class="download-app__phone-wrap relative mx-auto w-full max-w-[260px] sm:max-w-[300px] lg:max-w-none lg:justify-self-end">

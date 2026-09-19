@@ -27,7 +27,7 @@ import {
 } from "../services/api/votesApi";
 import { getMissions, reportMissionPollView } from "../services/api/missionsApi";
 import { getAppDownloadConfig } from "../services/api/appDownloadApi";
-import { openGooglePlay } from "../utils/openGooglePlay";
+import { openOfficialApp } from "../utils/openGooglePlay";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
 import {
   loadContestantMetadata,
@@ -1510,7 +1510,7 @@ const openAppDownload = () => {
   const url =
     String(appDownloadPrompt.value.playStoreUrl || "").trim() ||
     DEFAULT_PLAY_STORE_URL;
-  openGooglePlay(url);
+  openOfficialApp(url);
 };
 
 const openAppDownloadFromPrompt = () => {

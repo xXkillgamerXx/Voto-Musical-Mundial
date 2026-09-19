@@ -1,3 +1,5 @@
+import '../../fan/data/fan_models.dart';
+
 class FollowedArtistSummary {
   const FollowedArtistSummary({
     required this.id,
@@ -41,6 +43,7 @@ class UserProfile {
     required this.country,
     required this.followedArtists,
     this.emailCampaigns = true,
+    this.fanMembership,
   });
 
   final String id;
@@ -51,6 +54,7 @@ class UserProfile {
   final String bio;
   final String country;
   final bool emailCampaigns;
+  final FanMembership? fanMembership;
   final List<FollowedArtistSummary> followedArtists;
 
   String get name {
@@ -84,6 +88,11 @@ class UserProfile {
       bio: _stringValue([json['bio']]),
       country: _stringValue([json['country']]),
       emailCampaigns: json['emailCampaigns'] != false,
+      fanMembership: json['fanMembership'] is Map<String, dynamic>
+          ? FanMembership.fromJson(
+              json['fanMembership'] as Map<String, dynamic>,
+            )
+          : null,
       followedArtists: followed is List
           ? followed
                 .whereType<Map<String, dynamic>>()

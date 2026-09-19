@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
+import '../../../fan/presentation/pages/fan_store_page.dart';
+import '../../../fan/presentation/pages/membership_page.dart';
+import '../../../legal/presentation/pages/privacy_page.dart';
 import '../../../users/data/users_api.dart';
 import '../../../users/presentation/pages/edit_profile_page.dart';
 
@@ -101,6 +104,54 @@ class _SettingsPageState extends State<SettingsPage> {
                     MaterialPageRoute(
                       builder: (_) =>
                           EditProfilePage(authService: widget.authService),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SettingsCard(
+              child: _SettingsTile(
+                icon: Icons.workspace_premium_outlined,
+                title: tr('settings.membership'),
+                subtitle: tr('settings.membershipSubtitle'),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          MembershipPage(authService: widget.authService),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SettingsCard(
+              child: _SettingsTile(
+                icon: Icons.storefront_outlined,
+                title: tr('fan.storeTitle'),
+                subtitle: tr('fan.seePlans'),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          FanStorePage(authService: widget.authService),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SettingsCard(
+              child: _SettingsTile(
+                icon: Icons.privacy_tip_outlined,
+                title: tr('settings.privacy'),
+                subtitle: tr('settings.privacySubtitle'),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          PrivacyPage(authService: widget.authService),
                     ),
                   );
                 },

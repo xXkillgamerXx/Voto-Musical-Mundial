@@ -7,6 +7,7 @@ class PollComment {
     required this.text,
     required this.gifUrl,
     required this.createdAt,
+    this.fanSku = '',
   });
 
   final String id;
@@ -16,6 +17,7 @@ class PollComment {
   final String text;
   final String gifUrl;
   final DateTime? createdAt;
+  final String fanSku;
 
   factory PollComment.fromJson(Map<String, dynamic> json) {
     final gif = json['gif'];
@@ -34,6 +36,7 @@ class PollComment {
       text: '${json['text'] ?? ''}'.trim(),
       gifUrl: gifUrl,
       createdAt: _parseDate(json['createdAt']),
+      fanSku: '${json['fanSku'] ?? json['sku'] ?? ''}'.trim().toUpperCase(),
     );
   }
 

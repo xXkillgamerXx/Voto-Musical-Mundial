@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../fan/fan_perks.dart';
+
 /// IDs de AdMob.
 ///
 /// - `flutter run` (debug): App ID + unidades de **prueba** de Google → siempre
@@ -120,6 +122,7 @@ class AdMobConfig {
 
   static bool get adsEnabled {
     if (hideAds) return false;
+    if (FanPerks.instance.adsFree) return false;
     if (kIsWeb) return false;
     if (!(Platform.isAndroid || Platform.isIOS)) return false;
     if (useTestAds) return true;

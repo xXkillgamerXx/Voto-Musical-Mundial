@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
 import '../../../../core/ads/ad_service.dart';
+import '../../../../core/fan/fan_perks.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/navigation/app_deep_link.dart';
 import '../../../../core/notifications/push_notification_service.dart';
@@ -18,6 +19,9 @@ import '../../../home/data/poll_category.dart';
 import '../../../home/presentation/pages/home_page.dart';
 import '../../../home/presentation/pages/missions_page.dart';
 import '../../../home/presentation/pages/news_page.dart';
+import '../../../fan/data/fan_api.dart';
+import '../../../fan/presentation/pages/fan_store_page.dart';
+import '../../../fan/presentation/widgets/fan_badge.dart';
 import '../../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../../notifications/application/notification_controller.dart';
 import '../../../notifications/application/notification_deep_link.dart';
@@ -128,6 +132,7 @@ class _SignedInPageState extends State<_SignedInPage> {
       unawaited(_notifications.enablePush());
       PushNotificationService.instance.bindOpenHandler(_handlePushOpened);
       unawaited(_startDeepLinks());
+      unawaited(_loadFanPerks());
     });
   }
 
@@ -137,6 +142,14 @@ class _SignedInPageState extends State<_SignedInPage> {
       context: context,
       authService: widget.authService,
     );
+  }
+
+  Future<void> _loadFanPerks() async {
+    try {
+      await FanApi(widget.authService.client).getMe();
+    } catch (_) {
+      // Best-effort: ads and badges fall back to free until the next refresh.
+    }
   }
 
   Future<void> _startDeepLinks() async {
@@ -152,6 +165,20 @@ class _SignedInPageState extends State<_SignedInPage> {
 
     final navContext = _shellNavigatorKey.currentContext ?? context;
     if (!mounted) {
+      return;
+    }
+
+    if (path == '/planes' ||
+        path == '/fan-store' ||
+        path == '/membresia' ||
+        path == '/membership') {
+      unawaited(
+        Navigator.of(navContext, rootNavigator: true).push(
+          MaterialPageRoute(
+            builder: (_) => FanStorePage(authService: widget.authService),
+          ),
+        ),
+      );
       return;
     }
 
@@ -411,6 +438,15 @@ class _SignedInPageState extends State<_SignedInPage> {
                 }
                 if (section == 'Ranking Popularity') {
                   _openRankingPopularity();
+                  return;
+                }
+                if (section == 'Planes') {
+                  Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          FanStorePage(authService: widget.authService),
+                    ),
+                  );
                   return;
                 }
                 _selectSection(section);
@@ -905,6 +941,7 @@ class _HomeMenuDrawer extends StatelessWidget {
     _HomeMenuItem('Artistas', Icons.star_rounded),
     _HomeMenuItem('Ranking Popularity', Icons.leaderboard_rounded),
     _HomeMenuItem('Salón de la fama', Icons.workspace_premium_rounded),
+    _HomeMenuItem('Planes', Icons.workspace_premium_outlined),
   ];
 
   @override
@@ -1094,6 +1131,17 @@ class _DrawerHeader extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 3),
+                        ListenableBuilder(
+                          listenable: FanPerks.instance,
+                          builder: (context, _) {
+                            final sku = FanPerks.instance.sku;
+                            if (sku.isEmpty) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: FanBadge(sku: sku, compact: true),
+                            );
+                          },
+                        ),
                         Text(
                           subtitle,
                           maxLines: 1,

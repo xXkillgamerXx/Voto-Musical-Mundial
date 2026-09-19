@@ -118,6 +118,31 @@ export class PaypalService {
     return payload as Record<string, unknown>;
   }
 
+  returnUrl() {
+    const origin = String(this.config.get<string>('APP_ORIGIN') || 'https://vote.musicmundial.com')
+      .split(',')[0]
+      .trim()
+      .replace(/\/$/, '');
+    return `${origin || 'https://vote.musicmundial.com'}/paypal/return`;
+  }
+
+  cancelUrl() {
+    const origin = String(this.config.get<string>('APP_ORIGIN') || 'https://vote.musicmundial.com')
+      .split(',')[0]
+      .trim()
+      .replace(/\/$/, '');
+    return `${origin || 'https://vote.musicmundial.com'}/paypal/cancel`;
+  }
+
+  approveUrlFromOrder(order: Record<string, unknown>) {
+    const links = Array.isArray(order.links) ? order.links : [];
+    const approve = links.find((row) => {
+      const rel = String((row as { rel?: string })?.rel || '').toLowerCase();
+      return rel === 'approve' || rel === 'payer-action';
+    }) as { href?: string } | undefined;
+    return String(approve?.href || '').trim();
+  }
+
   async createOrder(input: { amount: number; currency: string; description: string; customId: string }) {
     this.assertConfigured();
     const value = Number(input.amount).toFixed(2);
@@ -136,11 +161,20 @@ export class PaypalService {
             },
           },
         ],
+        application_context: {
+          brand_name: 'Vote Music Mundial',
+          landing_page: 'LOGIN',
+          user_action: 'PAY_NOW',
+          return_url: this.returnUrl(),
+          cancel_url: this.cancelUrl(),
+        },
       }),
     });
     const id = String(order.id || '');
     if (!id) throw new BadRequestException('PayPal no devolvió una orden.');
-    return { orderId: id };
+    const approveUrl = this.approveUrlFromOrder(order);
+    if (!approveUrl) throw new BadRequestException('PayPal no devolvió el enlace de pago.');
+    return { orderId: id, approveUrl };
   }
 
   async captureOrder(orderId: string) {

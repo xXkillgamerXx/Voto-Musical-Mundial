@@ -3,6 +3,26 @@ const DEFAULT_PACKAGE_ID = 'vote.musicmundial.com'
 const DEFAULT_PLAY_URL =
   `https://play.google.com/store/apps/details?id=${DEFAULT_PACKAGE_ID}`
 
+export const APP_STORE_URL =
+  'https://apps.apple.com/us/app/music-mundial-vote/id6802404318'
+
+const userAgent = () =>
+  typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
+
+export const isAndroidDevice = () => /Android/i.test(userAgent())
+
+export const isAppleMobileDevice = () => {
+  if (/iPhone|iPad|iPod/i.test(userAgent())) return true
+  return (
+    typeof navigator !== 'undefined' &&
+    navigator.platform === 'MacIntel' &&
+    Number(navigator.maxTouchPoints || 0) > 1
+  )
+}
+
+export const showPlayStoreBadge = () => !isAppleMobileDevice()
+export const showAppStoreBadge = () => !isAndroidDevice()
+
 export const getPlayStorePackageId = (playStoreUrl = '') => {
   try {
     const parsed = new URL(String(playStoreUrl || DEFAULT_PLAY_URL).trim())
@@ -37,11 +57,8 @@ export const normalizePlayStoreWebUrl = (playStoreUrl = '') => {
 export const getGooglePlayOpenUrl = (playStoreUrl = '') => {
   const webUrl = normalizePlayStoreWebUrl(playStoreUrl)
   const packageId = getPlayStorePackageId(webUrl)
-  const isAndroid = /Android/i.test(
-    typeof navigator !== 'undefined' ? navigator.userAgent || '' : '',
-  )
 
-  if (!isAndroid) {
+  if (!isAndroidDevice()) {
     return webUrl
   }
 
@@ -55,14 +72,23 @@ export const getGooglePlayOpenUrl = (playStoreUrl = '') => {
 
 export const openGooglePlay = (playStoreUrl = '') => {
   const openUrl = getGooglePlayOpenUrl(playStoreUrl)
-  const isAndroid = /Android/i.test(
-    typeof navigator !== 'undefined' ? navigator.userAgent || '' : '',
-  )
 
-  if (isAndroid) {
+  if (isAndroidDevice()) {
     window.location.href = openUrl
     return
   }
 
   window.open(normalizePlayStoreWebUrl(playStoreUrl), '_blank', 'noopener,noreferrer')
+}
+
+export const openAppStore = () => {
+  window.open(APP_STORE_URL, '_blank', 'noopener,noreferrer')
+}
+
+export const openOfficialApp = (playStoreUrl = '') => {
+  if (isAppleMobileDevice()) {
+    openAppStore()
+    return
+  }
+  openGooglePlay(playStoreUrl)
 }

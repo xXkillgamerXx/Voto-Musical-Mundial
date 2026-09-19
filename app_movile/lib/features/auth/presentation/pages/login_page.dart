@@ -6,12 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/navigation/app_deep_link.dart';
 import '../../../../core/referrals/referral_storage.dart';
 import '../../data/auth_service.dart';
 import '../widgets/auth_controls.dart';
 import '../widgets/auth_scaffold.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
+import 'reset_password_page.dart';
+import 'verify_email_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({required this.authService, super.key});
@@ -29,6 +32,33 @@ class _LoginPageState extends State<LoginPage> {
   bool _rememberPassword = true;
   bool _isLoading = false;
   String _errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_listenResetLinks());
+  }
+
+  Future<void> _listenResetLinks() async {
+    await AppDeepLinkService.instance.start(_handleAuthLink);
+    AppDeepLinkService.instance.flushPending();
+  }
+
+  void _handleAuthLink(Uri uri) {
+    final path = AppDeepLinkService.pathFromUri(uri) ?? '';
+    final isReset =
+        path == '/reset-password' || path == '/recuperar-contrasena';
+    if (!isReset || !mounted) return;
+    final token = uri.queryParameters['token'] ?? '';
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ResetPasswordPage(
+          authService: widget.authService,
+          initialToken: token,
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -52,6 +82,16 @@ class _LoginPageState extends State<LoginPage> {
       await widget.authService.login(
         identifier: _emailController.text.trim().toLowerCase(),
         password: _passwordController.text,
+      );
+    } on EmailNotVerifiedException catch (error) {
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VerifyEmailPage(
+            authService: widget.authService,
+            email: error.email,
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
