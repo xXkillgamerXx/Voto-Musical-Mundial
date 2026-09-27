@@ -204,7 +204,9 @@ class AuthService {
     }
 
     try {
-      final googleUser = await googleSignIn.authenticate();
+      final googleUser = await googleSignIn.authenticate(
+        scopeHint: const ['email', 'openid', 'profile'],
+      );
       final googleAuth = googleUser.authentication;
       final idToken = googleAuth.idToken;
 
