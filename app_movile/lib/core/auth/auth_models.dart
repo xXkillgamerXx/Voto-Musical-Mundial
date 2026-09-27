@@ -93,6 +93,11 @@ class ApiUser {
 
   String get name =>
       displayName.trim().isNotEmpty ? displayName.trim() : username;
+
+  bool get isAdmin {
+    final value = role.trim().toLowerCase();
+    return value == 'admin' || value == 'superadmin' || value == 'owner';
+  }
 }
 
 String _todayKey() {

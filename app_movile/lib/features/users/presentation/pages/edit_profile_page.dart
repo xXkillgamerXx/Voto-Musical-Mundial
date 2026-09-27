@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/user_profile.dart';
@@ -179,9 +180,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    showAppSnackBar(context, message);
   }
 
   @override

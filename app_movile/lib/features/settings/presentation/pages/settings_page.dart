@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../fan/presentation/pages/fan_store_page.dart';
 import '../../../fan/presentation/pages/membership_page.dart';
@@ -63,9 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _emailCampaigns = !value;
         _savingEmailPref = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('settings.emailCampaignsError'))),
-      );
+      showAppSnackBar(context, tr('settings.emailCampaignsError'), error: true);
     }
   }
 

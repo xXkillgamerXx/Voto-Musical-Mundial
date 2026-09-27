@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/api/api_config.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 String formatWinnerCertificateYear(DateTime? value, {int? pollYear}) {
   if (pollYear != null && pollYear >= 2000) {
@@ -127,15 +128,11 @@ class _WinnerCertificateModalState extends State<WinnerCertificateModal> {
         }
         await Gal.putImageBytes(bytes, name: _filename.replaceAll('.png', ''));
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('pollDetail.certificateSaved'))),
-        );
+        showAppSnackBar(context, tr('pollDetail.certificateSaved'));
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('pollDetail.certificateDownloadError'))),
-      );
+      showAppSnackBar(context, tr('pollDetail.certificateDownloadError'), error: true);
     }
   }
 
@@ -154,9 +151,7 @@ class _WinnerCertificateModalState extends State<WinnerCertificateModal> {
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('pollDetail.certificateShareError'))),
-      );
+      showAppSnackBar(context, tr('pollDetail.certificateShareError'), error: true);
     }
   }
 

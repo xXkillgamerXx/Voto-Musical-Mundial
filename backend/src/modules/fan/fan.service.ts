@@ -171,7 +171,16 @@ export class FanService {
         })
       : [];
     const sku = plan?.sku || '';
-    const adsFree = sku === 'SUPER' || sku === 'MEGA' || Boolean(plan?.featured || plan?.mega);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const isAdmin = Boolean(user && STORE_ADMIN_ROLES.has(user.role));
+    const adsFree =
+      isAdmin ||
+      sku === 'SUPER' ||
+      sku === 'MEGA' ||
+      Boolean(plan?.featured || plan?.mega);
     const packDiscount = sku === 'SUPER' || sku === 'MEGA' || Boolean(plan?.featured) ? 0.1 : 0;
     return serialize({
       membership: this.toMembership(plan),

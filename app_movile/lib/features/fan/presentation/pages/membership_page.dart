@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/fan/fan_perks.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/fan_api.dart';
 import '../../data/fan_models.dart';
@@ -84,17 +85,15 @@ class _MembershipPageState extends State<MembershipPage> {
     try {
       await _api.cancelPurchase(plan.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('fan.cancelled'))),
-      );
+      showAppSnackBar(context, tr('fan.cancelled'));
       setState(() => _cancelling = false);
     } catch (error) {
       if (!mounted) return;
       setState(() => _cancelling = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error is ApiException ? error.message : tr('common.error')),
-        ),
+      showAppSnackBar(
+        context,
+        error is ApiException ? error.message : tr('common.error'),
+        error: true,
       );
     }
   }

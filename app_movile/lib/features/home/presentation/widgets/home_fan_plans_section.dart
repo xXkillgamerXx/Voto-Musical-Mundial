@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/fan/fan_perks.dart';
 import '../../../../core/i18n/i18n_registry.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../fan/data/fan_api.dart';
 import '../../../fan/data/fan_models.dart';
@@ -74,9 +75,7 @@ class _HomeFanPlansSectionState extends State<HomeFanPlansSection> {
       ),
     );
     if (purchased == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(tr('fan.thanks'))));
+      showAppSnackBar(context, tr('fan.thanks'));
     }
   }
 

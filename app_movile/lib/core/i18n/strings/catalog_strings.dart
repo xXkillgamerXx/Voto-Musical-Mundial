@@ -292,10 +292,10 @@ const Map<String, Map<String, String>> catalogStrings = {
   },
   'catalog.rankingHeroSubtitle': {
     'es':
-        'El chart oficial de artistas populares según seguidores, votos acumulados y apoyo del público en las votaciones.',
+        'El chart oficial de la semana. Cada lunes vuelve a 0: cuenta votos y follows nuevos (fans x10 + votos).',
     'en':
-        'The official chart of popular artists based on followers, accumulated votes and public support in polls.',
-    'ko': '팔로워, 누적 투표 수, 투표에서의 대중 응원을 기준으로 한 인기 아티스트 공식 차트입니다.',
+        'The official weekly chart. Every Monday it resets to 0 and counts new votes and follows (fans x10 + votes).',
+    'ko': '이번 주 공식 차트입니다. 매주 월요일 0으로 리셋되며 새 투표와 팔로우만 집계합니다.',
   },
   'catalog.rankingChartMetrics': {
     'es': 'CHART METRICS',
@@ -308,6 +308,11 @@ const Map<String, Map<String, String>> catalogStrings = {
     'ko': '아티스트',
   },
   'catalog.rankingMetricVotes': {'es': 'Votos', 'en': 'Votes', 'ko': '투표 수'},
+  'catalog.rankingFormula': {
+    'es': 'Fórmula: Fans x10 + votos (esta semana)',
+    'en': 'Formula: Fans x10 + votes (this week)',
+    'ko': '공식: 팬 x10 + 투표 (이번 주)',
+  },
   'catalog.rankingTop3': {'es': 'TOP 3', 'en': 'TOP 3', 'ko': 'TOP 3'},
   'catalog.rankingHotArtists': {
     'es': 'Hot artists',
@@ -354,6 +359,16 @@ const Map<String, Map<String, String>> catalogStrings = {
     'es': '{year} · Semana {week}',
     'en': '{year} · Week {week}',
     'ko': '{year} · {week}주차',
+  },
+  'catalog.rankingWeekEndsIn': {
+    'es': 'La semana acaba en',
+    'en': 'Week ends in',
+    'ko': '주간 종료까지',
+  },
+  'catalog.rankingWeekResetNow': {
+    'es': 'Reiniciando chart...',
+    'en': 'Resetting chart...',
+    'ko': '차트 초기화 중...',
   },
 
   // Tarjeta de artista (artist_card)

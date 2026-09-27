@@ -73,6 +73,24 @@ class AppTheme {
         color: colorScheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 10,
+        backgroundColor: const Color(0xFF17102E),
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+          height: 1.35,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: const Color(0xFFC084FC).withValues(alpha: 0.4),
+          ),
+        ),
+        insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+      ),
     );
   }
 }

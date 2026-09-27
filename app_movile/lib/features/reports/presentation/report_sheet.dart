@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../core/i18n/tr.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/reports_api.dart';
 
@@ -17,31 +18,32 @@ Future<void> showReportSheet(
   if (me != null &&
       ((reportedUserId != null && reportedUserId == me.id) ||
           targetId == me.id)) {
-    ScaffoldMessenger.of(hostContext).showSnackBar(
-      SnackBar(content: Text(tr('report.own'))),
-    );
+    showAppSnackBar(hostContext, tr('report.own'), error: true);
     return;
   }
 
   final reasons = ['spam', 'offensive', 'sexual', 'harassment', 'other'];
-  var selected = reasons.first;
+  var selected = 'offensive';
   final details = TextEditingController();
   var sending = false;
 
   await showModalBottomSheet<void>(
     context: hostContext,
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: const Color(0xFF120A2B),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (sheetContext) {
+      final keyboard = MediaQuery.viewInsetsOf(sheetContext).bottom;
+      final safeBottom = MediaQuery.paddingOf(sheetContext).bottom;
       return Padding(
         padding: EdgeInsets.fromLTRB(
           20,
           16,
           20,
-          20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+          20 + keyboard + safeBottom,
         ),
         child: StatefulBuilder(
           builder: (context, setModalState) {
@@ -152,9 +154,7 @@ Future<void> showReportSheet(
                                 ? message
                                 : tr('report.thanks');
                             if (hostContext.mounted) {
-                              ScaffoldMessenger.of(hostContext).showSnackBar(
-                                SnackBar(content: Text(text)),
-                              );
+                              showAppSnackBar(hostContext, text);
                             }
                           } catch (error) {
                             setModalState(() => sending = false);
@@ -162,9 +162,7 @@ Future<void> showReportSheet(
                             final text = error is ApiException
                                 ? error.message
                                 : tr('common.error');
-                            ScaffoldMessenger.of(sheetContext).showSnackBar(
-                              SnackBar(content: Text(text)),
-                            );
+                            showAppSnackBar(sheetContext, text, error: true);
                           }
                         },
                   style: FilledButton.styleFrom(

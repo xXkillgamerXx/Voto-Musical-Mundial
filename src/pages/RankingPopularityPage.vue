@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { translate } from "../i18n";
 import { getRankingPopularityCached } from "../services/firebaseCache";
@@ -40,17 +40,80 @@ const getArtistCardImage = (artist) => resolveArtistCardImage(artist);
 const getArtistGroup = (artist) => artist?.group || artist?.fandom || "";
 
 const artistUrl = (artist) => buildArtistUrl(artist, locale.value);
-const currentChartWeek = computed(() => {
-  const now = new Date();
-  const firstDayOfYear = new Date(now.getFullYear(), 0, 1);
-  const pastDaysOfYear = Math.floor((now - firstDayOfYear) / 86400000);
-  const weekNumber = Math.ceil(
-    (pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7,
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const nowMs = ref(Date.now());
+let countdownTimer;
+let didReloadForNewWeek = false;
+
+const utcMonday = (now = new Date()) => {
+  const date = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
+  const day = date.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + diff);
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+};
+
+const weekEndAt = (now = new Date()) =>
+  new Date(utcMonday(now).getTime() + WEEK_MS);
+
+const remainingWeekSeconds = computed(() =>
+  Math.max(0, Math.floor((weekEndAt().getTime() - nowMs.value) / 1000)),
+);
+
+const weekRemainingPercent = computed(() =>
+  Math.min(100, Math.max(0, (remainingWeekSeconds.value * 1000 / WEEK_MS) * 100)),
+);
+
+const weekCountdown = computed(() => {
+  const remaining = remainingWeekSeconds.value;
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    {
+      value: pad(Math.floor(remaining / 86400)),
+      label: translate("polls.detail.time.days"),
+    },
+    {
+      value: pad(Math.floor((remaining % 86400) / 3600)),
+      label: translate("polls.detail.time.hours"),
+    },
+    {
+      value: pad(Math.floor((remaining % 3600) / 60)),
+      label: translate("polls.detail.time.minutes"),
+    },
+    {
+      value: pad(remaining % 60),
+      label: translate("polls.detail.time.seconds"),
+    },
+  ];
+});
+
+const isoChartWeek = (now = new Date()) => {
+  const utc = new Date(
+    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
+  );
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((utc - yearStart) / 86400000 + 1) / 7);
+  return {
+    year: utc.getUTCFullYear(),
+    week,
+  };
+};
+
+const currentChartWeek = computed(() => {
+  const sample = artists.value[0];
+  const fallback = isoChartWeek();
+  const year = Number(sample?.chartYear || fallback.year);
+  const week = Number(sample?.chartWeek || fallback.week);
 
   return translate("ranking.chartWeek", {
-    year: now.getFullYear(),
-    week: String(weekNumber).padStart(2, "0"),
+    year,
+    week: String(week).padStart(2, "0"),
   });
 });
 
@@ -92,14 +155,17 @@ const formatNumber = (value) => Number(value || 0).toLocaleString(locale.value);
 const barWidth = (value) =>
   `${Math.max(7, Math.round((Number(value || 0) / maxPopularityScore.value) * 100))}%`;
 
-const loadArtists = async () => {
+const loadArtists = async ({ forceRefresh = false } = {}) => {
   isLoading.value = true;
   isLoadingVotes.value = false;
   errorMessage.value = "";
 
   try {
     isLoadingVotes.value = true;
-    artists.value = await getRankingPopularityCached(null);
+    artists.value = await getRankingPopularityCached(
+      null,
+      forceRefresh ? 0 : undefined,
+    );
   } catch {
     errorMessage.value = translate("ranking.errors.load");
   } finally {
@@ -108,7 +174,23 @@ const loadArtists = async () => {
   }
 };
 
-onMounted(loadArtists);
+onMounted(() => {
+  loadArtists();
+  countdownTimer = window.setInterval(async () => {
+    nowMs.value = Date.now();
+    if (remainingWeekSeconds.value > 0) {
+      didReloadForNewWeek = false;
+      return;
+    }
+    if (didReloadForNewWeek) return;
+    didReloadForNewWeek = true;
+    await loadArtists({ forceRefresh: true });
+  }, 1000);
+});
+
+onUnmounted(() => {
+  window.clearInterval(countdownTimer);
+});
 </script>
 
 <template>
@@ -146,7 +228,7 @@ onMounted(loadArtists);
             <div class="h-3 w-32 animate-pulse rounded-full bg-fuchsia-300/20"></div>
             <div class="mt-5 grid grid-cols-2 gap-3">
               <div
-                v-for="metric in 3"
+                v-for="metric in 2"
                 :key="`hero-metric-skeleton-${metric}`"
                 class="rounded-2xl bg-black/25 p-4"
               >
@@ -186,12 +268,12 @@ onMounted(loadArtists);
             <p class="text-xs font-black uppercase tracking-[0.22em] text-fuchsia-200">
               {{ $t("ranking.metricsTitle") }}
             </p>
-            <div class="mt-5 grid grid-cols-3 gap-3">
+            <div class="mt-5 grid grid-cols-2 gap-3">
               <div class="rounded-2xl bg-black/25 p-4">
                 <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
                   {{ $t("ranking.artists") }}
                 </p>
-                <p class="mt-1 text-2xl font-black text-white">
+                <p class="mt-1 text-3xl font-black tabular-nums text-white">
                   {{ rankedArtists.length }}
                 </p>
               </div>
@@ -199,11 +281,15 @@ onMounted(loadArtists);
                 <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">
                   {{ $t("ranking.votes") }}
                 </p>
-                <p class="mt-1 text-2xl font-black text-white">
+                <p class="mt-1 text-3xl font-black tabular-nums text-white">
                   {{ formatNumber(totalChartVotes) }}
                 </p>
               </div>
             </div>
+            <p class="mt-3 text-[11px] font-bold leading-5 text-slate-400">
+              {{ $t("ranking.formula") }}:
+              {{ $t("ranking.formulaValue") }}
+            </p>
             <p
               v-if="isLoadingVotes"
               class="mt-3 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-cyan-100"
@@ -212,6 +298,81 @@ onMounted(loadArtists);
             </p>
           </div>
         </template>
+      </div>
+
+      <div
+        v-if="!isLoading"
+        class="relative mt-8 overflow-hidden rounded-3xl border border-cyan-300/15 bg-black/35 p-4 shadow-xl shadow-cyan-950/20 sm:p-6"
+      >
+        <div
+          class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_0%,rgba(103,232,249,0.14),transparent_32%),radial-gradient(circle_at_92%_100%,rgba(217,70,239,0.12),transparent_28%)]"
+        ></div>
+        <div class="relative">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <span
+                class="inline-flex items-center gap-1.5 rounded-full border border-red-300/30 bg-red-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-red-200"
+              >
+                <span
+                  class="size-1.5 animate-pulse rounded-full bg-red-300 shadow-[0_0_10px_rgba(252,165,165,0.9)]"
+                ></span>
+                Live
+              </span>
+              <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">
+                {{ remainingWeekSeconds > 0 ? $t("ranking.weekEndsIn") : $t("ranking.weekResetNow") }}
+              </p>
+            </div>
+            <span
+              class="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-300"
+            >
+              {{ $t("polls.detail.liveCountdown") }}
+            </span>
+          </div>
+
+          <div class="mt-5 grid grid-cols-4 gap-2 sm:gap-3">
+            <div
+              v-for="item in weekCountdown"
+              :key="item.label"
+              class="rounded-2xl border border-white/10 bg-slate-950/70 p-3 text-center shadow-lg shadow-black/20 sm:p-4"
+            >
+              <p class="text-2xl font-black tabular-nums text-white sm:text-4xl">
+                {{ item.value }}
+              </p>
+              <p
+                class="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400"
+              >
+                {{ item.label }}
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+            <span
+              class="block h-full rounded-full bg-linear-to-r from-cyan-300 via-fuchsia-300 to-violet-400"
+              :style="{ width: `${weekRemainingPercent}%` }"
+            ></span>
+          </div>
+        </div>
+      </div>
+      <div
+        v-else
+        class="relative mt-8 overflow-hidden rounded-3xl border border-white/10 bg-black/25 p-4 sm:p-6"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <div class="h-4 w-48 animate-pulse rounded-full bg-cyan-300/20"></div>
+          <div class="h-6 w-28 animate-pulse rounded-full bg-white/10"></div>
+        </div>
+        <div class="mt-5 grid grid-cols-4 gap-2 sm:gap-3">
+          <div
+            v-for="index in 4"
+            :key="`week-countdown-skeleton-${index}`"
+            class="rounded-2xl bg-slate-950/60 p-3 sm:p-4"
+          >
+            <div class="mx-auto h-8 w-12 animate-pulse rounded-xl bg-white/15 sm:h-10"></div>
+            <div class="mx-auto mt-2 h-3 w-10 animate-pulse rounded-full bg-white/10"></div>
+          </div>
+        </div>
+        <div class="mt-5 h-2 animate-pulse rounded-full bg-white/10"></div>
       </div>
     </div>
 

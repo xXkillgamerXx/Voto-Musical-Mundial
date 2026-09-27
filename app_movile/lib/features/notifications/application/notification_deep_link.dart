@@ -10,6 +10,7 @@ import '../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../home/presentation/pages/news_page.dart';
 import '../../polls/presentation/pages/poll_detail_page.dart';
 import '../../users/presentation/pages/user_profile_page.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../data/app_notification.dart';
 import '../presentation/pages/notifications_page.dart';
 import 'notification_controller.dart';
@@ -248,9 +249,7 @@ class NotificationDeepLink {
       );
     } catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo abrir el perfil del artista')),
-      );
+      showAppSnackBar(context, 'No se pudo abrir el perfil del artista', error: true);
     }
   }
 

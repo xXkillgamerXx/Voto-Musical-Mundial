@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -287,9 +289,11 @@ class _RankedArtist {
       return _RankedArtist(
         artist: artist,
         rank: index + 1,
-        lastWeekRank: tr('catalog.rankingNew'),
-        peakPosition: index + 1,
-        weeksOnChart: 1,
+        lastWeekRank: artist.lastWeekRank.isEmpty
+            ? tr('catalog.rankingNew')
+            : artist.lastWeekRank,
+        peakPosition: artist.peakPosition > 0 ? artist.peakPosition : index + 1,
+        weeksOnChart: artist.weeksOnChart > 0 ? artist.weeksOnChart : 1,
         accent: _RankingAccent.forIndex(index),
       );
     }).toList(growable: false);
@@ -420,28 +424,33 @@ class _RankingHeroCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFCD34D).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(
-                        color: const Color(0xFFFCD34D).withValues(alpha: 0.25),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
                       ),
-                    ),
-                    child: Text(
-                      _currentChartWeekLabel(),
-                      style: const TextStyle(
-                        color: Color(0xFFFEF3C7),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFCD34D).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: const Color(0xFFFCD34D).withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Text(
+                        _currentChartWeekLabel(),
+                        style: const TextStyle(
+                          color: Color(0xFFFEF3C7),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  const _WeekResetCountdown(),
                   const SizedBox(height: 18),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -479,6 +488,16 @@ class _RankingHeroCard extends StatelessWidget {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          tr('catalog.rankingFormula'),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                          ),
                         ),
                       ],
                     ),
@@ -1629,14 +1648,198 @@ class _RankingStateMessage extends StatelessWidget {
   }
 }
 
-String _currentChartWeekLabel() {
-  final now = DateTime.now();
-  final firstDayOfYear = DateTime(now.year, 1, 1);
-  final pastDays = now.difference(firstDayOfYear).inDays;
-  final weekNumber = ((pastDays + firstDayOfYear.weekday) / 7).ceil();
-  final week = weekNumber.toString().padLeft(2, '0');
+DateTime _utcMonday([DateTime? now]) {
+  final utc = (now ?? DateTime.now()).toUtc();
+  final date = DateTime.utc(utc.year, utc.month, utc.day);
+  final diff = date.weekday - DateTime.monday;
+  return date.subtract(Duration(days: diff));
+}
 
-  return trp('catalog.rankingWeekLabel', {'year': now.year, 'week': week});
+DateTime _weekEndAt([DateTime? now]) =>
+    _utcMonday(now).add(const Duration(days: 7));
+
+class _WeekResetCountdown extends StatefulWidget {
+  const _WeekResetCountdown();
+
+  @override
+  State<_WeekResetCountdown> createState() => _WeekResetCountdownState();
+}
+
+class _WeekResetCountdownState extends State<_WeekResetCountdown> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _tick() {
+    final next = _weekEndAt().difference(DateTime.now().toUtc());
+    if (!mounted) return;
+    setState(() {
+      _remaining = next.isNegative ? Duration.zero : next;
+    });
+  }
+
+  String _pad(int value) => value.toString().padLeft(2, '0');
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _remaining.inDays;
+    final hours = _remaining.inHours.remainder(24);
+    final minutes = _remaining.inMinutes.remainder(60);
+    final seconds = _remaining.inSeconds.remainder(60);
+    final cells = [
+      (_pad(days), tr('home.days')),
+      (_pad(hours), tr('home.hours')),
+      (_pad(minutes), tr('home.minutesShort')),
+      (_pad(seconds), tr('home.secondsShort')),
+    ];
+
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    final remainingPercent =
+        (_remaining.inMilliseconds / weekMs * 100).clamp(0, 100).toDouble();
+    final title = _remaining.inSeconds > 0
+        ? tr('catalog.rankingWeekEndsIn')
+        : tr('catalog.rankingWeekResetNow');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF67E8F9).withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(
+                    color: const Color(0xFFFCA5A5).withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFCA5A5),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'LIVE',
+                      style: TextStyle(
+                        color: Color(0xFFFECACA),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(
+                    color: Color(0xFFA5F3FC),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF080A18),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          cells[i].$1,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          cells[i].$2.toUpperCase(),
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: remainingPercent / 100,
+              minHeight: 8,
+              backgroundColor: Colors.white.withValues(alpha: 0.1),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF67E8F9)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _currentChartWeekLabel() {
+  final now = DateTime.now().toUtc();
+  final utcDate = DateTime.utc(now.year, now.month, now.day);
+  final day = utcDate.weekday; // 1 Mon ... 7 Sun
+  final thursday = utcDate.add(Duration(days: 4 - day));
+  final yearStart = DateTime.utc(thursday.year);
+  final week = ((thursday.difference(yearStart).inDays + 1) / 7).ceil();
+  return trp('catalog.rankingWeekLabel', {
+    'year': thursday.year,
+    'week': week.toString().padLeft(2, '0'),
+  });
 }
 
 String _formatRankingCount(int value) {

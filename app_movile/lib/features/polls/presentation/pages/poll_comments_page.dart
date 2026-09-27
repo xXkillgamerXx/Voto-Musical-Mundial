@@ -6,6 +6,7 @@ import '../../../../core/api/api_exception.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/i18n_registry.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../fan/presentation/widgets/fan_badge.dart';
@@ -279,15 +280,19 @@ class _PollCommentsPageState extends State<PollCommentsPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showAppSnackBar(context, message);
   }
 
   bool _canDelete(PollComment comment) {
     final user = widget.authService.session.user;
     if (user == null) return false;
     return comment.userId.isNotEmpty && comment.userId == user.id;
+  }
+
+  bool _canReport(PollComment comment) {
+    final user = widget.authService.session.user;
+    if (user == null || comment.userId.isEmpty) return false;
+    return comment.userId != user.id;
   }
 
   @override
@@ -459,16 +464,16 @@ class _PollCommentsPageState extends State<PollCommentsPage> {
                             timeLabel: _formatCommentDate(comment.createdAt),
                             canDelete: _canDelete(comment),
                             onDelete: () => _delete(comment),
-                            onReport: _canDelete(comment)
-                                ? null
-                                : () => showReportSheet(
+                            onReport: _canReport(comment)
+                                ? () => showReportSheet(
                                       context,
                                       authService: widget.authService,
                                       targetType: 'comment',
                                       targetId: comment.id,
                                       reportedUserId: comment.userId,
                                       pollId: widget.pollId,
-                                    ),
+                                    )
+                                : null,
                           ),
                         ),
                       ),
@@ -1109,16 +1114,7 @@ class _CommentCard extends StatelessWidget {
                         ),
                       )
                     else if (onReport != null)
-                      IconButton(
-                        onPressed: onReport,
-                        tooltip: tr('report.comment'),
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          Icons.flag_outlined,
-                          size: 18,
-                          color: Colors.white.withValues(alpha: 0.55),
-                        ),
-                      ),
+                      _ReportCommentButton(onPressed: onReport!),
                   ],
                 ),
                 if (comment.text.isNotEmpty) ...[
@@ -1355,6 +1351,23 @@ class _PollCommentsEntryState extends State<PollCommentsEntry> {
     }
   }
 
+  bool _canReport(PollComment comment) {
+    final user = widget.authService.session.user;
+    if (user == null || comment.userId.isEmpty) return false;
+    return comment.userId != user.id;
+  }
+
+  void _report(PollComment comment) {
+    showReportSheet(
+      context,
+      authService: widget.authService,
+      targetType: 'comment',
+      targetId: comment.id,
+      reportedUserId: comment.userId,
+      pollId: widget.pollId,
+    );
+  }
+
   String _formatCommentDate(DateTime? date) {
     if (date == null) return '';
     final local = date.toLocal();
@@ -1508,6 +1521,9 @@ class _PollCommentsEntryState extends State<PollCommentsEntry> {
               _PreviewCommentCard(
                 comment: _visibleComments[i],
                 timeLabel: _formatCommentDate(_visibleComments[i].createdAt),
+                onReport: _canReport(_visibleComments[i])
+                    ? () => _report(_visibleComments[i])
+                    : null,
               ),
             ],
             if (_hasMore) ...[
@@ -1553,10 +1569,12 @@ class _PreviewCommentCard extends StatelessWidget {
   const _PreviewCommentCard({
     required this.comment,
     required this.timeLabel,
+    this.onReport,
   });
 
   final PollComment comment;
   final String timeLabel;
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -1577,28 +1595,40 @@ class _PreviewCommentCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
-                        comment.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            comment.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (timeLabel.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              timeLabel,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    if (timeLabel.isNotEmpty)
-                      Text(
-                        timeLabel,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
+                    if (onReport != null) ...[
+                      const SizedBox(width: 8),
+                      _ReportCommentButton(onPressed: onReport!),
+                    ],
                   ],
                 ),
                 if (comment.text.isNotEmpty) ...[
@@ -1633,6 +1663,52 @@ class _PreviewCommentCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ReportCommentButton extends StatelessWidget {
+  const _ReportCommentButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(99),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(
+              color: const Color(0xFFFCA5A5).withValues(alpha: 0.22),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.flag_rounded,
+                size: 13,
+                color: Color(0xFFFECACA),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                tr('report.button'),
+                style: const TextStyle(
+                  color: Color(0xFFFECACA),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -11,7 +11,10 @@ class FanPerks extends ChangeNotifier {
   FanMembership? membership;
   List<FanMembership> purchases = const [];
   bool adsFree = false;
+  bool adminAdsFree = false;
   double packDiscount = 0;
+
+  bool get hideAds => adsFree || adminAdsFree;
 
   String get sku {
     final plan = membership;
@@ -25,6 +28,12 @@ class FanPerks extends ChangeNotifier {
 
   int get daysLeft => membership?.daysLeft ?? 0;
 
+  void setAdminAdsFree(bool value) {
+    if (adminAdsFree == value) return;
+    adminAdsFree = value;
+    notifyListeners();
+  }
+
   void apply(FanMePayload payload) {
     membership = payload.membership;
     purchases = payload.purchases;
@@ -37,6 +46,7 @@ class FanPerks extends ChangeNotifier {
     membership = null;
     purchases = const [];
     adsFree = false;
+    adminAdsFree = false;
     packDiscount = 0;
     notifyListeners();
   }

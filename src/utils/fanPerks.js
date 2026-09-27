@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { getFanMe, importFanPlan } from '../services/api/fanApi'
-import { getStoredAuth } from '../services/api/client'
+import { getStoredAuth, onStoredAuthChange } from '../services/api/client'
+import { isFanStoreAdmin } from '../services/fanStore'
 import { getFanMembership, getLastFanInvoice, hydrateMembership, persistFanMembership } from './fanMembership'
 
 const state = ref({
@@ -13,7 +14,17 @@ const state = ref({
 
 export const fanMembershipState = state
 
-export const fanAdsFree = computed(() => Boolean(state.value.adsFree))
+const adminAdsFree = ref(typeof window !== 'undefined' && isFanStoreAdmin())
+
+if (typeof window !== 'undefined') {
+  onStoredAuthChange(() => {
+    adminAdsFree.value = isFanStoreAdmin()
+  })
+}
+
+export const fanAdsFree = computed(
+  () => Boolean(state.value.adsFree) || adminAdsFree.value,
+)
 export const fanPackDiscount = computed(() => Number(state.value.packDiscount || 0))
 export const isMegaVoter = computed(() =>
   Boolean(state.value.membership && !state.value.membership.expired && (state.value.membership.sku === 'MEGA' || state.value.membership.mega)),
@@ -59,7 +70,7 @@ export const applyFanMePayload = (payload) => {
     loaded: true,
     membership: payload.membership || null,
     purchases: payload.purchases || [],
-    adsFree: Boolean(payload.adsFree),
+    adsFree: Boolean(payload.adsFree) || isFanStoreAdmin(),
     packDiscount: Number(payload.packDiscount || 0),
   }
   return state.value
@@ -72,7 +83,9 @@ export const loadFanMe = async () => {
       loaded: true,
       membership: local,
       purchases: local ? [local] : [],
-      adsFree: Boolean(local && !local.expired && (local.sku === 'SUPER' || local.sku === 'MEGA' || local.featured)),
+      adsFree:
+        isFanStoreAdmin() ||
+        Boolean(local && !local.expired && (local.sku === 'SUPER' || local.sku === 'MEGA' || local.featured)),
       packDiscount: local && !local.expired && (local.sku === 'SUPER' || local.sku === 'MEGA' || local.featured) ? 0.1 : 0,
     }
     return state.value
@@ -86,7 +99,7 @@ export const loadFanMe = async () => {
       loaded: true,
       membership: local,
       purchases: local ? [local] : [],
-      adsFree: false,
+      adsFree: isFanStoreAdmin(),
       packDiscount: 0,
     }
     return state.value
@@ -95,6 +108,7 @@ export const loadFanMe = async () => {
 
 export const clearFanMe = () => {
   persistFanMembership(null)
+  adminAdsFree.value = false
   state.value = {
     loaded: false,
     membership: null,

@@ -12,6 +12,7 @@ import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/api/api_config.dart';
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/points_chip.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../artists/data/artist.dart';
@@ -1544,9 +1545,7 @@ class _PollDetailPageState extends State<PollDetailPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showAppSnackBar(context, message);
   }
 
   Future<void> _sharePoll() async {

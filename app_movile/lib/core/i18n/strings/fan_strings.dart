@@ -345,6 +345,7 @@ const Map<String, Map<String, String>> fanStrings = {
     'ko': '상세 내용 (선택)',
   },
   'report.send': {'es': 'Enviar reporte', 'en': 'Send report', 'ko': '신고 보내기'},
+  'report.button': {'es': 'Reportar', 'en': 'Report', 'ko': '신고'},
   'report.thanks': {
     'es': 'Gracias por reportar. Ayudas a cuidar la comunidad.',
     'en': 'Thanks for reporting. You help keep the community safer.',

@@ -123,6 +123,7 @@ class _SignedInPageState extends State<_SignedInPage> {
   @override
   void initState() {
     super.initState();
+    FanPerks.instance.setAdminAdsFree(widget.user.isAdmin);
     _pageController = PageController(initialPage: _selectedTabIndex);
     _notifications = NotificationController(widget.authService);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -134,6 +135,14 @@ class _SignedInPageState extends State<_SignedInPage> {
       unawaited(_startDeepLinks());
       unawaited(_loadFanPerks());
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SignedInPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.isAdmin != widget.user.isAdmin) {
+      FanPerks.instance.setAdminAdsFree(widget.user.isAdmin);
+    }
   }
 
   Future<void> _maybeClaimAppFirstOpen() async {

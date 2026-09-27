@@ -122,7 +122,7 @@ class AdMobConfig {
 
   static bool get adsEnabled {
     if (hideAds) return false;
-    if (FanPerks.instance.adsFree) return false;
+    if (FanPerks.instance.hideAds) return false;
     if (kIsWeb) return false;
     if (!(Platform.isAndroid || Platform.isIOS)) return false;
     if (useTestAds) return true;

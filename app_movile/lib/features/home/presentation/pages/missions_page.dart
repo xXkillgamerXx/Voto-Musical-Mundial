@@ -6,6 +6,7 @@ import '../../../../core/ads/ad_reward_gift.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/api/api_exception.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/skeleton_box.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../rewards/data/rewards_api.dart';
@@ -63,9 +64,7 @@ class _MissionsPageState extends State<MissionsPage> {
   Future<void> _watchAdForPoints() async {
     if (_watchingAd || !AdMobConfig.adsEnabled) return;
     if (_watchedToday >= _dailyWatchLimit) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('pollDetail.watchAdFailed'))),
-      );
+      showAppSnackBar(context, tr('pollDetail.watchAdFailed'), error: true);
       return;
     }
 
@@ -76,9 +75,7 @@ class _MissionsPageState extends State<MissionsPage> {
     if (result != RewardedAdResult.earned) {
       setState(() => _watchingAd = false);
       if (result != RewardedAdResult.dismissed) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('pollDetail.watchAdFailed'))),
-        );
+        showAppSnackBar(context, tr('pollDetail.watchAdFailed'), error: true);
       }
       return;
     }
@@ -100,16 +97,12 @@ class _MissionsPageState extends State<MissionsPage> {
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _watchingAd = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      showAppSnackBar(context, error.message, error: true);
       await _loadAdStatus();
     } catch (_) {
       if (!mounted) return;
       setState(() => _watchingAd = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('pollDetail.watchAdFailed'))),
-      );
+      showAppSnackBar(context, tr('pollDetail.watchAdFailed'), error: true);
     }
   }
 

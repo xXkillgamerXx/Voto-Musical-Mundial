@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/api/api_config.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/data/auth_service.dart';
 
 /// Muestra el enlace de invitación propio, igual que la sección de misiones web.
@@ -55,9 +56,7 @@ class _InviteFriendsCardState extends State<InviteFriendsCard> {
   Future<void> _copy() async {
     await Clipboard.setData(ClipboardData(text: _inviteUrl));
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(tr('referral.copied'))));
+    showAppSnackBar(context, tr('referral.copied'));
   }
 
   Future<void> _share() async {

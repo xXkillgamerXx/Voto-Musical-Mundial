@@ -13,6 +13,9 @@ class Artist {
     required this.followersCount,
     required this.popularityScore,
     required this.totalVotes,
+    this.lastWeekRank = '',
+    this.peakPosition = 0,
+    this.weeksOnChart = 0,
     this.bioEs = '',
     this.bioEn = '',
   });
@@ -30,6 +33,9 @@ class Artist {
   final int followersCount;
   final int popularityScore;
   final int totalVotes;
+  final String lastWeekRank;
+  final int peakPosition;
+  final int weeksOnChart;
 
   String get bio => localizedContent(bioEs, bioEn);
 
@@ -87,6 +93,9 @@ class Artist {
       followersCount: followersCount,
       popularityScore: popularityScore,
       totalVotes: totalVotes,
+      lastWeekRank: '${json['lastWeekRank'] ?? json['lastWeek'] ?? ''}',
+      peakPosition: _intValue(json['peakPosition'] ?? json['peak']),
+      weeksOnChart: _intValue(json['weeksOnChart'] ?? json['weeks']),
     );
   }
 }

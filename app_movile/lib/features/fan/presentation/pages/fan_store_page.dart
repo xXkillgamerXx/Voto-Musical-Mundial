@@ -6,6 +6,7 @@ import '../../../../core/api/api_exception.dart';
 import '../../../../core/fan/fan_perks.dart';
 import '../../../../core/i18n/i18n_registry.dart';
 import '../../../../core/i18n/tr.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/fan_api.dart';
 import '../../data/fan_models.dart';
@@ -88,9 +89,7 @@ class _FanStorePageState extends State<FanStorePage> {
       ),
     );
     if (purchased == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('fan.thanks'))),
-      );
+      showAppSnackBar(context, tr('fan.thanks'));
     }
   }
 
