@@ -81,16 +81,18 @@ class AdMobConfig {
   static const String testIosRewardedId =
       'ca-app-pub-3940256099942544/1712485313';
 
-  // Ad units reales (Android). iOS pendiente.
+  // Ad units reales.
   static const String prodAndroidBannerId =
       'ca-app-pub-6893073726792422/2624356965';
-  static const String prodIosBannerId = '';
+  static const String prodIosBannerId =
+      'ca-app-pub-6893073726792422/2243609207';
   static const String prodAndroidInterstitialId =
       'ca-app-pub-6893073726792422/5965987556';
   static const String prodIosInterstitialId = '';
   static const String prodAndroidRewardedId =
       'ca-app-pub-6893073726792422/6238998458';
-  static const String prodIosRewardedId = '';
+  static const String prodIosRewardedId =
+      'ca-app-pub-6893073726792422/4559790519';
 
   // Native Advanced de prueba oficiales.
   static const String testAndroidNativeId =
@@ -101,7 +103,8 @@ class AdMobConfig {
   // Native Advanced reales. Pega aquí el ID de AdMob (Android).
   static const String prodAndroidNativeId =
       'ca-app-pub-6893073726792422/6177043411';
-  static const String prodIosNativeId = '';
+  static const String prodIosNativeId =
+      'ca-app-pub-6893073726792422/1682345736';
 
   // App Open de prueba oficiales.
   static const String testAndroidAppOpenId =
@@ -112,7 +115,8 @@ class AdMobConfig {
   // App Open reales.
   static const String prodAndroidAppOpenId =
       'ca-app-pub-6893073726792422/2145661036';
-  static const String prodIosAppOpenId = '';
+  static const String prodIosAppOpenId =
+      'ca-app-pub-6893073726792422/9369264061';
 
   /// Segundos mínimos entre App Open (evita saturar al cambiar de app).
   static const int appOpenCooldownSeconds = 180;
