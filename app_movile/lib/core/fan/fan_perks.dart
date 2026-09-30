@@ -37,7 +37,14 @@ class FanPerks extends ChangeNotifier {
   void apply(FanMePayload payload) {
     membership = payload.membership;
     purchases = payload.purchases;
-    adsFree = payload.adsFree;
+    // SUPER/MEGA (y featured/mega) sin anuncios. El API también marca
+    // adsFree para admin — eso NO debe ocultar AdMob en la app.
+    final plan = membership;
+    final sku = (plan != null && !plan.expired) ? plan.sku : '';
+    adsFree = sku == 'SUPER' ||
+        sku == 'MEGA' ||
+        plan?.featured == true ||
+        plan?.mega == true;
     packDiscount = payload.packDiscount;
     notifyListeners();
   }

@@ -1076,12 +1076,6 @@ class _HeroStatBlock extends StatelessWidget {
   }
 }
 
-bool _pollShowsCountdown(Poll poll) {
-  if (poll.status == 'selecting_winners') return true;
-  if (poll.hideCountdown) return false;
-  return poll.countdownEndAt != null;
-}
-
 bool _pollShowsLiveBox(Poll poll) {
   if (poll.status == 'selecting_winners') return false;
   if (poll.status == 'closed') return false;
@@ -1089,20 +1083,8 @@ bool _pollShowsLiveBox(Poll poll) {
   return poll.countdownEndAt == null;
 }
 
-double _openPollCardHeight(Poll poll) {
-  if (_pollShowsCountdown(poll)) return 472;
-  if (_pollShowsLiveBox(poll)) return 416;
-  return 392;
-}
-
-double _openPollsCarouselHeight(List<Poll> polls) {
-  var height = 392.0;
-  for (final poll in polls) {
-    final next = _openPollCardHeight(poll);
-    if (next > height) height = next;
-  }
-  return height;
-}
+/// Altura fija de cada card en "Votar ahora" (todas iguales).
+const double _kOpenPollCardHeight = 448;
 
 class _ActivePollsSection extends StatelessWidget {
   const _ActivePollsSection({
@@ -1158,14 +1140,14 @@ class _ActivePollsSection extends StatelessWidget {
           _HomePollsBlockTitle(
             title: tr('home.openPollsSection'),
             count: openPolls.length,
-            trailing: openPolls.length > 1 ? const _SwipePollsHint() : null,
+            trailing: null,
           ),
           const SizedBox(height: 12),
           if (openPolls.isEmpty)
             _ActivePollsEmpty(onRankingTap: onRankingTap)
           else
             _PollsHorizontalCarousel(
-              height: _openPollsCarouselHeight(openPolls),
+              height: _kOpenPollCardHeight,
               cardWidthFactor: 0.82,
               polls: openPolls,
               compact: false,
@@ -1260,7 +1242,7 @@ class _PollsHorizontalCarouselState extends State<_PollsHorizontalCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    final showHint = widget.polls.length > 1;
+    final showDots = widget.polls.length > 1;
     final cardWidth = MediaQuery.sizeOf(context).width * widget.cardWidthFactor;
 
     return Column(
@@ -1268,65 +1250,30 @@ class _PollsHorizontalCarouselState extends State<_PollsHorizontalCarousel> {
       children: [
         SizedBox(
           height: widget.height,
-          child: Stack(
-            children: [
-              ListView.separated(
-                controller: _controller,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.only(right: 28),
-                itemCount: widget.polls.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 14),
-                itemBuilder: (context, index) {
-                  final poll = widget.polls[index];
-                  final card = SizedBox(
-                    width: cardWidth,
-                    height: widget.compact
-                        ? widget.height
-                        : _openPollCardHeight(poll),
-                    child: _ActivePollCard(
-                      poll: poll,
-                      visualIndex: index,
-                      compact: widget.compact,
-                      onVoteTap: () => widget.onVoteTap(poll),
-                    ),
-                  );
-                  if (widget.compact) return card;
-                  return Align(alignment: Alignment.topCenter, child: card);
-                },
-              ),
-              if (showHint && _index < widget.polls.length - 1)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 36,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            const Color(0xFF050213).withValues(alpha: 0),
-                            const Color(0xFF050213).withValues(alpha: 0.72),
-                          ],
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.chevron_right_rounded,
-                        color: Color(0xFFF0ABFC),
-                        size: 28,
-                      ),
-                    ),
-                  ),
+          child: ListView.separated(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(right: 28),
+            itemCount: widget.polls.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              final poll = widget.polls[index];
+              return SizedBox(
+                width: cardWidth,
+                height: widget.height,
+                child: _ActivePollCard(
+                  poll: poll,
+                  visualIndex: index,
+                  compact: widget.compact,
+                  onVoteTap: () => widget.onVoteTap(poll),
                 ),
-            ],
+              );
+            },
           ),
         ),
-        if (showHint) ...[
-          const SizedBox(height: 12),
+        if (showDots) ...[
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(widget.polls.length, (i) {
@@ -1399,33 +1346,6 @@ class _HomePollsBlockTitle extends StatelessWidget {
   }
 }
 
-class _SwipePollsHint extends StatelessWidget {
-  const _SwipePollsHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          tr('home.swipePollsHint'),
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.55),
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Icon(
-          Icons.arrow_forward_ios_rounded,
-          color: Colors.white.withValues(alpha: 0.45),
-          size: 12,
-        ),
-      ],
-    );
-  }
-}
-
 class _ActivePollCard extends StatelessWidget {
   const _ActivePollCard({
     required this.poll,
@@ -1451,7 +1371,7 @@ class _ActivePollCard extends StatelessWidget {
     final banner = resolvePollBanner(poll);
     final isSelecting = poll.status == 'selecting_winners';
     final isClosed = poll.status == 'closed';
-    final bannerHeight = compact ? 118.0 : 176.0;
+    final bannerHeight = compact ? 118.0 : 156.0;
 
     return Container(
       decoration: BoxDecoration(
@@ -1460,13 +1380,6 @@ class _ActivePollCard extends StatelessWidget {
         border: Border.all(
           color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF4C1D95).withValues(alpha: 0.25),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -1516,7 +1429,7 @@ class _ActivePollCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(20, compact ? 12 : 14, 20, 14),
+              padding: EdgeInsets.fromLTRB(16, compact ? 12 : 12, 16, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1526,7 +1439,7 @@ class _ActivePollCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: compact ? 16 : 18,
+                      fontSize: compact ? 16 : 17,
                       fontWeight: FontWeight.w900,
                       height: 1.12,
                     ),
@@ -1543,14 +1456,21 @@ class _ActivePollCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        height: 1.3,
+                        height: 1.25,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    _PollCountdown(poll: poll),
-                    const SizedBox(height: 12),
+                    // Hueco fijo: countdown / live / vacío → misma altura.
+                    SizedBox(
+                      height: 118,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: _PollCountdown(poll: poll),
+                      ),
+                    ),
+                    const Spacer(),
                   ] else ...[
                     const SizedBox(height: 12),
                     const Spacer(),
@@ -1654,7 +1574,7 @@ class _PollCountdownState extends State<_PollCountdown> {
               letterSpacing: 1.2,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             children: [
               _CountdownCell(value: _pad(days), label: tr('home.days')),
@@ -1692,25 +1612,22 @@ class _PollCountdownShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: SizedBox(
-        width: double.infinity,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF1A1230), Color(0xFF0C0818)],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: borderColor.withValues(alpha: 0.28),
-            ),
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1A1230), Color(0xFF0C0818)],
           ),
-          child: child,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: borderColor.withValues(alpha: 0.28),
+          ),
         ),
+        child: child,
       ),
     );
   }

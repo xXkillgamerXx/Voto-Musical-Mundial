@@ -63,6 +63,14 @@ class AdMobConfig {
       'ca-app-pub-3940256099942544~3347511713';
   static const String testIosAppId = 'ca-app-pub-3940256099942544~1458002511';
 
+  /// App ID real de iOS (AdMob → Apps → app iOS → Configuración).
+  /// Vacío = en iOS se usan unidades de **prueba** (coinciden con Info.plist).
+  /// Cuando lo pegues, actualiza también `GADApplicationIdentifier` en Info.plist.
+  static const String prodIosAppId = '';
+
+  static const String prodAndroidAppId =
+      'ca-app-pub-6893073726792422~4091397597';
+
   // Banner de prueba oficiales.
   static const String testAndroidBannerId =
       'ca-app-pub-3940256099942544/6300978111';
@@ -81,7 +89,7 @@ class AdMobConfig {
   static const String testIosRewardedId =
       'ca-app-pub-3940256099942544/1712485313';
 
-  // Ad units reales.
+  // Ad units reales. iOS vacío = no se muestra ese anuncio en release.
   static const String prodAndroidBannerId =
       'ca-app-pub-6893073726792422/2624356965';
   static const String prodIosBannerId =
@@ -129,81 +137,86 @@ class AdMobConfig {
     if (FanPerks.instance.hideAds) return false;
     if (kIsWeb) return false;
     if (!(Platform.isAndroid || Platform.isIOS)) return false;
-    if (useTestAds) return true;
-    return bannerAdUnitId.isNotEmpty ||
-        rewardedAdUnitId.isNotEmpty ||
-        interstitialAdUnitId.isNotEmpty ||
-        nativeAdUnitId.isNotEmpty ||
-        appOpenAdUnitId.isNotEmpty;
+    return bannerAdsEnabled ||
+        rewardedAdsEnabled ||
+        interstitialAdsEnabled ||
+        nativeAdsEnabled ||
+        appOpenAdsEnabled;
   }
 
+  /// En iOS, sin App ID real en Info.plist las unidades prod no cargan.
+  static bool get _useTestAdUnits {
+    if (useTestAds || kDebugMode) return true;
+    if (Platform.isIOS && prodIosAppId.isEmpty) return true;
+    return false;
+  }
+
+  /// Sin ID → no se muestra (no cae a anuncios de prueba en release).
   static String get bannerAdUnitId {
-    if (useTestAds || kDebugMode) {
+    if (_useTestAdUnits) {
       return Platform.isIOS ? testIosBannerId : testAndroidBannerId;
     }
-    final prod = Platform.isIOS ? prodIosBannerId : prodAndroidBannerId;
-    if (prod.isEmpty) {
-      return Platform.isIOS ? testIosBannerId : testAndroidBannerId;
-    }
-    return prod;
+    return Platform.isIOS ? prodIosBannerId : prodAndroidBannerId;
   }
 
   static String get interstitialAdUnitId {
-    if (useTestAds || kDebugMode) {
+    if (_useTestAdUnits) {
       return Platform.isIOS
           ? testIosInterstitialId
           : testAndroidInterstitialId;
     }
-    final prod =
-        Platform.isIOS ? prodIosInterstitialId : prodAndroidInterstitialId;
-    if (prod.isEmpty) {
-      return Platform.isIOS
-          ? testIosInterstitialId
-          : testAndroidInterstitialId;
-    }
-    return prod;
+    return Platform.isIOS ? prodIosInterstitialId : prodAndroidInterstitialId;
   }
 
   static String get rewardedAdUnitId {
-    if (useTestAds || kDebugMode) {
+    if (_useTestAdUnits) {
       return Platform.isIOS ? testIosRewardedId : testAndroidRewardedId;
     }
-    final prod = Platform.isIOS ? prodIosRewardedId : prodAndroidRewardedId;
-    if (prod.isEmpty) {
-      return Platform.isIOS ? testIosRewardedId : testAndroidRewardedId;
-    }
-    return prod;
+    return Platform.isIOS ? prodIosRewardedId : prodAndroidRewardedId;
   }
 
   static String get nativeAdUnitId {
-    if (useTestAds || kDebugMode) {
+    if (_useTestAdUnits) {
       return Platform.isIOS ? testIosNativeId : testAndroidNativeId;
     }
     return Platform.isIOS ? prodIosNativeId : prodAndroidNativeId;
   }
 
   static String get appOpenAdUnitId {
-    if (useTestAds || kDebugMode) {
+    if (_useTestAdUnits) {
       return Platform.isIOS ? testIosAppOpenId : testAndroidAppOpenId;
     }
-    final prod = Platform.isIOS ? prodIosAppOpenId : prodAndroidAppOpenId;
-    if (prod.isEmpty) {
-      return Platform.isIOS ? testIosAppOpenId : testAndroidAppOpenId;
-    }
-    return prod;
+    return Platform.isIOS ? prodIosAppOpenId : prodAndroidAppOpenId;
   }
 
-  /// Solo activo en debug (test) o cuando ya pegaste el ID real de producción.
+  static bool get bannerAdsEnabled =>
+      !hideAds &&
+      !FanPerks.instance.hideAds &&
+      !kIsWeb &&
+      bannerAdUnitId.isNotEmpty;
+
+  static bool get interstitialAdsEnabled =>
+      !hideAds &&
+      !FanPerks.instance.hideAds &&
+      !kIsWeb &&
+      interstitialAdUnitId.isNotEmpty;
+
+  static bool get rewardedAdsEnabled =>
+      !hideAds &&
+      !FanPerks.instance.hideAds &&
+      !kIsWeb &&
+      rewardedAdUnitId.isNotEmpty;
+
+  /// Nativos requieren factory nativa (solo Android hoy).
   static bool get nativeAdsEnabled {
-    if (!adsEnabled || kIsWeb) return false;
-    if (useTestAds || kDebugMode) return true;
+    if (hideAds || FanPerks.instance.hideAds || kIsWeb) return false;
+    if (Platform.isIOS) return false;
     return nativeAdUnitId.isNotEmpty;
   }
 
-  static bool get appOpenAdsEnabled {
-    if (!adsEnabled || kIsWeb) return false;
-    if (useTestAds || kDebugMode) return true;
-    final prod = Platform.isIOS ? prodIosAppOpenId : prodAndroidAppOpenId;
-    return prod.isNotEmpty;
-  }
+  static bool get appOpenAdsEnabled =>
+      !hideAds &&
+      !FanPerks.instance.hideAds &&
+      !kIsWeb &&
+      appOpenAdUnitId.isNotEmpty;
 }

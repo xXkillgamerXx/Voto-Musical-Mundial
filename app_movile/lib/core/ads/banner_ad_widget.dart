@@ -28,13 +28,27 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   int _attempt = 0;
 
   @override
+  void initState() {
+    super.initState();
+    FanPerks.instance.addListener(_onPerksChanged);
+  }
+
+  void _onPerksChanged() {
+    if (!mounted) return;
+    if (AdMobConfig.bannerAdsEnabled && !_loaded && !_loading) {
+      unawaited(_loadIfNeeded(force: true));
+    }
+    setState(() {});
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     unawaited(_loadIfNeeded());
   }
 
   Future<void> _loadIfNeeded({bool force = false}) async {
-    if (!AdMobConfig.adsEnabled || _loading) return;
+    if (!AdMobConfig.bannerAdsEnabled || _loading) return;
     if (!force && (_banner != null || _loaded)) return;
     if (!AdService.isReady) {
       await AdService.initialize();
@@ -112,6 +126,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   void dispose() {
+    FanPerks.instance.removeListener(_onPerksChanged);
     _banner?.dispose();
     super.dispose();
   }
@@ -121,7 +136,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     return ListenableBuilder(
       listenable: FanPerks.instance,
       builder: (context, _) {
-        if (!AdMobConfig.adsEnabled || !_loaded || _banner == null) {
+        if (!AdMobConfig.bannerAdsEnabled || !_loaded || _banner == null) {
           return const SizedBox.shrink();
         }
 

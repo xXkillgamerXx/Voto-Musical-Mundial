@@ -15,7 +15,7 @@ class InterstitialAdService {
   static DateTime? _lastShownAt;
 
   static Future<void> preload() async {
-    if (!AdMobConfig.adsEnabled || _ad != null || _loading) return;
+    if (!AdMobConfig.interstitialAdsEnabled || _ad != null || _loading) return;
     if (!AdService.isReady) {
       await AdService.initialize();
       if (!AdService.isReady) return;
@@ -54,7 +54,7 @@ class InterstitialAdService {
 
   /// Muestra interstitial si hay uno listo y pasó el cooldown.
   static Future<bool> showIfAvailable() async {
-    if (!AdMobConfig.adsEnabled || !_cooldownOk) return false;
+    if (!AdMobConfig.interstitialAdsEnabled || !_cooldownOk) return false;
 
     if (_ad == null) {
       await preload();

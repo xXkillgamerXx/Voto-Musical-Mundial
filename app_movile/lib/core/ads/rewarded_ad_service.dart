@@ -23,7 +23,7 @@ class RewardedAdService {
   static bool get isReady => _ad != null;
 
   static Future<void> preload() async {
-    if (!AdMobConfig.adsEnabled || _ad != null || _loading) return;
+    if (!AdMobConfig.rewardedAdsEnabled || _ad != null || _loading) return;
     if (!AdService.isReady) {
       await AdService.initialize();
       if (!AdService.isReady) return;
@@ -54,7 +54,7 @@ class RewardedAdService {
   }
 
   static Future<RewardedAdResult> show() async {
-    if (!AdMobConfig.adsEnabled) return RewardedAdResult.unavailable;
+    if (!AdMobConfig.rewardedAdsEnabled) return RewardedAdResult.unavailable;
 
     if (_ad == null) {
       await preload();

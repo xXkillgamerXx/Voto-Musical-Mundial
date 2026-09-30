@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.5+7
+version: 1.0.6+10
 
 environment:
   sdk: ^3.11.5
@@ -55,6 +55,9 @@ dependencies:
   gal: ^2.3.3
   sign_in_with_apple: ^8.1.0
   webview_flutter: ^4.13.0
+  # Pin: evita warning/error de dSYM faltante de objective_c.framework al subir a TestFlight.
+  # https://github.com/dart-lang/native/issues/3004
+  objective_c: 9.1.0
 
 dev_dependencies:
   flutter_test:

@@ -29,7 +29,7 @@ class _SquareAdWidgetState extends State<SquareAdWidget> {
   }
 
   Future<void> _loadIfNeeded() async {
-    if (_banner != null || !AdMobConfig.adsEnabled) return;
+    if (_banner != null || !AdMobConfig.bannerAdsEnabled) return;
     if (!AdService.isReady) {
       await AdService.initialize();
       if (!mounted || !AdService.isReady) return;
@@ -75,7 +75,7 @@ class _SquareAdWidgetState extends State<SquareAdWidget> {
     return ListenableBuilder(
       listenable: FanPerks.instance,
       builder: (context, _) {
-        if (!AdMobConfig.adsEnabled || !_loaded || _banner == null) {
+        if (!AdMobConfig.bannerAdsEnabled || !_loaded || _banner == null) {
           return const SizedBox.shrink();
         }
 

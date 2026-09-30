@@ -4210,29 +4210,31 @@ class _VersusMatch extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < entries.length; i++) ...[
-                if (i > 0) const SizedBox(width: 12),
-                Expanded(
-                  child: _VersusInfo(
-                    entry: entries[i],
-                    hideCounts: hideCounts,
-                    votingOpen: votingOpen,
-                    voting: votingId == entries[i].contestantId,
-                    showFeedback: feedbackId == entries[i].contestantId,
-                    feedbackAmount: feedbackAmount,
-                    feedbackToken: feedbackToken,
-                    voteLabel: voteLabel(entries[i]),
-                    voteEnabled: canVote(entries[i]),
-                    winnerRank: winnerRankFor(entries[i]),
-                    hasRoundWinners: hasRoundWinners,
-                    onVote: () => onVote(entries[i]),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < entries.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(
+                    child: _VersusInfo(
+                      entry: entries[i],
+                      hideCounts: hideCounts,
+                      votingOpen: votingOpen,
+                      voting: votingId == entries[i].contestantId,
+                      showFeedback: feedbackId == entries[i].contestantId,
+                      feedbackAmount: feedbackAmount,
+                      feedbackToken: feedbackToken,
+                      voteLabel: voteLabel(entries[i]),
+                      voteEnabled: canVote(entries[i]),
+                      winnerRank: winnerRankFor(entries[i]),
+                      hasRoundWinners: hasRoundWinners,
+                      onVote: () => onVote(entries[i]),
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ],
       ),
@@ -4455,6 +4457,7 @@ class _VersusInfo extends StatelessWidget {
     final group = artist?.group ?? '';
     final isWinner = winnerRank != null;
     return Stack(
+      fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: [
         Column(
@@ -4562,6 +4565,7 @@ class _VersusInfo extends StatelessWidget {
               ),
             ),
             if (votingOpen) ...[
+              const Spacer(),
               const SizedBox(height: 10),
               _VoteGradientButton(
                 enabled: voteEnabled && !voting,

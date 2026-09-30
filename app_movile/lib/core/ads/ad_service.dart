@@ -27,17 +27,21 @@ class AdService {
   }
 
   static Future<void> initialize() async {
-    if (_initialized || !AdMobConfig.adsEnabled) return;
+    if (_initialized) return;
+    if (kIsWeb) return;
     try {
+      // Inicializa siempre el SDK; la visibilidad la controla AdMobConfig.
       await MobileAds.instance.initialize();
       _initialized = true;
-      unawaited(RewardedAdService.preload());
-      unawaited(InterstitialAdService.preload());
-      unawaited(AppOpenAdService.preload());
+      if (AdMobConfig.adsEnabled) {
+        unawaited(RewardedAdService.preload());
+        unawaited(InterstitialAdService.preload());
+        unawaited(AppOpenAdService.preload());
+      }
     } catch (error, stack) {
       debugPrint('AdMob init failed: $error\n$stack');
     }
   }
 
-  static bool get isReady => _initialized && AdMobConfig.adsEnabled;
+  static bool get isReady => _initialized;
 }
