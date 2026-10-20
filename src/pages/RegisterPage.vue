@@ -4,6 +4,9 @@ import { VueTelInput } from 'vue-tel-input'
 import 'vue-tel-input/vue-tel-input.css'
 import { translate, i18n } from '../i18n'
 import { goToVerifyEmail, register } from '../services/api/authApi'
+import { withAppBase } from '../utils/appBase'
+
+const voteHomeHref = withAppBase('/')
 
 const fallbackCountries = [
   { name: 'República Dominicana', code: 'DO', flag: '🇩🇴', dialCode: '+1', example: '(809) 000-0000', maxDigits: 10 },
@@ -520,7 +523,7 @@ const handleRegister = async () => {
         <div class="pointer-events-none absolute -bottom-20 left-8 size-52 rounded-full bg-cyan-400/10 blur-3xl"></div>
 
         <div class="relative z-10">
-          <a href="/" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
+          <a :href="voteHomeHref" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
             {{ $t('register.backHome') }}
           </a>
 

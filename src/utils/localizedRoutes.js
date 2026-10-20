@@ -1,3 +1,4 @@
+import { stripAppBase, withAppBase } from './appBase'
 import { resolvePollLocale } from './pollLocale'
 
 /** Rutas estáticas ES ↔ EN para navegación y compartir. */
@@ -36,15 +37,19 @@ const buildStaticLookup = () => {
 
 const staticLookup = buildStaticLookup()
 
+export const NEWS_HOME_PATH = '/'
+
 export const routePath = (key, locale = 'es') => {
+  if (key === 'news') return NEWS_HOME_PATH
   const entry = STATIC_ROUTES[key]
-  if (!entry) return '/'
-  return resolvePollLocale(locale) === 'en' ? entry.en : entry.es
+  if (!entry) return withAppBase('/')
+  const path = resolvePollLocale(locale) === 'en' ? entry.en : entry.es
+  return withAppBase(path)
 }
 
 /** Convierte cualquier ruta conocida a su forma canónica (ES) para el router. */
 export const toCanonicalPath = (pathname = '/') => {
-  const path = String(pathname || '/').split('?')[0].split('#')[0] || '/'
+  const path = stripAppBase(String(pathname || '/').split('?')[0].split('#')[0] || '/')
   if (path === '/') return '/'
 
   const staticHit = staticLookup.get(path)
@@ -66,30 +71,31 @@ export const toCanonicalPath = (pathname = '/') => {
 
 /** Reescribe la ruta actual al idioma pedido (para compartir / cambiar idioma). */
 export const localizePath = (pathname = '/', locale = 'es') => {
-  const path = String(pathname || '/').split('?')[0].split('#')[0] || '/'
+  const path = stripAppBase(String(pathname || '/').split('?')[0].split('#')[0] || '/')
   const useEn = resolvePollLocale(locale) === 'en'
   const canonical = toCanonicalPath(path)
 
   const staticHit = staticLookup.get(canonical)
   if (staticHit) {
+    if (staticHit.key === 'news') return NEWS_HOME_PATH
     const entry = STATIC_ROUTES[staticHit.key]
-    return useEn ? entry.en : entry.es
+    return withAppBase(useEn ? entry.en : entry.es)
   }
 
   const parts = canonical.split('/').filter(Boolean)
-  if (!parts.length) return '/'
+  if (!parts.length) return withAppBase('/')
 
   if (parts[0] === 'votacion') {
     const prefix = useEn ? PREFIX.poll.en : PREFIX.poll.es
-    return `${prefix}/${parts.slice(1).join('/')}`
+    return withAppBase(`${prefix}/${parts.slice(1).join('/')}`)
   }
 
   if (parts[0] === 'artista') {
     const prefix = useEn ? PREFIX.artist.en : PREFIX.artist.es
-    return `${prefix}/${parts.slice(1).join('/')}`
+    return withAppBase(`${prefix}/${parts.slice(1).join('/')}`)
   }
 
-  return path
+  return withAppBase(path)
 }
 
 export const matchStaticRoute = (pathname, key) =>
@@ -106,7 +112,8 @@ export const syncLocalizedLocation = (locale = 'es') => {
   if (typeof window === 'undefined') return
   try {
     const url = new URL(window.location.href)
-    if (url.pathname.startsWith('/admin') || url.pathname.startsWith('/embed')) {
+    const current = stripAppBase(url.pathname)
+    if (current.startsWith('/admin') || current.startsWith('/embed')) {
       return
     }
     const nextPath = localizePath(url.pathname, locale)

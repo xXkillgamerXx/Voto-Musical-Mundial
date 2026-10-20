@@ -13,6 +13,7 @@ import {
 import { getPoll } from '../../services/api/pollsApi'
 import { translate } from '../../i18n'
 import { pollUrl as buildPollUrl } from '../../utils/pollLocale'
+import { withAppBase } from '../../utils/appBase'
 
 const props = defineProps({
   pollId: {
@@ -607,7 +608,7 @@ const deleteRound = async () => {
     await deleteAdminRound(props.pollId, props.roundId)
 
     isDeleteModalOpen.value = false
-    window.location.href = `/admin/votaciones/${props.pollId}`
+    window.location.href = withAppBase(`/admin/votaciones/${props.pollId}`)
   } catch {
     errorMessage.value = translate('admin.round.errors.delete')
     isDeletingRound.value = false

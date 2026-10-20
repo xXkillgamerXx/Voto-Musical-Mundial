@@ -9,7 +9,7 @@ When the user asks to run the web locally (for example: "ejecuta local", "run lo
 
 1. SSH tunnel to production PostgreSQL (`5432`) and Redis (`6379`)
 2. Backend API on `http://localhost:4000`
-3. Frontend on **`http://localhost:5173`** (not 5174)
+3. Frontend on **`http://localhost:5174/`** (Music Mundial landing) and **`http://localhost:5174/vote/`** (voting). One Vite server, two HTML routes. `npm run dev` starts it; `npm run dev:local` starts tunnel + API + that UI.
 
 ## Command
 
@@ -30,10 +30,12 @@ powershell -ExecutionPolicy Bypass -File .\dev-local.ps1
 
 - `localhost:5432` and `6379` listening (tunnel)
 - `curl http://localhost:4000/api/health` returns `"ok": true`
-- Frontend responds on `http://localhost:5173`
+- Landing responds on `http://localhost:5174/`
+- Voting responds on `http://localhost:5174/vote/`
 
 ## Notes
 
 - Docker is not used locally; backend `.env` must exist in `backend/`.
-- Vite proxies `/api` to `localhost:4000` and `/uploads` to production.
+- One Vite server serves two HTML routes: `/` from `news/` in this repo, `/vote/` from the vote SPA. No redirect between them. Do not edit the sibling `musicmundial` project.
+- Vite proxies `/vote/api` and `/api` to `localhost:4000`, and `/vote/uploads` plus `/uploads` to production.
 - This uses the **real production database**. Do not run destructive migrations locally without explicit user approval.

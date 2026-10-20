@@ -14,12 +14,13 @@ import { getArtistsCached } from "../services/firebaseCache";
 import { resolveArtistBanner } from "../utils/artistMedia";
 import { applyArtistLocale, artistUrl as buildArtistUrl } from "../utils/pollLocale";
 import { canSeeFanStore, loadFanStore } from "../services/fanStore";
+import { locationPath } from "../utils/appBase";
 import { routePath } from "../utils/localizedRoutes";
 import ArtistSupportersBoard from "../components/ArtistSupportersBoard.vue";
 import { getArtistSupporters } from "../utils/fanMembership";
 
 const { locale } = useI18n();
-const pathParts = window.location.pathname.split("/").filter(Boolean);
+const pathParts = locationPath().split("/").filter(Boolean);
 const routeArtistKey = pathParts[1] || "";
 const pollsHref = computed(() => routePath("polls", locale.value));
 const profileHref = computed(() => routePath("profile", locale.value));
@@ -239,7 +240,7 @@ const loadArtistPollStats = async () => {
 
 const toggleFollow = async () => {
   if (!currentUser.value) {
-    window.location.href = "/registro";
+    window.location.href = routePath("register", locale.value);
     return;
   }
 
@@ -313,7 +314,7 @@ onUnmounted(() => {
 <template>
   <section class="mx-auto max-w-352 px-4 sm:px-6">
     <a
-      href="/"
+      :href="routePath('home', locale)"
       class="inline-flex text-sm font-black text-fuchsia-300 transition hover:text-white"
     >
       {{ $t("artists.profile.back") }}

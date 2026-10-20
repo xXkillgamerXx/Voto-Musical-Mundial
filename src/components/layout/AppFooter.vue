@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { assetUrl } from '../../utils/appBase'
 import { routePath } from '../../utils/localizedRoutes'
 import { canSeeFanStoreNav, getFanStoreViewer, loadFanStore, onFanStoreChange } from '../../services/fanStore'
 
@@ -48,7 +49,7 @@ const socialLinks = [
   },
   {
     titleKey: 'footer.startlyCommunity',
-    image: '/startly-icon.png',
+    image: assetUrl('/startly-icon.png'),
     href: 'https://startlyapp.com/musicmundial',
   },
   {
@@ -66,9 +67,9 @@ const socialLinks = [
     <div class="relative mx-auto max-w-352 overflow-hidden p-2">
       <div class="relative grid gap-8 lg:grid-cols-[1.35fr_1fr_1fr_1fr]">
         <div>
-          <a href="/" class="inline-flex items-center gap-3">
+          <a :href="routePath('home', locale)" class="inline-flex items-center gap-3">
             <span class="grid h-12 w-16 place-items-center">
-              <img src="/logo-votos.png" :alt="$t('common.appName') + ' logo'" class="h-full w-full object-contain" />
+              <img :src="assetUrl('/logo-votos.png')" :alt="$t('common.appName') + ' logo'" class="h-full w-full object-contain" />
             </span>
             <span>
               <span class="block text-lg font-black uppercase leading-none">{{ $t('common.appName') }}</span>

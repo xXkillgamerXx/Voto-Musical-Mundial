@@ -10,6 +10,7 @@ import { clearFanMembership, hydrateMembership } from '../utils/fanMembership'
 import { downloadFanInvoice } from '../utils/fanInvoice'
 import { canSeeFanStore, checkoutPath, findStoreItem, getFanPlans, loadFanStore } from '../services/fanStore'
 import { pickLocalized, pickLocalizedList } from '../utils/localizedCopy'
+import { withAppBase } from '../utils/appBase'
 import { routePath } from '../utils/localizedRoutes'
 import MegaUpgradePills from '../components/MegaUpgradePills.vue'
 
@@ -68,7 +69,7 @@ const canOpenPlans = computed(() => {
 const notificationsHref = computed(() => routePath('notifications', locale.value))
 const publicProfileHref = computed(() => {
   const username = me.value?.username || getCurrentApiAuth()?.user?.username
-  return username ? `/user/${username}` : routePath('profile', locale.value)
+  return username ? withAppBase(`/user/${username}`) : routePath('profile', locale.value)
 })
 const menuItems = computed(() => [
   { id: 'profile', label: translate('accountSettings.navProfile'), icon: 'fa-solid fa-user' },

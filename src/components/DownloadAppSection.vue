@@ -9,6 +9,7 @@ import {
   showAppStoreBadge,
   showPlayStoreBadge,
 } from '../utils/openGooglePlay'
+import { assetUrl } from '../utils/appBase'
 
 const DEFAULT_PLAY_URL =
   'https://play.google.com/store/apps/details?id=vote.musicmundial.com'
@@ -69,7 +70,7 @@ onMounted(async () => {
     <div class="download-app__panel relative overflow-hidden rounded-[1.75rem] border border-white/10 sm:rounded-[2rem]">
       <!-- Fondo limpio (anillo neon a la derecha; texto a la izquierda) -->
       <img
-        src="/app-download-bg.png"
+        :src="assetUrl('/app-download-bg.png')"
         alt=""
         class="download-app__bg pointer-events-none absolute inset-0 h-full w-full object-cover object-right"
         aria-hidden="true"
@@ -85,7 +86,7 @@ onMounted(async () => {
         <div class="relative z-10 mx-auto flex w-full max-w-xl flex-col items-center text-center">
           <div class="inline-flex items-center gap-2.5">
             <img
-              src="/logo-votos.png"
+              :src="assetUrl('/logo-votos.png')"
               alt=""
               class="size-9 drop-shadow-[0_0_18px_rgba(251,191,36,0.55)] sm:size-10"
               aria-hidden="true"
@@ -169,7 +170,7 @@ onMounted(async () => {
         <div class="download-app__phone-wrap relative mx-auto w-full max-w-[260px] sm:max-w-[300px] lg:max-w-none lg:justify-self-end">
           <div class="download-app__phone-ring pointer-events-none absolute inset-x-6 bottom-4 h-16 rounded-full blur-2xl"></div>
           <img
-            src="/app-download-phone.png"
+            :src="assetUrl('/app-download-phone.png')"
             :alt="$t('home.downloadApp.phoneAlt')"
             class="download-app__phone relative z-10 mx-auto w-full max-w-[220px] sm:max-w-[250px] lg:max-w-[290px]"
             width="560"

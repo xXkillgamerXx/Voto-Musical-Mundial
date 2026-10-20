@@ -1,4 +1,5 @@
 import { toBlob } from 'html-to-image'
+import { assetUrl } from './appBase'
 import {
   formatCertificateInstagramTag,
   getCertificateInstagramHandle,
@@ -258,7 +259,7 @@ const buildCertificateNode = ({ name, group, category, year, lang = 'es' } = {})
     <article class="cert">
       <div class="glow"></div>
       <div class="inner">
-        <img class="crown-top" src="/certificate-crown.png" alt="" />
+        <img class="crown-top" src="${assetUrl('/certificate-crown.png')}" alt="" />
         <div class="brand">MUSIC MUNDIAL</div>
         <div class="voting">VOTING</div>
         <div class="title-row">

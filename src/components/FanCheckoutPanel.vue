@@ -14,6 +14,7 @@ import { getArtistsCached } from '../services/firebaseCache'
 import { getCurrentApiAuth, getMe } from '../services/api/authApi'
 import { getStoredAuth, setStoredAuth } from '../services/api/client'
 import { applyArtistLocale } from '../utils/pollLocale'
+import { withAppBase } from '../utils/appBase'
 import { routePath } from '../utils/localizedRoutes'
 import { saveFanPurchase } from '../utils/fanMembership'
 import { downloadFanInvoice } from '../utils/fanInvoice'
@@ -35,7 +36,7 @@ const lang = computed(() => (String(locale.value || 'es').startsWith('en') ? 'en
 const plansHref = computed(() => routePath('plans', locale.value))
 const profileHref = computed(() => {
   const username = getCurrentApiAuth()?.user?.username
-  return username ? `/user/${username}` : routePath('profile', locale.value)
+  return username ? withAppBase(`/user/${username}`) : routePath('profile', locale.value)
 })
 const currencyCode = computed(() => (props.currency === 'COP' ? 'COP' : 'USD'))
 

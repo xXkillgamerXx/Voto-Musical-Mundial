@@ -1,3 +1,5 @@
+import { withAppBase } from '../utils/appBase'
+
 export const FAN_PLANS = [
   {
     sku: 'FAN',
@@ -237,5 +239,5 @@ export const checkoutPath = (sku, { currency = 'USD', yearly = false, locale = '
     cur: currency === 'COP' ? 'COP' : 'USD',
     cycle: yearly ? 'year' : 'month',
   })
-  return `${path}?${params.toString()}`
+  return `${withAppBase(path)}?${params.toString()}`
 }

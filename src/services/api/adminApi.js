@@ -251,3 +251,25 @@ export const thankAdminContentReporter = (id, body = {}) =>
     method: 'POST',
     body,
   })
+
+export const getAdminNewsPosts = ({ page = 1, limit = 20, q = '', status = '' } = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  })
+  if (q) params.set('q', q)
+  if (status) params.set('status', status)
+  return adminRequest(`/news/posts?${params.toString()}`)
+}
+export const getAdminNewsPost = (id) => adminRequest(`/news/posts/${encodeURIComponent(id)}`)
+export const createAdminNewsPost = (body) => adminRequest('/news/posts', { method: 'POST', body })
+export const updateAdminNewsPost = (id, body) =>
+  adminRequest(`/news/posts/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const deleteAdminNewsPost = (id) =>
+  adminRequest(`/news/posts/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export const getAdminNewsCategories = () => adminRequest('/news/categories')
+export const createAdminNewsCategory = (body) => adminRequest('/news/categories', { method: 'POST', body })
+export const updateAdminNewsCategory = (id, body) =>
+  adminRequest(`/news/categories/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const deleteAdminNewsCategory = (id) =>
+  adminRequest(`/news/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })

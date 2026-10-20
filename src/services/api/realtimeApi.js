@@ -5,9 +5,13 @@ let socket = null
 
 export const getRealtimeSocket = () => {
   if (!socket) {
-    const baseUrl = getApiBaseUrl().replace(/\/api$/, '') || window.location.origin
-    socket = io(baseUrl, {
-      path: '/socket.io',
+    const apiBase = getApiBaseUrl()
+    const apiUrl = /^https?:/i.test(apiBase)
+      ? new URL(apiBase)
+      : new URL(apiBase, window.location.origin)
+    const socketPath = `${apiUrl.pathname.replace(/\/api\/?$/, '') || ''}/socket.io`.replace(/\/{2,}/g, '/')
+    socket = io(apiUrl.origin, {
+      path: socketPath || '/socket.io',
       transports: ['polling', 'websocket'],
       autoConnect: true,
       reconnection: true,

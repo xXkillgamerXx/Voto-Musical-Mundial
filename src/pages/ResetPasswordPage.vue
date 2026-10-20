@@ -7,6 +7,9 @@ import {
   goToLoginAfterPasswordReset,
   resetPassword,
 } from "../services/api/authApi";
+import { withAppBase } from "../utils/appBase";
+
+const voteHomeHref = withAppBase("/");
 
 const token = computed(() => new URLSearchParams(window.location.search).get("token") || "");
 const password = ref("");
@@ -81,7 +84,7 @@ const handleReset = async () => {
   <section class="mx-auto flex min-h-screen max-w-lg items-center px-4 py-10 sm:px-6">
     <div class="w-full overflow-hidden rounded-4xl border border-violet-300/25 bg-[#080a18] p-1 text-white shadow-2xl shadow-fuchsia-950/40">
       <div class="rounded-[calc(2rem-4px)] bg-[#080a18]/95 p-6 sm:p-8">
-        <a href="/" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
+        <a :href="voteHomeHref" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
           {{ $t("auth.goToLogin") }}
         </a>
         <p class="mt-6 text-xs font-black uppercase tracking-[0.3em] text-fuchsia-300">

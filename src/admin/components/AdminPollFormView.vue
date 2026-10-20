@@ -11,6 +11,7 @@ import {
 import { getPoll } from '../../services/api/pollsApi'
 import { translate } from '../../i18n'
 import { hasRichTextContent, richTextToHtml } from '../../utils/richText'
+import { withAppBase } from '../../utils/appBase'
 
 const props = defineProps({
   pollId: {
@@ -325,10 +326,10 @@ const savePoll = async () => {
       })
       const createdId = created?.id || created?.pollId
       if (createdId) {
-        window.location.href = `/admin/votaciones/editar/${createdId}?notify=1`
+        window.location.href = withAppBase(`/admin/votaciones/editar/${createdId}?notify=1`)
         return
       }
-      window.location.href = '/admin/votaciones'
+      window.location.href = withAppBase('/admin/votaciones')
     }
   } catch {
     errorMessage.value = translate('admin.pollForm.errors.save')

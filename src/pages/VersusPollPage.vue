@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import PollComments from "../components/PollComments.vue";
+import { withAppBase } from "../utils/appBase";
+
+const voteHomeHref = withAppBase("/");
 
 const remainingSeconds = ref(31 * 24 * 60 * 60 + 1 * 60 * 60 + 4 * 60 + 21);
 let countdownTimer;
@@ -78,7 +81,7 @@ const confirmVote = () => {
 <template>
   <section class="mx-auto max-w-352">
     <a
-      href="/"
+      :href="voteHomeHref"
       class="inline-flex text-sm font-black text-fuchsia-300 transition hover:text-white"
     >
       ← Volver a votaciones

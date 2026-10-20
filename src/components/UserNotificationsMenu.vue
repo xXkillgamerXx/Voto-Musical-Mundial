@@ -100,7 +100,7 @@ const openNotification = async (notification) => {
     return
   }
 
-  window.location.href = '/notificaciones'
+  window.location.href = notificationsHref.value
 }
 
 const markAllRead = async () => {

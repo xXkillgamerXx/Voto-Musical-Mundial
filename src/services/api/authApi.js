@@ -36,8 +36,13 @@ export const PENDING_EMAIL_VERIFY_KEY = "vmm_pending_email_verify";
 
 export const goToLogin = (notice = "passwordReset") => {
   window.sessionStorage.setItem(LOGIN_NOTICE_KEY, notice);
-  window.history.pushState({}, "", "/");
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  const onNewsHome = window.location.pathname === "/" || window.location.pathname === "";
+  if (onNewsHome) {
+    window.location.hash = "login";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    return;
+  }
+  window.location.href = "/#login";
 };
 
 export const goToLoginAfterPasswordReset = () => goToLogin("passwordReset");

@@ -1,0 +1,32 @@
+# Music Mundial (noticias) en la raiz + votacion en /vote
+# Copiar las directivas al vhost de www.musicmundial.com en aaPanel.
+#
+# La app movil sigue usando https://vote.musicmundial.com/api
+
+Alias /vote /www/wwwroot/vote.musicmundial.com
+<Directory "/www/wwwroot/vote.musicmundial.com">
+  Options FollowSymLinks
+  AllowOverride All
+  Require all granted
+</Directory>
+
+# Imagenes subidas (las URLs de la API siguen siendo /uploads/...)
+Alias /uploads /www/wwwroot/vote.musicmundial.com/uploads
+<Directory "/www/wwwroot/vote.musicmundial.com/uploads">
+  Options FollowSymLinks
+  AllowOverride None
+  Require all granted
+</Directory>
+
+# Reusar el mismo backend que ya proxea /api en vote.musicmundial.com
+# (normalmente el contenedor vmm-api). No uses npm start en el host.
+ProxyPreserveHost On
+ProxyPass /vote/api http://127.0.0.1:4000/api
+ProxyPassReverse /vote/api http://127.0.0.1:4000/api
+ProxyPass /vote/socket.io http://127.0.0.1:4000/socket.io
+ProxyPassReverse /vote/socket.io http://127.0.0.1:4000/socket.io
+
+# En vote.musicmundial.com (API de la app + SPA con base /vote):
+# RedirectMatch 302 ^/(?!api/|uploads/|socket\.io/|vote/|\.well-known/)(.*)$ /vote/$1
+# Alias /vote al mismo DocumentRoot
+# ProxyPass /api y /socket.io se quedan como estan para Flutter

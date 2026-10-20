@@ -1,15 +1,16 @@
 # Levanta el entorno local completo contra la base de datos de PRODUCCION.
-# 1) Tunel SSH  2) API NestJS  3) Frontend Vite en http://localhost:5173
+# 1) Tunel SSH  2) API NestJS  3) Frontend en :5174 (/ landing, /vote votacion)
 #
 # Uso:  npm run dev:local
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
+$newsRoot = Join-Path $root "news"
 $key = "$env:USERPROFILE\.ssh\vmm_server"
 $sshHost = "213.136.69.57"
 $sshPort = "2981"
 $sshUser = "root"
-$frontendPort = 5173
+$frontendPort = 5174
 $apiPort = 4000
 
 function Test-PortListening {
@@ -28,7 +29,7 @@ function Stop-ListenPort {
 function Wait-Port {
   param(
     [int]$Port,
-    [int]$TimeoutSeconds = 45
+    [int]$TimeoutSeconds = 90
   )
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
@@ -116,13 +117,20 @@ if (-not $workerRunning) {
   Write-Host "3/4  Worker ya activo." -ForegroundColor Green
 }
 
+if (-not (Test-Path $newsRoot)) {
+  Write-Host "No se encontro Music Mundial en $newsRoot" -ForegroundColor Red
+  exit 1
+}
+
 if (Test-PortListening -Port $frontendPort) {
   Write-Host "Liberando puerto ${frontendPort}..." -ForegroundColor Yellow
   Stop-ListenPort -Port $frontendPort
   Start-Sleep -Seconds 1
 }
 
-Stop-ListenPort -Port 5174
+if (Test-PortListening -Port 5173) {
+  Stop-ListenPort -Port 5173
+}
 
 Write-Host "4/4  Iniciando frontend (http://localhost:${frontendPort})..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList @(
@@ -137,9 +145,10 @@ if (-not (Wait-Port -Port $frontendPort)) {
 
 Write-Host ""
 Write-Host "Listo:" -ForegroundColor Green
-Write-Host "  Web:  http://localhost:${frontendPort}" -ForegroundColor Green
-Write-Host "  API:  http://localhost:${apiPort}/api/health" -ForegroundColor Green
-Write-Host "  Worker: bots + vote-sync" -ForegroundColor Green
-Write-Host "  DB:   produccion via tunel SSH (5432/6379)" -ForegroundColor Yellow
+Write-Host "  Landing: http://localhost:${frontendPort}/" -ForegroundColor Green
+Write-Host "  Votar:   http://localhost:${frontendPort}/vote/" -ForegroundColor Green
+Write-Host "  API:     http://localhost:${apiPort}/api/health" -ForegroundColor Green
+Write-Host "  Worker:  bots + vote-sync" -ForegroundColor Green
+Write-Host "  DB:      produccion via tunel SSH (5432/6379)" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "No cierres las ventanas del tunel SSH, la API ni el worker." -ForegroundColor DarkGray
+Write-Host "No cierres las ventanas del tunel SSH, la API, el worker ni los frontends." -ForegroundColor DarkGray

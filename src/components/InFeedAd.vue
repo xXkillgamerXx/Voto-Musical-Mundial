@@ -1,6 +1,7 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
-import { fanAdsFree } from "../utils/fanPerks";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { showWebAds } from "../utils/fanPerks";
+import { isAdminLocation } from "../utils/appBase";
 
 const ADSENSE_SCRIPT_ID = "google-adsense-script";
 const ADSENSE_CLIENT = "ca-pub-1078939545517246";
@@ -14,9 +15,7 @@ let fillTimer = 0;
 
 const isLocalHost = () =>
   ["localhost", "127.0.0.1", ""].includes(window.location.hostname);
-const isAdminPath = () =>
-  typeof window !== "undefined" &&
-  window.location.pathname.startsWith("/admin");
+const isAdminPath = () => typeof window !== "undefined" && isAdminLocation();
 const isLocal = typeof window !== "undefined" && isLocalHost();
 const shouldRenderAd = ref(typeof window !== "undefined" && !isAdminPath());
 const useLiveAdSense = shouldRenderAd.value && !isLocal;
@@ -52,6 +51,38 @@ const readFillStatus = () => {
   return false;
 };
 
+const tryLoadAd = async () => {
+  if (!shouldRenderAd.value || isLocal || !showWebAds.value || hasPushedAd.value) {
+    return;
+  }
+  try {
+    await loadAdSenseScript();
+    await nextTick();
+    if (hasPushedAd.value || !slotEl.value || !showWebAds.value) return;
+    window.adsbygoogle = window.adsbygoogle || [];
+    window.adsbygoogle.push({});
+    hasPushedAd.value = true;
+
+    observer = new MutationObserver(() => {
+      if (readFillStatus() && observer) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(slotEl.value, {
+      attributes: true,
+      attributeFilter: ["data-ad-status"],
+    });
+    readFillStatus();
+    fillTimer = window.setTimeout(() => {
+      if (!adFilled.value) {
+        observer?.disconnect();
+      }
+    }, 4000);
+  } catch {
+    adFilled.value = false;
+  }
+};
+
 onMounted(() => {
   if (!shouldRenderAd.value || typeof window === "undefined") {
     return;
@@ -62,34 +93,13 @@ onMounted(() => {
     return;
   }
 
-  window.setTimeout(async () => {
-    try {
-      await loadAdSenseScript();
-      await nextTick();
-      if (hasPushedAd.value || !slotEl.value) return;
-      window.adsbygoogle = window.adsbygoogle || [];
-      window.adsbygoogle.push({});
-      hasPushedAd.value = true;
-
-      observer = new MutationObserver(() => {
-        if (readFillStatus() && observer) {
-          observer.disconnect();
-        }
-      });
-      observer.observe(slotEl.value, {
-        attributes: true,
-        attributeFilter: ["data-ad-status"],
-      });
-      readFillStatus();
-      fillTimer = window.setTimeout(() => {
-        if (!adFilled.value) {
-          observer?.disconnect();
-        }
-      }, 4000);
-    } catch {
-      adFilled.value = false;
-    }
+  window.setTimeout(() => {
+    void tryLoadAd();
   }, 250);
+});
+
+watch(showWebAds, (show) => {
+  if (show) void tryLoadAd();
 });
 
 onUnmounted(() => {
@@ -100,7 +110,7 @@ onUnmounted(() => {
 
 <template>
   <aside
-    v-if="shouldRenderAd && !fanAdsFree && (isLocal || useLiveAdSense)"
+    v-if="shouldRenderAd && showWebAds && (isLocal || useLiveAdSense)"
     class="in-feed-ad w-full max-w-5xl"
     :class="
       isLocal || adFilled

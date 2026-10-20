@@ -1,3 +1,5 @@
+import { withAppBase } from './appBase'
+
 const asRecord = (value) =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 
@@ -86,10 +88,10 @@ export const resolveArtistSlug = (artist, locale = 'es') => {
 }
 
 export const artistUrl = (artist, locale = 'es') => {
-  if (!artist) return resolvePollLocale(locale) === 'en' ? '/artists' : '/artistas'
+  if (!artist) return withAppBase(resolvePollLocale(locale) === 'en' ? '/artists' : '/artistas')
   const slug = resolveArtistSlug(artist, locale)
   const prefix = resolvePollLocale(locale) === 'en' ? '/artist' : '/artista'
-  return `${prefix}/${slug}`
+  return withAppBase(`${prefix}/${slug}`)
 }
 
 export const withPollLocaleFields = (poll) => {
@@ -143,7 +145,7 @@ export const resolvePollSlug = (poll, locale = 'es') => {
 
 /** URL pública localizada: `/votacion|poll/{year}/{slug}`. */
 export const pollUrl = (poll, locale = 'es') => {
-  if (!poll) return resolvePollLocale(locale) === 'en' ? '/polls' : '/votaciones'
+  if (!poll) return withAppBase(resolvePollLocale(locale) === 'en' ? '/polls' : '/votaciones')
   const year =
     Number(poll.year) ||
     Number(asRecord(poll.config).year) ||
@@ -151,7 +153,7 @@ export const pollUrl = (poll, locale = 'es') => {
     new Date().getFullYear()
   const slug = resolvePollSlug(poll, locale)
   const prefix = resolvePollLocale(locale) === 'en' ? '/poll' : '/votacion'
-  return `${prefix}/${year}/${slug}`
+  return withAppBase(`${prefix}/${year}/${slug}`)
 }
 
 export const applyPollLocale = (poll, locale = 'es') => {

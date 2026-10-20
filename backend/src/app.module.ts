@@ -10,6 +10,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 import { MissionsModule } from './modules/missions/missions.module';
+import { NewsModule } from './modules/news/news.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PollsModule } from './modules/polls/polls.module';
 import { RankingsModule } from './modules/rankings/rankings.module';
@@ -46,6 +47,7 @@ import { WorkersModule } from './workers/workers.module';
     RewardsModule,
     SettingsModule,
     FanModule,
+    NewsModule,
     NotificationsModule,
     WorkersModule,
   ],

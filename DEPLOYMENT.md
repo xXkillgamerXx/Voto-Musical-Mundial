@@ -6,7 +6,8 @@
 - SSH port: `2981`
 - SSH user: `root`
 - SSH key: `~/.ssh/vmm_server`
-- Domain: `https://vote.musicmundial.com`
+- Public vote URL: `https://www.musicmundial.com/vote/`
+- API / app domain: `https://vote.musicmundial.com` (`/api` for Flutter)
 - Site root: `/www/wwwroot/vote.musicmundial.com`
 - Backend root: `/www/wwwroot/vote.musicmundial.com/backend`
 
@@ -14,7 +15,7 @@
 
 | Layer | How it runs |
 | --- | --- |
-| Frontend | Static Vue build served by **aaPanel Apache** from the site root |
+| Frontend | Static Vue build (`base: /vote/`) served by **aaPanel Apache**. News site stays at `/`; voting is `/vote/` |
 | Backend API | **Docker** container `vmm-api` |
 | Background jobs | **Docker** container `vmm-worker` |
 | Redis | **Docker** container `vmm-redis` on `127.0.0.1:6379` |
@@ -44,7 +45,7 @@ Do not use `vmm-postgres` for production. PostgreSQL is managed by aaPanel.
 From local repo:
 
 ```powershell
-$env:VITE_API_BASE_URL='/api'
+$env:VITE_API_BASE_URL='/vote/api'
 $env:VITE_FIREBASE_VAPID_KEY='BNQEx4dNvUVEV_CJ1qV64yzOA3xXPB2Y30EN_m4RLTf22tbVe_E1lkV-jNK7lbh4pbTxN2aOAN5mLPUMdYcRZuc'
 $env:VITE_TURNSTILE_SITE_KEY='0x4AAAAAADscx-A_CXbgnFea'
 npm run build
@@ -100,20 +101,22 @@ docker compose -f docker-compose.vote-db.yml build
 docker compose -f docker-compose.vote-db.yml up -d
 ```
 
-The API runs inside `vmm-api`. Apache proxies `/api` to that container.
+The API runs inside `vmm-api`. Apache proxies `/api` (Flutter + subdomain) and `/vote/api` (web SPA) to that container.
+
+Apache notes for combining both sites live in `apache/vote-under-musicmundial.conf.example`.
 
 ## Verification
 
 Check web:
 
 ```bash
-curl -I http://127.0.0.1 -H 'Host: vote.musicmundial.com'
+curl -I http://127.0.0.1/vote/ -H 'Host: vote.musicmundial.com'
 ```
 
 Check a JS asset (must be `200`, not `403`):
 
 ```bash
-curl -I http://127.0.0.1/assets/index-*.js -H 'Host: vote.musicmundial.com'
+curl -I http://127.0.0.1/vote/assets/index-*.js -H 'Host: vote.musicmundial.com'
 ```
 
 Check API:

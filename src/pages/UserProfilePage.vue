@@ -6,12 +6,13 @@ import { checkUsername, getCurrentApiAuth, getMe, getPublicProfile, updateMe, up
 import { onStoredAuthChange } from '../services/api/client'
 import ReportModal from '../components/ReportModal.vue'
 import { artistUrl as buildArtistUrl } from '../utils/pollLocale'
+import { locationPath } from '../utils/appBase'
 import { routePath } from '../utils/localizedRoutes'
 import { loadFanMe } from '../utils/fanPerks'
 import { getFanMembership, getMySupportedArtists, hydrateMembership, isMegaFanIdentity, membershipTone, membershipAccent, membershipShell } from '../utils/fanMembership'
 
 const { locale } = useI18n()
-const pathParts = window.location.pathname.split('/').filter(Boolean)
+const pathParts = locationPath().split('/').filter(Boolean)
 const routeUsername = pathParts[0] === 'user' ? (pathParts[1] || '').toLowerCase() : ''
 
 const currentUser = ref(null)
@@ -499,7 +500,7 @@ onUnmounted(() => {
         {{ errorMessage || $t('profile.notFoundDescription') }}
       </p>
       <a
-        href="/"
+        :href="routePath('home', locale)"
         class="mt-6 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-6 py-3 text-sm font-black uppercase tracking-wide text-white"
       >
         {{ $t('profile.backHome') }}

@@ -6,19 +6,13 @@ import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { join } from 'path';
 import { AppModule } from './app.module';
-import { assertSecurityConfig } from './common/security-config';
+import { assertSecurityConfig, resolveCorsOrigins } from './common/security-config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
   assertSecurityConfig(config);
-  const origin = config.get<string>('APP_ORIGIN') || 'http://localhost:5173';
-  const missionVisitOrigins = config.get<string>('MISSION_VISIT_ORIGINS')
-    || 'https://www.musicmundial.com,https://musicmundial.com,http://www.musicmundial.com,http://musicmundial.com';
-  const corsOrigins = [
-    ...origin.split(',').map((value) => value.trim()),
-    ...missionVisitOrigins.split(',').map((value) => value.trim()),
-  ].filter(Boolean);
+  const corsOrigins = resolveCorsOrigins(config);
 
   // Behind the aaPanel Apache reverse proxy: trust exactly one hop so request.ip is the
   // real client and X-Forwarded-For cannot be spoofed to bypass rate limits / cooldowns.

@@ -15,7 +15,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "migrate:firebase": "ts-node-dev --transpile-only src/scripts/firebase-import.ts",
-    "reconcile:firebase": "ts-node-dev --transpile-only src/scripts/reconcile-firebase.ts"
+    "reconcile:firebase": "ts-node-dev --transpile-only src/scripts/reconcile-firebase.ts",
+    "import:wp-news": "ts-node-dev --transpile-only src/scripts/import-wp-news.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -37,6 +38,7 @@
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
     "jose": "^5.10.0",
+    "mysql2": "^3.24.6",
     "nodemailer": "^9.0.5",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

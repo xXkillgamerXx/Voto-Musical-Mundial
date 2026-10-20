@@ -1,6 +1,7 @@
 import { getArtists, getPopularityRanking } from "./api/artistsApi";
 import { getLivePolls, getPolls } from "./api/pollsApi";
 import { pickCustomArtistBanner } from "../utils/artistMedia";
+import { stripAppBase } from "../utils/appBase";
 
 const ARTISTS_CACHE_MS = 5 * 60 * 1000;
 const POLLS_CACHE_MS = 90 * 1000;
@@ -346,7 +347,7 @@ const withTimeout = (promise, timeoutMs = 4500) =>
   ]);
 
 export const preloadRouteData = (db, path) => {
-  const normalized = String(path || '').split('?')[0]
+  const normalized = stripAppBase(String(path || '').split('?')[0] || '/')
   if (normalized === '/votaciones' || normalized === '/polls' || normalized === '/') {
     return withTimeout(getPollsCached(db));
   }

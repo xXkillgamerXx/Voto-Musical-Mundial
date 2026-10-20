@@ -6,6 +6,7 @@ import {
   getGooglePlayOpenUrl,
   normalizePlayStoreWebUrl,
 } from '../utils/openGooglePlay'
+import { assetUrl } from '../utils/appBase'
 
 const DEFAULT_PLAY_URL =
   'https://play.google.com/store/apps/details?id=vote.musicmundial.com'
@@ -115,7 +116,7 @@ onMounted(async () => {
 
         <div class="flex items-center gap-4 pr-10">
           <img
-            src="/app-download-phone.png"
+            :src="assetUrl('/app-download-phone.png')"
             alt=""
             class="h-24 w-auto drop-shadow-[0_10px_24px_rgba(0,0,0,0.45)]"
             width="96"

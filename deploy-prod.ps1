@@ -34,7 +34,7 @@ function Invoke-Ssh {
 if (-not $BackendOnly) {
   Write-Host "Building frontend..." -ForegroundColor Cyan
   Push-Location $root
-  $env:VITE_API_BASE_URL = "/api"
+  $env:VITE_API_BASE_URL = "/vote/api"
   $env:VITE_FIREBASE_VAPID_KEY = "BNQEx4dNvUVEV_CJ1qV64yzOA3xXPB2Y30EN_m4RLTf22tbVe_E1lkV-jNK7lbh4pbTxN2aOAN5mLPUMdYcRZuc"
   $env:VITE_TURNSTILE_SITE_KEY = "0x4AAAAAADscx-A_CXbgnFea"
   $env:VITE_INSTAGRAM_HANDLE = "musicmundial_awards"
@@ -73,6 +73,6 @@ if (-not $FrontendOnly) {
 }
 
 Write-Host "Verifying production..." -ForegroundColor Cyan
-Invoke-Ssh "echo WEB:; curl -sI http://127.0.0.1 -H 'Host: vote.musicmundial.com' | head -1; echo API:; curl -s http://127.0.0.1/api/health -H 'Host: vote.musicmundial.com'; echo; echo ASSET:; curl -sI http://127.0.0.1/assets/ -H 'Host: vote.musicmundial.com' | head -1; echo DOCKER:; docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'NAMES|vmm-'"
+Invoke-Ssh "echo WEB:; curl -sI http://127.0.0.1/vote/ -H 'Host: vote.musicmundial.com' | head -1; echo API:; curl -s http://127.0.0.1/api/health -H 'Host: vote.musicmundial.com'; echo; echo VOTE_API:; curl -s http://127.0.0.1/vote/api/health -H 'Host: vote.musicmundial.com'; echo; echo ASSET:; curl -sI http://127.0.0.1/vote/assets/ -H 'Host: vote.musicmundial.com' | head -1; echo DOCKER:; docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'NAMES|vmm-'"
 
 Write-Host "Deploy finished." -ForegroundColor Green

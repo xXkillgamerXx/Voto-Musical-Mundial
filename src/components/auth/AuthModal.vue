@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { translate, i18n } from "../../i18n";
 import { consumeLoginNotice, goToVerifyEmail, login, loginWithGoogle, requestPasswordReset } from "../../services/api/authApi";
+import { assetUrl, withAppBase } from "../../utils/appBase";
 
 const emit = defineEmits(["close"]);
 
@@ -15,7 +16,7 @@ const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
-const GOOGLE_REDIRECT_PATH = "/google-oauth-callback.html";
+const GOOGLE_REDIRECT_PATH = withAppBase("/google-oauth-callback.html");
 const GOOGLE_POPUP_NAME = "vmm_google_login";
 
 const closeModal = () => {
@@ -291,7 +292,7 @@ const handlePasswordReset = async () => {
             >
               <span class="grid size-5 place-items-center">
                 <img
-                  src="/google-g-logo.svg"
+                  :src="assetUrl('/google-g-logo.svg')"
                   alt=""
                   class="size-5"
                   aria-hidden="true"

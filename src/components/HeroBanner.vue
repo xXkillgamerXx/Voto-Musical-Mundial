@@ -5,6 +5,7 @@ import { translate } from '../i18n'
 import { subscribeArtistsCached, subscribeLivePollsCached } from '../services/firebaseCache'
 import { subscribePublicResults } from '../services/pollResults'
 import { applyPollLocale, pollUrl as buildPollUrl } from '../utils/pollLocale'
+import { assetUrl } from '../utils/appBase'
 import { routePath } from '../utils/localizedRoutes'
 import { htmlToPlainText } from '../utils/richText'
 
@@ -55,7 +56,7 @@ const emptyBannerSlide = computed(() => {
     contestantCount: 0,
     stats: [],
     time: '',
-    href: '/votaciones',
+    href: routePath('polls', locale.value),
     isEmpty: true,
   }
 })
@@ -551,7 +552,7 @@ onUnmounted(() => {
         <div class="absolute right-20 top-20 h-40 w-28 rotate-6 rounded-3xl bg-white/10 shadow-2xl shadow-black/40"></div>
         <div class="absolute right-56 top-24 h-32 w-24 -rotate-12 rounded-3xl bg-fuchsia-400/20 shadow-2xl shadow-fuchsia-500/30"></div>
         <div class="absolute right-36 top-1/2 grid size-44 -translate-y-1/2 place-items-center rounded-full border border-fuchsia-300/40 bg-black/30 shadow-[0_0_90px_rgba(217,70,239,0.55)]">
-          <img src="/logo-votos.png" alt="Corona Votos Musica Mundial" class="w-44" />
+          <img :src="assetUrl('/logo-votos.png')" alt="Corona Votos Musica Mundial" class="w-44" />
         </div>
       </div>
     </div>

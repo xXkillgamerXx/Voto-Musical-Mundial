@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+const appBase = String(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (appBase && appBase !== '/' ? `${appBase}/api` : '/api')
 
 const storageKey = 'vmm_api_auth'
 const anonymousStorageKey = 'vmm_api_anonymous'

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { getAdminOverview } from '../../services/api/adminApi'
+import { withAppBase } from '../../utils/appBase'
 import AdminTrendChart from './AdminTrendChart.vue'
 
 const overview = ref(null)
@@ -516,7 +517,7 @@ onMounted(load)
             <a
               v-for="action in quickActions"
               :key="action.href"
-              :href="action.href"
+              :href="withAppBase(action.href)"
               class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-black text-white transition hover:border-fuchsia-300/35 hover:bg-white/10"
             >
               <i class="mr-2 text-fuchsia-200" :class="action.icon" aria-hidden="true"></i>

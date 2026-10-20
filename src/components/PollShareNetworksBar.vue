@@ -1,4 +1,6 @@
 <script setup>
+import { assetUrl } from '../utils/appBase'
+
 defineProps({
   isBoostLive: {
     type: Boolean,
@@ -67,7 +69,7 @@ defineEmits(['share'])
           @click="$emit('share', 'startly')"
         >
           <img
-            src="/startly-icon.png"
+            :src="assetUrl('/startly-icon.png')"
             alt=""
             class="size-full object-contain"
             aria-hidden="true"

@@ -1,6 +1,6 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { fanAdsFree, loadFanMe } from '../utils/fanPerks'
+import { onMounted, ref, watch } from 'vue'
+import { showWebAds } from '../utils/fanPerks'
 
 const hasPushedAd = ref(false)
 const ADSENSE_SCRIPT_ID = 'google-adsense-script'
@@ -33,12 +33,13 @@ const loadAdSenseScript = () =>
     document.head.appendChild(script)
   })
 
-onMounted(() => {
-  if (hasPushedAd.value || typeof window === 'undefined' || !shouldRenderAd.value) {
+const tryLoadAd = () => {
+  if (hasPushedAd.value || typeof window === 'undefined' || !shouldRenderAd.value || !showWebAds.value) {
     return
   }
 
   window.setTimeout(async () => {
+    if (!showWebAds.value || hasPushedAd.value) return
     try {
       await loadAdSenseScript()
       window.adsbygoogle = window.adsbygoogle || []
@@ -48,12 +49,17 @@ onMounted(() => {
       // AdSense can be unavailable before the script finishes loading.
     }
   }, 250)
+}
+
+onMounted(tryLoadAd)
+watch(showWebAds, (show) => {
+  if (show) tryLoadAd()
 })
 </script>
 
 <template>
   <section
-    v-if="shouldRenderAd && !fanAdsFree"
+    v-if="shouldRenderAd && showWebAds"
     class="mt-3 w-full sm:mt-4"
     aria-label="Advertisement"
   >

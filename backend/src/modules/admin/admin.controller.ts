@@ -1,6 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { PollStatus, RoundType, UserRole } from '@prisma/client';
+import { PollStatus, Prisma, RoundType, UserRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
 import { diskStorage } from 'multer';
@@ -24,6 +24,7 @@ import { AdminPushService } from './admin-push.service';
 import { LifecycleNotifyService } from './lifecycle-notify.service';
 import { ModerationService } from './moderation.service';
 import { VoteBotCampaignService } from './vote-bot-campaign.service';
+import { AdjustManualVotesDto } from './dto/adjust-manual-votes.dto';
 
 const toBigInt = (value?: string | number | bigint | null) => BigInt(Number(value || 0));
 const toDate = (value: unknown) => {
@@ -41,7 +42,7 @@ const statusFor = (value: unknown) =>
   Object.values(PollStatus).includes(value as PollStatus) ? (value as PollStatus) : PollStatus.draft;
 const roundTypeFor = (value: unknown) =>
   Object.values(RoundType).includes(value as RoundType) ? (value as RoundType) : RoundType.standard;
-const allowedUploadTypes = new Set(['poll-banner', 'artist-banner', 'artist-profile', 'category-certificate']);
+const allowedUploadTypes = new Set(['poll-banner', 'artist-banner', 'artist-profile', 'category-certificate', 'news-cover']);
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const adminUploadsPath = join(process.cwd(), 'uploads', 'admin');
 const uploadTypeFor = (value: unknown) => {
@@ -118,6 +119,108 @@ export class AdminController {
       );
     } catch {
       // Best-effort: el regalo igual queda como notificacion en la base.
+    }
+  }
+
+  private async fillVersusByes(
+    tx: Prisma.TransactionClient,
+    pollId: bigint,
+    roundId: bigint,
+  ) {
+    const contestants = await tx.contestant.findMany({
+      where: { pollId, roundId },
+      orderBy: [{ matchGroup: 'asc' }, { matchOrder: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
+    });
+    const grouped = new Map<number, typeof contestants>();
+    const unpaired: typeof contestants = [];
+
+    for (const contestant of contestants) {
+      if (contestant.matchGroup > 0) {
+        const group = grouped.get(contestant.matchGroup) || [];
+        group.push(contestant);
+        grouped.set(contestant.matchGroup, group);
+      } else {
+        unpaired.push(contestant);
+      }
+    }
+
+    const incompleteGroups = [...grouped.entries()]
+      .filter(([, members]) => members.length === 1)
+      .sort(([current], [next]) => current - next);
+
+    for (const [groupNumber] of incompleteGroups) {
+      const nextContestant = unpaired.shift();
+      if (!nextContestant) {
+        break;
+      }
+      await tx.contestant.update({
+        where: { id: nextContestant.id },
+        data: { matchGroup: groupNumber, matchOrder: 1 },
+      });
+    }
+
+    let nextGroup = Math.max(0, ...contestants.map((contestant) => contestant.matchGroup), 0);
+    for (let index = 0; index < unpaired.length; index += 2) {
+      nextGroup += 1;
+      await tx.contestant.update({
+        where: { id: unpaired[index].id },
+        data: { matchGroup: nextGroup, matchOrder: 0 },
+      });
+      if (unpaired[index + 1]) {
+        await tx.contestant.update({
+          where: { id: unpaired[index + 1].id },
+          data: { matchGroup: nextGroup, matchOrder: 1 },
+        });
+      }
+    }
+  }
+
+  private async syncDraftRoundWithWinners(
+    tx: Prisma.TransactionClient,
+    pollId: bigint,
+    currentRoundId: bigint,
+    winnerIds: string[],
+  ) {
+    const rounds = await tx.round.findMany({
+      where: { pollId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const currentIndex = rounds.findIndex((round) => round.id === currentRoundId);
+    const nextRound = currentIndex >= 0 ? rounds[currentIndex + 1] : null;
+
+    if (!nextRound || nextRound.status !== PollStatus.draft) {
+      return;
+    }
+
+    const existing = await tx.contestant.findMany({
+      where: { pollId, roundId: nextRound.id },
+    });
+    const presentIds = new Set(existing.map((contestant) => contestant.artistId.toString()));
+
+    for (const artistId of winnerIds) {
+      const key = String(artistId);
+      if (presentIds.has(key)) {
+        continue;
+      }
+
+      await tx.contestant.create({
+        data: {
+          pollId,
+          roundId: nextRound.id,
+          artistId: toBigInt(artistId),
+          votes: 0n,
+          manualVotes: 0n,
+          matchGroup: 0,
+          matchOrder: 0,
+          order: presentIds.size,
+          metadata: {},
+        },
+      });
+      presentIds.add(key);
+    }
+
+    if (nextRound.type === RoundType.versus) {
+      await this.fillVersusByes(tx, pollId, nextRound.id);
     }
   }
 
@@ -787,7 +890,7 @@ export class AdminController {
   async adjustManualVotes(
     @Param('pollId') pollId: string,
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: AdjustManualVotesDto,
   ) {
     const amount = Math.trunc(Number(body.amount || 0));
     if (!amount) {
@@ -795,18 +898,30 @@ export class AdminController {
     }
 
     const contestant = await this.prisma.contestant.findUnique({ where: { id: toBigInt(id) } });
-    if (!contestant) {
+    if (!contestant || contestant.pollId !== toBigInt(pollId)) {
       throw new BadRequestException('El participante no existe.');
     }
 
-    const nextManual = Number(contestant.manualVotes) + amount;
-    if (nextManual < 0) {
+    const currentVotes = Number(contestant.votes);
+    const currentManual = Number(contestant.manualVotes);
+    const nextTotal = currentVotes + currentManual + amount;
+    if (nextTotal < 0) {
       throw new BadRequestException('Los votos no pueden quedar en negativo.');
+    }
+
+    let nextVotes = currentVotes;
+    let nextManual = currentManual + amount;
+    if (nextManual < 0) {
+      nextVotes += nextManual;
+      nextManual = 0;
     }
 
     const updated = await this.prisma.contestant.update({
       where: { id: contestant.id },
-      data: { manualVotes: { increment: amount } },
+      data: {
+        votes: BigInt(nextVotes),
+        manualVotes: BigInt(nextManual),
+      },
       include: { artist: true },
     });
 
@@ -904,6 +1019,8 @@ export class AdminController {
         where: { id: pollIdBig },
         data: { status: PollStatus.selecting_winners, activeEndAt: null, config: pollConfig as any },
       });
+
+      await this.syncDraftRoundWithWinners(tx, pollIdBig, roundIdBig, winnerIds);
     });
 
     await this.publishPollState(pollId, {

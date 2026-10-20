@@ -1,6 +1,7 @@
 <script setup>
-import { onMounted, ref } from "vue";
-import { fanAdsFree } from "../utils/fanPerks";
+import { onMounted, ref, watch } from "vue";
+import { showWebAds } from "../utils/fanPerks";
+import { isAdminLocation } from "../utils/appBase";
 
 const hasPushedAd = ref(false);
 const ADSENSE_SCRIPT_ID = "google-adsense-script";
@@ -10,7 +11,7 @@ const isLocalHost = () =>
 const shouldRenderAd = ref(
   typeof window !== "undefined" &&
     !isLocalHost() &&
-    !window.location.pathname.startsWith("/admin"),
+    !isAdminLocation(),
 );
 
 const loadAdSenseScript = () =>
@@ -32,16 +33,18 @@ const loadAdSenseScript = () =>
     document.head.appendChild(script);
   });
 
-onMounted(() => {
+const tryLoadAd = () => {
   if (
     hasPushedAd.value ||
     typeof window === "undefined" ||
-    !shouldRenderAd.value
+    !shouldRenderAd.value ||
+    !showWebAds.value
   ) {
     return;
   }
 
   window.setTimeout(async () => {
+    if (!showWebAds.value || hasPushedAd.value) return;
     try {
       await loadAdSenseScript();
       window.adsbygoogle = window.adsbygoogle || [];
@@ -51,11 +54,19 @@ onMounted(() => {
       // AdSense can be unavailable on localhost or before the script finishes loading.
     }
   }, 250);
+};
+
+onMounted(() => {
+  tryLoadAd();
+});
+
+watch(showWebAds, (show) => {
+  if (show) tryLoadAd();
 });
 </script>
 
 <template>
-  <section v-if="shouldRenderAd && !fanAdsFree" class="mx-auto max-w-352 px-4 py-4 sm:px-6">
+  <section v-if="shouldRenderAd && showWebAds" class="mx-auto max-w-352 px-4 py-4 sm:px-6">
     <div class="home-ad-card relative mx-auto max-w-5xl overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/85 p-2 shadow-2xl shadow-fuchsia-950/20">
       <div class="pointer-events-none absolute -left-20 -top-24 size-64 rounded-full bg-fuchsia-500/10 blur-3xl"></div>
       <div class="pointer-events-none absolute -right-16 bottom-0 size-56 rounded-full bg-cyan-400/10 blur-3xl"></div>

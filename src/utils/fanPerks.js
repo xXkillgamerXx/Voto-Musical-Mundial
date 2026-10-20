@@ -14,17 +14,29 @@ const state = ref({
 
 export const fanMembershipState = state
 
-const adminAdsFree = ref(typeof window !== 'undefined' && isFanStoreAdmin())
+const adminAdsFree = ref(false)
+const signedIn = ref(false)
+
+const refreshAdminAdsFree = () => {
+  adminAdsFree.value = isFanStoreAdmin()
+  signedIn.value = Boolean(getStoredAuth()?.accessToken)
+}
 
 if (typeof window !== 'undefined') {
-  onStoredAuthChange(() => {
-    adminAdsFree.value = isFanStoreAdmin()
-  })
+  refreshAdminAdsFree()
+  onStoredAuthChange(refreshAdminAdsFree)
 }
 
 export const fanAdsFree = computed(
   () => Boolean(state.value.adsFree) || adminAdsFree.value,
 )
+
+/** No ads for admin/superadmin/owner, SUPER/MEGA, or until fan/me resolves. */
+export const showWebAds = computed(() => {
+  if (fanAdsFree.value) return false
+  if (signedIn.value && !state.value.loaded) return false
+  return true
+})
 export const fanPackDiscount = computed(() => Number(state.value.packDiscount || 0))
 export const isMegaVoter = computed(() =>
   Boolean(state.value.membership && !state.value.membership.expired && (state.value.membership.sku === 'MEGA' || state.value.membership.mega)),
@@ -65,18 +77,20 @@ const importLocalPlanIfNeeded = async (payload) => {
 
 export const applyFanMePayload = (payload) => {
   if (!payload) return state.value
+  refreshAdminAdsFree()
   if (payload.membership) persistFanMembership(payload.membership)
   state.value = {
     loaded: true,
     membership: payload.membership || null,
     purchases: payload.purchases || [],
-    adsFree: Boolean(payload.adsFree) || isFanStoreAdmin(),
+    adsFree: Boolean(payload.adsFree) || adminAdsFree.value,
     packDiscount: Number(payload.packDiscount || 0),
   }
   return state.value
 }
 
 export const loadFanMe = async () => {
+  refreshAdminAdsFree()
   if (!getStoredAuth()?.accessToken) {
     const local = getFanMembership()
     state.value = {
@@ -84,7 +98,7 @@ export const loadFanMe = async () => {
       membership: local,
       purchases: local ? [local] : [],
       adsFree:
-        isFanStoreAdmin() ||
+        adminAdsFree.value ||
         Boolean(local && !local.expired && (local.sku === 'SUPER' || local.sku === 'MEGA' || local.featured)),
       packDiscount: local && !local.expired && (local.sku === 'SUPER' || local.sku === 'MEGA' || local.featured) ? 0.1 : 0,
     }
@@ -99,7 +113,7 @@ export const loadFanMe = async () => {
       loaded: true,
       membership: local,
       purchases: local ? [local] : [],
-      adsFree: isFanStoreAdmin(),
+      adsFree: adminAdsFree.value,
       packDiscount: 0,
     }
     return state.value
@@ -109,6 +123,7 @@ export const loadFanMe = async () => {
 export const clearFanMe = () => {
   persistFanMembership(null)
   adminAdsFree.value = false
+  signedIn.value = false
   state.value = {
     loaded: false,
     membership: null,

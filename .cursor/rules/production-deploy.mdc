@@ -9,7 +9,8 @@ When the user asks to deploy production (for example: "sube prod", "sube producc
 
 Key facts:
 
-- Production domain: `https://vote.musicmundial.com`
+- Production domain: `https://www.musicmundial.com/vote/` (news at `https://www.musicmundial.com/`)
+- API / Flutter: `https://vote.musicmundial.com/api`
 - SSH host: `213.136.69.57`
 - SSH port: `2981`
 - SSH user: `root`
@@ -30,8 +31,8 @@ Rules:
 - Do not deploy with Firebase Hosting. Firebase is only used for Web Push notifications.
 - Do not upload local `.env`, `node_modules`, `dist`, `backend/dist`, or generated deploy archives.
 - Preserve server folders/files: `backend`, `uploads`, `.well-known`, `.user.ini`, and server `.env`.
-- Build frontend locally with `VITE_API_BASE_URL=/api`, `VITE_FIREBASE_VAPID_KEY`, and `VITE_TURNSTILE_SITE_KEY` from `DEPLOYMENT.md`.
+- Build frontend locally with `VITE_API_BASE_URL=/vote/api`, `VITE_FIREBASE_VAPID_KEY`, and `VITE_TURNSTILE_SITE_KEY` from `DEPLOYMENT.md`. The SPA is served at `/vote/`. Flutter keeps using `https://vote.musicmundial.com/api`.
 - Validate backend with `npm run lint` and `npm run build` inside `backend`.
 - Deploy backend source only, then run `docker compose -f docker-compose.vote-db.yml build` and `docker compose -f docker-compose.vote-db.yml up -d` on the server.
 - After uploading frontend `dist`, always fix permissions on the server: `assets/` must be `755`, files `644`. Otherwise Apache returns 403 on JS/CSS and the page appears broken.
-- Verify after deploy: web `200 OK`, at least one `/assets/*.js` returns `200 OK`, `/api/health` returns `ok: true`, and containers `vmm-api`, `vmm-worker`, `vmm-redis` are running.
+- Verify after deploy: `/vote/` returns `200 OK`, at least one `/vote/assets/*.js` returns `200 OK`, `/api/health` returns `ok: true`, and containers `vmm-api`, `vmm-worker`, `vmm-redis` are running.

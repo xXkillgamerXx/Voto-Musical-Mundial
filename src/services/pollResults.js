@@ -68,6 +68,21 @@ export const loadContestantMetadata = async (_db, pollId, roundId) => {
 };
 
 export const mergeContestantsWithPublicResults = (contestants, publicResults) => {
+  const resultsRoundId =
+    publicResults?.roundId !== undefined && publicResults?.roundId !== null && publicResults?.roundId !== ''
+      ? String(publicResults.roundId)
+      : ''
+
+  if (resultsRoundId) {
+    const contestantsRoundId = contestants
+      .map((contestant) => contestant.roundId)
+      .find((roundId) => roundId !== undefined && roundId !== null && String(roundId) !== '')
+
+    if (contestantsRoundId && String(contestantsRoundId) !== resultsRoundId) {
+      return contestants
+    }
+  }
+
   const resultsByArtist = new Map(
     (publicResults?.results || []).map((result) => [result.artistId, result]),
   );

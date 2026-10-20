@@ -18,6 +18,32 @@ const REQUIRED_SECRETS = [
   'IP_HASH_SALT',
 ];
 
+export const LOCAL_WEB_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+];
+
+export const resolveCorsOrigins = (config: ConfigService) => {
+  const origin = config.get<string>('APP_ORIGIN') || 'http://localhost:5174';
+  const missionVisitOrigins =
+    config.get<string>('MISSION_VISIT_ORIGINS') ||
+    'https://www.musicmundial.com,https://musicmundial.com,http://www.musicmundial.com,http://musicmundial.com';
+
+  return [
+    ...new Set(
+      [
+        ...origin.split(','),
+        ...missionVisitOrigins.split(','),
+        ...LOCAL_WEB_ORIGINS,
+      ]
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
+};
+
 /**
  * Fail-fast in production if any security-critical secret is missing or still set to a
  * well-known placeholder. Prevents shipping forgeable tokens / predictable IP hashing.

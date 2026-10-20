@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getPublicTerms } from '../services/api/termsApi'
 import { hasRichTextContent, richTextToHtml } from '../utils/richText'
+import { routePath } from '../utils/localizedRoutes'
 
 const { t, locale } = useI18n()
 
@@ -50,7 +51,7 @@ onMounted(loadTerms)
   <section class="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:py-14">
     <div class="overflow-hidden rounded-4xl border border-violet-300/20 bg-white/5 p-1 text-white shadow-2xl shadow-fuchsia-950/30">
       <div class="rounded-[calc(2rem-4px)] bg-[#080a18]/95 p-6 sm:p-8">
-        <a href="/" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
+        <a :href="routePath('home', locale)" class="text-sm font-black text-fuchsia-300 transition hover:text-white">
           {{ $t('terms.backHome') }}
         </a>
 

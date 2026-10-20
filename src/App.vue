@@ -16,6 +16,7 @@ import { loadFanMe, clearFanMe } from './utils/fanPerks'
 import { reportMissionVisitProgress } from './services/api/missionsApi'
 import { trackPageView } from './services/googleAnalytics'
 import { activeTheme, applyTheme } from './theme'
+import { assetUrl, isVoteAppPath, locationPath, stripAppBase, withAppBase } from './utils/appBase'
 import { matchStaticRoute, toCanonicalPath } from './utils/localizedRoutes'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
@@ -48,7 +49,7 @@ const VersusPollPage = defineAsyncComponent(() => import('./pages/VersusPollPage
 const SubscriptionsPage = defineAsyncComponent(() => import('./pages/SubscriptionsPage.vue'))
 const CheckoutPage = defineAsyncComponent(() => import('./pages/CheckoutPage.vue'))
 
-const currentPath = ref(window.location.pathname)
+const currentPath = ref(locationPath())
 const currentRouteKey = ref(`${window.location.pathname}${window.location.search}${window.location.hash}`)
 const PREVIEW_PAGE_LOADING = false
 const isPageLoading = ref(true)
@@ -90,6 +91,16 @@ const shouldShowDailyRewardModal = computed(
 )
 
 let savedThemeBeforeEmbed = null
+
+watch(
+  isNewsPage,
+  (isNews) => {
+    if (isNews) {
+      window.location.replace('/')
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   shouldForceEmbedDarkTheme,
@@ -144,7 +155,7 @@ const finishPageLoading = async () => {
   const token = ++loadingToken
   window.clearTimeout(loadingTimer)
 
-  await preloadRouteData(null, window.location.pathname).catch(() => {})
+  await preloadRouteData(null, locationPath()).catch(() => {})
 
   if (token !== loadingToken) {
     return
@@ -180,12 +191,14 @@ const scrollToRouteHash = (attempt = 0) => {
 
 const syncCurrentPath = () => {
   isPageLoading.value = true
-  currentPath.value = window.location.pathname
+  currentPath.value = locationPath()
   currentRouteKey.value = `${window.location.pathname}${window.location.search}${window.location.hash}`
   trackPageView()
   reportVisitMissionProgress()
   finishPageLoading()
 }
+
+const voteHref = (url) => `${withAppBase(url.pathname)}${url.search}${url.hash}`
 
 const isInternalNavigation = (anchor) => {
   if (!anchor?.href || anchor.target || anchor.hasAttribute('download')) {
@@ -195,7 +208,8 @@ const isInternalNavigation = (anchor) => {
   const url = new URL(anchor.href)
 
   return url.origin === window.location.origin
-    && `${url.pathname}${url.search}${url.hash}` !== `${window.location.pathname}${window.location.search}${window.location.hash}`
+    && isVoteAppPath(url.pathname)
+    && voteHref(url) !== `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
 
 const handleDocumentClick = (event) => {
@@ -209,7 +223,7 @@ const handleDocumentClick = (event) => {
 
   event.preventDefault()
   isPageLoading.value = true
-  window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  window.history.pushState({}, '', voteHref(url))
   if (!url.hash) {
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
@@ -224,13 +238,14 @@ const preloadAnchorRoute = (event) => {
   }
 
   const url = new URL(anchor.href)
+  const path = stripAppBase(url.pathname)
 
-  if (prefetchedRoutes.has(url.pathname)) {
+  if (prefetchedRoutes.has(path)) {
     return
   }
 
-  prefetchedRoutes.add(url.pathname)
-  preloadRouteData(null, url.pathname).catch(() => {})
+  prefetchedRoutes.add(path)
+  preloadRouteData(null, path).catch(() => {})
 }
 
 let unsubscribeAuth = null
@@ -285,7 +300,7 @@ onUnmounted(() => {
         <div class="page-loader-card text-center">
           <div class="page-loader-equalizer relative mx-auto flex h-28 w-44 items-end justify-center gap-2 rounded-4xl border border-white/10 bg-white/8 px-6 py-5 shadow-2xl shadow-fuchsia-950/45 backdrop-blur-xl">
             <img
-              src="/logo-votos.png"
+              :src="assetUrl('/logo-votos.png')"
               :alt="$t('common.appName')"
               class="absolute -right-10 -top-8 w-22 rotate-12 drop-shadow-[0_0_30px_rgba(251,191,36,0.62)]"
             />

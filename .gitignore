@@ -13,6 +13,7 @@ dist-ssr
 .env
 *.local
 backend/uploads/
+backend/tmp/
 backend/firebase-service-account*.json
 firebase-service-account*.json
 vmm-*-deploy.tar.gz

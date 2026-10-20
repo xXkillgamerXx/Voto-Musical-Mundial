@@ -8,6 +8,7 @@ import {
   resolvePollShareImage,
   shareWithOptionalImage,
 } from "../utils/shareMeta";
+import { assetUrl, locationPath, withAppBase } from "../utils/appBase";
 import { routePath } from "../utils/localizedRoutes";
 import { isMegaVoter, loadFanMe } from "../utils/fanPerks";
 import { getArtistsCached } from "../services/firebaseCache";
@@ -60,7 +61,7 @@ const WinnerCertificateModal = defineAsyncComponent(
 
 const hallOfFameHref = computed(() => routePath("hallOfFame", i18n.global.locale.value));
 
-const pathParts = window.location.pathname.split("/").filter(Boolean);
+const pathParts = locationPath().split("/").filter(Boolean);
 const routeYear = Number(pathParts[1]) || new Date().getFullYear();
 const routeSlug = pathParts[2] || "";
 const roundQueryParam = "ronda";
@@ -314,6 +315,11 @@ const normalizeApiRound = (round) => {
     endsAt: dateLike(round.endsAt || metadata.endsAt || metadata.endAt),
     createdAt: dateLike(round.createdAt),
     updatedAt: dateLike(round.updatedAt),
+    winnerIds: Array.isArray(round.winnerIds)
+      ? round.winnerIds
+      : Array.isArray(metadata.winnerIds)
+        ? metadata.winnerIds
+        : [],
   };
 };
 
@@ -548,14 +554,20 @@ const activeRound = computed(() => {
     }
   }
 
-  return poll.value?.status === "closed"
-    ? rounds.value.filter((round) => round.status === "closed").at(-1) ||
-        rounds.value.at(-1) ||
-        null
-    : rounds.value.find((round) => round.id === poll.value?.activeRoundId) ||
-        rounds.value.find((round) => round.status === "live") ||
-        rounds.value[0] ||
-        null;
+  const closedRounds = rounds.value.filter((round) => round.status === "closed");
+  const pollStatus = poll.value?.status;
+
+  if (pollStatus === "closed" || pollStatus === "selecting_winners") {
+    return closedRounds.at(-1) || rounds.value.at(-1) || null;
+  }
+
+  return (
+    rounds.value.find((round) => round.id === poll.value?.activeRoundId) ||
+    rounds.value.find((round) => round.status === "live") ||
+    closedRounds.at(-1) ||
+    rounds.value[0] ||
+    null
+  );
 });
 const pollEndDate = computed(
   () =>
@@ -1478,9 +1490,9 @@ const scheduleMissionsPromptAfterFreeVote = (contestant) => {
 
 const goToMissionsFromPrompt = () => {
   closeMissionsPrompt();
-  const nextUrl = "/#misiones";
+  const nextUrl = `${withAppBase("/")}#misiones`;
   if (
-    window.location.pathname === "/" &&
+    locationPath() === "/" &&
     window.location.hash === "#misiones"
   ) {
     document
@@ -2116,33 +2128,21 @@ const isRoundIntroVisible = computed(
 );
 
 const roundSteps = computed(() =>
-  rounds.value
-    .map((round, index) => {
-      const isCurrent = activeRound.value?.id === round.id;
-      const isActive = isCurrent && isVotingOpen.value;
-      const activeRoundIndex = rounds.value.findIndex(
-        (item) => item.id === activeRound.value?.id,
-      );
-      const isBeforeActiveRound =
-        activeRoundIndex > -1 && index < activeRoundIndex;
-      const isFinalResultVisible = isClosed.value && round.status === "closed";
+  rounds.value.map((round, index) => {
+    const isCurrent = activeRound.value?.id === round.id;
+    const isActive = isCurrent && isVotingOpen.value;
 
-      return {
-        ...round,
-        number: index + 1,
-        isCurrent,
-        isActive,
-        isVisible:
-          isCurrent ||
-          isActive ||
-          isBeforeActiveRound ||
-          isFinalResultVisible,
-        winners: (round.winnerIds || [])
-          .map((artistId) => resolveArtist(artistId))
-          .filter(Boolean),
-      };
-    })
-    .filter((round) => round.isVisible),
+    return {
+      ...round,
+      number: index + 1,
+      isCurrent,
+      isActive,
+      isVisible: true,
+      winners: (round.winnerIds || [])
+        .map((artistId) => resolveArtist(artistId))
+        .filter(Boolean),
+    };
+  }),
 );
 
 const selectedRoundStep = computed(
@@ -2853,6 +2853,13 @@ const listenContestants = async (pollId, { clear = true } = {}) => {
       roundId,
       onData: (publicResults) => {
         if (!publicResults) {
+          return;
+        }
+        if (
+          roundId &&
+          publicResults.roundId &&
+          String(publicResults.roundId) !== String(roundId)
+        ) {
           return;
         }
 
@@ -5557,7 +5564,7 @@ onUnmounted(() => {
                       aria-hidden="true"
                     ></span>
                     <img
-                      src="/app-download-phone.png"
+                      :src="assetUrl('/app-download-phone.png')"
                       alt=""
                       class="relative h-[4.5rem] w-auto drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]"
                       width="72"
@@ -5991,7 +5998,7 @@ onUnmounted(() => {
                 aria-hidden="true"
               ></span>
               <img
-                src="/app-download-phone.png"
+                :src="assetUrl('/app-download-phone.png')"
                 alt=""
                 class="relative h-[4.5rem] w-auto drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]"
                 width="72"

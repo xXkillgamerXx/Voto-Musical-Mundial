@@ -8,6 +8,7 @@ import {
   updateAdminPollCategory,
   uploadAdminImage,
 } from '../../services/api/adminApi'
+import { withAppBase } from '../../utils/appBase'
 
 const props = defineProps({
   showForm: {
@@ -227,7 +228,7 @@ const saveCategory = async () => {
       )
 
     if (props.showForm) {
-      window.location.href = '/admin/categorias'
+      window.location.href = withAppBase('/admin/categorias')
     }
   } catch {
     errorMessage.value = translate('admin.categories.errors.save')

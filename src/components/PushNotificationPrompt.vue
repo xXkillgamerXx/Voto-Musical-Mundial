@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { translate } from '../i18n'
+import { routePath } from '../utils/localizedRoutes'
 import { getCurrentApiAuth } from '../services/api/authApi'
 import { onStoredAuthChange } from '../services/api/client'
 import {
@@ -124,7 +125,7 @@ onUnmounted(() => {
 
 const openForegroundMessage = () => {
   foregroundMessage.value = null
-  window.location.href = '/notificaciones'
+  window.location.href = routePath('notifications')
 }
 </script>
 

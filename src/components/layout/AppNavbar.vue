@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { availableLocales, setLocale, translate } from "../../i18n";
+import { assetUrl, withAppBase } from "../../utils/appBase";
 import { routePath } from "../../utils/localizedRoutes";
 import AuthModal from "../auth/AuthModal.vue";
 import ThemeToggle from "../theme/ThemeToggle.vue";
@@ -96,7 +97,7 @@ const formattedUserPoints = computed(() =>
   Number(displayPoints.value || 0).toLocaleString(locale.value),
 );
 const profileHref = computed(() =>
-  userUsername.value ? `/user/${userUsername.value}` : routePath("profile", locale.value),
+  userUsername.value ? withAppBase(`/user/${userUsername.value}`) : routePath("profile", locale.value),
 );
 const settingsHref = computed(() => routePath("profileSettings", locale.value));
 const shouldShowAvatarImage = computed(
@@ -257,12 +258,12 @@ onUnmounted(() => {
     <nav
       class="mx-auto flex max-w-352 items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:py-4"
     >
-      <a href="/" class="group flex items-center gap-3">
+      <a :href="routePath('home', locale)" class="group flex items-center gap-3">
         <span
           class="grid h-10 w-14 shrink-0 place-items-center sm:h-12 sm:w-16"
         >
           <img
-            src="/logo-votos.png"
+            :src="assetUrl('/logo-votos.png')"
             :alt="$t('common.appNamePlain') + ' logo'"
             class="h-full w-full object-contain"
           />

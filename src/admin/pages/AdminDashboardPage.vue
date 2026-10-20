@@ -6,6 +6,8 @@ import AdminContentReportsView from '../components/AdminContentReportsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
 import AdminMailView from '../components/AdminMailView.vue'
 import AdminMissionsView from '../components/AdminMissionsView.vue'
+import AdminNewsPostFormView from '../components/AdminNewsPostFormView.vue'
+import AdminNewsPostsView from '../components/AdminNewsPostsView.vue'
 import AdminModerationView from '../components/AdminModerationView.vue'
 import AdminDictionaryView from '../components/AdminDictionaryView.vue'
 import AdminPollCategoriesView from '../components/AdminPollCategoriesView.vue'
@@ -24,8 +26,10 @@ import AdminUsersView from '../components/AdminUsersView.vue'
 import AdminUserProfileView from '../components/AdminUserProfileView.vue'
 import { getCurrentApiAuth, getMe, logout } from '../../services/api/authApi'
 import { getAdminNavCounts } from '../../services/api/adminApi'
+import { assetUrl, locationPath, withAppBase } from '../../utils/appBase'
 
-const currentPath = window.location.pathname
+const currentPath = locationPath()
+const voteHomeHref = withAppBase('/')
 const isPollsView = computed(() => currentPath === '/admin/votaciones')
 const isPollCreateView = computed(() => currentPath === '/admin/votaciones/crear')
 const isPollEditView = computed(() => currentPath.startsWith('/admin/votaciones/editar/'))
@@ -37,6 +41,10 @@ const isPollRoundView = computed(() => /^\/admin\/votaciones\/[^/]+\/rondas\/[^/
 const isPollDetailView = computed(() => /^\/admin\/votaciones\/[^/]+$/.test(currentPath))
 const pollActionId = computed(() => currentPath.split('/')[3] || '')
 const roundActionId = computed(() => currentPath.split('/')[5] || '')
+const isNewsView = computed(() => currentPath === '/admin/noticias')
+const isNewsCreateView = computed(() => currentPath === '/admin/noticias/crear')
+const isNewsEditView = computed(() => currentPath.startsWith('/admin/noticias/editar/'))
+const newsEditId = computed(() => currentPath.replace('/admin/noticias/editar/', ''))
 const isArtistsView = computed(() => currentPath === '/admin/artistas')
 const isArtistCreateView = computed(() => currentPath === '/admin/artistas/crear')
 const isArtistEditView = computed(() => currentPath.startsWith('/admin/artistas/editar/'))
@@ -102,6 +110,18 @@ const pageTitle = computed(() => {
 
   if (isArtistsView.value) {
     return 'Artistas'
+  }
+
+  if (isNewsCreateView.value) {
+    return 'Nueva noticia'
+  }
+
+  if (isNewsEditView.value) {
+    return 'Editar noticia'
+  }
+
+  if (isNewsView.value) {
+    return 'Noticias'
   }
 
   if (isUserProfileView.value) {
@@ -198,6 +218,7 @@ const navItems = [
   { label: 'Votaciones', href: '/admin/votaciones', icon: 'fa-solid fa-check-to-slot' },
   { label: 'Categorías', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
+  { label: 'Noticias', href: '/admin/noticias', icon: 'fa-solid fa-newspaper' },
   { label: 'Misiones', href: '/admin/misiones', icon: 'fa-solid fa-bullseye' },
   { label: 'Notificaciones', href: '/admin/notificaciones', icon: 'fa-solid fa-bell' },
   { label: 'Correo', href: '/admin/correo', icon: 'fa-solid fa-envelope' },
@@ -227,7 +248,7 @@ const toggleMobileNav = () => {
 
 const handleLogout = async () => {
   logout()
-  window.location.href = '/'
+  window.location.href = voteHomeHref
 }
 
 const handleEscapeKey = (event) => {
@@ -304,7 +325,7 @@ onUnmounted(() => {
           {{ $t('admin.page.loginWithAdmin') }}
         </p>
         <a
-          href="/"
+          :href="voteHomeHref"
           class="mt-6 inline-flex rounded-full bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white/15"
         >
           {{ $t('admin.page.backToWeb') }}
@@ -326,9 +347,9 @@ onUnmounted(() => {
         ]"
       >
         <div class="flex items-center justify-between gap-3">
-          <a href="/" class="flex min-w-0 items-center gap-3" @click="closeMobileNav">
+          <a :href="voteHomeHref" class="flex min-w-0 items-center gap-3" @click="closeMobileNav">
             <span class="grid size-11 shrink-0 place-items-center rounded-2xl bg-white/10 sm:size-12">
-              <img src="/logo-votos.png" alt="Votos Musica Mundial" class="size-9 object-contain sm:size-10" />
+              <img :src="assetUrl('/logo-votos.png')" alt="Votos Musica Mundial" class="size-9 object-contain sm:size-10" />
             </span>
             <span class="min-w-0">
               <span class="block truncate text-sm font-black uppercase leading-none">
@@ -357,7 +378,7 @@ onUnmounted(() => {
           <a
             v-for="item in navItems"
             :key="item.label"
-            :href="item.href"
+            :href="withAppBase(item.href)"
             class="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-black transition sm:px-4 sm:py-3"
             :class="
               isActiveItem(item)
@@ -398,7 +419,7 @@ onUnmounted(() => {
 
           <div class="mt-3 grid gap-2">
             <a
-              href="/"
+              :href="voteHomeHref"
               class="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black text-slate-100 transition hover:bg-white/10"
               @click="closeMobileNav"
             >
@@ -443,7 +464,7 @@ onUnmounted(() => {
 
             <div class="flex shrink-0 items-center gap-2 sm:gap-3">
               <a
-                href="/"
+                :href="voteHomeHref"
                 class="hidden rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/10 hover:text-white sm:inline-flex"
               >
                 {{ $t('admin.page.viewWeb') }}
@@ -497,6 +518,14 @@ onUnmounted(() => {
             :artist-id="artistEditId"
           />
           <AdminArtistsView v-else-if="isArtistsView" />
+          <AdminNewsPostFormView
+            v-else-if="isNewsCreateView"
+          />
+          <AdminNewsPostFormView
+            v-else-if="isNewsEditView"
+            :post-id="newsEditId"
+          />
+          <AdminNewsPostsView v-else-if="isNewsView" />
           <AdminMissionsView v-else-if="isMissionsView" />
           <AdminPushNotificationsView v-else-if="isPushNotificationsView" />
           <AdminMailView v-else-if="isMailView" />

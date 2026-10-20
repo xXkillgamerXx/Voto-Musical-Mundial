@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:vote": "vite",
     "dev:local": "node ./dev-local.mjs",
     "dev:prod": "node ./dev-local.mjs",
     "build": "vite build",
