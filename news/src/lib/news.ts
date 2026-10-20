@@ -89,8 +89,53 @@ export const coverOf = (post?: Partial<NewsCard> | null, fallback = '/images/jun
 
 export type NewsPage =
   | { name: 'home'; locale: 'es' | 'en' }
+  | { name: 'categories'; locale: 'es' | 'en' }
   | { name: 'category'; locale: 'es' | 'en'; slug: string }
   | { name: 'article'; locale: 'es' | 'en'; slug: string }
+
+export type CategoryCard = {
+  href: string
+  image: string
+  title: string
+  sub: string
+  icon: string
+  tone: string
+}
+
+export const CATEGORY_CARD_META: Record<string, { icon: string; tone: string; fallback: string }> = {
+  noticias: { icon: 'news', tone: '1', fallback: '/images/stray-kids-grammy.jpg' },
+  kpop: { icon: 'music', tone: '2', fallback: '/images/jungkook-hero.jpg' },
+  peliculas: { icon: 'film', tone: '3', fallback: '/images/teach-you.jpg' },
+  series: { icon: 'series', tone: '4', fallback: '/images/screen-euphoria.jpg' },
+  celebridades: { icon: 'artist', tone: '2', fallback: '/images/jennie-tame.webp' },
+  pop: { icon: 'note', tone: '1', fallback: '/images/jimin-tiktok.webp' },
+  concierto: { icon: 'live', tone: '4', fallback: '/images/jungkook-peru.jpg' },
+  viral: { icon: 'pop', tone: '3', fallback: '/images/katseye.jpg' },
+  entrevista: { icon: 'mic', tone: '1', fallback: '/images/rm-museo.webp' },
+  'redes-sociales': { icon: 'social', tone: '2', fallback: '/images/jimin-tiktok.webp' },
+  latin: { icon: 'note', tone: '3', fallback: '/images/taylor-swift.jpg' },
+  realeza: { icon: 'artist', tone: '4', fallback: '/images/jennie-tame.webp' },
+}
+
+export const toCategoryCard = (
+  row: { slug: string; name: string; href?: string; coverUrl?: string | null; postCount?: number },
+  index: number,
+  locale: 'es' | 'en',
+): CategoryCard => {
+  const meta = CATEGORY_CARD_META[row.slug] || {
+    icon: 'news',
+    tone: String((index % 4) + 1),
+    fallback: '/images/jungkook-hero.jpg',
+  }
+  return {
+    href: row.href || `/${locale}/categoria/${row.slug}`,
+    image: row.coverUrl || meta.fallback,
+    title: row.name,
+    sub: `${Number(row.postCount || 0).toLocaleString(locale === 'en' ? 'en' : 'es')} ${t(locale, 'notesCount')}`,
+    icon: meta.icon,
+    tone: meta.tone,
+  }
+}
 
 export const parseNewsPage = (pathname = window.location.pathname): NewsPage => {
   const decoded = decodeURIComponent(pathname).replace(/\/+$/, '') || '/'
@@ -99,6 +144,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (parts[0] === 'es' || parts[0] === 'en') parts.shift()
   const path = parts.length ? `/${parts.join('/')}` : '/'
   if (path === '/') return { name: 'home', locale }
+  if (path === '/categorias' || path === '/categories') return { name: 'categories', locale }
   if (path.startsWith('/categoria/')) {
     return { name: 'category', locale, slug: path.slice('/categoria/'.length) }
   }

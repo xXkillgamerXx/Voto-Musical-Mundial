@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AuthDialog from './components/AuthDialog.vue'
+import CatsCard from './components/CatsCard.vue'
 import NewsArticle from './components/NewsArticle.vue'
+import NewsCategoriesPage from './components/NewsCategoriesPage.vue'
 import NewsCategoryPage from './components/NewsCategoryPage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
-import { coverOf, formatNewsDate, parseNewsPage, type NewsCard, type NewsPage } from './lib/news'
+import { coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
 import { ensureLocalePath, localeFromPath, withLocale, type SiteLocale } from './lib/locale'
+import { getTheme, toggleTheme as flipTheme, type SiteTheme } from './lib/theme'
 import { getCurrentApiAuth, getMe, logout } from '../../src/services/api/authApi'
 import { onStoredAuthChange } from '../../src/services/api/client'
 import { getNotifications } from '../../src/services/api/notificationsApi'
@@ -36,6 +39,12 @@ let homeRequest = 0
 const emptyStory = (): Story => ({ category: '', title: '', image: '/images/teach-you.jpg', alt: '', meta: '' })
 
 const siteLocale = computed(() => newsPage.value.locale || localeFromPath())
+const theme = ref<SiteTheme>(getTheme())
+
+function setSiteTheme() {
+  flipTheme()
+  theme.value = getTheme()
+}
 
 function txt(key: CopyKey) {
   return t(siteLocale.value, key)
@@ -182,17 +191,9 @@ async function loadHomeFeed() {
       .filter((row: { slug?: string; postCount?: number }) => Number(row.postCount || 0) > 0)
       .sort((a: { nav?: boolean }, b: { nav?: boolean }) => Number(Boolean(b.nav)) - Number(Boolean(a.nav)))
       .slice(0, 12)
-      .map((row: { slug: string; name: string; href?: string; coverUrl?: string | null; postCount?: number }, index: number) => {
-        const meta = CAT_META[row.slug] || { icon: 'news', tone: String((index % 4) + 1), fallback: '/images/jungkook-hero.jpg' }
-        return {
-          href: row.href || `/categoria/${row.slug}`,
-          image: row.coverUrl || meta.fallback,
-          title: row.name,
-          sub: `${Number(row.postCount || 0).toLocaleString(fromFeed === 'en' ? 'en' : 'es')} ${t(fromFeed, 'notesCount')}`,
-          icon: meta.icon,
-          tone: meta.tone,
-        }
-      })
+      .map((row: { slug: string; name: string; href?: string; coverUrl?: string | null; postCount?: number }, index: number) =>
+        toCategoryCard(row, index, fromFeed),
+      )
     homeFeedLocale.value = locale
   } catch {
     if (request !== homeRequest) return
@@ -233,21 +234,6 @@ const slides = ref<Array<{
   href?: string
 }>>([])
 const currentSlide = computed(() => slides.value[slide.value] || slides.value[0]!)
-const CAT_META: Record<string, { icon: string; tone: string; fallback: string }> = {
-  noticias: { icon: 'news', tone: '1', fallback: '/images/stray-kids-grammy.jpg' },
-  kpop: { icon: 'music', tone: '2', fallback: '/images/jungkook-hero.jpg' },
-  peliculas: { icon: 'film', tone: '3', fallback: '/images/teach-you.jpg' },
-  series: { icon: 'series', tone: '4', fallback: '/images/screen-euphoria.jpg' },
-  celebridades: { icon: 'artist', tone: '2', fallback: '/images/jennie-tame.webp' },
-  pop: { icon: 'note', tone: '1', fallback: '/images/jimin-tiktok.webp' },
-  concierto: { icon: 'live', tone: '4', fallback: '/images/jungkook-peru.jpg' },
-  viral: { icon: 'pop', tone: '3', fallback: '/images/katseye.jpg' },
-  entrevista: { icon: 'mic', tone: '1', fallback: '/images/rm-museo.webp' },
-  'redes-sociales': { icon: 'social', tone: '2', fallback: '/images/jimin-tiktok.webp' },
-  latin: { icon: 'note', tone: '3', fallback: '/images/taylor-swift.jpg' },
-  realeza: { icon: 'artist', tone: '4', fallback: '/images/jennie-tame.webp' },
-}
-
 const categories = ref<Array<{ href: string; image: string; title: string; sub: string; icon: string; tone: string }>>([])
 
 const catPages = computed(() => {
@@ -567,13 +553,31 @@ onUnmounted(() => {
   <header class="site-header">
     <div class="container head-inner">
       <a :href="loc('/')" class="brand" @click="closeMenu">
-        <img src="/images/logo.webp" alt="Music Mundial" />
+        <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
+        <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
       </a>
       <nav id="nav" class="nav" :class="{ open: menuOpen }">
         <div class="nav-toolbar">
-          <div class="lang-switch" role="group" :aria-label="txt('lang')">
-            <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
-            <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
+          <div class="nav-toolbar-row">
+            <div class="lang-switch" role="group" :aria-label="txt('lang')">
+              <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
+              <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
+            </div>
+            <button
+              class="round theme-toggle"
+              type="button"
+              :title="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
+              :aria-label="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
+              @click="setSiteTheme"
+            >
+              <svg v-if="theme === 'dark'" class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+              </svg>
+              <svg v-else class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M16.2 13.2A6.2 6.2 0 0 1 11 5.2 6.4 6.4 0 1 0 18.8 15a6.2 6.2 0 0 1-2.6-1.8z" />
+              </svg>
+            </button>
           </div>
           <label class="search-box">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -623,6 +627,21 @@ onUnmounted(() => {
           <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
           <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
         </div>
+        <button
+          class="round theme-toggle"
+          type="button"
+          :title="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
+          :aria-label="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
+          @click="setSiteTheme"
+        >
+          <svg v-if="theme === 'dark'" class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+          </svg>
+          <svg v-else class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M16.2 13.2A6.2 6.2 0 0 1 11 5.2 6.4 6.4 0 1 0 18.8 15a6.2 6.2 0 0 1-2.6-1.8z" />
+          </svg>
+        </button>
         <div class="icon-pop search-slot">
           <button
             class="round"
@@ -743,6 +762,7 @@ onUnmounted(() => {
   </header>
 
   <NewsArticle v-if="newsPage.name === 'article'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsCategoriesPage v-else-if="newsPage.name === 'categories'" :locale="newsPage.locale" />
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <main v-else-if="siteLocale === 'en' && enEmpty && homeReady" id="inicio" class="home">
     <div class="container article-wrap">
@@ -760,9 +780,11 @@ onUnmounted(() => {
             <i v-for="n in 14" :key="n" :style="{ '--d': `${(n % 7) * 80}ms` }"></i>
           </div>
           <p class="article-loader-copy">{{ txt('loadingHome') }}</p>
+          <span class="skel skel-chip"></span>
           <span class="skel skel-title"></span>
           <span class="skel skel-title two"></span>
           <span class="skel skel-meta"></span>
+          <span class="skel home-boot-btn"></span>
         </div>
       </article>
       <div class="home-cards">
@@ -772,11 +794,40 @@ onUnmounted(() => {
           <span class="skel skel-meta home-boot-meta"></span>
         </div>
       </div>
+      <section class="entertain home-boot-ent">
+        <div class="entertain-head">
+          <span class="skel skel-title two"></span>
+          <span class="skel skel-meta"></span>
+        </div>
+        <div class="entertain-grid">
+          <div class="entertain-feature skel"></div>
+          <div class="entertain-side">
+            <div v-for="n in 3" :key="'ent-skel-' + n" class="home-boot-side">
+              <span class="skel home-boot-thumb"></span>
+              <div>
+                <span class="skel skel-line"></span>
+                <span class="skel skel-meta"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
       <aside class="home-rail">
         <section class="trend-card">
-          <span class="skel skel-line home-boot-line"></span>
-          <span v-for="n in 5" :key="'trend-skel-' + n" class="skel home-boot-row"></span>
+          <div class="trend-head">
+            <span class="skel home-boot-head"></span>
+            <span class="skel skel-meta"></span>
+          </div>
+          <div v-for="n in 5" :key="'trend-skel-' + n" class="trend-row home-boot-trend">
+            <span class="skel"></span>
+            <span class="skel"></span>
+            <div>
+              <span class="skel skel-line"></span>
+              <span class="skel skel-meta"></span>
+            </div>
+          </div>
         </section>
+        <section class="spotify-band home-boot-spotify skel"></section>
       </aside>
     </div>
     <template v-else>
@@ -945,29 +996,13 @@ onUnmounted(() => {
             <h2>{{ txt('discoverLead') }} <span>{{ txt('discoverAccent') }}</span></h2>
             <p>{{ txt('discoverBlurb') }}</p>
           </div>
-          <a class="cats-link" :href="loc('/noticias')">{{ txt('allCategories') }}</a>
+          <a class="cats-link" :href="loc('/categorias')">{{ txt('allCategories') }}</a>
         </div>
         <div class="cats-carousel" @mouseenter="stopCats" @mouseleave="startCats">
           <div class="cats-viewport">
             <div class="cats-track" :style="{ transform: `translateX(-${catPage * 100}%)` }">
               <div v-for="(page, pageIndex) in catPages" :key="pageIndex" class="cats-page" :style="{ gridTemplateColumns: `repeat(${catSize}, minmax(0, 1fr))` }">
-                <a v-for="card in page" :key="card.title" class="cats-card" :href="card.href" :data-tone="card.tone">
-                  <img :src="card.image" :alt="card.title" />
-                  <span class="cats-body">
-                    <span class="cats-ico">
-                      <svg v-if="card.icon === 'news'" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15 3v5h5M9 12h6M9 16h6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-                      <svg v-else-if="card.icon === 'music'" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="7" cy="18" r="2.2" fill="currentColor"/><circle cx="17" cy="16" r="2.2" fill="currentColor"/></svg>
-                      <svg v-else-if="card.icon === 'film'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
-                      <svg v-else-if="card.icon === 'series'" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 9v6l5-3z" fill="currentColor"/></svg>
-                      <svg v-else-if="card.icon === 'artist'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 19c1.2-3 3.2-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-                      <svg v-else-if="card.icon === 'note'" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l9-2v13" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="7" cy="18" r="2.2" fill="currentColor"/></svg>
-                      <svg v-else-if="card.icon === 'live'" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-                      <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 6.2L21 12l-6.8 2.8L12 21l-2.2-6.2L3 12l6.8-2.8z" fill="currentColor"/></svg>
-                    </span>
-                    <span><strong>{{ card.title }}</strong><small>{{ card.sub }}</small></span>
-                    <span class="cats-go">→</span>
-                  </span>
-                </a>
+                <CatsCard v-for="card in page" :key="card.title" :card="card" />
               </div>
             </div>
           </div>
@@ -988,7 +1023,7 @@ onUnmounted(() => {
           <div class="cats-eyebrow">{{ txt('recommended') }}</div>
           <h2>{{ txt('moreNewsLead') }} <span>{{ txt('moreNewsAccent') }}</span></h2>
         </div>
-        <a class="cats-link" :href="loc('/noticias')">{{ txt('exploreCategories') }}</a>
+        <a class="cats-link" :href="loc('/categorias')">{{ txt('exploreCategories') }}</a>
       </div>
       <div class="list-grid">
         <div class="news-list">
@@ -1132,7 +1167,8 @@ onUnmounted(() => {
     <div class="container foot-inner">
       <div>
         <a :href="loc('/')" class="brand">
-          <img src="/images/logo.webp" alt="Music Mundial" />
+          <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
+          <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
         </a>
         <p>
           {{ txt('footerBlurb') }}<br />

@@ -3,7 +3,7 @@
   padding: 6px 0 4px;
   border: 0;
   background: transparent;
-  color: #1b2433;
+  color: var(--ink);
   font: inherit;
   cursor: pointer;
 }
@@ -27,7 +27,7 @@
 
 .auth-login {
   background: transparent;
-  color: #1b2433;
+  color: var(--ink);
   font: 650 13.5px 'DM Sans', sans-serif;
   padding: 6px 4px;
 }
@@ -94,7 +94,7 @@
 .account-name {
   margin: 0 8px 6px;
   font: 800 14px 'Manrope', sans-serif;
-  color: #121b2c;
+  color: var(--ink);
 }
 
 .account-pop a,
@@ -106,14 +106,14 @@
   background: transparent;
   border-radius: 8px;
   padding: 8px 10px;
-  color: #1b2433;
+  color: var(--ink);
   font: 650 13.5px 'DM Sans', sans-serif;
   cursor: pointer;
 }
 
 .account-pop a:hover,
 .account-pop button:hover {
-  background: #f4f7fb;
+  background: var(--hover);
   color: var(--blue);
 }
 
@@ -132,7 +132,7 @@
 
 .auth-head h2 {
   margin: 0;
-  color: #121b2c;
+  color: var(--ink);
   font: 800 26px/1.15 'Manrope', sans-serif;
   letter-spacing: -0.6px;
   text-align: center;
@@ -140,7 +140,7 @@
 
 .auth-lead {
   margin: 8px 0 0;
-  color: #657083;
+  color: var(--sub);
   font: 500 14px/1.4 'DM Sans', sans-serif;
 }
 
@@ -152,14 +152,14 @@
   height: 36px;
   border: 0;
   border-radius: 50%;
-  background: #f3f6fb;
-  color: #1b2433;
+  background: var(--input);
+  color: var(--ink);
   font-size: 22px;
   line-height: 1;
 }
 
 .auth-close:hover {
-  background: #e8eef8;
+  background: var(--hover);
 }
 
 .auth-body {
@@ -176,15 +176,15 @@
   height: 48px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #fff;
-  color: #121b2c;
+  background: var(--card);
+  color: var(--ink);
   font: 700 14px 'DM Sans', sans-serif;
   cursor: pointer;
 }
 
 .auth-google:hover {
-  border-color: #c9d6f5;
-  background: #f7f9ff;
+  border-color: var(--blue);
+  background: var(--hover);
 }
 
 .auth-google-icon {
@@ -226,7 +226,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #3d4758;
+  color: var(--sub);
   font: 700 12px 'DM Sans', sans-serif;
 }
 
@@ -237,15 +237,15 @@
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 0 14px;
-  background: #f8fafc;
-  color: #121b2c;
+  background: var(--input);
+  color: var(--ink);
   font: 500 14px 'DM Sans', sans-serif;
 }
 
 .auth-form input:focus {
-  outline: 2px solid #c9d6f5;
+  outline: 2px solid color-mix(in srgb, var(--blue) 35%, transparent);
   border-color: var(--blue);
-  background: #fff;
+  background: var(--card);
 }
 
 .auth-pass {
@@ -254,14 +254,14 @@
   height: 48px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #f8fafc;
+  background: var(--input);
   padding-right: 6px;
 }
 
 .auth-pass:focus-within {
-  outline: 2px solid #c9d6f5;
+  outline: 2px solid color-mix(in srgb, var(--blue) 35%, transparent);
   border-color: var(--blue);
-  background: #fff;
+  background: var(--card);
 }
 
 .auth-form .auth-pass input[type='email'],
@@ -384,7 +384,7 @@
 .auth-switch {
   margin: 2px 0 0;
   text-align: center;
-  color: #5d6b82;
+  color: var(--sub);
   font: 600 13.5px 'DM Sans', sans-serif;
 }
 

@@ -141,14 +141,15 @@ watch(() => [props.slug, props.locale], () => load(true))
         </div>
         <p class="article-loader-copy">{{ t(loc, 'loadingStories') }}</p>
       </div>
-      <button
-        v-else-if="!loading && items.length < total"
-        class="read-btn category-more"
-        type="button"
-        @click="loadMore"
-      >
-        {{ t(loc, 'loadMore') }}
-      </button>
+      <div v-else-if="!loading && items.length < total" class="category-more-row">
+        <button
+          class="category-more"
+          type="button"
+          @click="loadMore"
+        >
+          {{ t(loc, 'loadMore') }}
+        </button>
+      </div>
       </div>
       <aside v-if="popular.length || popularLoading" class="most-read">
         <div class="cats-eyebrow">{{ t(loc, 'mostRead') }}</div>
