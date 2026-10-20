@@ -279,7 +279,7 @@ function stepSlide(direction: number, manual = false) {
 
 function syncCatSize() {
   const width = window.innerWidth
-  catSize.value = width <= 550 ? 1 : width <= 900 ? 2 : 4
+  catSize.value = width <= 720 ? 1 : width <= 980 ? 2 : 4
   if (catPage.value >= catPages.value.length) catPage.value = 0
 }
 
@@ -570,6 +570,39 @@ onUnmounted(() => {
         <img src="/images/logo.webp" alt="Music Mundial" />
       </a>
       <nav id="nav" class="nav" :class="{ open: menuOpen }">
+        <div class="nav-toolbar">
+          <div class="lang-switch" role="group" :aria-label="txt('lang')">
+            <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
+            <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
+          </div>
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="M16.2 16.2 21 21" />
+            </svg>
+            <input
+              v-model="searchQuery"
+              type="search"
+              :placeholder="txt('searchPlaceholder')"
+              autocomplete="off"
+            />
+          </label>
+          <p v-if="searchLoading" class="search-status">{{ txt('searching') }}</p>
+          <p v-else-if="searchQuery.trim().length >= 2 && !searchHits.length" class="search-status">{{ txt('searchNone') }}</p>
+          <a
+            v-for="item in searchHits"
+            :key="'nav-' + item.id"
+            class="search-hit"
+            :href="item.href"
+            @click="closeMenu()"
+          >
+            <img :src="coverOf(item)" :alt="item.title" />
+            <div>
+              <small>{{ item.category }}</small>
+              <h3>{{ item.title }}</h3>
+            </div>
+          </a>
+        </div>
         <a :class="{ active: newsPage.name === 'home' }" :href="loc('/')" @click="closeMenu">{{ txt('navHome') }}</a>
         <a :class="{ active: newsPage.name === 'category' && newsPage.slug === 'kpop' }" :href="loc('/kpop')" @click="closeMenu">KPOP</a>
         <a :href="loc('/categoria/viral')" @click="closeMenu">{{ txt('navEntertainment') }}</a>
@@ -590,7 +623,7 @@ onUnmounted(() => {
           <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
           <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
         </div>
-        <div class="icon-pop">
+        <div class="icon-pop search-slot">
           <button
             class="round"
             type="button"
@@ -701,7 +734,7 @@ onUnmounted(() => {
           class="round mobile-toggle"
           type="button"
           :aria-label="txt('menu')"
-          @click="menuOpen = !menuOpen"
+          @click="menuOpen = !menuOpen; if (menuOpen) closePops()"
         >
           ☰
         </button>
@@ -915,7 +948,6 @@ onUnmounted(() => {
           <a class="cats-link" :href="loc('/noticias')">{{ txt('allCategories') }}</a>
         </div>
         <div class="cats-carousel" @mouseenter="stopCats" @mouseleave="startCats">
-          <button class="cats-nav prev" type="button" :aria-label="txt('prev')" @click="stepCats(-1, true)">‹</button>
           <div class="cats-viewport">
             <div class="cats-track" :style="{ transform: `translateX(-${catPage * 100}%)` }">
               <div v-for="(page, pageIndex) in catPages" :key="pageIndex" class="cats-page" :style="{ gridTemplateColumns: `repeat(${catSize}, minmax(0, 1fr))` }">
@@ -939,9 +971,12 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <button class="cats-nav next" type="button" :aria-label="txt('next')" @click="stepCats(1, true)">›</button>
-          <div class="cats-pager">
-            <button v-for="(_, index) in catPages" :key="index" type="button" :class="{ on: index === catPage }" :aria-label="`Página ${index + 1}`" @click="catPage = index; startCats()"></button>
+          <div class="cats-controls">
+            <button class="cats-nav prev" type="button" :aria-label="txt('prev')" @click="stepCats(-1, true)">‹</button>
+            <div class="cats-pager">
+              <button v-for="(_, index) in catPages" :key="index" type="button" :class="{ on: index === catPage }" :aria-label="`Página ${index + 1}`" @click="catPage = index; startCats()"></button>
+            </div>
+            <button class="cats-nav next" type="button" :aria-label="txt('next')" @click="stepCats(1, true)">›</button>
           </div>
         </div>
       </div>

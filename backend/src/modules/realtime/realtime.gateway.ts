@@ -12,14 +12,21 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { LOCAL_WEB_ORIGINS } from '../../common/security-config';
 import { JwtPayload } from '../auth/auth.types';
 import { MetricsService } from '../metrics/metrics.service';
 import { RedisService } from '../redis/redis.service';
 
-const realtimeOrigins = (process.env.APP_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
+const realtimeOrigins = [
+  ...new Set(
+    [
+      ...(process.env.APP_ORIGIN || 'http://localhost:5174').split(','),
+      ...LOCAL_WEB_ORIGINS,
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+];
 
 @WebSocketGateway({
   cors: {

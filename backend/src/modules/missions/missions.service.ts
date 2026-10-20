@@ -349,7 +349,7 @@ export class MissionsService {
       .split(',')
       .map((host) => host.trim().replace(/^www\./, '').toLowerCase())
       .filter(Boolean);
-    const hosts = new Set(['vote.musicmundial.com', 'localhost', '127.0.0.1', ...configured]);
+    const hosts = new Set(['vote.musicmundial.com', 'musicmundial.com', 'localhost', '127.0.0.1', ...configured]);
     return hosts.has(page.host);
   }
 

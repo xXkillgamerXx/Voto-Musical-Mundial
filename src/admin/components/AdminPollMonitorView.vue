@@ -11,6 +11,7 @@ import {
   createAdminRound,
   deleteAdminRound,
   finishAdminRound,
+  generateAdminVersus,
   getAdminArtists,
   getAdminBotCampaign,
   getAdminBotCampaigns,
@@ -117,6 +118,10 @@ const isRoundModalOpen = ref(false)
 const isCreatingRound = ref(false)
 const roundToDelete = ref(null)
 const isDeletingRound = ref(false)
+const opponentMatchToFix = ref(null)
+const opponentSearch = ref('')
+const isAddingOpponent = ref('')
+const isFillingMissingWinners = ref(false)
 const roundEndAtInput = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -137,13 +142,33 @@ const currentResultsTotal = () =>
 
 const applyPublicResultsSafely = (results, { allowDecrease = false } = {}) => {
   const nextRows = Array.isArray(results?.results) ? results.results : []
+  const incomingRoundId = results?.roundId != null && results?.roundId !== ''
+    ? String(results.roundId)
+    : ''
+  const currentRoundId = activeRound.value?.id ? String(activeRound.value.id) : ''
+
+  if (incomingRoundId && currentRoundId && incomingRoundId !== currentRoundId) {
+    return false
+  }
 
   // Never blank the ranking with an empty/partial payload while we already have data.
   if (!nextRows.length && publicResults.value?.results?.length) {
     return false
   }
 
-  if (!allowDecrease && publicResults.value?.results?.length && nextRows.length) {
+  const cachedRoundId = publicResults.value?.roundId != null && publicResults.value?.roundId !== ''
+    ? String(publicResults.value.roundId)
+    : ''
+  const roundChanged = Boolean(cachedRoundId && incomingRoundId && cachedRoundId !== incomingRoundId)
+  const isDraftRound = activeRound.value?.status === 'draft'
+
+  if (
+    !allowDecrease &&
+    !roundChanged &&
+    !isDraftRound &&
+    publicResults.value?.results?.length &&
+    nextRows.length
+  ) {
     const currentTotal = currentResultsTotal()
     const nextTotal = nextRows.reduce((sum, row) => sum + Number(row.totalVotes || 0), 0)
     // Bot campaigns can make API snapshots lag; ignore big downward jumps that look like a wipe.
@@ -186,6 +211,11 @@ const applyVoteDeltaLocally = (payload) => {
   const artistId = String(payload.artistId || '')
   const contestantId = String(payload.contestantId || '')
   const amount = Math.max(1, Number(payload.amount || 1))
+  const payloadRoundId = payload.roundId ? String(payload.roundId) : ''
+  const currentRoundId = activeRound.value?.id ? String(activeRound.value.id) : ''
+  if (payloadRoundId && currentRoundId && payloadRoundId !== currentRoundId) {
+    return
+  }
   if (!amount || (!artistId && !contestantId)) return
 
   if (publicResults.value?.results?.length) {
@@ -269,6 +299,11 @@ const flushPendingVoteDeltas = () => {
 
 const queueVoteDelta = (payload) => {
   if (!payload) return
+  const payloadRoundId = payload.roundId ? String(payload.roundId) : ''
+  const currentRoundId = activeRound.value?.id ? String(activeRound.value.id) : ''
+  if (payloadRoundId && currentRoundId && payloadRoundId !== currentRoundId) {
+    return
+  }
   // Soften bot floods: keep only the newest events.
   pendingVoteDeltas.push(payload)
   if (pendingVoteDeltas.length > 80) {
@@ -448,9 +483,69 @@ const activeRoundVersusMatches = computed(() => {
 
 const versusMatchWinners = computed(() =>
   activeRoundVersusMatches.value
-    .map((match) => match.contestants.find((contestant) => contestant.isMatchLeader) || match.contestants[0])
+    .map((match) => {
+      const contestants = [...(match.contestants || [])]
+      if (!contestants.length) {
+        return null
+      }
+
+      return contestants.sort(
+        (current, next) => Number(next.totalVotes || 0) - Number(current.totalVotes || 0),
+      )[0]
+    })
     .filter(Boolean),
 )
+
+const canFixVersusPairs = computed(() => activeRound.value?.status === 'draft')
+
+const incompleteVersusMatches = computed(() =>
+  activeRoundVersusMatches.value.filter((match) => match.contestants.length === 1),
+)
+
+const previousActiveRound = computed(() => {
+  if (activeRoundIndex.value <= 0) {
+    return null
+  }
+
+  return rounds.value[activeRoundIndex.value - 1] || null
+})
+
+const previousWinnerIdsForActive = computed(() =>
+  (previousActiveRound.value?.winnerIds || previousActiveRound.value?.config?.winnerIds || []).map(String),
+)
+
+const presentArtistIds = computed(
+  () => new Set(activeRoundContestants.value.map((contestant) => String(contestant.artistId))),
+)
+
+const missingPreviousWinners = computed(() =>
+  previousWinnerIdsForActive.value
+    .filter((artistId) => !presentArtistIds.value.has(artistId))
+    .map((artistId) => getArtist(artistId) || artists.value.find((artist) => String(artist.id) === artistId))
+    .filter(Boolean),
+)
+
+const opponentPickerArtists = computed(() => {
+  const query = opponentSearch.value.trim().toLowerCase()
+  const preferredIds = new Set(missingPreviousWinners.value.map((artist) => String(artist.id)))
+  const preferred = missingPreviousWinners.value
+  const rest = artists.value.filter(
+    (artist) => !presentArtistIds.value.has(String(artist.id)) && !preferredIds.has(String(artist.id)),
+  )
+  const list = [...preferred, ...rest]
+
+  if (!query) {
+    return list.slice(0, preferred.length ? 40 : 30)
+  }
+
+  return list
+    .filter((artist) => {
+      const name = String(artist.name || '').toLowerCase()
+      const group = String(artist.group || artist.fandom || '').toLowerCase()
+      return name.includes(query) || group.includes(query)
+    })
+    .slice(0, 40)
+})
 
 const totalActiveRoundVotes = computed(() =>
   activeRoundRanking.value.reduce(
@@ -825,9 +920,13 @@ const listenActiveRoundContestants = ({ force = false } = {}) => {
     return
   }
 
+  publicResults.value = null
+  recentActivity.value = []
+
   activeRoundContestants.value = (activeRound.value.contestants || []).map((contestant) => ({
     ...contestant,
     artistId: String(contestant.artistId),
+    roundId: contestant.roundId ? String(contestant.roundId) : roundId,
     matchGroup: Number(contestant.matchGroup || 0),
     matchOrder: Number(contestant.matchOrder || 0),
     order: Number(contestant.order || 0),
@@ -841,7 +940,9 @@ const listenActiveRoundContestants = ({ force = false } = {}) => {
       if (hasRunningBotCampaigns()) {
         return
       }
-      applyPublicResultsSafely(results)
+      applyPublicResultsSafely(results, {
+        allowDecrease: activeRound.value?.status === 'draft',
+      })
       if (!recentActivity.value.length && Array.isArray(results?.recentActivity)) {
         recentActivity.value = results.recentActivity
       }
@@ -993,14 +1094,17 @@ const addManualVotes = async (contestant) => {
     return
   }
 
-  const amount = Number(manualVoteAmounts.value[contestant.id] || 0)
+  const rawAmount = manualVoteAmounts.value[contestant.id]
+  const amount = Math.trunc(Number(rawAmount))
 
-  if (!Number.isInteger(amount) || amount === 0) {
+  if (!Number.isFinite(amount) || amount === 0) {
     errorMessage.value = translate('admin.monitor.errors.invalidManualVotes')
     return
   }
 
-  if (amount < 0 && contestant.totalVotes + amount < 0) {
+  const realVotes =
+    Number(contestant.votes || 0) + Number(contestant.manualVotes || 0)
+  if (amount < 0 && realVotes + amount < 0) {
     errorMessage.value = translate('admin.monitor.errors.negativeVotes')
     return
   }
@@ -1009,6 +1113,36 @@ const addManualVotes = async (contestant) => {
     adjustingVoteContestantId.value = contestant.id
     await adjustAdminContestantVotes(props.pollId, contestant.id, amount)
 
+    const artistId = String(contestant.artistId || '')
+    if (publicResults.value?.results?.length) {
+      publicResults.value = {
+        ...publicResults.value,
+        results: publicResults.value.results.map((row) => {
+          const sameArtist = artistId && String(row.artistId) === artistId
+          const sameContestant = String(row.contestantId || row.id) === String(contestant.id)
+          if (!sameArtist && !sameContestant) {
+            return row
+          }
+          return {
+            ...row,
+            votes: Number(row.votes || 0) + amount,
+            totalVotes: Number(row.totalVotes || 0) + amount,
+          }
+        }),
+      }
+    }
+
+    activeRoundContestants.value = activeRoundContestants.value.map((row) => {
+      if (String(row.id) !== String(contestant.id)) {
+        return row
+      }
+      return {
+        ...row,
+        manualVotes: Number(row.manualVotes || 0) + amount,
+        totalVotes: Number(row.totalVotes || 0) + amount,
+      }
+    })
+
     manualVoteAmounts.value = {
       ...manualVoteAmounts.value,
       [contestant.id]: '',
@@ -1016,10 +1150,12 @@ const addManualVotes = async (contestant) => {
     successMessage.value = amount > 0
       ? translate('admin.monitor.manualVotesAdded', { count: amount })
       : translate('admin.monitor.manualVotesRemoved', { count: Math.abs(amount) })
-    restartResultsAggregator()
-    listenActiveRoundContestants({ force: true })
-  } catch {
-    errorMessage.value = translate('admin.monitor.errors.adjustVotes')
+    await softRefreshPublicResults({ force: true })
+  } catch (error) {
+    const raw = error?.message
+    errorMessage.value = Array.isArray(raw)
+      ? raw.join(' ')
+      : (raw || translate('admin.monitor.errors.adjustVotes'))
   } finally {
     adjustingVoteContestantId.value = ''
   }
@@ -1255,7 +1391,11 @@ const createRound = async () => {
 
   try {
     isCreatingRound.value = true
-    const sourceWinnerIds = rounds.value[rounds.value.length - 1]?.winnerIds || []
+    const previousRound =
+      rounds.value.filter((round) => round.status === 'closed').at(-1) ||
+      rounds.value.at(-1) ||
+      null
+    const sourceWinnerIds = previousRound?.winnerIds || previousRound?.config?.winnerIds || []
     const endAt = toApiDate(roundForm.value.endAt)
     const round = await createAdminRound(props.pollId, {
       title: roundForm.value.title.trim(),
@@ -1279,6 +1419,10 @@ const createRound = async () => {
         }),
       ),
     )
+
+    if (round.type === 'versus' && sourceWinnerIds.length) {
+      await generateAdminVersus(props.pollId, round.id)
+    }
 
     roundForm.value = {
       title: '',
@@ -1338,6 +1482,118 @@ const confirmDeleteRound = async () => {
     errorMessage.value = error?.message || 'No se pudo eliminar la fase.'
   } finally {
     isDeletingRound.value = false
+  }
+}
+
+const openAddOpponent = (match) => {
+  errorMessage.value = ''
+  successMessage.value = ''
+  opponentMatchToFix.value = match
+  opponentSearch.value = ''
+}
+
+const closeAddOpponent = () => {
+  if (isAddingOpponent.value) {
+    return
+  }
+
+  opponentMatchToFix.value = null
+  opponentSearch.value = ''
+}
+
+const addOpponentToMatch = async (artist) => {
+  const match = opponentMatchToFix.value
+  if (!artist?.id || !match?.groupNumber || !activeRound.value?.id) {
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  isAddingOpponent.value = artist.id
+
+  try {
+    await createAdminContestant(props.pollId, {
+      roundId: activeRound.value.id,
+      artistId: artist.id,
+      votes: 0,
+      manualVotes: 0,
+      matchGroup: match.groupNumber,
+      matchOrder: 1,
+      order: activeRoundContestants.value.length,
+    })
+    opponentMatchToFix.value = null
+    opponentSearch.value = ''
+    successMessage.value = translate('admin.monitor.opponentAdded')
+    listenRounds()
+  } catch {
+    errorMessage.value = translate('admin.monitor.errors.addOpponent')
+  } finally {
+    isAddingOpponent.value = ''
+  }
+}
+
+const fillMissingVersusWinners = async () => {
+  if (!activeRound.value?.id || !missingPreviousWinners.value.length) {
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+  isFillingMissingWinners.value = true
+
+  try {
+    const holes = incompleteVersusMatches.value.map((match) => match.groupNumber)
+    let holeIndex = 0
+    let nextGroup = Math.max(0, ...activeRoundVersusMatches.value.map((match) => Number(match.groupNumber || 0)), 0)
+    const leftover = []
+
+    for (const artist of missingPreviousWinners.value) {
+      if (holeIndex < holes.length) {
+        await createAdminContestant(props.pollId, {
+          roundId: activeRound.value.id,
+          artistId: artist.id,
+          votes: 0,
+          manualVotes: 0,
+          matchGroup: holes[holeIndex],
+          matchOrder: 1,
+          order: activeRoundContestants.value.length + holeIndex + leftover.length,
+        })
+        holeIndex += 1
+      } else {
+        leftover.push(artist)
+      }
+    }
+
+    for (let index = 0; index < leftover.length; index += 2) {
+      nextGroup += 1
+      await createAdminContestant(props.pollId, {
+        roundId: activeRound.value.id,
+        artistId: leftover[index].id,
+        votes: 0,
+        manualVotes: 0,
+        matchGroup: nextGroup,
+        matchOrder: 0,
+        order: activeRoundContestants.value.length + holes.length + index,
+      })
+      if (leftover[index + 1]) {
+        await createAdminContestant(props.pollId, {
+          roundId: activeRound.value.id,
+          artistId: leftover[index + 1].id,
+          votes: 0,
+          manualVotes: 0,
+          matchGroup: nextGroup,
+          matchOrder: 1,
+          order: activeRoundContestants.value.length + holes.length + index + 1,
+        })
+      }
+    }
+
+    successMessage.value = translate('admin.monitor.winnersFilled')
+    listenRounds()
+  } catch {
+    errorMessage.value = translate('admin.monitor.errors.fillWinners')
+  } finally {
+    isFillingMissingWinners.value = false
   }
 }
 
@@ -1815,6 +2071,28 @@ onUnmounted(() => {
         </div>
 
         <div v-if="activeRound" class="mt-5 space-y-4">
+          <div
+            v-if="canFixVersusPairs && (incompleteVersusMatches.length || missingPreviousWinners.length)"
+            class="rounded-3xl border border-amber-300/30 bg-amber-400/10 p-4"
+          >
+            <p class="text-sm font-black text-amber-100">
+              {{ $t('admin.monitor.incompleteDuelHint') }}
+            </p>
+            <button
+              v-if="missingPreviousWinners.length"
+              type="button"
+              class="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-amber-300/30 bg-amber-400/20 px-4 text-xs font-black uppercase tracking-wide text-amber-50 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isFillingMissingWinners"
+              @click="fillMissingVersusWinners"
+            >
+              <i
+                v-if="isFillingMissingWinners"
+                class="fa-solid fa-circle-notch fa-spin"
+                aria-hidden="true"
+              ></i>
+              {{ $t('admin.monitor.fillMissingWinners') }}
+            </button>
+          </div>
           <template v-if="isActiveRoundVersus">
             <article
               v-for="match in activeRoundVersusMatches"
@@ -1832,10 +2110,10 @@ onUnmounted(() => {
 
               <div
                 class="relative grid gap-1.5 sm:gap-2"
-                :class="match.contestants.length === 2 ? 'grid-cols-2' : ''"
+                :class="match.contestants.length === 2 || (canFixVersusPairs && match.contestants.length === 1) ? 'grid-cols-2' : ''"
               >
                 <div
-                  v-if="match.contestants.length === 2"
+                  v-if="match.contestants.length === 2 || (canFixVersusPairs && match.contestants.length === 1)"
                   class="admin-versus-vs pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-center"
                 >
                   <span class="grid size-8 place-items-center rounded-full border-2 border-white/25 bg-linear-to-r from-violet-500 via-fuchsia-500 to-pink-500 text-[10px] font-black text-white shadow-lg shadow-fuchsia-500/50 sm:size-11 sm:text-sm">
@@ -1929,6 +2207,19 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
+
+                <button
+                  v-if="canFixVersusPairs && match.contestants.length === 1"
+                  type="button"
+                  class="relative flex min-h-52 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-amber-300/40 bg-slate-950/40 p-4 text-center transition hover:border-amber-300/70 hover:bg-amber-400/10"
+                  @click="openAddOpponent(match)"
+                >
+                  <span class="grid size-12 place-items-center rounded-full border border-amber-300/30 bg-amber-400/10 text-lg text-amber-100">
+                    <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                  </span>
+                  <span class="text-sm font-black text-amber-100">{{ $t('admin.monitor.addOpponent') }}</span>
+                  <span class="text-xs font-bold text-amber-100/70">{{ $t('admin.monitor.incompleteDuel') }}</span>
+                </button>
               </div>
             </article>
           </template>
@@ -2213,6 +2504,66 @@ onUnmounted(() => {
               {{ isClosingPoll ? 'Cerrando...' : 'Sí, finalizar votación' }}
             </button>
           </div>
+        </article>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="opponentMatchToFix"
+        class="fixed inset-0 z-80 grid place-items-center bg-black/80 px-4 backdrop-blur-md"
+        @click.self="closeAddOpponent"
+      >
+        <article class="w-full max-w-lg rounded-4xl border border-amber-300/25 bg-[#080a18] p-6 text-white shadow-2xl shadow-amber-950/30">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-amber-200">
+            {{ opponentMatchToFix.title }}
+          </p>
+          <h2 class="mt-3 text-3xl font-black">
+            {{ $t('admin.monitor.addOpponentTitle') }}
+          </h2>
+          <p class="mt-2 text-sm text-slate-400">
+            {{ $t('admin.monitor.addOpponentHint') }}
+          </p>
+          <input
+            v-model="opponentSearch"
+            type="search"
+            class="mt-4 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white outline-none placeholder:text-slate-500 focus:border-amber-300/40"
+            :placeholder="$t('admin.monitor.opponentSearchPlaceholder')"
+          />
+          <div class="mt-4 max-h-80 space-y-2 overflow-y-auto">
+            <button
+              v-for="artist in opponentPickerArtists"
+              :key="artist.id"
+              type="button"
+              class="flex w-full min-h-14 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 text-left transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="Boolean(isAddingOpponent)"
+              @click="addOpponentToMatch(artist)"
+            >
+              <span class="min-w-0">
+                <span class="block truncate font-black text-white">{{ artist.name }}</span>
+                <span class="block truncate text-xs font-bold text-slate-400">{{ artist.group || artist.fandom || $t('polls.detail.soloist') }}</span>
+              </span>
+              <i
+                v-if="isAddingOpponent === artist.id"
+                class="fa-solid fa-circle-notch fa-spin text-amber-200"
+                aria-hidden="true"
+              ></i>
+            </button>
+            <p
+              v-if="!opponentPickerArtists.length"
+              class="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm font-bold text-slate-400"
+            >
+              {{ $t('admin.monitor.noOpponentCandidates') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="mt-5 min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="Boolean(isAddingOpponent)"
+            @click="closeAddOpponent"
+          >
+            {{ $t('admin.monitor.botCampaignCancel') }}
+          </button>
         </article>
       </div>
     </Teleport>
