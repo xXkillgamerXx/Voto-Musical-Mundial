@@ -20,7 +20,10 @@ async function bootstrap() {
 
   app.useBodyParser('json', { limit: '5mb' });
   app.useBodyParser('urlencoded', { limit: '5mb', extended: true });
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use((req, res, next) => {
+    if (/\/news\/(sitemaps|feed|share)(\/|$)/.test(req.path || '')) return next();
+    return helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })(req, res, next);
+  });
   app.use(cookieParser());
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   app.enableCors({

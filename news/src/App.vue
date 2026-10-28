@@ -2,13 +2,17 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AuthDialog from './components/AuthDialog.vue'
 import CatsCard from './components/CatsCard.vue'
+import NewsAdminPage from './components/NewsAdminPage.vue'
 import NewsArticle from './components/NewsArticle.vue'
 import NewsCategoriesPage from './components/NewsCategoriesPage.vue'
 import NewsCategoryPage from './components/NewsCategoryPage.vue'
+import NewsProfilePage from './components/NewsProfilePage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
 import { coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
-import { ensureLocalePath, localeFromPath, withLocale, type SiteLocale } from './lib/locale'
+import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, type SiteLocale } from './lib/locale'
+import { applyHomeSeo, applyPrivateSeo } from './lib/seo'
+import { newsRouteState } from './lib/route-state'
 import { getTheme, toggleTheme as flipTheme, type SiteTheme } from './lib/theme'
 import { getCurrentApiAuth, getMe, logout } from '../../src/services/api/authApi'
 import { onStoredAuthChange } from '../../src/services/api/client'
@@ -41,9 +45,15 @@ const emptyStory = (): Story => ({ category: '', title: '', image: '/images/teac
 const siteLocale = computed(() => newsPage.value.locale || localeFromPath())
 const theme = ref<SiteTheme>(getTheme())
 
-function setSiteTheme() {
+function setSiteTheme(event: MouseEvent) {
   flipTheme()
   theme.value = getTheme()
+  const btn = event.currentTarget as HTMLElement
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  btn.classList.remove('is-flipping')
+  void btn.offsetWidth
+  btn.classList.add('is-flipping')
+  window.setTimeout(() => btn.classList.remove('is-flipping'), 560)
 }
 
 function txt(key: CopyKey) {
@@ -52,6 +62,18 @@ function txt(key: CopyKey) {
 
 function loc(path: string) {
   return withLocale(path, siteLocale.value)
+}
+
+function profileHref() {
+  return loc(siteLocale.value === 'en' ? '/profile' : '/perfil')
+}
+
+function profileEditHref() {
+  return loc(siteLocale.value === 'en' ? '/profile/edit' : '/perfil/editar')
+}
+
+function adminHref() {
+  return loc('/admin')
 }
 
 function postHref(item?: { href?: string } | null, fallback = '/') {
@@ -72,7 +94,14 @@ function setLocale(next: SiteLocale) {
     enEmpty.value = false
     clearHomeFeed()
   }
-  window.history.pushState({}, '', `/${next}`)
+  let path = next === 'en' ? '/' : '/es'
+  if (newsPage.value.name === 'article') {
+    const alt = newsRouteState.alternateHref
+    path = alt ? `${alt}${window.location.search}${window.location.hash}` : swapLocalePath(next)
+  } else if (newsPage.value.name !== 'home') {
+    path = swapLocalePath(next)
+  }
+  window.history.pushState({}, '', path)
   syncNewsPage()
 }
 
@@ -83,10 +112,12 @@ function onNewsClick(event: MouseEvent) {
   if (!href || href.includes('#') || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:')) return
   if (href.startsWith('/vote') || href.startsWith('/api')) return
   event.preventDefault()
-  const first = href.split('/').filter(Boolean)[0]
-  const next = first === 'es' || first === 'en' ? href.split('?')[0] : withLocale(href, siteLocale.value)
+  const url = new URL(href, window.location.origin)
+  const first = url.pathname.split('/').filter(Boolean)[0]
+  const path = first === 'es' || first === 'en' ? url.pathname : withLocale(url.pathname, siteLocale.value)
+  const next = `${path}${url.search}`
   closeMenu()
-  if (window.location.pathname === next) return
+  if (`${window.location.pathname}${window.location.search}` === next) return
   window.history.pushState({}, '', next)
   syncNewsPage()
 }
@@ -219,9 +250,18 @@ function syncNewsPage(opts?: { keepScroll?: boolean }) {
   ensureLocalePath()
   newsPage.value = parseNewsPage()
   document.documentElement.lang = newsPage.value.locale
-  document.title = newsPage.value.locale === 'en' ? 'Music Mundial — Entertainment news' : 'Music Mundial — Cultura y entretenimiento'
+  if (newsPage.value.name === 'admin') {
+    applyPrivateSeo('Panel Music Mundial')
+  } else if (newsPage.value.name === 'profile') {
+    applyPrivateSeo(
+      `${t(newsPage.value.locale, newsPage.value.edit ? 'profileEdit' : newsPage.value.username ? 'profilePublicTitle' : 'profileTitle')} — Music Mundial`,
+    )
+  } else if (newsPage.value.name !== 'article' && newsPage.value.name !== 'category') {
+    applyHomeSeo(newsPage.value.locale)
+  }
   if (!opts?.keepScroll) scrollToTop()
   if (newsPage.value.name === 'home') loadHomeFeed()
+  applySearchFromUrl()
 }
 
 const slides = ref<Array<{
@@ -430,6 +470,13 @@ async function runSearch(query: string) {
   }
 }
 
+function applySearchFromUrl() {
+  const q = new URLSearchParams(window.location.search).get('s') || ''
+  if (q.trim().length < 2) return
+  searchQuery.value = q.trim()
+  searchOpen.value = true
+}
+
 function toggleSearch() {
   searchOpen.value = !searchOpen.value
   noticesOpen.value = false
@@ -474,7 +521,9 @@ const accountOpen = ref(false)
 const avatarFailed = ref(false)
 let stopAuthWatch: (() => void) | null = null
 
+const ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
 const isSignedIn = computed(() => Boolean(currentUser.value))
+const isAdmin = computed(() => ADMIN_ROLES.has(String(currentUser.value?.role || '').toLowerCase()))
 const userInitial = computed(() => {
   const name = currentUser.value?.displayName || currentUser.value?.username || currentUser.value?.email || 'M'
   return String(name).trim().charAt(0).toUpperCase() || 'M'
@@ -550,6 +599,13 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <NewsAdminPage
+    v-if="newsPage.name === 'admin'"
+    :section="newsPage.section"
+    :post-id="newsPage.postId"
+    :news-locale="newsPage.newsLocale"
+  />
+  <template v-else>
   <header class="site-header">
     <div class="container head-inner">
       <a :href="loc('/')" class="brand" @click="closeMenu">
@@ -560,8 +616,8 @@ onUnmounted(() => {
         <div class="nav-toolbar">
           <div class="nav-toolbar-row">
             <div class="lang-switch" role="group" :aria-label="txt('lang')">
+              <a :class="{ on: siteLocale === 'en' }" href="/" @click.prevent="setLocale('en')">EN</a>
               <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
-              <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
             </div>
             <button
               class="round theme-toggle"
@@ -618,14 +674,16 @@ onUnmounted(() => {
           <button class="nav-auth nav-auth-solid" type="button" @click="openAuth('register')">{{ txt('navRegister') }}</button>
         </template>
         <template v-else>
-          <a class="nav-auth" href="/vote/perfil" @click="closeMenu">{{ txt('navProfile') }}</a>
+          <a class="nav-auth" :href="profileHref()" @click="closeMenu">{{ txt('navProfile') }}</a>
+          <a class="nav-auth" :href="profileEditHref()" @click="closeMenu">{{ txt('navSettings') }}</a>
+          <a v-if="isAdmin" class="nav-auth" :href="adminHref()" @click="closeMenu">{{ txt('navAdmin') }}</a>
           <button class="nav-auth" type="button" @click="handleLogout">{{ txt('navLogout') }}</button>
         </template>
       </nav>
       <div class="actions">
         <div class="lang-switch" role="group" :aria-label="txt('lang')">
+          <a :class="{ on: siteLocale === 'en' }" href="/" @click.prevent="setLocale('en')">EN</a>
           <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
-          <a :class="{ on: siteLocale === 'en' }" href="/en" @click.prevent="setLocale('en')">EN</a>
         </div>
         <button
           class="round theme-toggle"
@@ -743,9 +801,9 @@ onUnmounted(() => {
           </button>
           <div v-if="accountOpen" class="pop-panel account-pop">
             <p class="account-name">{{ userLabel }}</p>
-            <a href="/vote/perfil" @click="accountOpen = false">{{ txt('navProfile') }}</a>
-            <a href="/vote/perfil/configuracion" @click="accountOpen = false">{{ txt('navSettings') }}</a>
-            <a href="/vote/" @click="accountOpen = false">{{ txt('navVote') }}</a>
+            <a :href="profileHref()" @click="accountOpen = false">{{ txt('navProfile') }}</a>
+            <a :href="profileEditHref()" @click="accountOpen = false">{{ txt('navSettings') }}</a>
+            <a v-if="isAdmin" :href="adminHref()" @click="accountOpen = false">{{ txt('navAdmin') }}</a>
             <button type="button" @click="handleLogout">{{ txt('navLogout') }}</button>
           </div>
         </div>
@@ -764,11 +822,17 @@ onUnmounted(() => {
   <NewsArticle v-if="newsPage.name === 'article'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsCategoriesPage v-else-if="newsPage.name === 'categories'" :locale="newsPage.locale" />
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsProfilePage
+    v-else-if="newsPage.name === 'profile'"
+    :locale="newsPage.locale"
+    :username="newsPage.username"
+    :edit="newsPage.edit"
+  />
   <main v-else-if="siteLocale === 'en' && enEmpty && homeReady" id="inicio" class="home">
     <div class="container article-wrap">
       <p class="article-status">
         English content is not loaded yet. The site is running in Spanish for now.
-        <a href="/es" @click.prevent="setLocale('es')">Ver en español</a>
+        <a href="/" @click.prevent="setLocale('es')">Ver en español</a>
       </p>
     </div>
   </main>
@@ -1187,4 +1251,5 @@ onUnmounted(() => {
   </footer>
 
   <AuthDialog :open="authOpen" :mode="authMode" :locale="siteLocale" @close="closeAuth" @mode="authMode = $event" />
+  </template>
 </template>

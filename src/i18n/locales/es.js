@@ -628,7 +628,7 @@ export default {
   news: {
     feedEyebrow: 'Music Mundial Feed',
     title: 'Noticias',
-    description: 'Últimas noticias de música y entretenimiento cargadas desde el feed oficial de Music Mundial.',
+    description: 'Últimas noticias de música y entretenimiento de Music Mundial.',
     searchPlaceholder: 'Buscar noticias...',
     recent: 'Reciente',
     defaultTitle: 'Noticia',

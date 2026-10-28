@@ -4,6 +4,7 @@ import { getNewsPopular, getNewsPosts } from '../../../src/services/api/newsApi'
 import { withLocale } from '../lib/locale'
 import { t } from '../lib/copy'
 import { categoryHero, categoryTitle, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
+import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale?: string }>()
 const items = ref<NewsCard[]>([])
@@ -13,7 +14,7 @@ const total = ref(0)
 const page = ref(1)
 const loading = ref(true)
 const error = ref('')
-const loc = computed(() => (props.locale === 'en' ? 'en' : 'es'))
+const loc = computed(() => (props.locale === 'es' ? 'es' : 'en'))
 const homeHref = computed(() => withLocale('/', loc.value))
 const fromPosts = computed(() => {
   const match = items.value.find((item) => item.categorySlug === props.slug)
@@ -48,7 +49,22 @@ async function load(reset = true) {
     const payload = await getNewsPosts({ page: page.value, limit: 18, category: props.slug, locale: loc.value })
     total.value = payload.total || 0
     items.value = reset ? payload.items : [...items.value, ...(payload.items || [])]
-    document.title = `${title.value} — Music Mundial`
+    if (reset) {
+      applyNewsSeo({
+        type: 'website',
+        locale: loc.value,
+        title: `${title.value} — Music Mundial`,
+        description:
+          loc.value === 'es'
+            ? `${countLabel.value} de ${title.value} en Music Mundial.`
+            : `${countLabel.value} in ${title.value} on Music Mundial.`,
+        path: withLocale(`/categoria/${props.slug}`, loc.value),
+        image: coverOf(items.value[0]),
+        imageAlt: title.value,
+        hreflangEn: withLocale(`/categoria/${props.slug}`, 'en'),
+        hreflangEs: withLocale(`/categoria/${props.slug}`, 'es'),
+      })
+    }
   } catch {
     error.value = t(loc.value, 'categoryMissing')
   } finally {

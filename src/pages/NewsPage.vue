@@ -2,13 +2,18 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translate } from '../i18n'
+import { getNewsPosts } from '../services/api/newsApi'
+
+const VISUALS = [
+  'from-violet-950 via-fuchsia-700 to-indigo-950',
+  'from-indigo-950 via-purple-700 to-fuchsia-900',
+  'from-amber-900 via-fuchsia-700 to-violet-950',
+  'from-cyan-950 via-violet-800 to-slate-950',
+  'from-rose-950 via-fuchsia-800 to-slate-950',
+  'from-slate-950 via-blue-900 to-violet-950',
+]
 
 const { locale } = useI18n()
-const musicMundialPath = computed(() => locale.value === 'en' ? '/en' : '')
-const feedUrl = computed(() => `https://www.musicmundial.com${musicMundialPath.value}/feed/`)
-const feedProxyUrl = computed(() => `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl.value)}`)
-const feedJsonUrl = computed(() => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl.value)}`)
-const postsUrl = computed(() => `https://www.musicmundial.com${musicMundialPath.value}/wp-json/wp/v2/posts?per_page=24&_embed=1`)
 const newsItems = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
@@ -16,204 +21,36 @@ const searchQuery = ref('')
 const currentPage = ref(1)
 const itemsPerPage = 9
 
-const decodeHtml = (value = '') => {
-  if (!value) {
-    return ''
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.innerHTML = value
-
-  return textarea.value.trim()
-}
-
-const normalizeText = (value = '') => decodeHtml(value.replace(/<[^>]+>/g, ''))
-
-const textFromNode = (item, selector) =>
-  normalizeText(item.querySelector(selector)?.textContent || '')
-
-const imageFromItem = (item) => {
-  const mediaImage = item.querySelector('media\\:content, content')?.getAttribute('url')
-    || item.querySelector('media\\:thumbnail, thumbnail')?.getAttribute('url')
-    || item.querySelector('enclosure')?.getAttribute('url')
-
-  if (mediaImage) {
-    return mediaImage
-  }
-
-  const encodedContent = textFromNode(item, 'encoded')
-    || item.getElementsByTagName('content:encoded')?.[0]?.textContent
-    || ''
-  const imageMatch = encodedContent.match(/<img[^>]+src=["']([^"']+)["']/i)
-
-  return imageMatch?.[1] || ''
-}
-
 const formatFeedDate = (value) => {
   const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return translate('news.recent')
-  }
-
+  if (Number.isNaN(date.getTime())) return translate('news.recent')
   return new Intl.DateTimeFormat(locale.value, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
 }
 
-const fetchFeedItems = async () => {
-  const urls = [feedUrl.value, feedProxyUrl.value]
-
-  for (const url of urls) {
-    try {
-      const response = await fetch(url)
-
-      if (!response.ok) {
-        continue
-      }
-
-      const xmlText = await response.text()
-      const documentXml = new DOMParser().parseFromString(xmlText, 'text/xml')
-      const items = [...documentXml.querySelectorAll('item')]
-
-      if (items.length) {
-        return items
-      }
-    } catch {
-      // Try the next feed source.
-    }
-  }
-
-  return []
-}
-
-const imageFromHtml = (html = '') => {
-  const featuredImageMatch = html.match(/<img[^>]+class=["'][^"']*(?:wp-post-image|wp-image|size-full)[^"']*["'][^>]+src=["']([^"']+)["']/i)
-    || html.match(/<img[^>]+src=["']([^"']+)["'][^>]+class=["'][^"']*(?:wp-post-image|wp-image|size-full)[^"']*["']/i)
-  const imageMatch = featuredImageMatch || html.match(/<img[^>]+src=["']([^"']+)["']/i)
-
-  return imageMatch?.[1] || ''
-}
-
-const stripHtml = (value = '') => normalizeText(value)
-
-const newsFromPosts = (posts) =>
-  posts.map((post, index) => {
-    const featuredMedia = post._embedded?.['wp:featuredmedia']?.[0]
-    const terms = post._embedded?.['wp:term']?.flat?.() || []
-    const tag = normalizeText(terms.find((term) => term.taxonomy === 'category')?.name || translate('news.defaultTag'))
-
-    return {
-      title: stripHtml(post.title?.rendered || translate('news.defaultTitle')),
-      tag,
-      rawDate: post.date_gmt || post.date,
-      time: formatFeedDate(post.date_gmt || post.date),
-      link: post.link,
-      description: stripHtml(post.excerpt?.rendered || ''),
-      image: featuredMedia?.source_url || imageFromHtml(post.content?.rendered || post.excerpt?.rendered),
-      visual: [
-        'from-violet-950 via-fuchsia-700 to-indigo-950',
-        'from-indigo-950 via-purple-700 to-fuchsia-900',
-        'from-amber-900 via-fuchsia-700 to-violet-950',
-        'from-cyan-950 via-violet-800 to-slate-950',
-        'from-rose-950 via-fuchsia-800 to-slate-950',
-        'from-slate-950 via-blue-900 to-violet-950',
-      ][index % 6],
-    }
-  })
-
-const fetchWordPressNews = async () => {
-  try {
-    const response = await fetch(postsUrl.value)
-
-    if (!response.ok) {
-      return []
-    }
-
-    const posts = await response.json()
-
-    if (!Array.isArray(posts) || !posts.length) {
-      return []
-    }
-
-    return sortByRecent(newsFromPosts(posts))
-  } catch {
-    return []
-  }
-}
-
-const newsFromJsonItems = (items) =>
-  items.map((item, index) => ({
-    title: normalizeText(item.title || translate('news.defaultTitle')),
-    tag: normalizeText(item.categories?.[0] || translate('news.defaultTag')),
-    rawDate: item.pubDate,
-    time: formatFeedDate(item.pubDate),
-    link: item.link,
-    description: normalizeText(item.description || ''),
-    image: item.thumbnail
-      || item.enclosure?.link
-      || imageFromHtml(item.content || item.description),
-    visual: [
-      'from-violet-950 via-fuchsia-700 to-indigo-950',
-      'from-indigo-950 via-purple-700 to-fuchsia-900',
-      'from-amber-900 via-fuchsia-700 to-violet-950',
-      'from-cyan-950 via-violet-800 to-slate-950',
-      'from-rose-950 via-fuchsia-800 to-slate-950',
-      'from-slate-950 via-blue-900 to-violet-950',
-    ][index % 6],
-  }))
-
-const sortByRecent = (items) =>
-  items.slice().sort((current, next) => {
-    const currentTime = new Date(current.rawDate || current.time).getTime() || 0
-    const nextTime = new Date(next.rawDate || next.time).getTime() || 0
-
-    return nextTime - currentTime
-  })
-
-const fetchFeedJsonNews = async () => {
-  try {
-    const response = await fetch(feedJsonUrl.value)
-
-    if (!response.ok) {
-      return []
-    }
-
-    const data = await response.json()
-
-    if (data.status !== 'ok' || !Array.isArray(data.items)) {
-      return []
-    }
-
-    return sortByRecent(newsFromJsonItems(data.items))
-  } catch {
-    return []
-  }
-}
-
-const visibleNews = computed(() => {
-  const normalizedQuery = searchQuery.value.trim().toLowerCase()
-
-  if (!normalizedQuery) {
-    return newsItems.value
-  }
-
-  return newsItems.value.filter((item) =>
-    [item.title, item.tag, item.description]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(normalizedQuery),
-  )
+const mapPost = (post, index) => ({
+  id: post.id,
+  title: post.title,
+  tag: post.category || translate('news.defaultTag'),
+  time: formatFeedDate(post.publishedAt),
+  link: post.href,
+  description: post.excerpt || '',
+  image: post.coverUrl || '',
+  visual: VISUALS[index % VISUALS.length],
 })
 
-const totalPages = computed(() =>
-  Math.max(Math.ceil(visibleNews.value.length / itemsPerPage), 1),
-)
+const visibleNews = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return newsItems.value
+  return newsItems.value.filter((item) =>
+    [item.title, item.tag, item.description].filter(Boolean).join(' ').toLowerCase().includes(query),
+  )
+})
+const totalPages = computed(() => Math.max(Math.ceil(visibleNews.value.length / itemsPerPage), 1))
 const paginatedNews = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage
-
   return visibleNews.value.slice(start, start + itemsPerPage)
 })
 
@@ -224,47 +61,16 @@ const goToPage = (page) => {
 const loadNews = async () => {
   isLoading.value = true
   errorMessage.value = ''
-
   try {
-    const wordpressNews = await fetchWordPressNews()
-
-    if (wordpressNews.length) {
-      newsItems.value = wordpressNews
-      return
-    }
-
-    const items = await fetchFeedItems()
-
-    if (!items.length) {
-      const jsonNews = await fetchFeedJsonNews()
-
-      if (!jsonNews.length) {
-        throw new Error('empty-feed')
-      }
-
-      newsItems.value = jsonNews
-      return
-    }
-
-    newsItems.value = sortByRecent(items.map((item, index) => ({
-      title: textFromNode(item, 'title'),
-      tag: textFromNode(item, 'category') || translate('news.defaultTag'),
-      rawDate: textFromNode(item, 'pubDate'),
-      time: formatFeedDate(textFromNode(item, 'pubDate')),
-      link: textFromNode(item, 'link'),
-      description: textFromNode(item, 'description'),
-      image: imageFromItem(item),
-      visual: [
-        'from-violet-950 via-fuchsia-700 to-indigo-950',
-        'from-indigo-950 via-purple-700 to-fuchsia-900',
-        'from-amber-900 via-fuchsia-700 to-violet-950',
-        'from-cyan-950 via-violet-800 to-slate-950',
-        'from-rose-950 via-fuchsia-800 to-slate-950',
-        'from-slate-950 via-blue-900 to-violet-950',
-      ][index % 6],
-    })))
+    const payload = await getNewsPosts({
+      page: 1,
+      limit: 24,
+      locale: locale.value,
+    })
+    newsItems.value = (payload.items || []).map(mapPost)
   } catch {
     errorMessage.value = translate('news.errors.loadFeed')
+    newsItems.value = []
   } finally {
     isLoading.value = false
   }
@@ -338,10 +144,10 @@ watch(locale, () => {
       <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <article
           v-for="item in paginatedNews"
-          :key="item.link"
-          class="group overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30"
+          :key="item.id"
+          class="group flex h-full overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30"
         >
-          <a :href="item.link" target="_blank" rel="noreferrer" class="block">
+          <a :href="item.link" class="flex h-full min-h-full w-full flex-col">
             <div class="relative h-48 overflow-hidden bg-linear-to-br" :class="item.visual">
               <img
                 v-if="item.image"
@@ -355,13 +161,13 @@ watch(locale, () => {
               </span>
             </div>
 
-            <div class="p-5">
+            <div class="flex flex-1 flex-col p-5">
               <h3 class="line-clamp-2 text-lg font-black text-white">{{ item.title }}</h3>
-              <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{{ item.description }}</p>
-              <p class="mt-3 text-xs font-bold uppercase tracking-widest text-slate-500">{{ item.time }}</p>
-              <span class="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition group-hover:scale-[1.01]">
+              <p v-if="item.description" class="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{{ item.description }}</p>
+              <p class="mt-auto pt-4 text-xs font-bold uppercase tracking-widest text-slate-500">{{ item.time }}</p>
+              <span class="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition group-hover:scale-[1.01]">
                 {{ $t('news.readArticle') }}
-                <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
               </span>
             </div>
           </a>

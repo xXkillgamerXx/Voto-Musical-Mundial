@@ -1,0 +1,25 @@
+User-agent: *
+Disallow: /wp-admin/
+Allow: /wp-admin/admin-ajax.php
+Disallow: /wp-login.php
+Disallow: /search/
+Disallow: /es/search/
+Disallow: /*?s=
+Disallow: /*?replytocom=
+Disallow: /*?redirect_to=
+Disallow: /*?order=
+Disallow: /*?filter_by=
+Disallow: /*?m=
+Disallow: /*?mode=
+Disallow: /*?gl=
+Disallow: /*snax_login_popup*
+Disallow: /admin
+Disallow: /es/admin
+Disallow: /perfil
+Disallow: /es/perfil
+Disallow: /profile
+
+Sitemap: https://www.musicmundial.com/sitemap_index.xml
+Sitemap: https://www.musicmundial.com/news-sitemap.xml
+Sitemap: https://www.musicmundial.com/es/sitemap_index.xml
+Sitemap: https://www.musicmundial.com/es/news-sitemap.xml

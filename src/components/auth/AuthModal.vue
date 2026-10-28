@@ -15,7 +15,9 @@ const isResetPasswordOpen = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_ID =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com";
 const GOOGLE_REDIRECT_PATH = withAppBase("/google-oauth-callback.html");
 const GOOGLE_POPUP_NAME = "vmm_google_login";
 

@@ -25,9 +25,11 @@ const playOpenUrl = computed(() => getGooglePlayOpenUrl(playStoreUrl.value))
 const isAndroid = () => /Android/i.test(navigator.userAgent || '')
 
 const playBadgeSrc = computed(() =>
-  String(locale.value || 'es').toLowerCase().startsWith('en')
-    ? '/google-play-badge-en.png'
-    : '/google-play-badge-es.png',
+  assetUrl(
+    String(locale.value || 'es').toLowerCase().startsWith('en')
+      ? '/google-play-badge-en.png'
+      : '/google-play-badge-es.png',
+  ),
 )
 
 const wasDismissed = () => {

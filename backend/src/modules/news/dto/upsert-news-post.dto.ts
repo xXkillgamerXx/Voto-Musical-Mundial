@@ -47,6 +47,19 @@ export class UpsertNewsPostDto {
   authorName?: string;
 
   @IsOptional()
+  @IsIn(['es', 'en'])
+  locale?: 'es' | 'en';
+
+  @IsOptional()
+  @IsString()
+  authorUserId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  wpAuthorId?: number;
+
+  @IsOptional()
   @IsDateString()
   publishedAt?: string;
 
@@ -54,6 +67,29 @@ export class UpsertNewsPostDto {
   @IsArray()
   @IsString({ each: true })
   categoryIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  attachments?: Array<{ url?: string; type?: string; name?: string }>;
+
+  @IsOptional()
+  @IsString()
+  altSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  altPostId?: string;
+}
+
+export class CreateNewsCommentDto {
+  @IsString()
+  @Length(2, 800)
+  text: string;
 }
 
 export class UpsertNewsCategoryDto {

@@ -42,8 +42,9 @@ const statusFor = (value: unknown) =>
   Object.values(PollStatus).includes(value as PollStatus) ? (value as PollStatus) : PollStatus.draft;
 const roundTypeFor = (value: unknown) =>
   Object.values(RoundType).includes(value as RoundType) ? (value as RoundType) : RoundType.standard;
-const allowedUploadTypes = new Set(['poll-banner', 'artist-banner', 'artist-profile', 'category-certificate', 'news-cover']);
+const allowedUploadTypes = new Set(['poll-banner', 'artist-banner', 'artist-profile', 'category-certificate', 'news-cover', 'news-image', 'news-file']);
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const allowedNewsFileTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']);
 const adminUploadsPath = join(process.cwd(), 'uploads', 'admin');
 const uploadTypeFor = (value: unknown) => {
   const type = String(value || '');
@@ -247,10 +248,19 @@ export class AdminController {
           callback(null, `${Date.now()}-${randomUUID()}${extension}`);
         },
       }),
-      limits: { fileSize: 8 * 1024 * 1024 },
-      fileFilter: (_request, file, callback) => {
-        if (!allowedImageTypes.has(file.mimetype)) {
-          callback(new BadRequestException('Solo se permiten imagenes JPG, PNG o WEBP.'), false);
+      limits: { fileSize: 40 * 1024 * 1024 },
+      fileFilter: (request, file, callback) => {
+        const type = String(request.params?.type || '');
+        const allowed = type === 'news-file' ? allowedNewsFileTypes : allowedImageTypes;
+        if (!allowed.has(file.mimetype)) {
+          callback(
+            new BadRequestException(
+              type === 'news-file'
+                ? 'Solo se permiten JPG, PNG, WEBP, GIF, MP4 o WEBM.'
+                : 'Solo se permiten imagenes JPG, PNG o WEBP.',
+            ),
+            false,
+          );
           return;
         }
 

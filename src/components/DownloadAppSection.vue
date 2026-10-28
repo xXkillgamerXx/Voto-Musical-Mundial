@@ -26,11 +26,11 @@ const isEnglish = computed(() =>
 )
 
 const playBadgeSrc = computed(() =>
-  isEnglish.value ? '/google-play-badge-en.png' : '/google-play-badge-es.png',
+  assetUrl(isEnglish.value ? '/google-play-badge-en.png' : '/google-play-badge-es.png'),
 )
 
 const appStoreBadgeSrc = computed(() =>
-  isEnglish.value ? '/app-store-badge-en.svg' : '/app-store-badge-es.svg',
+  assetUrl(isEnglish.value ? '/app-store-badge-en.svg' : '/app-store-badge-es.svg'),
 )
 
 const showPlay = showPlayStoreBadge()

@@ -1,0 +1,6 @@
+.env
+html/
+backend/
+uploads/
+*.tgz
+.stage/

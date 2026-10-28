@@ -13,24 +13,41 @@ import { NewsService } from './news.service';
 export class NewsAdminController {
   constructor(private readonly news: NewsService) {}
 
+  @Get('overview')
+  overview(@Query('days') days?: string) {
+    return this.news.adminOverview(Number(days || 30));
+  }
+
   @Get('posts')
   list(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('q') q?: string,
     @Query('status') status?: string,
+    @Query('locale') locale?: string,
   ) {
     return this.news.adminList({
       page: Number(page || 1),
       limit: Number(limit || 20),
       q,
       status,
+      locale,
     });
   }
 
+  @Get('authors')
+  authors(@Query('locale') locale?: string) {
+    return this.news.adminAuthors(locale);
+  }
+
+  @Get('tags')
+  tags(@Query('locale') locale?: string, @Query('q') q?: string) {
+    return this.news.adminTags(locale, q);
+  }
+
   @Get('categories')
-  categories() {
-    return this.news.categories();
+  categories(@Query('locale') locale?: string) {
+    return this.news.categories(locale);
   }
 
   @Post('categories')
@@ -48,23 +65,40 @@ export class NewsAdminController {
     return this.news.removeCategory(id);
   }
 
+  @Get('posts/:id/comments')
+  postComments(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.news.adminListComments(id, locale);
+  }
+
   @Get('posts/:id')
-  getOne(@Param('id') id: string) {
-    return this.news.adminGet(id);
+  getOne(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.news.adminGet(id, locale);
   }
 
   @Post('posts')
-  create(@Body() body: UpsertNewsPostDto, @CurrentUser() user: { id: bigint }) {
-    return this.news.create(body, user.id);
+  create(
+    @Body() body: UpsertNewsPostDto,
+    @CurrentUser() user: { id: bigint; role?: string },
+  ) {
+    return this.news.create(body, user);
   }
 
   @Patch('posts/:id')
-  update(@Param('id') id: string, @Body() body: UpsertNewsPostDto) {
-    return this.news.update(id, body);
+  update(
+    @Param('id') id: string,
+    @Body() body: UpsertNewsPostDto,
+    @CurrentUser() user: { id: bigint; role?: string },
+  ) {
+    return this.news.update(id, body, user);
+  }
+
+  @Delete('comments/:id')
+  removeComment(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.news.removeComment(id, locale);
   }
 
   @Delete('posts/:id')
-  remove(@Param('id') id: string) {
-    return this.news.remove(id);
+  remove(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.news.remove(id, locale);
   }
 }

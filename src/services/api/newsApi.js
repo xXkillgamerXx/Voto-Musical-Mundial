@@ -1,9 +1,9 @@
-import { apiRequest } from './client'
+import { apiRequest, getStoredAuth } from './client'
 
 export const newsLocale = (locale) => {
   if (locale === 'en' || locale === 'es') return locale
   const first = window.location.pathname.split('/').filter(Boolean)[0]
-  return first === 'en' ? 'en' : 'es'
+  return first === 'es' ? 'es' : 'en'
 }
 
 const withLocale = (path, locale) => {
@@ -26,6 +26,14 @@ export const getNewsPosts = ({ page = 1, limit = 12, category = '', q = '', loca
 }
 export const getNewsPost = (slug, locale) =>
   apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}`, locale))
+export const getNewsComments = (slug, locale) =>
+  apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale))
+export const postNewsComment = (slug, text, locale) =>
+  apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale), {
+    method: 'POST',
+    body: { text },
+    token: getStoredAuth()?.accessToken,
+  })
 export const getNewsPopular = ({ exclude = '', limit = 5, locale } = {}) => {
   const params = new URLSearchParams({
     locale: newsLocale(locale),

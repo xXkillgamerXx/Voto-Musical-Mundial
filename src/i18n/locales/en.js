@@ -628,7 +628,7 @@ export default {
   news: {
     feedEyebrow: 'Music Mundial Feed',
     title: 'News',
-    description: 'Latest music and entertainment news loaded from the official Music Mundial feed.',
+    description: 'Latest music and entertainment news from Music Mundial.',
     searchPlaceholder: 'Search news...',
     recent: 'Recent',
     defaultTitle: 'News item',

@@ -252,22 +252,39 @@ export const thankAdminContentReporter = (id, body = {}) =>
     body,
   })
 
-export const getAdminNewsPosts = ({ page = 1, limit = 20, q = '', status = '' } = {}) => {
+export const getAdminNewsOverview = (days = 30) => adminRequest(`/news/overview?days=${days}`)
+export const getAdminNewsPosts = ({ page = 1, limit = 20, q = '', status = '', locale = '' } = {}) => {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   })
   if (q) params.set('q', q)
   if (status) params.set('status', status)
+  if (locale) params.set('locale', locale)
   return adminRequest(`/news/posts?${params.toString()}`)
 }
-export const getAdminNewsPost = (id) => adminRequest(`/news/posts/${encodeURIComponent(id)}`)
+export const getAdminNewsPost = (id, locale = 'es') =>
+  adminRequest(`/news/posts/${encodeURIComponent(id)}?locale=${encodeURIComponent(locale)}`)
 export const createAdminNewsPost = (body) => adminRequest('/news/posts', { method: 'POST', body })
 export const updateAdminNewsPost = (id, body) =>
   adminRequest(`/news/posts/${encodeURIComponent(id)}`, { method: 'PATCH', body })
-export const deleteAdminNewsPost = (id) =>
-  adminRequest(`/news/posts/${encodeURIComponent(id)}`, { method: 'DELETE' })
-export const getAdminNewsCategories = () => adminRequest('/news/categories')
+export const deleteAdminNewsPost = (id, locale = 'es') =>
+  adminRequest(`/news/posts/${encodeURIComponent(id)}?locale=${encodeURIComponent(locale)}`, { method: 'DELETE' })
+export const getAdminNewsAuthors = (locale = 'es') =>
+  adminRequest(`/news/authors?locale=${encodeURIComponent(locale)}`)
+export const getAdminNewsTags = (locale = 'es', q = '') => {
+  const params = new URLSearchParams({ locale })
+  if (q) params.set('q', q)
+  return adminRequest(`/news/tags?${params.toString()}`)
+}
+export const getAdminNewsComments = (id, locale = 'es') =>
+  adminRequest(`/news/posts/${encodeURIComponent(id)}/comments?locale=${encodeURIComponent(locale)}`)
+export const deleteAdminNewsComment = (id, locale = 'es') =>
+  adminRequest(`/news/comments/${encodeURIComponent(id)}?locale=${encodeURIComponent(locale)}`, {
+    method: 'DELETE',
+  })
+export const getAdminNewsCategories = (locale = '') =>
+  adminRequest(`/news/categories${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`)
 export const createAdminNewsCategory = (body) => adminRequest('/news/categories', { method: 'POST', body })
 export const updateAdminNewsCategory = (id, body) =>
   adminRequest(`/news/categories/${encodeURIComponent(id)}`, { method: 'PATCH', body })

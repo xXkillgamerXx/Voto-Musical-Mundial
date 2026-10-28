@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Google Login</title>
+  </head>
+  <body>
+    <script>
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const query = new URLSearchParams(window.location.search);
+      const accessToken = hash.get("access_token");
+      const error = hash.get("error_description") || hash.get("error") || query.get("error_description") || query.get("error");
+
+      if (window.opener) {
+        window.opener.postMessage(
+          {
+            source: "vmm-google-oauth",
+            accessToken,
+            error,
+          },
+          window.location.origin,
+        );
+      }
+
+      window.close();
+    </script>
+  </body>
+</html>

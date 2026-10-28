@@ -1,5 +1,10 @@
 const appBase = String(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (appBase && appBase !== '/' ? `${appBase}/api` : '/api')
+const envApiBase = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const sameOriginApi = appBase && appBase !== '/' ? `${appBase}/api` : '/api'
+const pageHost = typeof window !== 'undefined' ? window.location.hostname : ''
+const bakedLocalhost = /localhost|127\.0\.0\.1/i.test(envApiBase)
+const pageIsLocal = /localhost|127\.0\.0\.1/i.test(pageHost)
+const API_BASE_URL = !envApiBase || (bakedLocalhost && !pageIsLocal) ? sameOriginApi : envApiBase
 
 const storageKey = 'vmm_api_auth'
 const anonymousStorageKey = 'vmm_api_anonymous'
