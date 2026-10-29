@@ -70,11 +70,14 @@ const RESERVED_SLUGS = new Set([
   'es',
   'en',
   'feed',
+  'author',
+  'forum',
+  'foro',
 ])
 
 const articleShareTarget = (urlPath) => {
   const parts = String(urlPath || '/').split('/').filter(Boolean)
-  if (!parts.length) return null
+  if (!parts.length || path.extname(urlPath || '')) return null
   const locale = parts[0] === 'es' ? 'es' : 'en'
   if (parts[0] === 'es' || parts[0] === 'en') parts.shift()
   if (parts.length !== 1 || RESERVED_SLUGS.has(parts[0])) return null

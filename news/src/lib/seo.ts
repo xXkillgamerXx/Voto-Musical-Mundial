@@ -1,5 +1,5 @@
 import { stripLocale, withLocale } from './locale'
-import { FACEBOOK_PAGE, SITE_NAME, TWITTER_SITE, buildNewsArticleGraph } from './schema'
+import { FACEBOOK_PAGE, SITE_NAME, TWITTER_SITE, buildAuthorProfileGraph, buildNewsArticleGraph } from './schema'
 
 const DEFAULT_IMAGE = 'https://www.musicmundial.com/images/portada-1600x900.jpg'
 const LOGO_IMAGE_RE =
@@ -119,7 +119,7 @@ const setJsonLd = (id: string, data: object | null) => {
 }
 
 export type NewsSeoInput = {
-  type?: 'website' | 'article'
+  type?: 'website' | 'article' | 'profile'
   title: string
   description?: string
   path?: string
@@ -138,6 +138,7 @@ export type NewsSeoInput = {
   hreflangEn?: string | null
   hreflangEs?: string | null
   videos?: string[]
+  imageCaption?: string
 }
 
 export const applyNewsSeo = (input: NewsSeoInput) => {
@@ -179,7 +180,7 @@ export const applyNewsSeo = (input: NewsSeoInput) => {
   )
   setAttr('name', 'googlebot', 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1')
   setAttr('name', 'googlebot-news', type === 'article' ? 'index, follow' : '')
-  setAttr('property', 'og:type', type)
+  setAttr('property', 'og:type', type === 'profile' ? 'profile' : type)
   setAttr('property', 'og:locale', locale === 'es' ? 'es_ES' : 'en_US')
   setListAttr('property', 'og:locale:alternate', locale === 'es' ? ['en_US'] : ['es_ES'])
   setAttr('property', 'og:title', fullTitle)
@@ -224,10 +225,19 @@ export const applyNewsSeo = (input: NewsSeoInput) => {
           sections: input.sections,
           categoryName: input.categoryName,
           categoryUrl: input.categoryPath ? absoluteUrl(input.categoryPath) : '',
-          imageCaption: imageAlt,
+          imageCaption: input.imageCaption || imageAlt,
           videos: input.videos,
         })
-      : null,
+      : type === 'profile'
+        ? buildAuthorProfileGraph({
+            locale,
+            origin: window.location.origin,
+            url,
+            name: clip(input.author || input.title, 200),
+            description: clip(input.description || description, SCHEMA_DESC_MAX),
+            image,
+          })
+        : null,
   )
 
   trackPageView(document.title, url)

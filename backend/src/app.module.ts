@@ -23,6 +23,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
 import { VotesModule } from './modules/votes/votes.module';
 import { FanModule } from './modules/fan/fan.module';
+import { ForumModule } from './modules/forum/forum.module';
 import { WorkersModule } from './workers/workers.module';
 
 @Module({
@@ -47,6 +48,7 @@ import { WorkersModule } from './workers/workers.module';
     RewardsModule,
     SettingsModule,
     FanModule,
+    ForumModule,
     NewsModule,
     NotificationsModule,
     WorkersModule,

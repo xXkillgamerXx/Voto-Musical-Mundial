@@ -67,6 +67,9 @@ model User {
   activityDays               UserActivityDay[]
   fanPurchases               FanPurchase[]
   artistSupports             ArtistSupporter[]
+  forumTopicsAuthored        ForumTopic[]     @relation("ForumTopicAuthor")
+  forumTopicsLastPosted      ForumTopic[]     @relation("ForumTopicLastPoster")
+  forumPosts                 ForumPost[]
 
   @@map("users")
 }
@@ -582,5 +585,80 @@ model ArtistSupporter {
   @@index([artistId, startedAt])
   @@index([artistId, points])
   @@map("artist_supporters")
+}
+
+model ForumCategory {
+  id        BigInt   @id @default(autoincrement())
+  slug      String   @unique
+  nameEs    String   @map("name_es")
+  nameEn    String   @map("name_en")
+  blurbEs   String   @map("blurb_es")
+  blurbEn   String   @map("blurb_en")
+  icon      String   @default("note")
+  sortOrder Int      @default(0) @map("sort_order")
+  isVip     Boolean  @default(false) @map("is_vip")
+  isActive  Boolean  @default(true) @map("is_active")
+  parentId  BigInt?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent    ForumCategory?  @relation("ForumCategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  ForumCategory[] @relation("ForumCategoryTree")
+  topics    ForumTopic[]
+
+  @@index([parentId, sortOrder])
+  @@map("forum_categories")
+}
+
+model ForumTopic {
+  id           BigInt    @id @default(autoincrement())
+  categoryId   BigInt    @map("category_id")
+  authorId     BigInt    @map("author_id")
+  title        String
+  slug         String
+  replyCount   Int       @default(0) @map("reply_count")
+  viewCount    Int       @default(0) @map("view_count")
+  lastPostAt   DateTime  @default(now()) @map("last_post_at")
+  lastPosterId BigInt?   @map("last_poster_id")
+  closedAt     DateTime? @map("closed_at")
+  pinnedAt     DateTime? @map("pinned_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  category     ForumCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  author       User          @relation("ForumTopicAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  lastPoster   User?         @relation("ForumTopicLastPoster", fields: [lastPosterId], references: [id], onDelete: SetNull)
+  posts        ForumPost[]
+
+  @@unique([categoryId, slug])
+  @@index([categoryId, lastPostAt])
+  @@index([deletedAt, lastPostAt])
+  @@index([deletedAt, createdAt])
+  @@index([authorId, createdAt])
+  @@map("forum_topics")
+}
+
+model ForumPost {
+  id            BigInt    @id @default(autoincrement())
+  topicId       BigInt    @map("topic_id")
+  authorId      BigInt    @map("author_id")
+  body          String
+  images        Json      @default("[]")
+  position      Int
+  replyToPostId BigInt?   @map("reply_to_post_id")
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  topic         ForumTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  author        User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  replyTo       ForumPost? @relation("ForumPostReply", fields: [replyToPostId], references: [id], onDelete: SetNull)
+  replies       ForumPost[] @relation("ForumPostReply")
+
+  @@unique([topicId, position])
+  @@index([topicId, position])
+  @@index([authorId, createdAt])
+  @@map("forum_posts")
 }
 

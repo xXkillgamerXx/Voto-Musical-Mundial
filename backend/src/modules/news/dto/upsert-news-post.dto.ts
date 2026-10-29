@@ -33,6 +33,14 @@ export class UpsertNewsPostDto {
   coverUrl?: string;
 
   @IsOptional()
+  @IsString()
+  coverCaption?: string;
+
+  @IsOptional()
+  @IsString()
+  coverAlt?: string;
+
+  @IsOptional()
   @IsIn(['draft', 'publish', 'scheduled', 'trash'])
   status?: 'draft' | 'publish' | 'scheduled' | 'trash';
 

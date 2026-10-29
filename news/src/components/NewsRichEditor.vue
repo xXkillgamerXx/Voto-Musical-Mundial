@@ -58,6 +58,20 @@ const addLink = () => {
   run('createLink', url)
 }
 
+const addQuote = () => {
+  const selected = window.getSelection()?.toString().trim() || ''
+  const quote = selected || window.prompt('Cita', '') || ''
+  if (!quote.trim()) return
+  const cite = window.prompt('Autor de la cita (opcional)', '') || ''
+  const safe = (value: string) =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const citeHtml = cite.trim() ? `<cite>${safe(cite.trim())}</cite>` : ''
+  run(
+    'insertHTML',
+    `<figure class="wp-block-pullquote"><blockquote><p>${safe(quote.trim())}</p>${citeHtml}</blockquote></figure>`,
+  )
+}
+
 const addImage = () => {
   const input = document.createElement('input')
   input.type = 'file'
@@ -73,7 +87,12 @@ const addImage = () => {
       if (file.type.startsWith('video/')) {
         run('insertHTML', `<p><video src="${url}" controls playsinline></video></p>`)
       } else {
-        run('insertHTML', `<p><img src="${url}" alt="" /></p>`)
+        const alt = window.prompt('Texto alternativo (SEO)', file.name.replace(/\.[^.]+$/, '')) || ''
+        const caption = window.prompt('Pie de foto (opcional)', '') || ''
+        const safe = (value: string) =>
+          value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        const cap = caption.trim() ? `<figcaption>${safe(caption.trim())}</figcaption>` : ''
+        run('insertHTML', `<figure class="wp-block-image"><img src="${url}" alt="${safe(alt)}" />${cap}</figure>`)
       }
     } finally {
       uploading.value = false
@@ -103,7 +122,7 @@ onMounted(() => {
         <span></span>
         <button type="button" title="Lista" @mousedown.prevent @click="run('insertUnorderedList')">•</button>
         <button type="button" title="Lista numerada" @mousedown.prevent @click="run('insertOrderedList')">1.</button>
-        <button type="button" title="Cita" @mousedown.prevent @click="setBlock('blockquote')">“</button>
+        <button type="button" title="Cita" @mousedown.prevent @click="addQuote">“</button>
         <span></span>
         <button type="button" title="Enlace" @mousedown.prevent @click="addLink">Link</button>
         <button type="button" title="Imagen, GIF o video" :disabled="uploading" @mousedown.prevent @click="addImage">

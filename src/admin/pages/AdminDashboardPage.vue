@@ -4,6 +4,7 @@ import AdminArtistFormView from '../components/AdminArtistFormView.vue'
 import AdminArtistsView from '../components/AdminArtistsView.vue'
 import AdminContentReportsView from '../components/AdminContentReportsView.vue'
 import AdminDashboardView from '../components/AdminDashboardView.vue'
+import AdminForumView from '../components/AdminForumView.vue'
 import AdminMailView from '../components/AdminMailView.vue'
 import AdminMissionsView from '../components/AdminMissionsView.vue'
 import AdminNewsPostFormView from '../components/AdminNewsPostFormView.vue'
@@ -41,6 +42,7 @@ const isPollRoundView = computed(() => /^\/admin\/votaciones\/[^/]+\/rondas\/[^/
 const isPollDetailView = computed(() => /^\/admin\/votaciones\/[^/]+$/.test(currentPath))
 const pollActionId = computed(() => currentPath.split('/')[3] || '')
 const roundActionId = computed(() => currentPath.split('/')[5] || '')
+const isForumView = computed(() => currentPath === '/admin/foro')
 const isNewsView = computed(() => currentPath === '/admin/noticias')
 const isNewsCreateView = computed(() => currentPath === '/admin/noticias/crear')
 const isNewsEditView = computed(() => currentPath.startsWith('/admin/noticias/editar/'))
@@ -122,6 +124,10 @@ const pageTitle = computed(() => {
 
   if (isNewsView.value) {
     return 'Noticias'
+  }
+
+  if (isForumView.value) {
+    return 'Foro'
   }
 
   if (isUserProfileView.value) {
@@ -219,6 +225,7 @@ const navItems = [
   { label: 'Categorías', href: '/admin/categorias', icon: 'fa-solid fa-trophy' },
   { label: 'Artistas', href: '/admin/artistas', icon: 'fa-solid fa-microphone-lines' },
   { label: 'Noticias', href: '/admin/noticias', icon: 'fa-solid fa-newspaper' },
+  { label: 'Foro', href: '/admin/foro', icon: 'fa-solid fa-comments' },
   { label: 'Misiones', href: '/admin/misiones', icon: 'fa-solid fa-bullseye' },
   { label: 'Notificaciones', href: '/admin/notificaciones', icon: 'fa-solid fa-bell' },
   { label: 'Correo', href: '/admin/correo', icon: 'fa-solid fa-envelope' },
@@ -526,6 +533,7 @@ onUnmounted(() => {
             :post-id="newsEditId"
           />
           <AdminNewsPostsView v-else-if="isNewsView" />
+          <AdminForumView v-else-if="isForumView" />
           <AdminMissionsView v-else-if="isMissionsView" />
           <AdminPushNotificationsView v-else-if="isPushNotificationsView" />
           <AdminMailView v-else-if="isMailView" />

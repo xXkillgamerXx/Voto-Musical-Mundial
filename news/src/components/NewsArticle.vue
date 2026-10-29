@@ -8,6 +8,7 @@ import { coverOf, formatNewsDate, type NewsCard } from '../lib/news'
 import { newsRouteState } from '../lib/route-state'
 import { applyHomeSeo, applyNewsSeo } from '../lib/seo'
 import NewsComments from './NewsComments.vue'
+import NewsAuthorHover from './NewsAuthorHover.vue'
 
 const props = defineProps<{ slug: string; locale?: string }>()
 const post = ref<(NewsCard & { content?: string; related?: NewsCard[] }) | null>(null)
@@ -76,7 +77,8 @@ async function load() {
       description: post.value.excerpt,
       path: post.value.href || window.location.pathname,
       image: post.value.coverUrl,
-      imageAlt: post.value.title,
+      imageAlt: post.value.coverAlt || post.value.title,
+      imageCaption: post.value.coverCaption || post.value.coverAlt || post.value.title,
       publishedAt: post.value.publishedAt,
       modifiedAt: post.value.modifiedAt || post.value.publishedAt,
       author: post.value.authorName,
@@ -168,13 +170,20 @@ watch(bodyHtml, async () => {
         <p class="article-meta">
           <span class="article-by">
             {{ t(loc, 'byAuthor') }}
-            <a v-if="post.authorHref || post.authorUsername" :href="post.authorHref || withLocale(`/user/${post.authorUsername}`, loc)">{{ post.authorName || t(loc, 'staff') }}</a>
-            <template v-else>{{ post.authorName || t(loc, 'staff') }}</template>
+            <NewsAuthorHover
+              :locale="loc"
+              :name="post.authorName || t(loc, 'staff')"
+              :href="post.authorHref || (post.authorUsername ? withLocale(`/user/${post.authorUsername}`, loc) : '')"
+              :photo-url="post.authorPhotoUrl"
+              :bio="post.authorBio"
+              :post-count="post.authorPostCount"
+            />
           </span>
           <span v-if="post.publishedAt"> · {{ formatNewsDate(post.publishedAt, loc) }}</span>
         </p>
         <figure v-if="post.coverUrl" class="article-cover">
-          <img :src="coverOf(post)" :alt="post.title" width="1600" height="900" fetchpriority="high" decoding="async" />
+          <img :src="coverOf(post)" :alt="post.coverAlt || post.title" width="1600" height="900" fetchpriority="high" decoding="async" />
+          <figcaption v-if="post.coverCaption">{{ post.coverCaption }}</figcaption>
         </figure>
         <p v-if="post.excerpt" class="article-lead">{{ post.excerpt }}</p>
         <div class="article-body" v-html="bodyHtml"></div>

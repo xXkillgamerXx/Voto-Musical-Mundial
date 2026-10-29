@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { loadNewsIndexHtml, paintArticleIndex } from './news-article-html';
 import { rssBodyHtml, youtubeVideoIds } from './news-html';
-import { buildNewsArticleGraph } from './news-schema';
+import { buildAuthorProfileGraph, buildNewsArticleGraph } from './news-schema';
 import { NewsService } from './news.service';
 
 const SITE_NAME = 'Music Mundial';
@@ -196,7 +196,7 @@ export class NewsShareController {
         categoryUrl: category?.slug
           ? `${origin}${locale === 'es' ? '/es' : ''}/categoria/${category.slug}`
           : '',
-        imageCaption: titleRaw,
+        imageCaption: stripHtml(article?.coverCaption || article?.coverAlt || titleRaw),
         videos,
       }),
     ).replace(/</g, '\\u003c');
@@ -217,7 +217,7 @@ export class NewsShareController {
             modified,
             author: escapeHtml(author),
             section: escapeHtml(String(category?.name || article?.category || '')),
-            imageAlt: escapeHtml(titleRaw),
+            imageAlt: escapeHtml(String(article?.coverAlt || titleRaw)),
             tags: tags
               .map((item: { name?: string; slug?: string }) => escapeHtml(item.name || item.slug || ''))
               .filter(Boolean),
@@ -235,7 +235,8 @@ export class NewsShareController {
             publishedLabel: escapeHtml(formatArticleDate(String(article?.publishedAt || ''), locale)),
             publishedIso: published,
             image,
-            imageAlt: escapeHtml(titleRaw),
+            imageAlt: escapeHtml(String(article?.coverAlt || titleRaw)),
+            imageCaption: escapeHtml(String(article?.coverCaption || '')),
             categoryName: escapeHtml(String(category?.name || article?.category || '')),
             categoryHref: category?.slug
               ? escapeHtml(`${locale === 'es' ? '/es' : ''}/categoria/${category.slug}`)
@@ -243,6 +244,92 @@ export class NewsShareController {
             homeHref: locale === 'es' ? '/es' : '/',
             bodyHtml: rssBodyHtml(String(article?.content || '')),
             videos,
+          },
+        )
+      : '';
+    if (!html) return res.status(404).end();
+    return res.status(200).send(html);
+  }
+
+  @Get('share-author/:slug')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'public, max-age=300')
+  async authorShareCard(
+    @Param('slug') slug: string,
+    @Query('locale') localeValue: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const locale = localeValue === 'es' ? 'es' : 'en';
+    const origin = this.origin(req);
+    let author: Record<string, any> | null = null;
+    try {
+      author = (await this.news.findAuthor(slug, locale, 1, 12)) as Record<string, any> | null;
+    } catch {
+      author = null;
+    }
+    if (!author) return res.status(404).end();
+
+    const name = stripHtml(author.name || slug);
+    const path = withoutEnLocale(String(author.href || (locale === 'es' ? `/es/author/${slug}` : `/author/${slug}`)));
+    const url = withoutEnLocale(`${origin}${path}`);
+    const descriptionRaw = clip(
+      stripHtml(
+        author.bio ||
+          (locale === 'es'
+            ? `${name} escribe en Music Mundial.`
+            : `${name} writes for Music Mundial.`),
+      ),
+      DESC_MAX,
+    );
+    const imageRaw = this.absoluteUrl(String(author.photoUrl || author.items?.[0]?.coverUrl || ''), origin);
+    const jsonLd = JSON.stringify(
+      buildAuthorProfileGraph({
+        locale,
+        origin,
+        url,
+        name,
+        description: descriptionRaw,
+        image: imageRaw,
+      }),
+    ).replace(/</g, '\\u003c');
+    const pageTitle = escapeHtml(`${name}, Author at ${SITE_NAME}`);
+    const indexHtml = loadNewsIndexHtml();
+    const html = indexHtml
+      ? paintArticleIndex(
+          indexHtml,
+          {
+            locale,
+            ogType: 'profile',
+            title: pageTitle,
+            description: escapeHtml(descriptionRaw),
+            canonical: escapeHtml(url),
+            image: escapeHtml(imageRaw),
+            imageAlt: escapeHtml(name),
+            jsonLd,
+            hreflangEn: escapeHtml(absolutePath(origin, `/author/${author.slug || slug}`)),
+            hreflangEs: escapeHtml(absolutePath(origin, `/es/author/${author.slug || slug}`)),
+          },
+          undefined,
+          {
+            locale,
+            name: escapeHtml(name),
+            bio: escapeHtml(clip(stripHtml(author.bio || ''), 600)),
+            photo: escapeHtml(imageRaw),
+            countLabel: `${Number(author.postCount || author.total || 0)} ${locale === 'es' ? 'artículos' : 'articles'}`,
+            homeHref: locale === 'es' ? '/es' : '/',
+            items: (Array.isArray(author.items) ? author.items : []).map((item: Record<string, any>) => ({
+              href: escapeHtml(String(item.href || '')),
+              title: escapeHtml(stripHtml(item.title || '')),
+              image: escapeHtml(this.absoluteUrl(String(item.coverUrl || ''), origin)),
+              category: escapeHtml(String(item.category || '')),
+              meta: escapeHtml(
+                `${item.authorName ? `${locale === 'es' ? 'Por' : 'By'} ${item.authorName} · ` : ''}${formatArticleDate(
+                  String(item.publishedAt || ''),
+                  locale,
+                )}`,
+              ),
+            })),
           },
         )
       : '';

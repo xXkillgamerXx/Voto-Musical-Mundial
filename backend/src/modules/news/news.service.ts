@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BLOCKED_LANGUAGE_MESSAGE, isCommentLanguageBlocked } from '../../common/comment-profanity';
 import { normalizeSlug } from '../../common/poll-lookup';
@@ -35,7 +36,10 @@ type PostRow = {
   comment_count: number;
   author_name?: string | null;
   author_nicename?: string | null;
+  author_email?: string | null;
   cover_url?: string | null;
+  cover_caption?: string | null;
+  cover_alt?: string | null;
   view_count?: number;
 };
 
@@ -79,6 +83,14 @@ const largeNewsImage = (url?: string | null) => {
   return raw.replace(/-(?:scaled|[0-9]+x[0-9]+)(?=\.(?:jpe?g|png|webp|gif)(?:\?|#|$))/i, '');
 };
 
+const gravatarUrl = (email?: string | null) => {
+  const key = String(email || '')
+    .trim()
+    .toLowerCase();
+  if (!key || !key.includes('@')) return '';
+  return `https://www.gravatar.com/avatar/${createHash('md5').update(key).digest('hex')}?s=256&d=mp`;
+};
+
 const firstImage = (html: string) => {
   const match = String(html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
   const url = match?.[1]?.replace(/\\\//g, '/');
@@ -96,12 +108,15 @@ const toCard = (post: PostRow, categories: Array<{ slug: string; name: string }>
     title: post.post_title,
     excerpt,
     coverUrl: largeNewsImage(post.cover_url) || firstImage(post.post_content),
+    coverCaption: String(post.cover_caption || '').trim() || undefined,
+    coverAlt: String(post.cover_alt || '').trim() || undefined,
     featured: false,
     status: fromWpStatus(post.post_status),
     wpAuthorId: post.post_author ? String(post.post_author) : undefined,
     authorName: post.author_name || (locale === 'en' ? 'Staff' : 'Redacción'),
     authorSlug: post.author_nicename || undefined,
     authorHref: post.author_nicename ? publicHref(locale, `author/${post.author_nicename}`) : undefined,
+    authorPhotoUrl: gravatarUrl(post.author_email) || undefined,
     publishedAt: post.post_date,
     modifiedAt: post.post_modified || post.post_date,
     viewCount: Number(post.view_count || 0),
@@ -141,6 +156,9 @@ const LEGACY_RESERVED = new Set([
   'entretenimiento',
   'peliculas',
   'k-drama',
+  'author',
+  'forum',
+  'foro',
 ]);
 
 @Injectable()
@@ -159,11 +177,13 @@ export class NewsService {
     const limit = Math.min(50, Math.max(1, Number(input.limit || 12)));
     const category = normalizeSlug(input.category);
     const q = String(input.q || '').trim();
+    const author = normalizeSlug(input.author);
     const { items, total } = await this.loadPosts(locale, {
       page,
       limit,
       category,
       q,
+      authorSlug: author,
     });
     return serialize({ page, limit, total, items });
   }
@@ -244,6 +264,37 @@ export class NewsService {
     return serialize({ locale, days: 90, items });
   }
 
+  async findAuthor(slug: string, localeValue?: string, pageValue = 1, limitValue = 18) {
+    const locale = this.mysql.locale(localeValue);
+    const nicename = String(slug || '')
+      .trim()
+      .toLowerCase();
+    if (!nicename) throw new NotFoundException('No encontramos a ese autor.');
+    const profile = await this.authorProfile(locale, nicename);
+    if (!profile) throw new NotFoundException('No encontramos a ese autor.');
+    const page = Math.max(1, Number(pageValue || 1));
+    const limit = Math.min(50, Math.max(1, Number(limitValue || 18)));
+    const { items, total } = await this.loadPosts(locale, {
+      page,
+      limit,
+      authorId: profile.id,
+    });
+    const photo =
+      items.find((item) => item.authorPhotoUrl && !/gravatar\.com/i.test(String(item.authorPhotoUrl)))?.authorPhotoUrl ||
+      profile.photoUrl;
+    return serialize({
+      ...profile,
+      photoUrl: photo,
+      href: publicHref(locale, `author/${profile.slug}`),
+      locale,
+      page,
+      limit,
+      total,
+      postCount: total,
+      items,
+    });
+  }
+
   async findBySlug(slug: string, localeValue?: string) {
     const locale = this.mysql.locale(localeValue);
     const key = String(slug || '').trim();
@@ -277,8 +328,12 @@ export class NewsService {
     const cats = await this.categoriesFor(locale, [post.ID]);
     const [card] = await this.withAuthors(locale, [toCard(post, cats.get(post.ID) || [], locale)]);
     const tags = await this.tagsFor(locale, [post.ID]);
+    const author = post.author_nicename ? await this.authorProfile(locale, post.author_nicename) : null;
     return {
       ...card,
+      authorBio: author?.bio || '',
+      authorPhotoUrl: card.authorPhotoUrl || author?.photoUrl || '',
+      authorPostCount: author?.postCount || 0,
       content: post.post_content || '',
       videos: youtubeVideoIds(post.post_content || ''),
       tags: (tags.get(post.ID) || []).map((item) => ({ slug: item.slug, name: item.name })),
@@ -405,6 +460,8 @@ export class NewsService {
     const alternate = await this.alternateFor(locale, post, true);
     return serialize({
       ...card,
+      coverCaption: card.coverCaption || '',
+      coverAlt: card.coverAlt || '',
       content: post.post_content,
       featured: featured[0]?.meta_value === '1',
       categoryIds: (cats.get(post.ID) || []).map((item) => String(item.term_id || item.slug)),
@@ -725,11 +782,13 @@ export class NewsService {
     const content = light ? '' : 'p.post_content, ';
     return `SELECT p.ID, p.post_title, p.post_name, p.post_excerpt, ${content}p.post_date, p.post_modified, p.post_status, p.post_author,
       p.comment_count, COALESCE(NULLIF(u.display_name, ''), u.user_nicename, u.user_login) AS author_name,
-      u.user_nicename AS author_nicename, att.guid AS cover_url
+      u.user_nicename AS author_nicename, u.user_email AS author_email, att.guid AS cover_url,
+      att.post_excerpt AS cover_caption, imgalt.meta_value AS cover_alt
       FROM wpgn_posts p
       LEFT JOIN wpgn_users u ON u.ID = p.post_author
       LEFT JOIN wpgn_postmeta th ON th.post_id = p.ID AND th.meta_key = '_thumbnail_id'
-      LEFT JOIN wpgn_posts att ON att.ID = CAST(th.meta_value AS UNSIGNED)`;
+      LEFT JOIN wpgn_posts att ON att.ID = CAST(th.meta_value AS UNSIGNED)
+      LEFT JOIN wpgn_postmeta imgalt ON imgalt.post_id = att.ID AND imgalt.meta_key = '_wp_attachment_image_alt'`;
   }
 
   private async loadPosts(
@@ -743,6 +802,8 @@ export class NewsService {
       excludeId?: number;
       skipCount?: boolean;
       light?: boolean;
+      authorId?: number;
+      authorSlug?: string;
     },
   ) {
     const slugs = (input.slugs?.length ? input.slugs : input.category ? [input.category] : []).filter(Boolean);
@@ -751,6 +812,13 @@ export class NewsService {
     if (input.excludeId) {
       where.push('p.ID <> ?');
       params.push(input.excludeId);
+    }
+    if (input.authorId) {
+      where.push('p.post_author = ?');
+      params.push(input.authorId);
+    } else if (input.authorSlug) {
+      where.push('u.user_nicename = ?');
+      params.push(input.authorSlug);
     }
     if (slugs.length) {
       where.push(`EXISTS (
@@ -778,9 +846,12 @@ export class NewsService {
       rows.map((row) => toCard(row, cats.get(row.ID) || [], locale)),
     );
     if (input.skipCount) return { total: items.length, items };
+    const countFrom = input.authorSlug
+      ? 'FROM wpgn_posts p LEFT JOIN wpgn_users u ON u.ID = p.post_author'
+      : 'FROM wpgn_posts p';
     const countRows = await this.mysql.query<{ total: number }>(
       locale,
-      `SELECT COUNT(*) AS total FROM wpgn_posts p WHERE ${whereSql}`,
+      `SELECT COUNT(*) AS total ${countFrom} WHERE ${whereSql}`,
       params,
     );
     return {
@@ -901,7 +972,7 @@ export class NewsService {
     await this.setCategories(locale, id, body.categoryIds || []);
     if (Array.isArray(body.tags)) await this.setTags(locale, id, body.tags);
     if (Array.isArray(body.attachments)) await this.setAttachments(locale, id, body.attachments);
-    await this.setCover(locale, id, body.coverUrl);
+    await this.setCover(locale, id, body.coverUrl, body.coverCaption, body.coverAlt);
     await this.setMeta(locale, id, '_vmm_featured', body.featured ? '1' : '');
     const linkedId = String(body.authorUserId || (!keepAuthor ? actorId : '') || '').trim();
     if (linkedId) await this.setMeta(locale, id, '_vmm_user_id', linkedId);
@@ -977,8 +1048,12 @@ export class NewsService {
     const attachments = await this.attachmentsFor(locale, post.ID);
     const commentCount = await this.commentCount(locale, post.ID);
     const alternate = await this.alternateFor(locale, post);
+    const author = post.author_nicename ? await this.authorProfile(locale, post.author_nicename) : null;
     return serialize({
       ...card,
+      authorBio: author?.bio || '',
+      authorPhotoUrl: card.authorPhotoUrl || author?.photoUrl || '',
+      authorPostCount: author?.postCount || 0,
       content: expandNewsEmbeds(sanitizeNewsHtml(post.post_content)),
       tags: (tags.get(post.ID) || []).map((item) => ({ slug: item.slug, name: item.name })),
       attachments,
@@ -1204,36 +1279,56 @@ export class NewsService {
     return Number(rows[0]?.term_taxonomy_id || 0);
   }
 
-  private async setCover(locale: NewsLocale, postId: number, coverUrl?: string) {
+  private async setCover(
+    locale: NewsLocale,
+    postId: number,
+    coverUrl?: string,
+    coverCaption?: string,
+    coverAlt?: string,
+  ) {
     const url = String(coverUrl || '').trim();
-    if (!url) return;
+    const caption = coverCaption === undefined ? undefined : String(coverCaption || '').trim();
+    const alt = coverAlt === undefined ? undefined : String(coverAlt || '').trim();
+    if (!url && caption === undefined && alt === undefined) return;
     const current = await this.mysql.query<{ meta_value: string }>(
       locale,
       `SELECT meta_value FROM wpgn_postmeta WHERE post_id = ? AND meta_key = '_thumbnail_id' LIMIT 1`,
       [postId],
     );
-    const attachmentId = Number(current[0]?.meta_value || 0);
+    let attachmentId = Number(current[0]?.meta_value || 0);
     const now = this.wpStamp(new Date());
     if (attachmentId) {
-      await this.mysql.exec(locale, `UPDATE wpgn_posts SET guid = ?, post_modified = ? WHERE ID = ? AND post_type = 'attachment'`, [
-        url,
-        now,
-        attachmentId,
-      ]);
-      return;
+      const fields = ['post_modified = ?'];
+      const params: unknown[] = [now];
+      if (url) {
+        fields.unshift('guid = ?');
+        params.unshift(url);
+      }
+      if (caption !== undefined) {
+        fields.unshift('post_excerpt = ?');
+        params.unshift(caption);
+      }
+      params.push(attachmentId);
+      await this.mysql.exec(
+        locale,
+        `UPDATE wpgn_posts SET ${fields.join(', ')} WHERE ID = ? AND post_type = 'attachment'`,
+        params,
+      );
+    } else if (url) {
+      const inserted = await this.mysql.exec(
+        locale,
+        `INSERT INTO wpgn_posts (
+          post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt,
+          post_status, comment_status, ping_status, post_password, post_name,
+          to_ping, pinged, post_modified, post_modified_gmt, post_content_filtered,
+          post_parent, guid, menu_order, post_type, post_mime_type, comment_count
+        ) VALUES (1, ?, ?, '', 'vmm-cover', ?, 'inherit', 'closed', 'closed', '', ?, '', '', ?, ?, '', ?, ?, 0, 'attachment', 'image/jpeg', 0)`,
+        [now, now, caption || '', `vmm-cover-${postId}`, now, now, postId, url],
+      );
+      attachmentId = Number(inserted.insertId || 0);
+      if (attachmentId) await this.setMeta(locale, postId, '_thumbnail_id', String(attachmentId));
     }
-    const inserted = await this.mysql.exec(
-      locale,
-      `INSERT INTO wpgn_posts (
-        post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt,
-        post_status, comment_status, ping_status, post_password, post_name,
-        to_ping, pinged, post_modified, post_modified_gmt, post_content_filtered,
-        post_parent, guid, menu_order, post_type, post_mime_type, comment_count
-      ) VALUES (1, ?, ?, '', 'vmm-cover', '', 'inherit', 'closed', 'closed', '', ?, '', '', ?, ?, '', ?, ?, 0, 'attachment', 'image/jpeg', 0)`,
-      [now, now, `vmm-cover-${postId}`, now, now, postId, url],
-    );
-    if (!inserted.insertId) return;
-    await this.setMeta(locale, postId, '_thumbnail_id', String(inserted.insertId));
+    if (attachmentId && alt !== undefined) await this.setMeta(locale, attachmentId, '_wp_attachment_image_alt', alt);
   }
 
   private async getMeta(locale: NewsLocale, postId: number, key: string) {
@@ -1464,7 +1559,64 @@ export class NewsService {
     return Number(rows[0].ID);
   }
 
-  private async withAuthors<T extends { id: string; authorName: string; locale?: string }>(locale: NewsLocale, items: T[]) {
+  private async authorProfile(locale: NewsLocale, nicename: string) {
+    const key = String(nicename || '')
+      .trim()
+      .toLowerCase();
+    if (!key) return null;
+    const rows = await this.mysql.query<{
+      ID: number;
+      display_name: string;
+      user_nicename: string;
+      user_email: string;
+      user_url: string;
+    }>(
+      locale,
+      `SELECT u.ID, u.display_name, u.user_nicename, u.user_email, u.user_url
+       FROM wpgn_users u
+       WHERE u.user_nicename = ? OR u.user_login = ?
+       LIMIT 1`,
+      [key, key],
+    );
+    const user = rows[0];
+    if (!user) return null;
+    let bio = '';
+    let postCount = 0;
+    try {
+      const metas = await this.mysql.query<{ meta_value: string }>(
+        locale,
+        `SELECT meta_value FROM wpgn_usermeta WHERE user_id = ? AND meta_key = 'description' LIMIT 1`,
+        [user.ID],
+      );
+      bio = String(metas[0]?.meta_value || '').trim();
+    } catch {
+      bio = '';
+    }
+    try {
+      const counts = await this.mysql.query<{ total: number }>(
+        locale,
+        `SELECT COUNT(*) AS total FROM wpgn_posts p WHERE p.post_author = ? AND p.post_type = 'post' AND p.post_status = 'publish'`,
+        [user.ID],
+      );
+      postCount = Number(counts[0]?.total || 0);
+    } catch {
+      postCount = 0;
+    }
+    const website = String(user.user_url || '').startsWith('vmm:') ? '' : String(user.user_url || '').trim();
+    return {
+      id: Number(user.ID),
+      slug: user.user_nicename || key,
+      name: user.display_name || user.user_nicename || key,
+      bio,
+      photoUrl: gravatarUrl(user.user_email),
+      website,
+      postCount,
+    };
+  }
+
+  private async withAuthors<
+    T extends { id: string; authorName: string; locale?: string; authorHref?: string; authorPhotoUrl?: string },
+  >(locale: NewsLocale, items: T[]) {
     if (!items.length) return items;
     const ids = items.map((item) => Number(item.id)).filter((id) => id > 0);
     if (!ids.length) return items;
@@ -1492,8 +1644,11 @@ export class NewsService {
         authorName: user.displayName || user.username || item.authorName,
         authorUsername: username || undefined,
         authorEmail: user.email || undefined,
-        authorPhotoUrl: user.photoUrl || undefined,
-        authorHref: username ? publicHref((item.locale || locale) as NewsLocale, `user/${username}`) : undefined,
+        authorPhotoUrl: user.photoUrl || item.authorPhotoUrl,
+        authorHref:
+          item.authorHref ||
+          (username ? publicHref((item.locale || locale) as NewsLocale, `user/${username}`) : undefined),
+        authorProfileHref: username ? publicHref((item.locale || locale) as NewsLocale, `user/${username}`) : undefined,
       };
     });
   }

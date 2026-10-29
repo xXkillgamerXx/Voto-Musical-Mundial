@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AuthDialog from './AuthDialog.vue'
 import NewsAdminCategories from './NewsAdminCategories.vue'
+import NewsAdminForum from './NewsAdminForum.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
 import { getAdminNewsOverview } from '../../../src/services/api/adminApi'
@@ -62,7 +63,7 @@ type Overview = {
 }
 
 const props = defineProps<{
-  section?: 'dashboard' | 'posts' | 'categories' | 'post-form'
+  section?: 'dashboard' | 'posts' | 'categories' | 'forum' | 'post-form'
   postId?: string
   newsLocale?: 'es' | 'en'
 }>()
@@ -73,12 +74,14 @@ const pageTitle = computed(() => {
   if (section.value === 'post-form') return props.postId ? 'Editar noticia' : 'Nueva noticia'
   if (section.value === 'posts') return 'Noticias'
   if (section.value === 'categories') return 'Categorías'
+  if (section.value === 'forum') return 'Foro'
   return 'Dashboard'
 })
 const pageLead = computed(() => {
   if (section.value === 'post-form') return 'La nota se firma con tu correo. Solo un admin puede cambiar el autor.'
   if (section.value === 'posts') return 'Crea, edita y publica notas en español e inglés.'
   if (section.value === 'categories') return 'Categorías de musicmundial_es y musicmundial_en.'
+  if (section.value === 'forum') return 'Salas del foro, textos ES/EN, VIP y temas (fijar, cerrar u ocultar).'
   return 'Resumen de musicmundial_es y musicmundial_en'
 })
 
@@ -93,6 +96,7 @@ const days = ref(30)
 const overview = ref<Overview | null>(null)
 const theme = ref<SiteTheme>(getTheme())
 const avatarFailed = ref(false)
+const forumCreateTick = ref(0)
 let stopAuthWatch: (() => void) | null = null
 
 const userName = computed(
@@ -282,6 +286,10 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h10" /></svg>
           Categorías
         </a>
+        <a :class="{ on: section === 'forum' }" href="/es/admin/foro" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
+          Foro
+        </a>
       </nav>
       <div class="na-user">
         <div class="na-user-row">
@@ -312,6 +320,7 @@ onUnmounted(() => {
         </div>
         <div class="na-top-actions">
           <a v-if="section === 'posts'" class="na-btn solid" href="/es/admin/noticias/nueva">Nueva noticia</a>
+          <button v-if="section === 'forum'" class="na-btn solid" type="button" @click="forumCreateTick += 1">Nueva sala</button>
           <div v-if="section === 'dashboard'" class="na-ranges" role="group" aria-label="Rango">
             <button v-for="option in [7, 30, 90]" :key="option" type="button" :class="{ on: days === option }" @click="setDays(option)">
               {{ option }}d
@@ -339,6 +348,7 @@ onUnmounted(() => {
         <NewsAdminPostForm v-if="section === 'post-form'" :post-id="postId" :news-locale="newsLocale" />
         <NewsAdminPosts v-else-if="section === 'posts'" />
         <NewsAdminCategories v-else-if="section === 'categories'" />
+        <NewsAdminForum v-else-if="section === 'forum'" :create-tick="forumCreateTick" />
         <template v-else>
         <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
         <p v-else-if="loading && !overview" class="na-empty">Cargando dashboard…</p>

@@ -3,6 +3,7 @@ import { join } from 'path';
 
 export type ArticleHead = {
   locale: 'es' | 'en';
+  ogType?: 'article' | 'profile' | 'website';
   title: string;
   description: string;
   canonical: string;
@@ -30,6 +31,7 @@ export type ArticleBody = {
   publishedIso?: string;
   image?: string;
   imageAlt?: string;
+  imageCaption?: string;
   categoryName?: string;
   categoryHref?: string;
   homeHref?: string;
@@ -97,7 +99,7 @@ const rankMathBlock = (head: ArticleHead) => {
     hreflang,
     `    <meta property="og:locale" content="${locale}">`,
     `    <meta property="og:locale:alternate" content="${localeAlt}">`,
-    `    <meta property="og:type" content="article">`,
+    `    <meta property="og:type" content="${head.ogType || 'article'}">`,
     `    <meta property="og:title" content="${head.title}">`,
     `    <meta property="og:description" content="${head.description}">`,
     `    <meta property="og:url" content="${head.canonical}">`,
@@ -175,7 +177,11 @@ export const renderArticleBody = (body: ArticleBody) => {
           </p>
           ${
             body.image
-              ? `<figure class="article-cover"><img src="${body.image}" alt="${body.imageAlt || body.title}" width="1600" height="900" fetchpriority="high" decoding="async"></figure>`
+              ? `<figure class="article-cover"><img src="${body.image}" alt="${body.imageAlt || body.title}" width="1600" height="900" fetchpriority="high" decoding="async">${
+                  body.imageCaption
+                    ? `<figcaption>${body.imageCaption}</figcaption>`
+                    : ''
+                }</figure>`
               : ''
           }
           ${body.excerpt ? `<p class="article-lead">${body.excerpt}</p>` : ''}
@@ -188,7 +194,63 @@ export const renderArticleBody = (body: ArticleBody) => {
   </main>`;
 };
 
-export const paintArticleIndex = (html: string, head: ArticleHead, body?: ArticleBody) => {
+export type AuthorBody = {
+  locale: 'es' | 'en';
+  name: string;
+  bio?: string;
+  photo?: string;
+  countLabel?: string;
+  homeHref?: string;
+  items: Array<{ href: string; title: string; image?: string; category?: string; meta?: string }>;
+};
+
+export const renderAuthorBody = (body: AuthorBody) => {
+  const homeHref = body.homeHref || (body.locale === 'es' ? '/es' : '/');
+  const cards = (body.items || [])
+    .map(
+      (item) => `<a class="pop-card" href="${item.href}">
+          <div class="photo">${item.image ? `<img src="${item.image}" alt="${item.title}">` : ''}${
+            item.category ? `<div class="tag-row"><span class="category">${item.category}</span></div>` : ''
+          }</div>
+          <h3>${item.title}</h3>
+          ${item.meta ? `<time>${item.meta}</time>` : ''}
+        </a>`,
+    )
+    .join('\n        ');
+  return `<main id="news-ssr" class="category-page author-page">
+    <section class="category-hero category-hero-light">
+      <div class="container">
+        <nav class="crumbs" aria-label="breadcrumb">
+          <a href="${homeHref}">Music Mundial</a>
+          <span class="crumbs-sep" aria-hidden="true">›</span>
+          <span class="crumbs-now">${body.name}</span>
+        </nav>
+        <div class="author-hero">
+          ${
+            body.photo
+              ? `<img class="author-hero-photo" src="${body.photo}" alt="${body.name}">`
+              : `<span class="author-hero-photo ph">${body.name.slice(0, 1)}</span>`
+          }
+          <div>
+            <div class="cats-eyebrow">${body.locale === 'es' ? 'Autor' : 'Author'}</div>
+            <h1>${body.name}</h1>
+            ${body.bio ? `<p class="author-hero-bio">${body.bio}</p>` : ''}
+            ${body.countLabel ? `<p class="author-hero-count">${body.countLabel}</p>` : ''}
+          </div>
+        </div>
+      </div>
+    </section>
+    <div class="container article-layout category-body">
+      <div class="article-wrap">
+        <div class="pop-mag category-grid">
+        ${cards}
+        </div>
+      </div>
+    </div>
+  </main>`;
+};
+
+export const paintArticleIndex = (html: string, head: ArticleHead, body?: ArticleBody, author?: AuthorBody) => {
   const lang = head.locale === 'es' ? 'es' : 'en';
   let out = html.replace(
     /<html\b[^>]*>/i,
@@ -197,8 +259,8 @@ export const paintArticleIndex = (html: string, head: ArticleHead, body?: Articl
   out = out.replace(/<title>[^<]*<\/title>/i, `<title>${head.title}</title>`);
   out = stripHomeSeo(out);
   out = out.replace(/<title>[^<]*<\/title>/i, (match) => `${match}\n${rankMathBlock(head)}`);
-  if (body) {
-    const shell = renderArticleBody(body);
+  if (body || author) {
+    const shell = author ? renderAuthorBody(author) : renderArticleBody(body as ArticleBody);
     if (!out.includes('news-ssr-hide')) {
       out = out.replace(
         '</head>',

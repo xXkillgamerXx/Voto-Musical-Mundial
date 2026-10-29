@@ -26,6 +26,14 @@ export const getNewsPosts = ({ page = 1, limit = 12, category = '', q = '', loca
 }
 export const getNewsPost = (slug, locale) =>
   apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}`, locale))
+export const getNewsAuthor = (slug, { page = 1, limit = 18, locale } = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+    locale: newsLocale(locale),
+  })
+  return apiRequest(`/news/authors/${encodeURIComponent(slug)}?${params.toString()}`)
+}
 export const getNewsComments = (slug, locale) =>
   apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale))
 export const postNewsComment = (slug, text, locale) =>

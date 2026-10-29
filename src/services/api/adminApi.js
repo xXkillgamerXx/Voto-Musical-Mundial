@@ -290,3 +290,21 @@ export const updateAdminNewsCategory = (id, body) =>
   adminRequest(`/news/categories/${encodeURIComponent(id)}`, { method: 'PATCH', body })
 export const deleteAdminNewsCategory = (id) =>
   adminRequest(`/news/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export const getAdminForumCategories = () => adminRequest('/forum/categories')
+export const createAdminForumCategory = (body) => adminRequest('/forum/categories', { method: 'POST', body })
+export const updateAdminForumCategory = (slug, body) =>
+  adminRequest(`/forum/categories/${encodeURIComponent(slug)}`, { method: 'PATCH', body })
+export const getAdminForumTopics = ({ page = 1, limit = 20, q = '', category = '', status = 'all' } = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+    status,
+    locale: 'es',
+  })
+  if (q) params.set('q', q)
+  if (category) params.set('category', category)
+  return adminRequest(`/forum/topics?${params.toString()}`)
+}
+export const updateAdminForumTopic = (id, body) =>
+  adminRequest(`/forum/topics/${encodeURIComponent(id)}`, { method: 'PATCH', body })

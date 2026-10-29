@@ -10,8 +10,13 @@ export type NewsCard = {
   categorySlug: string
   authorName?: string
   authorUsername?: string
+  authorSlug?: string
   authorHref?: string
   authorPhotoUrl?: string
+  authorBio?: string
+  authorPostCount?: number
+  coverCaption?: string
+  coverAlt?: string
   publishedAt?: string
   modifiedAt?: string
   href: string
@@ -106,13 +111,15 @@ export type NewsPage =
   | {
       name: 'admin'
       locale: 'es' | 'en'
-      section?: 'dashboard' | 'posts' | 'categories' | 'post-form'
+      section?: 'dashboard' | 'posts' | 'categories' | 'forum' | 'post-form'
       postId?: string
       newsLocale?: 'es' | 'en'
     }
   | { name: 'profile'; locale: 'es' | 'en'; username?: string; edit?: boolean }
   | { name: 'categories'; locale: 'es' | 'en' }
   | { name: 'category'; locale: 'es' | 'en'; slug: string }
+  | { name: 'author'; locale: 'es' | 'en'; slug: string }
+  | { name: 'forum'; locale: 'es' | 'en'; board?: string; post?: string }
   | { name: 'article'; locale: 'es' | 'en'; slug: string }
 
 export type CategoryCard = {
@@ -174,11 +181,19 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (editNews) return { name: 'admin', locale, section: 'post-form', postId: editNews[1], newsLocale: 'es' }
   if (path === '/admin/noticias') return { name: 'admin', locale, section: 'posts' }
   if (path === '/admin/categorias') return { name: 'admin', locale, section: 'categories' }
+  if (path === '/admin/foro') return { name: 'admin', locale, section: 'forum' }
   if (path.startsWith('/admin/')) return { name: 'admin', locale, section: 'dashboard' }
   if (path === '/perfil/editar' || path === '/profile/edit') return { name: 'profile', locale, edit: true }
   if (path === '/perfil' || path === '/profile') return { name: 'profile', locale }
   const person = path.match(/^\/user\/([a-zA-Z0-9_]{3,32})$/)
   if (person) return { name: 'profile', locale, username: person[1].toLowerCase() }
+  const author = path.match(/^\/author\/([a-zA-Z0-9_-]+)$/)
+  if (author) return { name: 'author', locale, slug: author[1].toLowerCase() }
+  if (path === '/forum' || path === '/foro') return { name: 'forum', locale }
+  const forumPost = path.match(/^\/(?:forum|foro)\/([a-z0-9-]+)\/([A-Za-z0-9_-]+)$/)
+  if (forumPost) return { name: 'forum', locale, board: forumPost[1], post: forumPost[2] }
+  const forumBoard = path.match(/^\/(?:forum|foro)\/([a-z0-9-]+)$/)
+  if (forumBoard) return { name: 'forum', locale, board: forumBoard[1] }
   if (path === '/categorias' || path === '/categories') return { name: 'categories', locale }
   if (path.startsWith('/categoria/')) {
     return { name: 'category', locale, slug: path.slice('/categoria/'.length) }

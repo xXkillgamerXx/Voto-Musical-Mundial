@@ -626,12 +626,33 @@ button.na-card .value,
   color: var(--sub);
   font-size: 12px;
   font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.na-ranges button:hover {
+  transform: translateY(-1px);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
+  background: var(--hover);
 }
 
 .na-ranges button.on {
   color: #fff;
   background: var(--blue);
   border-color: var(--blue);
+}
+
+.na-ranges button.on:hover {
+  color: #fff;
+  background: color-mix(in srgb, var(--blue) 82%, #fff);
+  border-color: color-mix(in srgb, var(--blue) 70%, #fff);
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--blue) 32%, transparent);
 }
 
 .na-gate,
@@ -792,12 +813,65 @@ button.na-card .value,
   background: var(--card);
   color: var(--ink);
   font: 800 13px 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+
+.na-btn:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--blue) 55%, var(--line));
+  background: var(--hover);
+  color: var(--blue);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.na-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.na-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--blue) 70%, transparent);
+  outline-offset: 2px;
 }
 
 .na-btn.solid {
   border-color: var(--blue);
   background: var(--blue);
   color: #fff;
+}
+
+.na-btn.solid:hover {
+  border-color: color-mix(in srgb, var(--blue) 70%, #fff);
+  background: color-mix(in srgb, var(--blue) 82%, #fff);
+  color: #fff;
+  filter: saturate(1.12);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--blue) 38%, transparent);
+}
+
+.na-btn:disabled,
+.na-btn[aria-disabled='true'] {
+  pointer-events: none;
+  opacity: 0.5;
+  transform: none;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .na-btn {
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .na-btn:hover,
+  .na-btn:active {
+    transform: none;
+  }
 }
 
 .na-ok {
@@ -1065,11 +1139,35 @@ html[data-theme='dark'] .na-ok {
   border-radius: 10px;
 }
 
-.na-wp-visual blockquote {
-  margin: 0 0 1em;
-  padding: 0 0 0 14px;
-  border-left: 3px solid var(--blue);
+.na-wp-visual blockquote,
+.na-wp-visual .wp-block-pullquote {
+  margin: 1.4em auto;
+  padding: 8px 12px;
+  border: 0;
+  text-align: center;
+}
+
+.na-wp-visual blockquote p,
+.na-wp-visual .wp-block-pullquote p {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.na-wp-visual blockquote cite,
+.na-wp-visual .wp-block-pullquote cite {
   color: var(--sub);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.na-wp-visual figcaption {
+  margin: 8px 0 0;
+  color: var(--sub);
+  font-size: 13px;
+  font-style: italic;
 }
 
 .na-wp-visual a {
@@ -1550,4 +1648,141 @@ html[data-theme='dark'] .na-chip.draft {
 
 .na-pager button:disabled {
   opacity: 0.45;
+}
+
+.na-select {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--input);
+  color: var(--ink);
+  font: 700 13px 'DM Sans', sans-serif;
+}
+
+.na-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(12, 20, 36, 0.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.na-modal-card {
+  width: min(640px, 100%);
+  max-height: min(86vh, 760px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 24px 60px rgba(12, 20, 36, 0.28);
+}
+
+.na-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.na-modal-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.na-modal-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--input);
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.na-forum-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.na-modal-card .na-forum-fields label {
+  margin-top: 0;
+}
+
+.na-modal-card .na-form-actions {
+  display: flex;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.na-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  font-weight: 800;
+}
+
+.na-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.na-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: none;
+}
+
+.na-cat-child {
+  background: color-mix(in srgb, var(--input) 55%, transparent);
+}
+
+.na-cat-child-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 52px;
+}
+
+.na-cat-branch {
+  width: 16px;
+  height: 18px;
+  flex: none;
+  margin-top: -10px;
+  border-left: 2px solid color-mix(in srgb, var(--ink) 28%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--ink) 28%, transparent);
+  border-radius: 0 0 0 6px;
+}
+
+.na-cat-row h3 small {
+  color: var(--sub);
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .na-forum-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .na-cat-row {
+    flex-wrap: wrap;
+  }
+
+  .na-row-actions {
+    width: 100%;
+  }
+
+  .na-cat-child-label {
+    padding-left: 28px;
+  }
 }

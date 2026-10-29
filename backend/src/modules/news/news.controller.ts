@@ -34,6 +34,15 @@ export class NewsController {
     return this.news.listPublic({ ...query, locale });
   }
 
+  @Get('authors/:slug')
+  author(
+    @Param('slug') slug: string,
+    @Query() query: ListNewsDto,
+    @Query('locale') locale?: string,
+  ) {
+    return this.news.findAuthor(slug, locale, query.page, query.limit);
+  }
+
   @Get('legacy-root/:slug')
   async legacyRoot(@Param('slug') slug: string, @Res() res: Response) {
     const dest = await this.news.legacySpanishRedirect(slug);

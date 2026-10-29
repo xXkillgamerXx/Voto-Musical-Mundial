@@ -47,6 +47,8 @@ const form = ref({
   excerpt: '',
   content: '',
   coverUrl: '',
+  coverCaption: '',
+  coverAlt: '',
   status: 'draft',
   featured: false,
   publishedAt: '',
@@ -138,6 +140,8 @@ const load = async () => {
         excerpt: post.excerpt || '',
         content: post.content || '',
         coverUrl: post.coverUrl || '',
+        coverCaption: post.coverCaption || '',
+        coverAlt: post.coverAlt || '',
         status: post.status === 'scheduled' ? 'scheduled' : post.status === 'publish' ? 'publish' : 'draft',
         featured: Boolean(post.featured),
         publishedAt: post.publishedAt ? String(post.publishedAt).slice(0, 16) : '',
@@ -318,6 +322,8 @@ const save = async () => {
     excerpt: form.value.excerpt || '',
     content: form.value.content || '',
     coverUrl: form.value.coverUrl || undefined,
+    coverCaption: form.value.coverCaption || '',
+    coverAlt: form.value.coverAlt || '',
     status: form.value.status,
     featured: Boolean(form.value.featured),
     publishedAt: form.value.publishedAt ? new Date(form.value.publishedAt).toISOString() : undefined,
@@ -427,6 +433,14 @@ onUnmounted(() => {
           <label>
             URL
             <input v-model="form.coverUrl" />
+          </label>
+          <label>
+            Pie de foto (SEO)
+            <input v-model="form.coverCaption" placeholder="Texto debajo de la imagen" />
+          </label>
+          <label>
+            Texto alternativo
+            <input v-model="form.coverAlt" placeholder="Describe la foto" />
           </label>
           <label class="na-file">
             {{ uploading ? 'Subiendo…' : 'Subir imagen' }}

@@ -4,8 +4,11 @@ import AuthDialog from './components/AuthDialog.vue'
 import CatsCard from './components/CatsCard.vue'
 import NewsAdminPage from './components/NewsAdminPage.vue'
 import NewsArticle from './components/NewsArticle.vue'
+import NewsAuthorPage from './components/NewsAuthorPage.vue'
 import NewsCategoriesPage from './components/NewsCategoriesPage.vue'
 import NewsCategoryPage from './components/NewsCategoryPage.vue'
+import NewsForumPage from './components/NewsForumPage.vue'
+import { FORUM_BOARDS, forumCover } from './lib/forum'
 import NewsProfilePage from './components/NewsProfilePage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
@@ -256,7 +259,7 @@ function syncNewsPage(opts?: { keepScroll?: boolean }) {
     applyPrivateSeo(
       `${t(newsPage.value.locale, newsPage.value.edit ? 'profileEdit' : newsPage.value.username ? 'profilePublicTitle' : 'profileTitle')} — Music Mundial`,
     )
-  } else if (newsPage.value.name !== 'article' && newsPage.value.name !== 'category') {
+  } else if (!['article', 'category', 'author', 'categories', 'forum'].includes(newsPage.value.name)) {
     applyHomeSeo(newsPage.value.locale)
   }
   if (!opts?.keepScroll) scrollToTop()
@@ -282,6 +285,17 @@ const catPages = computed(() => {
   for (let i = 0; i < list.length; i += catSize.value) pages.push(list.slice(i, i + catSize.value))
   return pages
 })
+
+const forumHomeCards = computed(() =>
+  FORUM_BOARDS.map((board, index) => ({
+    href: loc(`/forum/${board.slug}`),
+    image: forumCover(board.slug, index),
+    title: board.name[siteLocale.value === 'es' ? 'es' : 'en'],
+    sub: txt('forumViewTopics'),
+    icon: board.icon,
+    tone: String((index % 4) + 1),
+  })),
+)
 
 let slideTimer: ReturnType<typeof setInterval> | null = null
 let catTimer: ReturnType<typeof setInterval> | null = null
@@ -550,8 +564,13 @@ function closeAuth() {
 
 function openAuthFromHash() {
   const hash = window.location.hash.replace('#', '').toLowerCase()
-  if (hash === 'login' || hash === 'iniciar-sesion') openAuth('login')
-  if (hash === 'registro' || hash === 'register') openAuth('register')
+  if (hash === 'login' || hash === 'iniciar-sesion' || hash === 'registro' || hash === 'register') {
+    if (isSignedIn.value) {
+      closeAuth()
+      return
+    }
+    openAuth(hash === 'registro' || hash === 'register' ? 'register' : 'login')
+  }
 }
 
 function toggleAccount() {
@@ -669,6 +688,7 @@ onUnmounted(() => {
         <a :href="loc('/celebridades')" @click="closeMenu">{{ txt('navPopular') }}</a>
         <a :href="loc('/series')" @click="closeMenu">{{ txt('navSeries') }}</a>
         <a href="/vote/" @click="closeMenu">{{ txt('navVote') }}</a>
+        <a :class="{ active: newsPage.name === 'forum' }" :href="loc('/forum')" @click="closeMenu">{{ txt('navForum') }}</a>
         <template v-if="!isSignedIn">
           <button class="nav-auth" type="button" @click="openAuth('login')">{{ txt('navLogin') }}</button>
           <button class="nav-auth nav-auth-solid" type="button" @click="openAuth('register')">{{ txt('navRegister') }}</button>
@@ -820,6 +840,13 @@ onUnmounted(() => {
   </header>
 
   <NewsArticle v-if="newsPage.name === 'article'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsAuthorPage v-else-if="newsPage.name === 'author'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsForumPage
+    v-else-if="newsPage.name === 'forum'"
+    :locale="newsPage.locale"
+    :board="newsPage.board"
+    :post="newsPage.post"
+  />
   <NewsCategoriesPage v-else-if="newsPage.name === 'categories'" :locale="newsPage.locale" />
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsProfilePage
@@ -1042,6 +1069,33 @@ onUnmounted(() => {
       </div>
     </section>
 
+    <section class="section container forum-home rise" id="foro">
+      <div class="cats-head">
+        <div>
+          <div class="cats-eyebrow">{{ txt('navForum') }}</div>
+          <h2>{{ txt('forumTitleA') }} <span>{{ txt('forumTitleB') }}</span></h2>
+          <p>{{ txt('forumLead') }}</p>
+        </div>
+        <a class="cats-link" :href="loc('/forum')">{{ txt('forumExplore') }} →</a>
+      </div>
+      <div class="forum-home-grid">
+        <CatsCard v-for="card in forumHomeCards" :key="card.href" :card="card" />
+      </div>
+      <div class="forum-home-empty">
+        <div class="forum-home-mosaic" aria-hidden="true">
+          <img v-for="card in forumHomeCards.slice(0, 4)" :key="card.href" :src="card.image" alt="" />
+        </div>
+        <div>
+          <h3>{{ txt('forumHomeEmptyTitle') }}</h3>
+          <p>{{ txt('forumEmpty') }}</p>
+          <div class="forum-hero-actions">
+            <a class="forum-btn solid" :href="loc('/forum/new')">{{ txt('forumStart') }}</a>
+            <a class="forum-btn ghost" :href="loc('/forum')">{{ txt('forumExplore') }}</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="cats rise" id="categorias">
       <div class="cats-ambient" aria-hidden="true">
         <span class="cats-glow a"></span>
@@ -1245,6 +1299,7 @@ onUnmounted(() => {
         <a :href="loc('/k-drama')">K-Dramas</a>
         <a :href="loc('/celebridades')">{{ txt('celebrities') }}</a>
         <a href="/vote/">{{ txt('navVote') }}</a>
+        <a :href="loc('/forum')">{{ txt('navForum') }}</a>
         <a href="mailto:hola@musicmundial.com">{{ txt('contact') }}</a>
       </div>
     </div>

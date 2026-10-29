@@ -25,5 +25,9 @@ export class ListNewsDto {
 
   @IsOptional()
   @IsString()
+  author?: string;
+
+  @IsOptional()
+  @IsString()
   locale?: string;
 }

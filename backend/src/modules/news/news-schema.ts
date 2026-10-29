@@ -259,3 +259,55 @@ export const buildNewsArticleGraph = (input: NewsSchemaInput) => {
     ].filter(Boolean),
   };
 };
+
+export const buildAuthorProfileGraph = (input: {
+  locale: 'es' | 'en';
+  origin: string;
+  url: string;
+  name: string;
+  description: string;
+  image?: string;
+}) => {
+  const origin = input.origin.replace(/\/$/, '');
+  const url = input.url.replace(/\/$/, '') || origin;
+  const lang = languageOf(input.locale);
+  const personId = `${url}/#person`;
+  const pageId = `${url}/#webpage`;
+  const crumbId = `${url}/#breadcrumb`;
+  const home = siteHome(origin, input.locale);
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      organizationNode(origin, input.locale),
+      compact({
+        '@type': 'ProfilePage',
+        '@id': pageId,
+        url,
+        name: `${input.name}, Author at ${SITE_NAME}`,
+        description: input.description,
+        inLanguage: lang,
+        isPartOf: { '@id': websiteId(input.locale) },
+        about: { '@id': personId },
+        primaryImageOfPage: input.image ? { '@id': input.image } : undefined,
+        breadcrumb: { '@id': crumbId },
+      }),
+      compact({
+        '@type': 'Person',
+        '@id': personId,
+        name: input.name,
+        url,
+        image: input.image || undefined,
+        jobTitle: input.locale === 'es' ? 'Redactor' : 'Author',
+        worksFor: { '@id': ORG_ID },
+      }),
+      {
+        '@type': 'BreadcrumbList',
+        '@id': crumbId,
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: SITE_NAME, item: home },
+          { '@type': 'ListItem', position: 2, name: input.name, item: url },
+        ],
+      },
+    ],
+  };
+};

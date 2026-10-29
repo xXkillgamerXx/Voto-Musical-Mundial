@@ -28,8 +28,21 @@ const embedHtmlForUrl = (raw: string) => {
   return `<p class="embed-link"><a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeAttr(url)}</a></p>`
 }
 
+export const expandWpCaptions = (html: string) =>
+  String(html || '').replace(/\[caption[^\]]*\]([\s\S]*?)\[\/caption\]/gi, (_match, inner) => {
+    const block = String(inner || '')
+    const img = block.match(/<img[\s\S]*?>/i)?.[0] || ''
+    const caption = block
+      .replace(/<img[\s\S]*?>/i, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!img) return block
+    return `<figure class="wp-block-image">${img}${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`
+  })
+
 export const expandNewsEmbeds = (html: string) =>
-  String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url))
+  expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url)))
 
 export const youtubeVideoIds = (html: string) => {
   const re = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/gi
