@@ -1,9 +1,56 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import {
+  COOKIE_CONSENT_EVENT,
+  COOKIE_CONSENT_KEY,
+  COOKIE_CONSENT_VERSION,
+  readCookieConsent,
+} from '../utils/cookieConsent'
 
-const consentKey = 'vmm_cookie_consent'
-const consentChangeEvent = 'vmm-cookie-consent-change'
+const props = defineProps({
+  locale: { type: String, default: 'es' },
+})
 
+const COPY = {
+  es: {
+    title: 'Cookies',
+    body: 'Aceptar permite anuncios y estadísticas. Rechazar te deja seguir en el sitio sin esas cookies.',
+    accept: 'Aceptar',
+    acceptHint: 'Sí, con anuncios',
+    reject: 'Rechazar',
+    rejectHint: 'No, sin anuncios',
+    configure: 'Elegir una por una',
+    save: 'Guardar',
+    preferencesTitle: 'Preferencias',
+    preferencesText: 'Idioma y tema.',
+    analyticsTitle: 'Estadísticas',
+    analyticsText: 'Saber qué páginas se visitan.',
+    adsTitle: 'Anuncios',
+    adsText: 'Mostrar publicidad de Google.',
+    notificationsTitle: 'Avisos',
+    notificationsText: 'Regalos y artistas que sigues.',
+  },
+  en: {
+    title: 'Cookies',
+    body: 'Accept allows ads and stats. Reject lets you keep using the site without those cookies.',
+    accept: 'Accept',
+    acceptHint: 'Yes, with ads',
+    reject: 'Reject',
+    rejectHint: 'No, without ads',
+    configure: 'Choose one by one',
+    save: 'Save',
+    preferencesTitle: 'Preferences',
+    preferencesText: 'Language and theme.',
+    analyticsTitle: 'Stats',
+    analyticsText: 'See which pages are visited.',
+    adsTitle: 'Ads',
+    adsText: 'Show Google ads.',
+    notificationsTitle: 'Alerts',
+    notificationsText: 'Gifts and artists you follow.',
+  },
+}
+
+const text = computed(() => COPY[props.locale === 'en' ? 'en' : 'es'])
 const isVisible = ref(false)
 const isCustomizing = ref(false)
 const options = ref({
@@ -26,18 +73,16 @@ const buildConsent = (mode, overrides = {}) => {
     adPersonalization: acceptAll ? true : Boolean(overrides.ads),
     pushPrompt: acceptAll ? true : Boolean(overrides.pushPrompt),
     acceptedAt: new Date().toISOString(),
-    version: 2,
+    version: COOKIE_CONSENT_VERSION,
   }
 }
 
 const saveConsent = (mode, overrides = {}) => {
-  const consent = {
-    ...buildConsent(mode, overrides),
-  }
-
-  window.localStorage.setItem(consentKey, JSON.stringify(consent))
-  window.dispatchEvent(new CustomEvent(consentChangeEvent, { detail: consent }))
+  const consent = buildConsent(mode, overrides)
+  window.localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(consent))
+  window.dispatchEvent(new CustomEvent(COOKIE_CONSENT_EVENT, { detail: consent }))
   isVisible.value = false
+  isCustomizing.value = false
 }
 
 const acceptAll = () => saveConsent('all')
@@ -45,10 +90,11 @@ const rejectOptional = () => saveConsent('necessary')
 const saveCustom = () => saveConsent('custom', options.value)
 
 onMounted(() => {
-  if (!window.localStorage.getItem(consentKey)) {
+  const saved = readCookieConsent()
+  if (!saved || Number(saved.version) < COOKIE_CONSENT_VERSION) {
     window.setTimeout(() => {
       isVisible.value = true
-    }, 900)
+    }, 280)
   }
 })
 </script>
@@ -56,144 +102,213 @@ onMounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="cookie-consent">
-      <div
-        v-if="isVisible"
-        class="fixed inset-x-3 bottom-3 z-90 mx-auto max-w-4xl rounded-4xl border border-cyan-300/20 bg-slate-950/96 p-4 text-white shadow-2xl shadow-cyan-950/35 backdrop-blur-xl sm:inset-x-6 sm:bottom-6 sm:p-5"
-      >
-        <div class="pointer-events-none absolute inset-0 rounded-4xl bg-[radial-gradient(circle_at_12%_0%,rgba(34,211,238,0.18),transparent_32%),radial-gradient(circle_at_92%_20%,rgba(217,70,239,0.14),transparent_30%)]"></div>
-
-        <div class="relative grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
-          <div class="flex gap-3">
-            <span class="grid size-12 shrink-0 place-items-center rounded-2xl bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/20">
-              <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
-            </span>
-
-            <div class="min-w-0">
-              <p class="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-200">
-                {{ $t('cookies.eyebrow') }}
-              </p>
-              <h2 class="mt-1 text-xl font-black text-white">
-                {{ $t('cookies.title') }}
-              </h2>
-              <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                {{ $t('cookies.description') }}
-              </p>
-
-              <div class="mt-3 flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-wide text-slate-300">
-                <span class="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-emerald-100">
-                  {{ $t('cookies.badgeNecessary') }}
-                </span>
-                <span class="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-cyan-100">
-                  {{ $t('cookies.badgeAnalytics') }}
-                </span>
-                <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1.5 text-fuchsia-100">
-                  {{ $t('cookies.badgePush') }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid gap-2 sm:grid-cols-3 lg:min-w-96 lg:grid-cols-1">
-            <button
-              type="button"
-              class="min-h-11 rounded-full bg-linear-to-r from-cyan-400 to-fuchsia-500 px-5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/30 transition hover:scale-[1.02]"
-              @click="acceptAll"
-            >
-              {{ $t('cookies.acceptAll') }}
-            </button>
-            <button
-              type="button"
-              class="min-h-11 rounded-full border border-white/10 bg-white/5 px-5 text-xs font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
-              @click="rejectOptional"
-            >
-              {{ $t('cookies.rejectOptional') }}
-            </button>
-            <button
-              type="button"
-              class="min-h-11 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-5 text-xs font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/15"
-              @click="isCustomizing = !isCustomizing"
-            >
-              {{ $t('cookies.configure') }}
-            </button>
-          </div>
+      <section v-if="isVisible" class="cookie-bar" role="dialog" aria-modal="false" :aria-label="text.title">
+        <div class="cookie-copy">
+          <p class="cookie-kicker">{{ text.title }}</p>
+          <p class="cookie-body">{{ text.body }}</p>
         </div>
 
-        <div
-          v-if="isCustomizing"
-          class="relative mt-4 grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-3 sm:grid-cols-2"
-        >
-          <label class="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-            <input
-              v-model="options.preferences"
-              type="checkbox"
-              class="mt-1 size-4 accent-cyan-400"
-            />
-            <span>
-              <span class="block text-sm font-black text-white">{{ $t('cookies.preferencesTitle') }}</span>
-              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.preferencesText') }}</span>
-            </span>
+        <div v-if="isCustomizing" class="cookie-options">
+          <label>
+            <input v-model="options.preferences" type="checkbox" />
+            <span><strong>{{ text.preferencesTitle }}</strong><small>{{ text.preferencesText }}</small></span>
           </label>
-
-          <label class="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-            <input
-              v-model="options.analytics"
-              type="checkbox"
-              class="mt-1 size-4 accent-cyan-400"
-            />
-            <span>
-              <span class="block text-sm font-black text-white">{{ $t('cookies.analyticsTitle') }}</span>
-              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.analyticsText') }}</span>
-            </span>
+          <label>
+            <input v-model="options.analytics" type="checkbox" />
+            <span><strong>{{ text.analyticsTitle }}</strong><small>{{ text.analyticsText }}</small></span>
           </label>
-
-          <label class="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-            <input
-              v-model="options.ads"
-              type="checkbox"
-              class="mt-1 size-4 accent-cyan-400"
-            />
-            <span>
-              <span class="block text-sm font-black text-white">{{ $t('cookies.adsTitle') }}</span>
-              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.adsText') }}</span>
-            </span>
+          <label>
+            <input v-model="options.ads" type="checkbox" />
+            <span><strong>{{ text.adsTitle }}</strong><small>{{ text.adsText }}</small></span>
           </label>
-
-          <label class="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-            <input
-              v-model="options.pushPrompt"
-              type="checkbox"
-              class="mt-1 size-4 accent-cyan-400"
-            />
-            <span>
-              <span class="block text-sm font-black text-white">{{ $t('cookies.notificationsTitle') }}</span>
-              <span class="text-xs leading-5 text-slate-400">{{ $t('cookies.notificationsText') }}</span>
-            </span>
+          <label>
+            <input v-model="options.pushPrompt" type="checkbox" />
+            <span><strong>{{ text.notificationsTitle }}</strong><small>{{ text.notificationsText }}</small></span>
           </label>
-
-          <div class="sm:col-span-2 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              class="min-h-11 rounded-full bg-white px-5 text-xs font-black uppercase tracking-wide text-slate-950 transition hover:scale-[1.02]"
-              @click="saveCustom"
-            >
-              {{ $t('cookies.savePreferences') }}
-            </button>
-          </div>
+          <button type="button" class="cookie-save" @click="saveCustom">{{ text.save }}</button>
         </div>
-      </div>
+
+        <div class="cookie-actions">
+          <button type="button" class="cookie-choice cookie-yes" @click="acceptAll">
+            <span>{{ text.accept }}</span>
+            <small>{{ text.acceptHint }}</small>
+          </button>
+          <button type="button" class="cookie-choice cookie-no" @click="rejectOptional">
+            <span>{{ text.reject }}</span>
+            <small>{{ text.rejectHint }}</small>
+          </button>
+          <button type="button" class="cookie-more" @click="isCustomizing = !isCustomizing">
+            {{ text.configure }}
+          </button>
+        </div>
+      </section>
     </Transition>
   </Teleport>
 </template>
 
 <style scoped>
+.cookie-bar {
+  position: fixed;
+  z-index: 200;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  gap: 14px;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 22px;
+  background: rgba(12, 18, 32, 0.94);
+  color: #e8eef8;
+  box-shadow: 0 18px 50px rgba(4, 8, 20, 0.45);
+  backdrop-filter: blur(16px);
+  font-family: inherit;
+}
+
+.cookie-kicker {
+  margin: 0;
+  color: #8eb6ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.cookie-body {
+  margin: 6px 0 0;
+  color: #d5deea;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.cookie-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cookie-choice,
+.cookie-more,
+.cookie-save {
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cookie-choice {
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+}
+
+.cookie-choice span {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.cookie-choice small {
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.82;
+}
+
+.cookie-yes {
+  background: #225df5;
+  color: #fff;
+}
+
+.cookie-yes:hover {
+  background: #1b4fd4;
+}
+
+.cookie-no {
+  background: #f4f7fb;
+  color: #1c2838;
+}
+
+.cookie-no:hover {
+  background: #fff;
+}
+
+.cookie-more,
+.cookie-save {
+  grid-column: 1 / -1;
+  min-height: 40px;
+  background: transparent;
+  color: #b7c6dc;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.cookie-save {
+  border-radius: 12px;
+  background: #225df5;
+  color: #fff;
+}
+
+.cookie-options {
+  display: grid;
+  gap: 8px;
+}
+
+.cookie-options label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.cookie-options input {
+  margin-top: 3px;
+  accent-color: #225df5;
+}
+
+.cookie-options strong,
+.cookie-options small {
+  display: block;
+}
+
+.cookie-options strong {
+  color: #fff;
+  font-size: 0.88rem;
+}
+
+.cookie-options small {
+  color: #aebaca;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .cookie-consent-enter-active,
 .cookie-consent-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.22s ease, transform 0.22s ease;
 }
 
 .cookie-consent-enter-from,
 .cookie-consent-leave-to {
   opacity: 0;
-  transform: translateY(0.75rem) scale(0.98);
+  transform: translateY(16px);
+}
+
+@media (min-width: 760px) {
+  .cookie-bar {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    padding: 18px 18px 18px 22px;
+  }
+
+  .cookie-options,
+  .cookie-more {
+    grid-column: 1 / -1;
+  }
+
+  .cookie-actions {
+    min-width: 340px;
+  }
 }
 </style>

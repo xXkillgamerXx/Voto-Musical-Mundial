@@ -53,6 +53,40 @@
     <meta name="twitter:image" content="https://www.musicmundial.com/vote/web-app-manifest-512x512.png" />
     <meta name="twitter:image:alt" content="MUSIC MUNDIAL VOTING" />
     <meta name="twitter:url" content="https://www.musicmundial.com/vote/" />
+    <style>
+      html.mm-no-ads ins.adsbygoogle,
+      html.mm-no-ads .google-auto-placed,
+      html.mm-no-ads .adsbygoogle-noablate,
+      html.mm-no-ads .grippy-host,
+      html.mm-no-ads #google_vignette,
+      html.mm-no-ads [id*="google_vignette"],
+      html.mm-no-ads iframe[src*="googlesyndication.com"],
+      html.mm-no-ads iframe[src*="doubleclick.net"],
+      html.mm-no-ads iframe[src*="googleadservices.com"],
+      html.mm-no-ads iframe[id^="aswift_"],
+      html.mm-no-ads iframe[id^="google_ads"],
+      html.mm-no-ads div[id^="google_ads_iframe"],
+      html.mm-no-ads div[id^="aswift_"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+      }
+    </style>
+    <script>
+      (function () {
+        var parts = location.pathname.split('/').filter(Boolean)
+        if (parts[0] === 'es' || parts[0] === 'en') parts.shift()
+        if (parts[0] === 'vote') parts.shift()
+        if (parts[0] === 'es' || parts[0] === 'en') parts.shift()
+        if (parts[0] !== 'admin') return
+        document.documentElement.classList.add('mm-no-ads')
+        window.adsbygoogle = window.adsbygoogle || []
+        window.adsbygoogle.pauseAdRequests = 1
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

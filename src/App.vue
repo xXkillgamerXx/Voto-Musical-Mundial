@@ -1,5 +1,6 @@
 <script setup>
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ActivePolls from './components/ActivePolls.vue'
 import AppFooter from './components/layout/AppFooter.vue'
 import AppNavbar from './components/layout/AppNavbar.vue'
@@ -17,6 +18,7 @@ import { reportMissionVisitProgress } from './services/api/missionsApi'
 import { trackPageView } from './services/googleAnalytics'
 import { activeTheme, applyTheme } from './theme'
 import { assetUrl, isVoteAppPath, locationPath, stripAppBase, withAppBase } from './utils/appBase'
+import { isSiteAdminPath, isStoredAdminUser, setAdminAdsSuppressed } from './utils/suppressPageAds'
 import { matchStaticRoute, toCanonicalPath } from './utils/localizedRoutes'
 
 const AdminDashboardPage = defineAsyncComponent(() => import('./admin/pages/AdminDashboardPage.vue'))
@@ -49,6 +51,7 @@ const VersusPollPage = defineAsyncComponent(() => import('./pages/VersusPollPage
 const SubscriptionsPage = defineAsyncComponent(() => import('./pages/SubscriptionsPage.vue'))
 const CheckoutPage = defineAsyncComponent(() => import('./pages/CheckoutPage.vue'))
 
+const { locale } = useI18n()
 const currentPath = ref(locationPath())
 const currentRouteKey = ref(`${window.location.pathname}${window.location.search}${window.location.hash}`)
 const PREVIEW_PAGE_LOADING = false
@@ -198,7 +201,7 @@ const syncCurrentPath = () => {
   finishPageLoading()
 }
 
-const voteHref = (url) => `${withAppBase(url.pathname)}${url.search}${url.hash}`
+const voteHref = (url) => withAppBase(`${url.pathname}${url.search}${url.hash}`)
 
 const isInternalNavigation = (anchor) => {
   if (!anchor?.href || anchor.target || anchor.hasAttribute('download')) {
@@ -212,6 +215,10 @@ const isInternalNavigation = (anchor) => {
     && voteHref(url) !== `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
 
+const hidePageAds = () => isAdminPage.value || isStoredAdminUser()
+
+watch(hidePageAds, (hide) => setAdminAdsSuppressed(hide), { immediate: true, flush: 'sync' })
+
 const handleDocumentClick = (event) => {
   const anchor = event.target.closest?.('a[href]')
 
@@ -220,6 +227,7 @@ const handleDocumentClick = (event) => {
   }
 
   const url = new URL(anchor.href)
+  if (isSiteAdminPath(url.pathname) || isStoredAdminUser()) setAdminAdsSuppressed(true)
 
   event.preventDefault()
   isPageLoading.value = true
@@ -258,6 +266,7 @@ onMounted(() => {
   trackPageView()
   reportVisitMissionProgress()
   const syncFanMe = () => {
+    setAdminAdsSuppressed(isAdminPage.value || isStoredAdminUser())
     if (getStoredAuth()?.accessToken) loadFanMe()
     else clearFanMe()
   }
@@ -374,7 +383,7 @@ onUnmounted(() => {
     <DailyRewardModal v-if="shouldShowDailyRewardModal" />
     <GiftNotificationModal v-if="!isPlainPage" />
     <DownloadAppModal v-if="!isPlainPage" />
-    <CookieConsentBanner v-if="!isPlainPage" />
+    <CookieConsentBanner v-if="!isPlainPage" :locale="locale" />
     <PushNotificationPrompt v-if="!isPlainPage" />
 
   </div>

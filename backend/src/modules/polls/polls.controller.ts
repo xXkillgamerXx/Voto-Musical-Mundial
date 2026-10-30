@@ -1,7 +1,9 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseInterceptors } from '@nestjs/common';
+import { NoStoreInterceptor } from '../../common/no-store.interceptor';
 import { PollsService } from './polls.service';
 
 @Controller('polls')
+@UseInterceptors(NoStoreInterceptor)
 export class PollsController {
   constructor(private readonly polls: PollsService) {}
 

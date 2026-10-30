@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
+import { newsPublicOrigin } from './news-origin';
 import { NewsService } from './news.service';
 
 const SITE_NAME = 'Music Mundial';
@@ -52,22 +53,7 @@ export class NewsFeedController {
   ) {}
 
   private origin(req: Request) {
-    const configured = (
-      this.config.get<string>('PUBLIC_NEWS_ORIGIN') ||
-      this.config.get<string>('APP_PUBLIC_ORIGIN') ||
-      this.config.get<string>('APP_ORIGIN') ||
-      ''
-    )
-      .split(',')[0]
-      .trim()
-      .replace(/\/$/, '');
-    if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) return configured;
-    const host = String(req.headers.host || '').trim();
-    if (host && !/localhost|127\.0\.0\.1/i.test(host)) {
-      const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-      return `${proto}://${host}`.replace(/\/$/, '');
-    }
-    return 'https://www.musicmundial.com';
+    return newsPublicOrigin(this.config, req);
   }
 
   private abs(origin: string, path: string) {

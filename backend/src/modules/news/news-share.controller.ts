@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import { loadNewsIndexHtml, paintArticleIndex } from './news-article-html';
 import { rssBodyHtml, youtubeVideoIds } from './news-html';
 import { buildAuthorProfileGraph, buildNewsArticleGraph } from './news-schema';
+import { newsPublicOrigin } from './news-origin';
 import { NewsService } from './news.service';
 
 const SITE_NAME = 'Music Mundial';
@@ -94,21 +95,7 @@ export class NewsShareController {
   ) {}
 
   private origin(req: Request) {
-    const configured = (
-      this.config.get<string>('PUBLIC_NEWS_ORIGIN') ||
-      this.config.get<string>('APP_PUBLIC_ORIGIN') ||
-      ''
-    )
-      .split(',')[0]
-      .trim()
-      .replace(/\/$/, '');
-    if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) return configured;
-    const host = String(req.headers.host || '').trim();
-    if (host && !/localhost|127\.0\.0\.1/i.test(host)) {
-      const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-      return `${proto}://${host}`.replace(/\/$/, '');
-    }
-    return 'https://www.musicmundial.com';
+    return newsPublicOrigin(this.config, req);
   }
 
   private absoluteUrl(value: string, origin: string) {

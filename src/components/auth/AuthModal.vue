@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { translate, i18n } from "../../i18n";
 import { consumeLoginNotice, goToVerifyEmail, login, loginWithGoogle, requestPasswordReset } from "../../services/api/authApi";
+import { GOOGLE_CLIENT_ID, requestGoogleIdToken } from "../../services/googleAuth";
 import { assetUrl, withAppBase } from "../../utils/appBase";
 
 const emit = defineEmits(["close"]);
@@ -15,11 +16,6 @@ const isResetPasswordOpen = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
-const GOOGLE_CLIENT_ID =
-  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-  "927668152816-gko08hdb5upa01a3psav544t0gf9m1a4.apps.googleusercontent.com";
-const GOOGLE_REDIRECT_PATH = withAppBase("/google-oauth-callback.html");
-const GOOGLE_POPUP_NAME = "vmm_google_login";
 
 const closeModal = () => {
   emit("close");
@@ -52,56 +48,6 @@ onUnmounted(() => {
   }
   return message || translate("auth.errors.genericAction");
 };
-
-const openGooglePopup = () => {
-  const redirectUri = `${window.location.origin}${GOOGLE_REDIRECT_PATH}`;
-  const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: "token",
-    scope: "openid email profile",
-    prompt: "select_account",
-  });
-  const left = Math.max(window.screenX + (window.outerWidth - 500) / 2, 0);
-  const top = Math.max(window.screenY + (window.outerHeight - 640) / 2, 0);
-
-  return window.open(
-    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
-    GOOGLE_POPUP_NAME,
-    `width=500,height=640,left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
-  );
-};
-
-const waitForGooglePopup = (popup) => new Promise((resolve, reject) => {
-  const timeout = window.setTimeout(() => {
-    cleanup();
-    reject(new Error("Google tardo demasiado en responder."));
-  }, 120000);
-  const closedTimer = window.setInterval(() => {
-    if (popup.closed) {
-      cleanup();
-      reject(new Error("Inicio con Google cancelado."));
-    }
-  }, 500);
-  const cleanup = () => {
-    window.clearTimeout(timeout);
-    window.clearInterval(closedTimer);
-    window.removeEventListener("message", handleMessage);
-  };
-  const handleMessage = (event) => {
-    if (event.origin !== window.location.origin || event.data?.source !== "vmm-google-oauth") {
-      return;
-    }
-    cleanup();
-    if (event.data.error) {
-      reject(new Error(event.data.error));
-      return;
-    }
-    resolve(event.data.accessToken);
-  };
-
-  window.addEventListener("message", handleMessage);
-});
 
 const openPasswordReset = () => {
   errorMessage.value = "";
@@ -149,14 +95,10 @@ const handleGoogleAccess = async () => {
 
   isLoading.value = true;
   try {
-    const popup = openGooglePopup();
-    if (!popup) {
-      throw new Error("El navegador bloqueo el popup de Google.");
-    }
-    const accessToken = await waitForGooglePopup(popup);
+    const credential = await requestGoogleIdToken();
     const referralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toLowerCase();
     await loginWithGoogle({
-      accessToken,
+      credential,
       locale: String(i18n.global.locale.value || "en").startsWith("es") ? "es" : "en",
       ...(referralCode ? { referralCode } : {}),
     });

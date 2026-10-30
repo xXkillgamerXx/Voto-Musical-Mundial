@@ -213,7 +213,7 @@ const applyCommittedVotes = (batch, result) => {
   );
   const currentVotes = displayVoteCountFor(currentContestant || { artistId });
 
-  setOptimisticVoteTotal(artistId, currentVotes + amount);
+  bumpVisibleVoteTotal(artistId, currentVotes, amount);
   showVoteFeedback(artistId, amount, { flash: false });
   if (currentUser.value && !currentUser.value.isAnonymous) {
     window.dispatchEvent(new CustomEvent('vmm:missions-refresh'));
@@ -899,12 +899,15 @@ const displayVoteCountFor = (contestant) => {
     return serverVotes;
   }
 
-  const animatedCount =
-    animatedVoteCounts.value[getContestantArtistId(contestant)];
+  const artistId = getContestantArtistId(contestant);
+  const animatedCount = animatedVoteCounts.value[artistId];
+  const target = Math.max(serverVotes, getOptimisticVoteTotal(artistId));
 
-  return animatedCount === undefined
-    ? serverVotes
-    : Math.max(0, Math.round(Number(animatedCount)));
+  if (animatedCount === undefined) {
+    return target;
+  }
+
+  return Math.max(target, Math.round(Number(animatedCount)));
 };
 
 const isViewingLiveContestants = computed(
@@ -912,14 +915,16 @@ const isViewingLiveContestants = computed(
 );
 
 const displayTotalVotes = computed(() => {
+  const liveSum = Math.max(0, Math.round(Number(displayedTotalVotes.value || 0)));
   const animatedTotal = isViewingLiveContestants.value
     ? animatedDisplayedTotalVotes.value
     : null;
 
-  return Math.max(
-    0,
-    Math.round(Number(animatedTotal ?? displayedTotalVotes.value)),
-  );
+  if (animatedTotal === null || animatedTotal === undefined) {
+    return liveSum;
+  }
+
+  return Math.max(liveSum, Math.round(Number(animatedTotal)));
 });
 
 const isLoadingDisplayedContestants = computed(() =>
@@ -2345,6 +2350,16 @@ const setOptimisticVoteTotal = (artistId, totalVotes) => {
   };
 };
 
+const bumpVisibleVoteTotal = (artistId, fromVotes, amount) => {
+  const delta = Math.max(1, Math.round(Number(amount || 1)));
+  const from = Math.max(0, Math.round(Number(fromVotes || 0)));
+  const to = from + delta;
+  const fromTotal = displayTotalVotes.value;
+  setOptimisticVoteTotal(artistId, Math.max(getOptimisticVoteTotal(artistId), to));
+  animateVoteCount(artistId, from, to);
+  animateDisplayedTotalVotes(fromTotal, fromTotal + delta);
+};
+
 const clearOptimisticVoteTotal = (artistId) => {
   if (!artistId) {
     return;
@@ -2750,6 +2765,19 @@ const subscribeRealtime = (pollId) => {
       }
 
       pushLiveVoteToast(payload);
+      const artistId = String(payload.artistId || "");
+      const amount = Math.max(1, Math.round(Number(payload.amount || 1)));
+      if (!artistId || hasOwnVoteFeedback(artistId)) {
+        return;
+      }
+      const currentContestant = displayedContestants.value.find(
+        (item) => getContestantArtistId(item) === artistId,
+      );
+      bumpVisibleVoteTotal(
+        artistId,
+        displayVoteCountFor(currentContestant || { artistId }),
+        amount,
+      );
     },
     onResultsDirty: (event = {}) => {
       const dirtyRoundId = event.roundId ? String(event.roundId) : "";
@@ -3428,7 +3456,7 @@ const voteAnonymouslyFor = async (contestant) => {
     };
     // Anonymous votes are sent immediately, so this visual update only happens after
     // the backend confirms the vote. That keeps the UI from bouncing on rejected votes.
-    setOptimisticVoteTotal(artistId, currentVotes + 1);
+    bumpVisibleVoteTotal(artistId, currentVotes, 1);
     pendingAnonymousVoteFeedback.value = {
       artistId,
       artistName:
@@ -3609,7 +3637,7 @@ const voteLoggedFreeFor = async (contestant) => {
       syncStoredPoints(result.user.points, result.user.spentPoints);
     }
 
-    setOptimisticVoteTotal(artistId, currentVotes + 1);
+    bumpVisibleVoteTotal(artistId, currentVotes, 1);
     showVoteFeedback(artistId, 1);
     closeVoteModal();
     scheduleMissionsPromptAfterFreeVote(contestant);

@@ -4,6 +4,7 @@ import {
   ensureAccessToken,
   getStoredAnonymousAuth,
   getStoredAuth,
+  isAccessTokenExpired,
   setStoredAnonymousAuth,
   setStoredAuth,
 } from "./client";
@@ -208,16 +209,31 @@ export const uploadProfileImage = async (file) => {
   });
 };
 
-export const getAnonymousToken = async () => {
-  const current = getStoredAnonymousAuth();
-  if (current?.accessToken) return current;
+let anonymousTokenPromise = null;
 
-  const auth = await apiRequest("/auth/anonymous", {
-    method: "POST",
-    body: {},
-  });
-  setStoredAnonymousAuth(auth);
-  return auth;
+export const getAnonymousToken = async ({ force = false } = {}) => {
+  if (!force) {
+    const current = getStoredAnonymousAuth();
+    if (current?.accessToken && !isAccessTokenExpired(current.accessToken)) {
+      return current;
+    }
+  }
+
+  if (!anonymousTokenPromise) {
+    anonymousTokenPromise = apiRequest("/auth/anonymous", {
+      method: "POST",
+      body: {},
+    })
+      .then((auth) => {
+        setStoredAnonymousAuth(auth);
+        return auth;
+      })
+      .finally(() => {
+        anonymousTokenPromise = null;
+      });
+  }
+
+  return anonymousTokenPromise;
 };
 
 export const getCurrentApiAuth = getStoredAuth;

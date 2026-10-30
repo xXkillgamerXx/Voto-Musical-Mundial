@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { NoStoreInterceptor } from '../../common/no-store.interceptor';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { existsSync, mkdirSync } from 'fs';
 import { diskStorage } from 'multer';
@@ -13,6 +14,7 @@ const profileUploadsPath = join(process.cwd(), 'uploads', 'profile');
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 @Controller('users')
+@UseInterceptors(NoStoreInterceptor)
 export class UsersController {
   constructor(
     private readonly users: UsersService,

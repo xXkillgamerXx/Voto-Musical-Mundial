@@ -9,14 +9,7 @@
     <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
     <link rel="canonical" href="https://www.musicmundial.com/">
 
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-MYCSLDGEHG"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-MYCSLDGEHG');
-    </script>
+    <!-- Google tag loads after the privacy choice, from the consent script below. -->
 
     <!-- ===== FAVICON ===== -->
     <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
@@ -98,8 +91,100 @@
     }
     </script>
 
-    <!-- ===== GOOGLE ADSENSE ===== -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1078939545517246" crossorigin="anonymous"></script>
+    <!-- ===== GOOGLE ADSENSE (not on admin, not for admin accounts) ===== -->
+    <style>
+      html.mm-no-ads ins.adsbygoogle,
+      html.mm-no-ads .google-auto-placed,
+      html.mm-no-ads .adsbygoogle-noablate,
+      html.mm-no-ads .grippy-host,
+      html.mm-no-ads #google_vignette,
+      html.mm-no-ads [id*="google_vignette"],
+      html.mm-no-ads iframe[src*="googlesyndication.com"],
+      html.mm-no-ads iframe[src*="doubleclick.net"],
+      html.mm-no-ads iframe[src*="googleadservices.com"],
+      html.mm-no-ads iframe[id^="aswift_"],
+      html.mm-no-ads iframe[id^="google_ads"],
+      html.mm-no-ads div[id^="google_ads_iframe"],
+      html.mm-no-ads div[id^="aswift_"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+      }
+    </style>
+    <script>
+      (function () {
+        function adminPath() {
+          var parts = location.pathname.split('/').filter(Boolean)
+          if (parts[0] === 'es' || parts[0] === 'en') parts.shift()
+          if (parts[0] === 'vote') parts.shift()
+          if (parts[0] === 'es' || parts[0] === 'en') parts.shift()
+          return parts[0] === 'admin'
+        }
+        function adminUser() {
+          try {
+            var auth = JSON.parse(localStorage.getItem('vmm_api_auth') || 'null')
+            var role = String((auth && auth.user && auth.user.role) || '').toLowerCase()
+            if (role === 'admin' || role === 'superadmin' || role === 'owner') return true
+            var part = String((auth && auth.accessToken) || '').split('.')[1]
+            if (!part) return false
+            var json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+            role = String(json.role || '').toLowerCase()
+            return role === 'admin' || role === 'superadmin' || role === 'owner'
+          } catch (e) {
+            return false
+          }
+        }
+        function consentAllows(flag) {
+          try {
+            var saved = JSON.parse(localStorage.getItem('vmm_cookie_consent') || 'null')
+            if (!saved || Number(saved.version) < 3) return false
+            return saved.mode === 'all' || saved[flag] === true
+          } catch (e) {
+            return false
+          }
+        }
+        function loadAdsense() {
+          if (document.querySelector('script[src*="pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"]')) return
+          var script = document.createElement('script')
+          script.async = true
+          script.crossOrigin = 'anonymous'
+          script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1078939545517246'
+          document.head.appendChild(script)
+        }
+        function loadGtag() {
+          if (document.getElementById('mm-news-gtag')) return
+          window.dataLayer = window.dataLayer || []
+          window.gtag = window.gtag || function () { window.dataLayer.push(arguments) }
+          var script = document.createElement('script')
+          script.id = 'mm-news-gtag'
+          script.async = true
+          script.src = 'https://www.googletagmanager.com/gtag/js?id=G-MYCSLDGEHG'
+          document.head.appendChild(script)
+          window.gtag('js', new Date())
+          window.gtag('config', 'G-MYCSLDGEHG')
+        }
+        function applyConsent(consent) {
+          if (adminPath() || adminUser()) {
+            document.documentElement.classList.add('mm-no-ads')
+            window.adsbygoogle = window.adsbygoogle || []
+            window.adsbygoogle.pauseAdRequests = 1
+            return
+          }
+          var saved = consent || null
+          var ads = saved ? Number(saved.version) >= 3 && (saved.mode === 'all' || saved.ads === true) : consentAllows('ads')
+          var analytics = saved ? Number(saved.version) >= 3 && (saved.mode === 'all' || saved.analytics === true) : consentAllows('analytics')
+          if (ads) loadAdsense()
+          if (analytics) loadGtag()
+        }
+        applyConsent(null)
+        window.addEventListener('vmm-cookie-consent-change', function (event) {
+          applyConsent(event.detail || null)
+        })
+      })()
+    </script>
     <script>
       (function () {
         try {

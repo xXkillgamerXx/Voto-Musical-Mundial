@@ -14,7 +14,7 @@ const readConsent = () => {
 }
 
 const hasAnalyticsConsent = (consent = readConsent()) =>
-  Boolean(consent?.mode === 'all' || consent?.analytics === true)
+  Boolean(Number(consent?.version) >= 3 && (consent?.mode === 'all' || consent?.analytics === true))
 
 const ensureGtag = () => {
   window.dataLayer = window.dataLayer || []

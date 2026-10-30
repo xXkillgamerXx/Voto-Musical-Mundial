@@ -77,6 +77,7 @@ const errorMessage = ref('')
 const successMessage = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let tagTimer: ReturnType<typeof setTimeout> | null = null
+const DRAFT_KEY = 'nmm-news-new-draft'
 const canChangeAuthor = computed(() => ['admin', 'superadmin', 'owner'].includes(String(me.value?.role || '').toLowerCase()))
 const esHref = computed(() => articleHref('es', form.value.esSlug || form.value.slug))
 const enHref = computed(() => articleHref('en', form.value.enSlug || (form.value.locale === 'en' ? form.value.slug : '')))
@@ -167,15 +168,19 @@ const load = async () => {
       await loadLookups(form.value.locale)
       author.value = me.value
       wpAuthorName.value = me.value?.displayName || me.value?.email || ''
-      form.value.slug = ''
-      form.value.esSlug = ''
-      form.value.enSlug = ''
-      form.value.tags = []
-      form.value.attachments = []
       comments.value = []
+      try {
+        const raw = sessionStorage.getItem(DRAFT_KEY)
+        if (raw) {
+          const draft = JSON.parse(raw)
+          form.value = { ...form.value, ...draft, locale: form.value.locale }
+        }
+      } catch {
+        /* ignore broken drafts */
+      }
     }
-  } catch {
-    errorMessage.value = 'No se pudo cargar el formulario.'
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'No se pudo cargar el formulario.'
   } finally {
     loading.value = false
   }
@@ -337,9 +342,16 @@ const save = async () => {
     if (isEditing.value && props.postId) {
       await updateAdminNewsPost(props.postId, body)
       successMessage.value = 'Noticia actualizada.'
+      window.dispatchEvent(new Event('nmm:news-home-stale'))
     } else {
       const created = await createAdminNewsPost(body)
       successMessage.value = 'Noticia creada.'
+      try {
+        sessionStorage.removeItem(DRAFT_KEY)
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(new Event('nmm:news-home-stale'))
       const db = form.value.locale === 'en' ? 'en/' : ''
       window.history.pushState({}, '', `/es/admin/noticias/${db}${created.id}`)
       window.dispatchEvent(new PopStateEvent('popstate'))
@@ -352,6 +364,18 @@ const save = async () => {
 }
 
 watch(() => [props.postId, props.newsLocale] as const, load, { immediate: true })
+watch(
+  form,
+  (value) => {
+    if (isEditing.value || loading.value) return
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(value))
+    } catch {
+      /* ignore quota */
+    }
+  },
+  { deep: true },
+)
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
   if (tagTimer) clearTimeout(tagTimer)
@@ -362,8 +386,8 @@ onUnmounted(() => {
   <section class="na-form">
     <p v-if="successMessage" class="na-ok">{{ successMessage }}</p>
     <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
-    <p v-else-if="loading" class="na-empty">Cargando formulario…</p>
-    <form v-else class="na-form-grid" @submit.prevent="save">
+    <p v-if="loading" class="na-empty">Cargando formulario…</p>
+    <form v-show="!loading" class="na-form-grid" @submit.prevent="save">
       <article class="na-card na-form-main">
         <input
           v-model="form.title"

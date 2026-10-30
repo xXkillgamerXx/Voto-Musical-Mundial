@@ -21,6 +21,9 @@ const realtimeOrigins = [
   ...new Set(
     [
       ...(process.env.APP_ORIGIN || 'http://localhost:5174').split(','),
+      ...(process.env.MISSION_VISIT_ORIGINS || '').split(','),
+      'https://www.musicmundial.com',
+      'https://musicmundial.com',
       ...LOCAL_WEB_ORIGINS,
     ]
       .map((value) => value.trim())

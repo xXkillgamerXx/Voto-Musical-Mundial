@@ -1,7 +1,9 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { showWebAds } from "../utils/fanPerks";
 import { isAdminLocation } from "../utils/appBase";
+import { isStoredAdminUser } from "../utils/suppressPageAds";
+import { adCookieConsent } from "../utils/cookieConsent";
 
 const ADSENSE_SCRIPT_ID = "google-adsense-script";
 const ADSENSE_CLIENT = "ca-pub-1078939545517246";
@@ -12,13 +14,19 @@ const adFilled = ref(false);
 const hasPushedAd = ref(false);
 let observer = null;
 let fillTimer = 0;
+let loadTimer = 0;
 
 const isLocalHost = () =>
   ["localhost", "127.0.0.1", ""].includes(window.location.hostname);
 const isAdminPath = () => typeof window !== "undefined" && isAdminLocation();
+const adsAllowed = () =>
+  adCookieConsent.value &&
+  !isAdminPath() &&
+  !isStoredAdminUser() &&
+  !document.documentElement.classList.contains("mm-no-ads");
 const isLocal = typeof window !== "undefined" && isLocalHost();
-const shouldRenderAd = ref(typeof window !== "undefined" && !isAdminPath());
-const useLiveAdSense = shouldRenderAd.value && !isLocal;
+const shouldRenderAd = ref(typeof window !== "undefined" && adsAllowed());
+const useLiveAdSense = computed(() => shouldRenderAd.value && !isLocal);
 
 const loadAdSenseScript = () =>
   new Promise((resolve, reject) => {
@@ -52,13 +60,13 @@ const readFillStatus = () => {
 };
 
 const tryLoadAd = async () => {
-  if (!shouldRenderAd.value || isLocal || !showWebAds.value || hasPushedAd.value) {
+  if (!shouldRenderAd.value || !adsAllowed() || isLocal || !showWebAds.value || hasPushedAd.value) {
     return;
   }
   try {
     await loadAdSenseScript();
     await nextTick();
-    if (hasPushedAd.value || !slotEl.value || !showWebAds.value) return;
+    if (hasPushedAd.value || !slotEl.value || !showWebAds.value || !adsAllowed()) return;
     window.adsbygoogle = window.adsbygoogle || [];
     window.adsbygoogle.push({});
     hasPushedAd.value = true;
@@ -93,7 +101,7 @@ onMounted(() => {
     return;
   }
 
-  window.setTimeout(() => {
+  loadTimer = window.setTimeout(() => {
     void tryLoadAd();
   }, 250);
 });
@@ -102,15 +110,23 @@ watch(showWebAds, (show) => {
   if (show) void tryLoadAd();
 });
 
+watch(adCookieConsent, (allowed) => {
+  if (allowed) {
+    shouldRenderAd.value = adsAllowed();
+    void tryLoadAd();
+  }
+});
+
 onUnmounted(() => {
   observer?.disconnect();
   if (fillTimer) window.clearTimeout(fillTimer);
+  if (loadTimer) window.clearTimeout(loadTimer);
 });
 </script>
 
 <template>
   <aside
-    v-if="shouldRenderAd && showWebAds && (isLocal || useLiveAdSense)"
+    v-if="shouldRenderAd && showWebAds && adCookieConsent && !isStoredAdminUser() && (isLocal || useLiveAdSense)"
     class="in-feed-ad w-full max-w-5xl"
     :class="
       isLocal || adFilled

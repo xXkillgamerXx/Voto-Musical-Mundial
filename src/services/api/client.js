@@ -7,7 +7,8 @@ const pageIsLocal = /localhost|127\.0\.0\.1/i.test(pageHost)
 const API_BASE_URL = !envApiBase || (bakedLocalhost && !pageIsLocal) ? sameOriginApi : envApiBase
 
 const storageKey = 'vmm_api_auth'
-const anonymousStorageKey = 'vmm_api_anonymous'
+const anonymousStorageKey = 'vmm_api_anonymous_v2'
+const legacyAnonymousStorageKeys = ['vmm_api_anonymous']
 const authChangeEvent = 'vmm-api-auth-change'
 let refreshPromise = null
 
@@ -22,11 +23,13 @@ const decodeJwtPayload = (token) => {
   }
 }
 
-const isAccessTokenExpired = (token, skewMs = 10_000) => {
+export const isAccessTokenExpired = (token, skewMs = 10_000) => {
   const payload = decodeJwtPayload(token)
   if (!payload?.exp) return false
   return payload.exp * 1000 <= Date.now() + skewMs
 }
+
+const jwtType = (token) => decodeJwtPayload(token)?.type || ''
 
 export const getStoredAuth = () => {
   try {
@@ -48,8 +51,12 @@ export const setStoredAuth = (auth) => {
 
 export const getStoredAnonymousAuth = () => {
   try {
-    return JSON.parse(window.localStorage.getItem(anonymousStorageKey) || 'null')
+    const current = JSON.parse(window.localStorage.getItem(anonymousStorageKey) || 'null')
+    if (current?.accessToken) return current
+    legacyAnonymousStorageKeys.forEach((key) => window.localStorage.removeItem(key))
+    return null
   } catch {
+    legacyAnonymousStorageKeys.forEach((key) => window.localStorage.removeItem(key))
     return null
   }
 }
@@ -110,12 +117,32 @@ export const ensureAccessToken = async () => {
   return refreshed?.accessToken || null
 }
 
+const withUserCacheBuster = (path) => {
+  const [pathname, search = ''] = String(path || '').split('?')
+  if (!/^\/(users|votes|polls|rankings|admin|news)(\/|$)/.test(pathname)) return path
+  const params = new URLSearchParams(search)
+  params.set('_', `${Date.now()}${Math.floor(Math.random() * 1e9)}`)
+  return `${pathname}?${params.toString()}`
+}
+
+const noStoreFetch = (url, init = {}) =>
+  window.fetch(url, {
+    cache: 'no-store',
+    ...init,
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      ...(init.headers || {}),
+    },
+  })
+
 export const apiRequest = async (path, {
   method = 'GET',
   body,
   token,
   headers = {},
 } = {}) => {
+  const requestPath = withUserCacheBuster(path)
   const buildRequest = (requestToken) => ({
     method,
     headers: {
@@ -126,25 +153,33 @@ export const apiRequest = async (path, {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 
-  let response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(token))
+  let response = await noStoreFetch(`${API_BASE_URL}${requestPath}`, buildRequest(token))
   let payload = await response.json().catch(() => null)
+  const usedAnonymous = jwtType(token) === 'anonymous'
 
-  if (response.status === 401 && !path.startsWith('/auth/')) {
+  if (response.status === 401 && !path.startsWith('/auth/') && !usedAnonymous) {
     const refreshedAuth = await refreshStoredAuth()
 
     if (refreshedAuth?.accessToken) {
-      response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(refreshedAuth.accessToken))
+      response = await noStoreFetch(`${API_BASE_URL}${withUserCacheBuster(path)}`, buildRequest(refreshedAuth.accessToken))
       payload = await response.json().catch(() => null)
     }
   }
 
   if (!response.ok) {
-    const message = payload?.message || payload?.error?.message || 'No se pudo completar la solicitud.'
+    const rawMessage = payload?.message || payload?.error?.message
+    const message = Array.isArray(rawMessage)
+      ? rawMessage.filter(Boolean).join(' ')
+      : rawMessage || 'No se pudo completar la solicitud.'
     const error = new Error(message)
     error.status = response.status
     error.payload = payload
     if (response.status === 401 && !path.startsWith('/auth/')) {
-      setStoredAuth(null)
+      if (usedAnonymous) {
+        setStoredAnonymousAuth(null)
+      } else {
+        setStoredAuth(null)
+      }
     }
     throw error
   }
@@ -158,6 +193,7 @@ export const apiFormRequest = async (path, {
   token,
   headers = {},
 } = {}) => {
+  const requestPath = withUserCacheBuster(path)
   const buildRequest = (requestToken) => ({
     method,
     headers: {
@@ -167,25 +203,33 @@ export const apiFormRequest = async (path, {
     body,
   })
 
-  let response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(token))
+  let response = await noStoreFetch(`${API_BASE_URL}${requestPath}`, buildRequest(token))
   let payload = await response.json().catch(() => null)
+  const usedAnonymous = jwtType(token) === 'anonymous'
 
-  if (response.status === 401 && !path.startsWith('/auth/')) {
+  if (response.status === 401 && !path.startsWith('/auth/') && !usedAnonymous) {
     const refreshedAuth = await refreshStoredAuth()
 
     if (refreshedAuth?.accessToken) {
-      response = await window.fetch(`${API_BASE_URL}${path}`, buildRequest(refreshedAuth.accessToken))
+      response = await noStoreFetch(`${API_BASE_URL}${withUserCacheBuster(path)}`, buildRequest(refreshedAuth.accessToken))
       payload = await response.json().catch(() => null)
     }
   }
 
   if (!response.ok) {
-    const message = payload?.message || payload?.error?.message || 'No se pudo completar la solicitud.'
+    const rawMessage = payload?.message || payload?.error?.message
+    const message = Array.isArray(rawMessage)
+      ? rawMessage.filter(Boolean).join(' ')
+      : rawMessage || 'No se pudo completar la solicitud.'
     const error = new Error(message)
     error.status = response.status
     error.payload = payload
     if (response.status === 401 && !path.startsWith('/auth/')) {
-      setStoredAuth(null)
+      if (usedAnonymous) {
+        setStoredAnonymousAuth(null)
+      } else {
+        setStoredAuth(null)
+      }
     }
     throw error
   }

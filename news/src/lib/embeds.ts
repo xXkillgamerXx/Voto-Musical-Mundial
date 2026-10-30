@@ -62,8 +62,28 @@ export const expandWpCaptions = (html: string) =>
     return `<figure class="wp-block-image">${img}${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`
   })
 
+/** Lyrics and classic posts store line breaks as newlines. The browser otherwise joins them into one paragraph. */
+export const preserveTextLineBreaks = (html: string) => {
+  const parts = String(html || '').split(/(<[^>]+>)/g)
+  let skip = 0
+  return parts
+    .map((part) => {
+      if (part.startsWith('<')) {
+        if (/^<(pre|script|style|textarea|iframe)\b/i.test(part)) skip += 1
+        if (/^<\/(pre|script|style|textarea|iframe)>/i.test(part)) skip = Math.max(0, skip - 1)
+        return part
+      }
+      if (skip || !part.trim() || !/[\r\n]/.test(part)) return part
+      return part
+        .replace(/\r\n|\r|\n/g, '<br>')
+        .replace(/^(?:\s*<br>)+/g, '')
+        .replace(/(?:<br>\s*)+$/g, '')
+    })
+    .join('')
+}
+
 export const expandNewsEmbeds = (html: string) =>
-  expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url)))
+  preserveTextLineBreaks(expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url))))
 
 export const expandNewsEmbedsForEditor = (html: string) =>
   expandWpCaptions(String(html || '')).replace(EMBED_RE, (_match, url) => {

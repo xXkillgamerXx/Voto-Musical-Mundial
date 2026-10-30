@@ -17,6 +17,8 @@ export const stripAppBase = (pathname = '/') => {
   return normalized
 }
 
+const PAGE_NOCACHE_RE = /^\/(user|perfil|profile)(\/|$)/
+
 export const withAppBase = (pathname = '/') => {
   const raw = String(pathname || '/')
   const hashIndex = raw.indexOf('#')
@@ -32,7 +34,12 @@ export const withAppBase = (pathname = '/') => {
     : stripped === '/'
       ? `${base}/`
       : `${base}${stripped}`
-  return `${prefixed}${query}${hash}`
+  if (!PAGE_NOCACHE_RE.test(stripped)) {
+    return `${prefixed}${query}${hash}`
+  }
+  const params = new URLSearchParams(query.startsWith('?') ? query.slice(1) : query)
+  params.set('_', `${Date.now()}${Math.floor(Math.random() * 1e9)}`)
+  return `${prefixed}?${params.toString()}${hash}`
 }
 
 export const locationPath = () =>

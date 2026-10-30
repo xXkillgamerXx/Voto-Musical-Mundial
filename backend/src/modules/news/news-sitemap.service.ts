@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { newsPublicOrigin } from './news-origin';
 import { NewsLocale, NewsMysqlService } from './news-mysql';
 
 export const SITEMAP_PAGE_SIZE = 2000;
@@ -33,17 +34,7 @@ export class NewsSitemapService {
   ) {}
 
   publicOrigin() {
-    const configured = (
-      this.config.get<string>('PUBLIC_NEWS_ORIGIN') ||
-      this.config.get<string>('APP_PUBLIC_ORIGIN') ||
-      this.config.get<string>('APP_ORIGIN') ||
-      ''
-    )
-      .split(',')[0]
-      .trim()
-      .replace(/\/$/, '');
-    if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) return configured;
-    return '';
+    return newsPublicOrigin(this.config);
   }
 
   async listPage(localeValue: string | undefined, page: number, limit = SITEMAP_PAGE_SIZE) {

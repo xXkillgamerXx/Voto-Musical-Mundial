@@ -27,7 +27,7 @@ let showTimer = null
 const hasCookieConsentForPush = () => {
   try {
     const consent = JSON.parse(window.localStorage.getItem(cookieConsentKey) || 'null')
-    return consent?.mode === 'all' || consent?.pushPrompt === true
+    return Number(consent?.version) >= 3 && (consent?.mode === 'all' || consent?.pushPrompt === true)
   } catch {
     return false
   }

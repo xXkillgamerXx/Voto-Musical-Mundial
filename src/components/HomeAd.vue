@@ -1,9 +1,12 @@
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { showWebAds } from "../utils/fanPerks";
 import { isAdminLocation } from "../utils/appBase";
+import { isStoredAdminUser } from "../utils/suppressPageAds";
+import { adCookieConsent } from "../utils/cookieConsent";
 
 const hasPushedAd = ref(false);
+let loadTimer = 0;
 const ADSENSE_SCRIPT_ID = "google-adsense-script";
 const ADSENSE_CLIENT = "ca-pub-1078939545517246";
 const isLocalHost = () =>
@@ -13,6 +16,12 @@ const shouldRenderAd = ref(
     !isLocalHost() &&
     !isAdminLocation(),
 );
+const adsAllowed = () =>
+  shouldRenderAd.value &&
+  adCookieConsent.value &&
+  !isAdminLocation() &&
+  !isStoredAdminUser() &&
+  !document.documentElement.classList.contains("mm-no-ads");
 
 const loadAdSenseScript = () =>
   new Promise((resolve, reject) => {
@@ -37,14 +46,14 @@ const tryLoadAd = () => {
   if (
     hasPushedAd.value ||
     typeof window === "undefined" ||
-    !shouldRenderAd.value ||
+    !adsAllowed() ||
     !showWebAds.value
   ) {
     return;
   }
 
-  window.setTimeout(async () => {
-    if (!showWebAds.value || hasPushedAd.value) return;
+  loadTimer = window.setTimeout(async () => {
+    if (!showWebAds.value || hasPushedAd.value || !adsAllowed()) return;
     try {
       await loadAdSenseScript();
       window.adsbygoogle = window.adsbygoogle || [];
@@ -60,13 +69,21 @@ onMounted(() => {
   tryLoadAd();
 });
 
+onUnmounted(() => {
+  if (loadTimer) window.clearTimeout(loadTimer);
+});
+
 watch(showWebAds, (show) => {
   if (show) tryLoadAd();
+});
+
+watch(adCookieConsent, (allowed) => {
+  if (allowed) tryLoadAd();
 });
 </script>
 
 <template>
-  <section v-if="shouldRenderAd && showWebAds" class="mx-auto max-w-352 px-4 py-4 sm:px-6">
+  <section v-if="shouldRenderAd && showWebAds && adCookieConsent && !isStoredAdminUser()" class="mx-auto max-w-352 px-4 py-4 sm:px-6">
     <div class="home-ad-card relative mx-auto max-w-5xl overflow-hidden rounded-4xl border border-violet-300/15 bg-[#090b19]/85 p-2 shadow-2xl shadow-fuchsia-950/20">
       <div class="pointer-events-none absolute -left-20 -top-24 size-64 rounded-full bg-fuchsia-500/10 blur-3xl"></div>
       <div class="pointer-events-none absolute -right-16 bottom-0 size-56 rounded-full bg-cyan-400/10 blur-3xl"></div>

@@ -13,11 +13,20 @@ export const stripLocale = (pathname = window.location.pathname) => {
   return parts.length ? `/${parts.join('/')}` : '/'
 }
 
+const PAGE_NOCACHE_RE = /^\/(user|perfil|profile)(\/|$)/
+
+export const withPageCacheBuster = (href: string) => {
+  const url = new URL(href, 'https://www.musicmundial.com')
+  if (!PAGE_NOCACHE_RE.test(stripLocale(url.pathname))) return href
+  url.searchParams.set('_', `${Date.now()}${Math.floor(Math.random() * 1e9)}`)
+  return `${url.pathname}?${url.searchParams.toString()}${url.hash}`
+}
+
 export const withLocale = (path: string, locale: SiteLocale = localeFromPath()) => {
   const raw = path.startsWith('http') ? new URL(path, window.location.origin).pathname : path
   const stripped = stripLocale(raw.startsWith('/') ? raw : `/${raw}`)
-  if (locale === 'es') return stripped === '/' ? '/es' : `/es${stripped}`
-  return stripped
+  const prefixed = locale === 'es' ? (stripped === '/' ? '/es' : `/es${stripped}`) : stripped
+  return withPageCacheBuster(prefixed)
 }
 
 export const ensureLocalePath = () => {
@@ -31,7 +40,9 @@ export const ensureLocalePath = () => {
 
 export const swapLocalePath = (next: SiteLocale) => {
   const stripped = stripLocale(window.location.pathname)
-  return withLocale(stripped, next) + window.location.search + window.location.hash
+  const href = withLocale(stripped, next)
+  if (PAGE_NOCACHE_RE.test(stripped)) return href + window.location.hash
+  return href + window.location.search + window.location.hash
 }
 
 export const articleHref = (locale: SiteLocale | string, slug: string) => {

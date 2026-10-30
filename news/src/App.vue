@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AuthDialog from './components/AuthDialog.vue'
+import CookieConsentBanner from '../../src/components/CookieConsentBanner.vue'
 import CatsCard from './components/CatsCard.vue'
 import NewsAdminPage from './components/NewsAdminPage.vue'
 import NewsArticle from './components/NewsArticle.vue'
@@ -13,11 +14,12 @@ import NewsProfilePage from './components/NewsProfilePage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
 import { coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
-import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, type SiteLocale } from './lib/locale'
+import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, withPageCacheBuster, type SiteLocale } from './lib/locale'
 import { applyHomeSeo, applyPrivateSeo } from './lib/seo'
 import { newsRouteState } from './lib/route-state'
 import { getTheme, toggleTheme as flipTheme, type SiteTheme } from './lib/theme'
 import { getCurrentApiAuth, getMe, logout } from '../../src/services/api/authApi'
+import { isSiteAdminPath, isStoredAdminUser, setAdminAdsSuppressed } from '../../src/utils/suppressPageAds'
 import { onStoredAuthChange } from '../../src/services/api/client'
 import { getNotifications } from '../../src/services/api/notificationsApi'
 import {
@@ -118,7 +120,8 @@ function onNewsClick(event: MouseEvent) {
   const url = new URL(href, window.location.origin)
   const first = url.pathname.split('/').filter(Boolean)[0]
   const path = first === 'es' || first === 'en' ? url.pathname : withLocale(url.pathname, siteLocale.value)
-  const next = `${path}${url.search}`
+  if (isSiteAdminPath(path) || isStoredAdminUser()) setAdminAdsSuppressed(true)
+  const next = withPageCacheBuster(`${path}${url.search}`)
   closeMenu()
   if (`${window.location.pathname}${window.location.search}` === next) return
   window.history.pushState({}, '', next)
@@ -172,10 +175,10 @@ function clearHomeFeed() {
   homeFeedLocale.value = null
 }
 
-async function loadHomeFeed() {
+async function loadHomeFeed(force = false) {
   if (newsPage.value.name !== 'home') return
   const locale = newsPage.value.locale
-  if (homeFeedLocale.value === locale && homeReady.value) return
+  if (!force && homeFeedLocale.value === locale && homeReady.value) return
   const request = ++homeRequest
   try {
     const feed = await getNewsHome(locale)
@@ -263,7 +266,7 @@ function syncNewsPage(opts?: { keepScroll?: boolean }) {
     applyHomeSeo(newsPage.value.locale)
   }
   if (!opts?.keepScroll) scrollToTop()
-  if (newsPage.value.name === 'home') loadHomeFeed()
+  if (newsPage.value.name === 'home') loadHomeFeed(true)
   applySearchFromUrl()
 }
 
@@ -358,6 +361,11 @@ function onPopState() {
   syncNewsPage({ keepScroll: true })
 }
 
+function markHomeStale() {
+  homeReady.value = false
+  homeFeedLocale.value = null
+}
+
 onMounted(() => {
   startSlides()
   syncCatSize()
@@ -367,6 +375,7 @@ onMounted(() => {
   window.addEventListener('popstate', onPopState)
   document.addEventListener('click', onDocumentClick)
   window.addEventListener('keydown', onDocumentKeydown)
+  window.addEventListener('nmm:news-home-stale', markHomeStale)
   revealObserver = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return
@@ -392,6 +401,7 @@ onUnmounted(() => {
   window.removeEventListener('popstate', onPopState)
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('keydown', onDocumentKeydown)
+  window.removeEventListener('nmm:news-home-stale', markHomeStale)
   revealObserver?.disconnect()
 })
 
@@ -537,7 +547,13 @@ let stopAuthWatch: (() => void) | null = null
 
 const ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
 const isSignedIn = computed(() => Boolean(currentUser.value))
-const isAdmin = computed(() => ADMIN_ROLES.has(String(currentUser.value?.role || '').toLowerCase()))
+const isAdmin = computed(() => ADMIN_ROLES.has(String(currentUser.value?.role || '').toLowerCase()) || isStoredAdminUser())
+
+watch(
+  () => newsPage.value.name === 'admin' || isAdmin.value,
+  (hide) => setAdminAdsSuppressed(hide, { restoreScript: !hide }),
+  { immediate: true, flush: 'sync' },
+)
 const userInitial = computed(() => {
   const name = currentUser.value?.displayName || currentUser.value?.username || currentUser.value?.email || 'M'
   return String(name).trim().charAt(0).toUpperCase() || 'M'
@@ -589,6 +605,9 @@ function handleLogout() {
 function syncAuth(authState = getCurrentApiAuth()) {
   const user = authState?.user && !authState.user.isAnonymous ? authState.user : null
   currentUser.value = user
+  setAdminAdsSuppressed(newsPage.value.name === 'admin' || isAdmin.value || isStoredAdminUser(), {
+    restoreScript: newsPage.value.name !== 'admin' && !isAdmin.value && !isStoredAdminUser(),
+  })
   avatarFailed.value = false
   accountOpen.value = false
   if (!user) {
@@ -1306,5 +1325,6 @@ onUnmounted(() => {
   </footer>
 
   <AuthDialog :open="authOpen" :mode="authMode" :locale="siteLocale" @close="closeAuth" @mode="authMode = $event" />
+  <CookieConsentBanner :locale="siteLocale" />
   </template>
 </template>

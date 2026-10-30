@@ -4,7 +4,7 @@ import { pickCustomArtistBanner } from "../utils/artistMedia";
 import { stripAppBase } from "../utils/appBase";
 
 const ARTISTS_CACHE_MS = 5 * 60 * 1000;
-const POLLS_CACHE_MS = 90 * 1000;
+const POLLS_CACHE_MS = 5 * 1000;
 const RANKING_CACHE_MS = 2 * 60 * 1000;
 const PUBLIC_ARTISTS_LIMIT = 250;
 const PUBLIC_POLLS_LIMIT = 100;

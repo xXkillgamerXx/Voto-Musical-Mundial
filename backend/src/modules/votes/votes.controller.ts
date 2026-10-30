@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseInterceptors } from '@nestjs/common';
 import { Request } from 'express';
+import { NoStoreInterceptor } from '../../common/no-store.interceptor';
 import { CastVoteDto } from './dto/cast-vote.dto';
 import { VoteStatusDto } from './dto/vote-status.dto';
 import { VotesService } from './votes.service';
 
 @Controller('votes')
+@UseInterceptors(NoStoreInterceptor)
 export class VotesController {
   constructor(private readonly votes: VotesService) {}
 
