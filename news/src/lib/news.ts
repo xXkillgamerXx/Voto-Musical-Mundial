@@ -5,6 +5,8 @@ export type NewsCard = {
   slug: string
   title: string
   excerpt: string
+  /** Subtítulo manual (h2). Vacío si el editor no lo escribió. */
+  dek?: string
   coverUrl?: string | null
   category: string
   categorySlug: string
@@ -117,7 +119,7 @@ export type NewsPage =
   | {
       name: 'admin'
       locale: 'es' | 'en'
-      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'post-form'
+      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'post-form'
       postId?: string
       newsLocale?: 'es' | 'en'
     }
@@ -127,7 +129,21 @@ export type NewsPage =
   | { name: 'tag'; locale: 'es' | 'en'; slug: string }
   | { name: 'author'; locale: 'es' | 'en'; slug: string }
   | { name: 'forum'; locale: 'es' | 'en'; board?: string; post?: string }
+  | { name: 'static'; locale: 'es' | 'en'; slug: string }
   | { name: 'article'; locale: 'es' | 'en'; slug: string }
+
+export const SITE_PAGE_SLUGS = new Set([
+  'sobre-nosotros',
+  'about-us',
+  'terminos-y-condiciones',
+  'terms-and-conditions',
+  'cookies',
+  'politica-de-privacidad',
+  'privacy-policy',
+  'dmca',
+  'contactanos',
+  'contact-us',
+])
 
 export type CategoryCard = {
   href: string
@@ -181,6 +197,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   const path = parts.length ? `/${parts.join('/')}` : '/'
   if (path === '/') return { name: 'home', locale }
   if (path === '/admin') return { name: 'admin', locale, section: 'dashboard' }
+  if (path === '/admin/noticias/en/nueva') return { name: 'admin', locale, section: 'post-form', newsLocale: 'en' }
   if (path === '/admin/noticias/nueva') return { name: 'admin', locale, section: 'post-form', newsLocale: 'es' }
   const editEn = path.match(/^\/admin\/noticias\/en\/(\d+)$/)
   if (editEn) return { name: 'admin', locale, section: 'post-form', postId: editEn[1], newsLocale: 'en' }
@@ -191,6 +208,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (path === '/admin/autores') return { name: 'admin', locale, section: 'authors' }
   if (path === '/admin/etiquetas') return { name: 'admin', locale, section: 'tags' }
   if (path === '/admin/foro') return { name: 'admin', locale, section: 'forum' }
+  if (path === '/admin/paginas') return { name: 'admin', locale, section: 'pages' }
   if (path.startsWith('/admin/')) return { name: 'admin', locale, section: 'dashboard' }
   if (path === '/perfil/editar' || path === '/profile/edit') return { name: 'profile', locale, edit: true }
   if (path === '/perfil' || path === '/profile') return { name: 'profile', locale }
@@ -212,5 +230,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (tag) return { name: 'tag', locale, slug: tag[1].toLowerCase() }
   const shortcut = CATEGORY_PATHS[path.replace(/^\//, '').toLowerCase()]
   if (shortcut) return { name: 'category', locale, slug: shortcut }
+  const staticSlug = path.replace(/^\//, '').toLowerCase()
+  if (SITE_PAGE_SLUGS.has(staticSlug)) return { name: 'static', locale, slug: staticSlug }
   return { name: 'article', locale, slug: path.replace(/^\//, '') }
 }

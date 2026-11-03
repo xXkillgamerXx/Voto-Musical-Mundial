@@ -94,7 +94,7 @@ export class NewsMysqlService implements OnModuleDestroy {
         password:
           this.config.get<string>('NEWS_MYSQL_PASSWORD_EN') ??
           this.config.get<string>('NEWS_MYSQL_PASSWORD') ??
-          'password',
+          '',
         database: this.config.get<string>('NEWS_MYSQL_DATABASE_EN') || 'musicmundial_en',
         prefix: this.config.get<string>('NEWS_MYSQL_PREFIX_EN') || 'wpgn_',
       };
@@ -109,7 +109,7 @@ export class NewsMysqlService implements OnModuleDestroy {
       password:
         this.config.get<string>('NEWS_MYSQL_PASSWORD_ES') ??
         this.config.get<string>('NEWS_MYSQL_PASSWORD') ??
-        'password',
+        '',
       database: this.config.get<string>('NEWS_MYSQL_DATABASE_ES') || 'musicmundial_es',
       prefix: this.config.get<string>('NEWS_MYSQL_PREFIX_ES') || 'wpgn_',
     };
@@ -129,6 +129,8 @@ export class NewsMysqlService implements OnModuleDestroy {
       charset: 'utf8mb4',
       waitForConnections: true,
       connectionLimit: 8,
+      connectTimeout: 10000,
+      enableKeepAlive: true,
     });
     this.pools.set(locale, pool);
     return pool;

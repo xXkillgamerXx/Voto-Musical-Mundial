@@ -9,6 +9,13 @@ import { UpsertNewsPostDto } from './dto/upsert-news-post.dto';
 import { NewsLocale, NewsMysqlService } from './news-mysql';
 import { ensureImageAlts, expandNewsEmbeds, firstYoutubeEmbed, plainExcerpt, rssBodyHtml, sanitizeNewsHtml, youtubeVideoIds } from './news-html';
 import { NewsSitemapService } from './news-sitemap.service';
+import {
+  SITE_PAGE_META_KEY,
+  SITE_PAGES,
+  sitePageByKey,
+  sitePageBySlug,
+  sitePageHref,
+} from './news-site-pages';
 
 type NewsActor = { id: bigint; role?: string };
 type NewsAttachment = { url: string; type: string; name: string };
@@ -435,8 +442,7 @@ export class NewsService {
     return serialize({ page, limit, total: Number(countRows[0]?.total || 0), items, locale });
   }
 
-  async adminAuthors(localeValue?: string, q?: string) {
-    const locale = this.mysql.locale(localeValue);
+  private async adminAuthorsLocale(locale: NewsLocale, q = '') {
     const query = String(q || '').trim();
     const like = `%${query}%`;
     const rows = await this.mysql.query<{
@@ -446,48 +452,94 @@ export class NewsService {
       user_login: string;
       user_nicename: string;
       user_url: string;
-      posts: number;
-      bio: string | null;
-      photo: string | null;
-      site: string | null;
+      posts: number | string;
     }>(
       locale,
       `SELECT u.ID, u.display_name, u.user_email, u.user_login, u.user_nicename, u.user_url,
-        SUM(p.post_type = 'post' AND p.post_status = 'publish') AS posts,
-        (SELECT meta_value FROM wpgn_usermeta WHERE user_id = u.ID AND meta_key = 'description' LIMIT 1) AS bio,
-        (SELECT meta_value FROM wpgn_usermeta WHERE user_id = u.ID AND meta_key = 'vmm_avatar' LIMIT 1) AS photo,
-        (SELECT meta_value FROM wpgn_usermeta WHERE user_id = u.ID AND meta_key = 'vmm_website' LIMIT 1) AS site
+        COALESCE(pc.posts, 0) AS posts
        FROM wpgn_users u
-       LEFT JOIN wpgn_posts p ON p.post_author = u.ID
-       ${query ? 'WHERE u.display_name LIKE ? OR u.user_nicename LIKE ? OR u.user_login LIKE ? OR u.user_email LIKE ?' : ''}
-       GROUP BY u.ID, u.display_name, u.user_email, u.user_login, u.user_nicename, u.user_url
-       ORDER BY posts DESC, u.display_name ASC
-       LIMIT 80`,
+       LEFT JOIN (
+         SELECT post_author, COUNT(*) AS posts
+         FROM wpgn_posts
+         WHERE post_type = 'post' AND post_status IN ('publish', 'draft', 'future', 'pending', 'private')
+         GROUP BY post_author
+       ) pc ON pc.post_author = u.ID
+       ${
+         query
+           ? 'WHERE (u.display_name LIKE ? OR u.user_nicename LIKE ? OR u.user_login LIKE ? OR u.user_email LIKE ?)'
+           : ''
+       }
+       ORDER BY COALESCE(pc.posts, 0) DESC, u.display_name ASC
+       LIMIT 200`,
       query ? [like, like, like, like] : [],
     );
-    return serialize(
-      rows.map((row) => {
-        const linked = String(row.user_url || '').startsWith('vmm:');
-        return {
-          id: String(row.ID),
-          name: row.display_name || row.user_login,
-          email: row.user_email || '',
-          login: row.user_login,
-          slug: row.user_nicename || row.user_login,
-          bio: String(row.bio || ''),
-          photoUrl: String(row.photo || '') || gravatarUrl(row.user_email),
-          website: linked ? String(row.site || '') : String(row.user_url || ''),
-          linkedUserId: linked ? String(row.user_url).slice(4) : '',
-          postCount: Number(row.posts || 0),
-          href: publicHref(locale, `author/${row.user_nicename || row.user_login}`),
-        };
-      }),
-    );
+
+    const ids = rows.map((row) => Number(row.ID)).filter((id) => id > 0);
+    const metaByUser = new Map<number, { bio: string; photo: string; site: string }>();
+    if (ids.length) {
+      try {
+        const metas = await this.mysql.query<{ user_id: number; meta_key: string; meta_value: string }>(
+          locale,
+          `SELECT user_id, meta_key, meta_value
+           FROM wpgn_usermeta
+           WHERE user_id IN (${ids.map(() => '?').join(',')})
+             AND meta_key IN ('description', 'vmm_avatar', 'vmm_website')`,
+          ids,
+        );
+        for (const meta of metas) {
+          const current = metaByUser.get(Number(meta.user_id)) || { bio: '', photo: '', site: '' };
+          if (meta.meta_key === 'description') current.bio = String(meta.meta_value || '');
+          if (meta.meta_key === 'vmm_avatar') current.photo = String(meta.meta_value || '');
+          if (meta.meta_key === 'vmm_website') current.site = String(meta.meta_value || '');
+          metaByUser.set(Number(meta.user_id), current);
+        }
+      } catch (error) {
+        this.logger.warn(`adminAuthors meta(${locale}) failed: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+
+    return rows.map((row) => {
+      const linked = String(row.user_url || '').startsWith('vmm:');
+      const slug = row.user_nicename || row.user_login;
+      const meta = metaByUser.get(Number(row.ID)) || { bio: '', photo: '', site: '' };
+      return {
+        id: String(row.ID),
+        name: row.display_name || row.user_login,
+        email: row.user_email || '',
+        login: row.user_login,
+        slug,
+        bio: meta.bio,
+        photoUrl: meta.photo || gravatarUrl(row.user_email),
+        website: linked ? meta.site : String(row.user_url || ''),
+        linkedUserId: linked ? String(row.user_url).slice(4) : '',
+        postCount: Number(row.posts || 0),
+        href: publicHref(locale, `author/${slug}`),
+        locale,
+      };
+    });
+  }
+
+  async adminAuthors(localeValue?: string, q?: string) {
+    const locale = this.mysql.locale(localeValue);
+    try {
+      return serialize(await this.adminAuthorsLocale(locale, q));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`adminAuthors(${locale}) failed: ${message}`);
+      throw new BadRequestException(`No se pudieron cargar autores (${locale}): ${message.slice(0, 180)}`);
+    }
   }
 
   async adminUpdateAuthor(
     id: string,
-    body: { locale?: string; name?: string; bio?: string; website?: string; photoUrl?: string },
+    body: {
+      locale?: string;
+      name?: string;
+      bio?: string;
+      website?: string;
+      photoUrl?: string;
+      linkedUserId?: string | null;
+    },
   ) {
     const locale = this.mysql.locale(body.locale);
     const userId = Number(id);
@@ -503,9 +555,50 @@ export class NewsService {
     if (name) {
       await this.mysql.exec(locale, `UPDATE wpgn_users SET display_name = ? WHERE ID = ?`, [name.slice(0, 250), userId]);
     }
+    if (body.linkedUserId !== undefined) {
+      const linked = String(body.linkedUserId || '').trim();
+      if (linked) {
+        const account = await this.prisma.user.findUnique({
+          where: { id: BigInt(linked) },
+          select: { id: true, username: true, email: true, displayName: true },
+        });
+        if (!account) throw new BadRequestException('La cuenta de Vote Music Mundial no existe.');
+        const previousUrl = String(user.user_url || '');
+        if (previousUrl && !previousUrl.startsWith('vmm:')) {
+          await this.setUserMeta(locale, userId, 'vmm_website', previousUrl.slice(0, 300));
+        }
+        await this.mysql.exec(
+          locale,
+          `UPDATE wpgn_users SET user_url = ?, user_email = ?, user_nicename = ?, display_name = ? WHERE ID = ?`,
+          [
+            `vmm:${account.id}`,
+            String(account.email || user.user_nicename).slice(0, 100),
+            String(account.username || user.user_nicename).toLowerCase().slice(0, 50),
+            String(account.displayName || account.username || name || user.user_nicename).slice(0, 250),
+            userId,
+          ],
+        );
+      } else if (String(user.user_url || '').startsWith('vmm:')) {
+        const site = await this.mysql.query<{ meta_value: string }>(
+          locale,
+          `SELECT meta_value FROM wpgn_usermeta WHERE user_id = ? AND meta_key = 'vmm_website' LIMIT 1`,
+          [userId],
+        );
+        await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = ? WHERE ID = ?`, [
+          String(site[0]?.meta_value || ''),
+          userId,
+        ]);
+      }
+    }
+    const fresh = await this.mysql.query<{ user_url: string; user_nicename: string }>(
+      locale,
+      `SELECT user_url, user_nicename FROM wpgn_users WHERE ID = ? LIMIT 1`,
+      [userId],
+    );
+    const currentUrl = String(fresh[0]?.user_url || user.user_url || '');
     if (body.website != null) {
       const website = String(body.website || '').trim().slice(0, 300);
-      if (String(user.user_url || '').startsWith('vmm:')) {
+      if (currentUrl.startsWith('vmm:')) {
         await this.setUserMeta(locale, userId, 'vmm_website', website);
       } else {
         await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = ? WHERE ID = ?`, [website, userId]);
@@ -515,8 +608,18 @@ export class NewsService {
     if (body.photoUrl != null) {
       await this.setUserMeta(locale, userId, 'vmm_avatar', String(body.photoUrl || '').trim().slice(0, 500));
     }
-    const profile = await this.authorProfile(locale, user.user_nicename);
-    return serialize(profile);
+    const latest = await this.mysql.query<{ user_url: string; user_nicename: string }>(
+      locale,
+      `SELECT user_url, user_nicename FROM wpgn_users WHERE ID = ? LIMIT 1`,
+      [userId],
+    );
+    const nicename = String(latest[0]?.user_nicename || fresh[0]?.user_nicename || user.user_nicename);
+    const linkedUrl = String(latest[0]?.user_url || currentUrl || '');
+    const profile = await this.authorProfile(locale, nicename);
+    return serialize({
+      ...profile,
+      linkedUserId: linkedUrl.startsWith('vmm:') ? linkedUrl.slice(4) : '',
+    });
   }
 
   async adminGet(id: string, localeValue?: string) {
@@ -540,6 +643,8 @@ export class NewsService {
     const alternate = await this.alternateFor(locale, post, true);
     return serialize({
       ...card,
+      // Solo el extracto escrito a mano (sin fallback del cuerpo) para el editor / h2.
+      excerpt: String(post.post_excerpt || '').trim(),
       coverCaption: card.coverCaption || '',
       coverAlt: card.coverAlt || '',
       content: post.post_content,
@@ -1115,7 +1220,7 @@ export class NewsService {
     const title = String(body.title || '').trim();
     if (title.length < 3) throw new BadRequestException('El título es obligatorio.');
     const content = ensureImageAlts(sanitizeNewsHtml(body.content || ''), title);
-    const excerpt = String(body.excerpt || '').trim() || plainExcerpt(content);
+    const excerpt = String(body.excerpt || '').trim();
     const coverAlt = String(body.coverAlt || '').trim() || title;
     const status = toWpStatus(body.status);
     const publishedAt = body.publishedAt ? new Date(body.publishedAt) : new Date();
@@ -1244,8 +1349,11 @@ export class NewsService {
     const commentCount = await this.commentCount(locale, post.ID);
     const alternate = await this.alternateFor(locale, post);
     const author = post.author_nicename ? await this.authorProfile(locale, post.author_nicename) : null;
+    const dek = String(post.post_excerpt || '').trim();
     return serialize({
       ...card,
+      // Listas/SEO pueden usar excerpt con fallback; el h2 de artículo solo si hay dek manual.
+      dek,
       authorBio: author?.bio || '',
       authorPhotoUrl: card.authorPhotoUrl || author?.photoUrl || '',
       authorPostCount: author?.postCount || 0,
@@ -2249,6 +2357,198 @@ export class NewsService {
 
   private refreshSitemaps(locale: NewsLocale) {
     void this.sitemaps.notify(locale).catch((error) => this.logger.warn(`sitemap ping failed: ${String(error)}`));
+  }
+
+  async listSitePages(localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    try {
+      await this.ensureSitePages(locale);
+    } catch {
+      // Keep listing defaults even if seed/MySQL is briefly unavailable.
+    }
+    const items: Array<{
+      key: string;
+      id: string;
+      title: string;
+      slug: string;
+      status: string;
+      href: string;
+      updatedAt: string | Date | null;
+      locale: NewsLocale;
+    }> = [];
+    for (const def of SITE_PAGES) {
+      let row: Awaited<ReturnType<NewsService['findSitePageRow']>> = null;
+      try {
+        row = await this.findSitePageRow(locale, def.key);
+      } catch {
+        row = null;
+      }
+      const slug = locale === 'en' ? def.enSlug : def.esSlug;
+      items.push({
+        key: def.key,
+        id: row ? String(row.ID) : '',
+        title: row?.post_title || (locale === 'en' ? def.enTitle : def.esTitle),
+        slug: row?.post_name || slug,
+        status: row?.post_status || 'publish',
+        href: sitePageHref(locale, def.key),
+        updatedAt: row?.post_modified || null,
+        locale,
+      });
+    }
+    return serialize({ locale, items });
+  }
+
+  async getSitePage(slugOrKey: string, localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    await this.ensureSitePages(locale);
+    const def = sitePageByKey(slugOrKey) || sitePageBySlug(locale, slugOrKey);
+    if (!def) throw new NotFoundException('No encontramos esa página.');
+    const row = await this.findSitePageRow(locale, def.key);
+    if (!row) throw new NotFoundException('No encontramos esa página.');
+    return serialize({
+      key: def.key,
+      id: String(row.ID),
+      title: row.post_title,
+      slug: row.post_name,
+      content: expandNewsEmbeds(sanitizeNewsHtml(row.post_content || '')),
+      status: row.post_status,
+      href: sitePageHref(locale, def.key),
+      updatedAt: row.post_modified,
+      locale,
+    });
+  }
+
+  async adminGetSitePage(key: string, localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    await this.ensureSitePages(locale);
+    const def = sitePageByKey(key);
+    if (!def) throw new NotFoundException('Página no válida.');
+    const row = await this.findSitePageRow(locale, def.key);
+    if (!row) throw new NotFoundException('Página no válida.');
+    return serialize({
+      key: def.key,
+      id: String(row.ID),
+      title: row.post_title,
+      slug: row.post_name,
+      content: row.post_content || '',
+      status: row.post_status,
+      href: sitePageHref(locale, def.key),
+      updatedAt: row.post_modified,
+      locale,
+    });
+  }
+
+  async updateSitePage(
+    key: string,
+    body: { locale?: string; title?: string; content?: string; status?: string },
+  ) {
+    const locale = this.mysql.locale(body.locale);
+    await this.ensureSitePages(locale);
+    const def = sitePageByKey(key);
+    if (!def) throw new BadRequestException('Página no válida.');
+    const row = await this.findSitePageRow(locale, def.key);
+    if (!row) throw new NotFoundException('Página no válida.');
+    const title = String(body.title || '').trim() || (locale === 'en' ? def.enTitle : def.esTitle);
+    if (title.length < 2) throw new BadRequestException('El título es obligatorio.');
+    const content = ensureImageAlts(sanitizeNewsHtml(body.content || ''), title);
+    const status = String(body.status || 'publish').trim() === 'draft' ? 'draft' : 'publish';
+    const slug = locale === 'en' ? def.enSlug : def.esSlug;
+    const now = this.wpStamp(new Date());
+    const nowGmt = this.wpStamp(new Date(), true);
+    await this.mysql.exec(
+      locale,
+      `UPDATE wpgn_posts SET
+        post_title = ?, post_content = ?, post_status = ?, post_name = ?,
+        post_modified = ?, post_modified_gmt = ?, guid = ?
+       WHERE ID = ? AND post_type = 'page'`,
+      [title, content, status, slug, now, nowGmt, sitePageHref(locale, def.key), row.ID],
+    );
+    await this.setMeta(locale, row.ID, SITE_PAGE_META_KEY, def.key);
+    return this.adminGetSitePage(def.key, locale);
+  }
+
+  private async ensureSitePages(locale: NewsLocale) {
+    for (const def of SITE_PAGES) {
+      const existing = await this.findSitePageRow(locale, def.key);
+      if (existing) continue;
+      const slug = locale === 'en' ? def.enSlug : def.esSlug;
+      const title = locale === 'en' ? def.enTitle : def.esTitle;
+      const content = locale === 'en' ? def.enHtml : def.esHtml;
+      const now = this.wpStamp(new Date());
+      const nowGmt = this.wpStamp(new Date(), true);
+      const bySlug = await this.mysql.query<{ ID: number }>(
+        locale,
+        `SELECT ID FROM wpgn_posts WHERE post_type = 'page' AND post_name = ? LIMIT 1`,
+        [slug],
+      );
+      let id = Number(bySlug[0]?.ID || 0);
+      if (id) {
+        const empty = await this.mysql.query<{ post_content: string }>(
+          locale,
+          `SELECT post_content FROM wpgn_posts WHERE ID = ? LIMIT 1`,
+          [id],
+        );
+        if (!String(empty[0]?.post_content || '').trim()) {
+          await this.mysql.exec(
+            locale,
+            `UPDATE wpgn_posts SET post_title = ?, post_content = ?, post_status = 'publish', post_modified = ?, post_modified_gmt = ? WHERE ID = ?`,
+            [title, content, now, nowGmt, id],
+          );
+        }
+      } else {
+        const inserted = await this.mysql.exec(
+          locale,
+          `INSERT INTO wpgn_posts (
+            post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt,
+            post_status, comment_status, ping_status, post_password, post_name,
+            to_ping, pinged, post_modified, post_modified_gmt, post_content_filtered,
+            post_parent, guid, menu_order, post_type, post_mime_type, comment_count
+          ) VALUES (1, ?, ?, ?, ?, '', 'publish', 'closed', 'closed', '', ?, '', '', ?, ?, '', 0, ?, 0, 'page', '', 0)`,
+          [now, nowGmt, content, title, slug, now, nowGmt, sitePageHref(locale, def.key)],
+        );
+        id = Number(inserted.insertId || 0);
+      }
+      if (id) await this.setMeta(locale, id, SITE_PAGE_META_KEY, def.key);
+    }
+  }
+
+  private async findSitePageRow(locale: NewsLocale, key: string) {
+    const def = sitePageByKey(key);
+    if (!def) return null;
+    const slug = locale === 'en' ? def.enSlug : def.esSlug;
+    const byMeta = await this.mysql.query<{
+      ID: number;
+      post_title: string;
+      post_name: string;
+      post_content: string;
+      post_status: string;
+      post_modified: Date | string;
+    }>(
+      locale,
+      `SELECT p.ID, p.post_title, p.post_name, p.post_content, p.post_status, p.post_modified
+       FROM wpgn_posts p
+       JOIN wpgn_postmeta m ON m.post_id = p.ID AND m.meta_key = ? AND m.meta_value = ?
+       WHERE p.post_type = 'page'
+       LIMIT 1`,
+      [SITE_PAGE_META_KEY, key],
+    );
+    if (byMeta[0]) return byMeta[0];
+    const bySlug = await this.mysql.query<{
+      ID: number;
+      post_title: string;
+      post_name: string;
+      post_content: string;
+      post_status: string;
+      post_modified: Date | string;
+    }>(
+      locale,
+      `SELECT ID, post_title, post_name, post_content, post_status, post_modified
+       FROM wpgn_posts
+       WHERE post_type = 'page' AND post_name = ?
+       LIMIT 1`,
+      [slug],
+    );
+    return bySlug[0] || null;
   }
 
   private wpStamp(value: Date, gmt = false) {

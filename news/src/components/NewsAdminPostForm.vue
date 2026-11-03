@@ -8,16 +8,23 @@ import {
   getAdminNewsComments,
   getAdminNewsPost,
   getAdminNewsTags,
-  getAdminUsers,
   updateAdminNewsPost,
   uploadAdminImage,
 } from '../../../src/services/api/adminApi'
 import { getMe } from '../../../src/services/api/authApi'
+import { compressImageFile } from '../lib/compressImage'
 import { articleHref } from '../lib/locale'
 import NewsRichEditor from './NewsRichEditor.vue'
 
 type Category = { id: string; name: string; slug: string }
-type WpAuthor = { id: string; name: string; email: string; postCount: number; linkedUserId?: string }
+type WpAuthor = {
+  id: string
+  name: string
+  email: string
+  postCount: number
+  photoUrl?: string
+  linkedUserId?: string
+}
 type Account = {
   id: string
   displayName?: string
@@ -38,6 +45,21 @@ type CommentItem = {
 const props = defineProps<{ postId?: string; newsLocale?: 'es' | 'en' }>()
 const isEditing = computed(() => Boolean(props.postId))
 
+const nowLocalInput = () => {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const slugify = (value: string) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 180)
+
 const form = ref({
   locale: (props.newsLocale === 'en' ? 'en' : 'es') as 'es' | 'en',
   title: '',
@@ -51,7 +73,7 @@ const form = ref({
   coverAlt: '',
   status: 'draft',
   featured: false,
-  publishedAt: '',
+  publishedAt: nowLocalInput(),
   categoryIds: [] as string[],
   wpAuthorId: '',
   tags: [] as string[],
@@ -60,12 +82,6 @@ const form = ref({
 const categories = ref<Category[]>([])
 const wpAuthors = ref<WpAuthor[]>([])
 const me = ref<Account | null>(null)
-const author = ref<Account | null>(null)
-const wpAuthorName = ref('')
-const userQuery = ref('')
-const userHits = ref<Account[]>([])
-const searchingUsers = ref(false)
-const reassignOpen = ref(false)
 const tagDraft = ref('')
 const tagHits = ref<Array<{ name: string; postCount?: number }>>([])
 const comments = ref<CommentItem[]>([])
@@ -75,15 +91,46 @@ const uploading = ref(false)
 const uploadingFile = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-let searchTimer: ReturnType<typeof setTimeout> | null = null
+const slugManual = ref(false)
+const coverPreview = ref('')
+const coverDragging = ref(false)
+let coverObjectUrl = ''
+let pendingCoverFile: File | null = null
 let tagTimer: ReturnType<typeof setTimeout> | null = null
-const DRAFT_KEY = 'nmm-news-new-draft'
+const draftKey = () => `nmm-news-new-draft-${props.newsLocale === 'en' ? 'en' : 'es'}`
 const canChangeAuthor = computed(() => ['admin', 'superadmin', 'owner'].includes(String(me.value?.role || '').toLowerCase()))
-const esHref = computed(() => articleHref('es', form.value.esSlug || form.value.slug))
-const enHref = computed(() => articleHref('en', form.value.enSlug || (form.value.locale === 'en' ? form.value.slug : '')))
+const selectedAuthor = computed(
+  () => wpAuthors.value.find((item) => String(item.id) === String(form.value.wpAuthorId)) || null,
+)
+const coverSrc = computed(() => coverPreview.value || form.value.coverUrl || '')
 
-const authorLabel = (user?: Account | null) =>
-  user?.displayName || user?.username || user?.email || 'Cuenta'
+const clearCoverPreview = () => {
+  if (coverObjectUrl) {
+    URL.revokeObjectURL(coverObjectUrl)
+    coverObjectUrl = ''
+  }
+  coverPreview.value = ''
+  pendingCoverFile = null
+}
+const primarySlug = computed({
+  get: () => (form.value.locale === 'en' ? form.value.enSlug : form.value.esSlug) || form.value.slug,
+  set: (value: string) => {
+    const next = String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 180)
+    form.value.slug = next
+    if (form.value.locale === 'en') form.value.enSlug = next
+    else form.value.esSlug = next
+  },
+})
+const primaryHref = computed(() => articleHref(form.value.locale, primarySlug.value))
+const localeLabel = computed(() => (form.value.locale === 'en' ? 'English' : 'Español'))
+const visibleCategories = computed(() =>
+  categories.value.filter((cat) => !['uncategorized', 'sin-categoria', 'sin-categoría'].includes(cat.slug)),
+)
 
 const toAccount = (user: Record<string, any>): Account => ({
   id: String(user.id),
@@ -94,6 +141,14 @@ const toAccount = (user: Record<string, any>): Account => ({
   role: user.role || '',
 })
 
+const ensureDefaultAuthor = () => {
+  if (form.value.wpAuthorId) return
+  const linkedToMe = me.value
+    ? wpAuthors.value.find((item) => String(item.linkedUserId || '') === String(me.value?.id || ''))
+    : null
+  form.value.wpAuthorId = String((linkedToMe || wpAuthors.value[0])?.id || '')
+}
+
 const fileKind = (file: { type?: string; name?: string; url?: string }) => {
   const hint = `${file.type || ''} ${file.name || ''} ${file.url || ''}`.toLowerCase()
   if (hint.includes('gif') || hint.endsWith('.gif')) return 'gif'
@@ -101,13 +156,40 @@ const fileKind = (file: { type?: string; name?: string; url?: string }) => {
   return 'image'
 }
 
+const withTimeout = <T,>(promise: Promise<T>, ms = 8000): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+
+const lookupsLoading = ref(false)
+
 const loadLookups = async (locale: 'es' | 'en') => {
-  const [cats, authors] = await Promise.all([
-    getAdminNewsCategories(locale),
-    getAdminNewsAuthors(locale),
-  ])
-  categories.value = Array.isArray(cats) ? cats : []
-  wpAuthors.value = Array.isArray(authors) ? authors : []
+  lookupsLoading.value = true
+  try {
+    const cats = await withTimeout(getAdminNewsCategories(locale), 15000).catch(() => [])
+    categories.value = Array.isArray(cats) ? cats : []
+  } catch {
+    categories.value = []
+  }
+  try {
+    const authors = await withTimeout(getAdminNewsAuthors(locale), 15000).catch(() => [])
+    wpAuthors.value = Array.isArray(authors) ? authors : []
+    if (!isEditing.value) ensureDefaultAuthor()
+  } catch {
+    wpAuthors.value = []
+  } finally {
+    lookupsLoading.value = false
+  }
 }
 
 const loadComments = async () => {
@@ -116,22 +198,31 @@ const loadComments = async () => {
     return
   }
   try {
-    const payload = await getAdminNewsComments(props.postId, form.value.locale)
+    const payload = await withTimeout(getAdminNewsComments(props.postId, form.value.locale), 8000)
     comments.value = payload.items || []
   } catch {
     comments.value = []
   }
 }
 
+const hydrateAuthor = async () => {
+  try {
+    const account = await withTimeout(getMe().catch(() => null), 6000).catch(() => null)
+    me.value = account ? toAccount(account) : null
+    if (!isEditing.value) ensureDefaultAuthor()
+  } catch {
+    /* form stays usable */
+  }
+}
+
 const load = async () => {
   loading.value = true
   errorMessage.value = ''
-  reassignOpen.value = false
   try {
-    const account = await getMe().catch(() => null)
-    me.value = account ? toAccount(account) : null
     if (props.postId) {
-      const post = await getAdminNewsPost(props.postId, form.value.locale)
+      form.value.locale = props.newsLocale === 'en' ? 'en' : 'es'
+      const post = await withTimeout(getAdminNewsPost(props.postId, form.value.locale), 10000)
+      slugManual.value = true
       form.value = {
         locale: post.locale === 'en' ? 'en' : 'es',
         title: post.title || '',
@@ -145,69 +236,61 @@ const load = async () => {
         coverAlt: post.coverAlt || '',
         status: post.status === 'scheduled' ? 'scheduled' : post.status === 'publish' ? 'publish' : 'draft',
         featured: Boolean(post.featured),
-        publishedAt: post.publishedAt ? String(post.publishedAt).slice(0, 16) : '',
+        publishedAt: post.publishedAt ? String(post.publishedAt).slice(0, 16) : nowLocalInput(),
         categoryIds: (post.categoryIds || []).map((id: string | number) => String(id)),
         wpAuthorId: post.wpAuthorId ? String(post.wpAuthorId) : '',
         tags: Array.isArray(post.tags) ? post.tags.map((item: string) => String(item)) : [],
         attachments: Array.isArray(post.attachments) ? post.attachments : [],
       }
-      wpAuthorName.value = post.authorName || ''
-      if (post.authorUserId) {
-        author.value = {
-          id: String(post.authorUserId),
-          displayName: post.authorName || '',
-          username: post.authorUsername || '',
-          email: post.authorEmail || '',
-          photoUrl: post.authorPhotoUrl || '',
-        }
-      } else {
-        author.value = null
-      }
-      await Promise.all([loadLookups(form.value.locale), loadComments()])
+      loading.value = false
+      void hydrateAuthor()
+      void Promise.all([loadLookups(form.value.locale), loadComments()])
     } else {
-      await loadLookups(form.value.locale)
-      author.value = me.value
-      wpAuthorName.value = me.value?.displayName || me.value?.email || ''
+      form.value.locale = props.newsLocale === 'en' ? 'en' : 'es'
+      slugManual.value = false
       comments.value = []
       try {
-        const raw = sessionStorage.getItem(DRAFT_KEY)
+        const raw = sessionStorage.getItem(draftKey())
         if (raw) {
           const draft = JSON.parse(raw)
-          form.value = { ...form.value, ...draft, locale: form.value.locale }
+          form.value = {
+            ...form.value,
+            ...draft,
+            locale: form.value.locale,
+            publishedAt: draft.publishedAt || nowLocalInput(),
+          }
+          if (draft.esSlug || draft.enSlug || draft.slug) slugManual.value = true
+        } else if (!form.value.publishedAt) {
+          form.value.publishedAt = nowLocalInput()
         }
       } catch {
-        /* ignore broken drafts */
+        if (!form.value.publishedAt) form.value.publishedAt = nowLocalInput()
       }
+      loading.value = false
+      void hydrateAuthor()
+      void loadLookups(form.value.locale)
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'No se pudo cargar el formulario.'
-  } finally {
     loading.value = false
   }
 }
 
-const searchUsers = async (query: string) => {
-  const q = query.trim()
-  if (q.length < 2) {
-    userHits.value = []
-    return
-  }
-  searchingUsers.value = true
-  try {
-    const payload = await getAdminUsers({ page: 1, limit: 8, search: q })
-    if (userQuery.value.trim() !== q) return
-    userHits.value = (payload.items || []).map(toAccount)
-  } catch {
-    userHits.value = []
-  } finally {
-    searchingUsers.value = false
-  }
-}
+watch(
+  () => form.value.title,
+  (title) => {
+    if (isEditing.value || slugManual.value) return
+    const next = slugify(title)
+    form.value.slug = next
+    if (form.value.locale === 'en') form.value.enSlug = next
+    else form.value.esSlug = next
+  },
+)
 
-watch(userQuery, (value) => {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => searchUsers(value), 280)
-})
+const onPrimarySlugInput = (event: Event) => {
+  slugManual.value = true
+  primarySlug.value = (event.target as HTMLInputElement).value
+}
 
 watch(
   () => form.value.locale,
@@ -216,15 +299,9 @@ watch(
     await loadLookups(locale)
     form.value.categoryIds = []
     form.value.wpAuthorId = ''
+    ensureDefaultAuthor()
   },
 )
-
-const pickUser = (user: Account) => {
-  author.value = user
-  userQuery.value = ''
-  userHits.value = []
-  reassignOpen.value = false
-}
 
 const addTag = (name?: string) => {
   const value = String(name || tagDraft.value).trim()
@@ -261,27 +338,50 @@ watch(tagDraft, (value) => {
   tagTimer = setTimeout(() => searchTags(value), 220)
 })
 
-const uploadCover = async (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const [file] = input.files || []
-  if (!file) return
+const applyCoverFile = async (file?: File | null) => {
+  if (!file || !file.type.startsWith('image/')) return
   uploading.value = true
   errorMessage.value = ''
   try {
-    const uploaded = await uploadAdminImage('news-cover', file)
-    form.value.coverUrl = uploaded.path || uploaded.url || ''
+    const optimized = await compressImageFile(file, { maxEdge: 1600, targetBytes: 170_000 })
+    clearCoverPreview()
+    pendingCoverFile = optimized
+    coverObjectUrl = URL.createObjectURL(optimized)
+    coverPreview.value = coverObjectUrl
     if (!form.value.coverAlt.trim() && form.value.title.trim()) {
       form.value.coverAlt = form.value.title.trim()
     }
-    if (!form.value.coverCaption.trim() && form.value.title.trim()) {
-      form.value.coverCaption = form.value.title.trim()
+    const uploaded = await uploadAdminImage('news-cover', optimized)
+    const remote = uploaded.path || uploaded.url || ''
+    if (remote) {
+      form.value.coverUrl = remote
+      clearCoverPreview()
     }
   } catch {
-    errorMessage.value = 'No se pudo subir la portada.'
+    /* keep local preview; upload again on save */
   } finally {
     uploading.value = false
-    input.value = ''
   }
+}
+
+const uploadCover = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  await applyCoverFile(input.files?.[0])
+  input.value = ''
+}
+
+const onCoverDrag = (event: DragEvent, active: boolean) => {
+  event.preventDefault()
+  event.stopPropagation()
+  coverDragging.value = active
+}
+
+const onCoverDrop = async (event: DragEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+  coverDragging.value = false
+  const file = Array.from(event.dataTransfer?.files || []).find((item) => item.type.startsWith('image/'))
+  await applyCoverFile(file)
 }
 
 const uploadAttachment = async (event: Event) => {
@@ -325,6 +425,21 @@ const save = async () => {
   saving.value = true
   errorMessage.value = ''
   successMessage.value = ''
+  if (pendingCoverFile && !form.value.coverUrl) {
+    try {
+      const optimized = await compressImageFile(pendingCoverFile, { maxEdge: 1600, targetBytes: 170_000 })
+      const uploaded = await uploadAdminImage('news-cover', optimized)
+      const remote = uploaded.path || uploaded.url || ''
+      if (remote) {
+        form.value.coverUrl = remote
+        clearCoverPreview()
+      }
+    } catch {
+      errorMessage.value = 'No se pudo subir la portada. Revisa la conexión e inténtalo otra vez.'
+      saving.value = false
+      return
+    }
+  }
   const body = {
     locale: form.value.locale,
     title: form.value.title,
@@ -333,16 +448,16 @@ const save = async () => {
     excerpt: form.value.excerpt || '',
     content: form.value.content || '',
     coverUrl: form.value.coverUrl || undefined,
-    coverCaption: form.value.coverCaption || form.value.title || '',
-    coverAlt: form.value.coverAlt || form.value.title || '',
+    coverCaption: form.value.coverCaption.trim(),
+    coverAlt: form.value.coverAlt.trim() || form.value.title || '',
     status: form.value.status,
     featured: Boolean(form.value.featured),
     publishedAt: form.value.publishedAt ? new Date(form.value.publishedAt).toISOString() : undefined,
     categoryIds: form.value.categoryIds || [],
     tags: form.value.tags || [],
     attachments: form.value.attachments || [],
-    authorUserId: author.value?.id || (!isEditing.value ? me.value?.id : undefined) || undefined,
-    wpAuthorId: canChangeAuthor.value && form.value.wpAuthorId ? Number(form.value.wpAuthorId) : undefined,
+    authorUserId: selectedAuthor.value?.linkedUserId || (!isEditing.value ? me.value?.id : undefined) || undefined,
+    wpAuthorId: form.value.wpAuthorId ? Number(form.value.wpAuthorId) : undefined,
   }
   try {
     if (isEditing.value && props.postId) {
@@ -353,7 +468,7 @@ const save = async () => {
       const created = await createAdminNewsPost(body)
       successMessage.value = 'Noticia creada.'
       try {
-        sessionStorage.removeItem(DRAFT_KEY)
+        sessionStorage.removeItem(draftKey())
       } catch {
         /* ignore */
       }
@@ -375,7 +490,7 @@ watch(
   (value) => {
     if (isEditing.value || loading.value) return
     try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(value))
+      sessionStorage.setItem(draftKey(), JSON.stringify(value))
     } catch {
       /* ignore quota */
     }
@@ -383,8 +498,8 @@ watch(
   { deep: true },
 )
 onUnmounted(() => {
-  if (searchTimer) clearTimeout(searchTimer)
   if (tagTimer) clearTimeout(tagTimer)
+  clearCoverPreview()
 })
 </script>
 
@@ -395,48 +510,55 @@ onUnmounted(() => {
     <p v-if="loading" class="na-empty">Cargando formulario…</p>
     <form v-show="!loading" class="na-form-grid" @submit.prevent="save">
       <article class="na-card na-form-main">
-        <input
-          v-model="form.title"
-          class="na-title-input"
-          required
-          maxlength="220"
-          placeholder="Añadir título"
-        />
-        <div class="na-url-grid">
-          <label class="na-slug-field">
-            URL en español
-            <div class="na-url-line">
-              <span>/es/</span>
-              <input v-model="form.esSlug" maxlength="180" placeholder="ese" />
-            </div>
-            <small>{{ esHref }}</small>
-          </label>
-          <label class="na-slug-field">
-            URL in English
-            <div class="na-url-line">
-              <span>/</span>
-              <input v-model="form.enSlug" maxlength="180" placeholder="adaszd" />
-            </div>
-            <small>{{ enHref }}</small>
-          </label>
-        </div>
-        <NewsRichEditor v-model="form.content" :default-alt="form.title" />
-        <label>
-          Extracto
-          <textarea v-model="form.excerpt" rows="3" placeholder="Resumen corto de la nota" />
+        <label class="na-title-field">
+          <span>{{ form.locale === 'en' ? 'Title (English)' : 'Título (Español)' }}</span>
+          <input
+            v-model="form.title"
+            class="na-title-input"
+            required
+            maxlength="220"
+            :placeholder="form.locale === 'en' ? 'Add English title' : 'Añadir título en español'"
+          />
         </label>
+        <label class="na-dek-field">
+          <span>Subtítulo (h2) · opcional</span>
+          <textarea
+            v-model="form.excerpt"
+            rows="2"
+            maxlength="320"
+            :placeholder="
+              form.locale === 'en'
+                ? 'Optional subtitle under the title. Leave empty to hide.'
+                : 'Opcional. Solo aparece debajo del título si lo escribes aquí.'
+            "
+          />
+          <small>Solo se muestra en la nota si lo agregas. No se genera solo.</small>
+        </label>
+        <label class="na-slug-field">
+          URL {{ form.locale === 'en' ? '(English)' : '(Español)' }}
+          <div class="na-url-line">
+            <input
+              :value="primarySlug"
+              maxlength="180"
+              :placeholder="form.locale === 'en' ? 'from-the-title' : 'desde-el-titulo'"
+              @input="onPrimarySlugInput"
+            />
+          </div>
+          <small>{{ primaryHref }}</small>
+        </label>
+        <NewsRichEditor v-model="form.content" :default-alt="form.title" />
       </article>
 
       <aside class="na-form-side">
         <article class="na-card">
           <span class="kicker">Publicación</span>
-          <label>
-            Idioma
-            <select v-model="form.locale" :disabled="isEditing">
-              <option value="es">Español</option>
-              <option value="en">English</option>
-            </select>
-          </label>
+          <p class="na-locale-badge">
+            Solo {{ localeLabel }} ·
+            <b>{{ form.locale === 'en' ? 'musicmundial_en' : 'musicmundial_es' }}</b>
+          </p>
+          <p class="na-help">
+            Español e inglés son bases distintas. Esta nota no afecta al otro idioma.
+          </p>
           <label>
             Estado
             <select v-model="form.status">
@@ -455,75 +577,87 @@ onUnmounted(() => {
           </label>
         </article>
 
-        <article class="na-card">
+        <article class="na-card na-cover-card">
           <span class="kicker">Portada</span>
-          <div v-if="form.coverUrl" class="na-cover-box">
-            <img class="na-cover-preview" :src="form.coverUrl" alt="" />
+          <div
+            class="na-cover-drop"
+            :class="{ 'is-dragging': coverDragging, 'has-cover': Boolean(coverSrc) }"
+            @dragenter="onCoverDrag($event, true)"
+            @dragover="onCoverDrag($event, true)"
+            @dragleave="onCoverDrag($event, false)"
+            @drop="onCoverDrop"
+          >
+            <label class="na-file na-cover-upload">
+              {{
+                uploading
+                  ? 'Subiendo…'
+                  : coverDragging
+                    ? 'Suelta la imagen aquí'
+                    : coverSrc
+                      ? 'Cambiar imagen'
+                      : 'Arrastra una imagen o haz clic'
+              }}
+              <input type="file" accept="image/jpeg,image/png,image/webp" @change="uploadCover" />
+            </label>
+            <div v-if="coverSrc" class="na-cover-box">
+              <img class="na-cover-preview" :src="coverSrc" :alt="form.coverAlt || form.title || ''" />
+            </div>
+            <p v-else class="na-help">JPG, PNG o WebP. Se comprime a ~170 KB al subir.</p>
           </div>
-          <label>
-            URL
-            <input v-model="form.coverUrl" />
-          </label>
-          <label>
-            Pie de foto (SEO)
-            <input v-model="form.coverCaption" :placeholder="form.title || 'Título de la noticia'" />
+          <p v-if="coverPreview && !form.coverUrl" class="na-help">Vista previa local · se sube al servidor al guardar.</p>
+          <label class="na-cover-seo">
+            Banner en portada (opcional)
+            <input
+              v-model="form.coverCaption"
+              maxlength="180"
+              placeholder="Solo si quieres el texto sobre la foto. Déjalo vacío para no mostrarlo."
+            />
+            <small class="na-help">Si no escribes nada, la portada sale sin banner.</small>
           </label>
           <label>
             Texto alternativo (SEO)
             <input v-model="form.coverAlt" :placeholder="form.title || 'Título de la noticia'" />
           </label>
-          <label class="na-file">
-            {{ uploading ? 'Subiendo…' : 'Subir imagen' }}
-            <input type="file" accept="image/jpeg,image/png,image/webp" @change="uploadCover" />
-          </label>
         </article>
 
         <article class="na-card">
           <span class="kicker">Autor</span>
-          <p class="na-help">La nota se firma con el correo de la cuenta. Solo un admin puede cambiarlo.</p>
-          <div class="na-author-chip">
-            <img v-if="author?.photoUrl" :src="author.photoUrl" alt="" />
-            <span v-else class="ph">{{ (author ? authorLabel(author) : wpAuthorName || 'A').slice(0, 1) }}</span>
+          <p class="na-help">
+            Elige un autor del panel Autores. Edita nombre, bio, foto y vínculo VMM allí.
+          </p>
+          <div v-if="selectedAuthor" class="na-author-chip">
+            <img v-if="selectedAuthor.photoUrl" :src="selectedAuthor.photoUrl" alt="" />
+            <span v-else class="ph">{{ selectedAuthor.name.slice(0, 1) }}</span>
             <div>
-              <b>{{ author ? authorLabel(author) : wpAuthorName || 'Redacción' }}</b>
-              <small>{{ author?.email || (author?.username ? `@${author.username}` : 'Autor de la nota') }}</small>
+              <b>{{ selectedAuthor.name }}</b>
+              <small>
+                {{ selectedAuthor.email || 'Autor de noticias' }}
+                ·
+                {{ selectedAuthor.linkedUserId ? 'Cuenta VMM vinculada' : 'Sin cuenta VMM' }}
+              </small>
             </div>
           </div>
-          <button v-if="canChangeAuthor && !reassignOpen" class="na-btn" type="button" @click="reassignOpen = true">
-            Cambiar autor
-          </button>
-          <template v-if="canChangeAuthor && reassignOpen">
-            <label>
-              Buscar cuenta
-              <input v-model="userQuery" type="search" placeholder="Nombre, usuario o correo" autocomplete="off" />
-            </label>
-            <p v-if="searchingUsers" class="na-help">Buscando cuentas…</p>
-            <div v-else-if="userHits.length" class="na-user-hits">
-              <button v-for="hit in userHits" :key="hit.id" type="button" @click="pickUser(hit)">
-                <img v-if="hit.photoUrl" :src="hit.photoUrl" alt="" />
-                <span>
-                  <b>{{ authorLabel(hit) }}</b>
-                  <small>{{ hit.email || (hit.username ? `@${hit.username}` : '') }}</small>
-                </span>
-              </button>
-            </div>
-            <label>
-              Sustituir autor de noticias
-              <select v-model="form.wpAuthorId">
-                <option value="">Mantener / crear firma nueva</option>
-                <option v-for="item in wpAuthors" :key="item.id" :value="item.id">
-                  {{ item.name }} · {{ item.postCount }} notas
-                </option>
-              </select>
-            </label>
-            <button class="na-btn" type="button" @click="reassignOpen = false">Cerrar</button>
-          </template>
+          <label>
+            Autor de la nota
+            <select v-model="form.wpAuthorId" :disabled="!canChangeAuthor || lookupsLoading">
+              <option disabled value="">{{ lookupsLoading ? 'Cargando autores…' : 'Seleccionar autor' }}</option>
+              <option v-for="item in wpAuthors" :key="item.id" :value="String(item.id)">
+                {{ item.name }} · {{ item.postCount }} notas{{ item.linkedUserId ? ' · VMM' : '' }}
+              </option>
+            </select>
+          </label>
+          <a class="na-btn" href="/es/admin/autores">Gestionar autores</a>
         </article>
 
         <article class="na-card">
-          <span class="kicker">Categorías</span>
-          <div class="na-checks">
-            <label v-for="cat in categories" :key="cat.id" class="na-check">
+          <span class="kicker">Categorías · {{ localeLabel }}</span>
+          <p v-if="lookupsLoading && !visibleCategories.length" class="na-help">Cargando categorías…</p>
+          <p v-else-if="!visibleCategories.length" class="na-help">
+            No hay categorías en {{ localeLabel }} ({{ form.locale === 'en' ? 'musicmundial_en' : 'musicmundial_es' }}).
+            Créalas en Categorías del menú.
+          </p>
+          <div v-else class="na-checks">
+            <label v-for="cat in visibleCategories" :key="cat.id" class="na-check">
               <input v-model="form.categoryIds" type="checkbox" :value="String(cat.id)" />
               {{ cat.name }}
             </label>

@@ -49,7 +49,15 @@ export class NewsAdminController {
   @Patch('authors/:id')
   updateAuthor(
     @Param('id') id: string,
-    @Body() body: { locale?: string; name?: string; bio?: string; website?: string; photoUrl?: string },
+    @Body()
+    body: {
+      locale?: string;
+      name?: string;
+      bio?: string;
+      website?: string;
+      photoUrl?: string;
+      linkedUserId?: string | null;
+    },
   ) {
     return this.news.adminUpdateAuthor(id, body);
   }
@@ -144,5 +152,23 @@ export class NewsAdminController {
   @Delete('posts/:id')
   remove(@Param('id') id: string, @Query('locale') locale?: string) {
     return this.news.remove(id, locale);
+  }
+
+  @Get('pages')
+  listPages(@Query('locale') locale?: string) {
+    return this.news.listSitePages(locale);
+  }
+
+  @Get('pages/:key')
+  getPage(@Param('key') key: string, @Query('locale') locale?: string) {
+    return this.news.adminGetSitePage(key, locale);
+  }
+
+  @Patch('pages/:key')
+  updatePage(
+    @Param('key') key: string,
+    @Body() body: { locale?: string; title?: string; content?: string; status?: string },
+  ) {
+    return this.news.updateSitePage(key, body);
   }
 }

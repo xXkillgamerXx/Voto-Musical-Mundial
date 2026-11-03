@@ -78,10 +78,13 @@ const search = () => {
   load()
 }
 
+const emit = defineEmits<{ localeChange: [locale: 'es' | 'en'] }>()
+
 const setLocale = (next: 'es' | 'en') => {
   if (locale.value === next) return
   locale.value = next
   page.value = 1
+  emit('localeChange', next)
   load()
 }
 
@@ -126,17 +129,38 @@ const setPage = (next: number) => {
 }
 
 watch(page, () => window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }))
-onMounted(load)
+onMounted(() => {
+  emit('localeChange', locale.value)
+  load()
+})
 </script>
 
 <template>
   <section>
+    <div class="na-lang-tabs" role="tablist" aria-label="Idioma de las notas">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="locale === 'es'"
+        :class="{ on: locale === 'es' }"
+        @click="setLocale('es')"
+      >
+        <strong>Español</strong>
+        <span>Notas en ES</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="locale === 'en'"
+        :class="{ on: locale === 'en' }"
+        @click="setLocale('en')"
+      >
+        <strong>English</strong>
+        <span>Notes in EN</span>
+      </button>
+    </div>
     <div class="na-filters">
       <div class="na-toolbar">
-        <div class="na-ranges" role="group" aria-label="Idioma">
-          <button type="button" :class="{ on: locale === 'en' }" @click="setLocale('en')">EN</button>
-          <button type="button" :class="{ on: locale === 'es' }" @click="setLocale('es')">ES</button>
-        </div>
         <input
           v-model="q"
           class="na-search"

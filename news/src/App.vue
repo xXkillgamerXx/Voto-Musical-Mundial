@@ -12,6 +12,7 @@ import NewsTagPage from './components/NewsTagPage.vue'
 import NewsForumPage from './components/NewsForumPage.vue'
 import { FORUM_BOARDS, forumCover } from './lib/forum'
 import NewsProfilePage from './components/NewsProfilePage.vue'
+import NewsStaticPage from './components/NewsStaticPage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
 import { categoryHref, coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
@@ -473,6 +474,7 @@ function toggleNotices() {
   noticesOpen.value = !noticesOpen.value
   accountOpen.value = false
   searchOpen.value = false
+  closeMenu()
   if (noticesOpen.value) loadInbox()
 }
 
@@ -647,6 +649,15 @@ onUnmounted(() => {
   <template v-else>
   <header class="site-header">
     <div class="container head-inner">
+      <button
+        class="round mobile-toggle"
+        type="button"
+        :aria-label="txt('menu')"
+        :aria-expanded="menuOpen"
+        @click="menuOpen = !menuOpen; if (menuOpen) closePops()"
+      >
+        ☰
+      </button>
       <a :href="loc('/')" class="brand" @click="closeMenu">
         <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
         <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
@@ -768,10 +779,10 @@ onUnmounted(() => {
               />
             </label>
             <p v-if="searchLoading" class="search-status">{{ txt('searching') }}</p>
-            <p v-else-if="searchQuery.trim().length < 2" class="search-status">{{ txt('searchEmpty') }}</p>
+            <p v-else-if="searchQuery.trim().length < 2" class="search-status is-hint">{{ txt('searchEmpty') }}</p>
             <p v-else-if="!searchHits.length" class="search-status">{{ txt('searchNone') }}</p>
             <a
-              v-for="item in searchHits"
+              v-for="item in searchHits.slice(0, 6)"
               :key="item.id"
               class="search-hit"
               :href="item.href"
@@ -822,7 +833,19 @@ onUnmounted(() => {
           <button class="auth-login" type="button" @click="openAuth('login')">{{ txt('navLogin') }}</button>
           <button class="auth-register" type="button" @click="openAuth('register')">{{ txt('navRegister') }}</button>
         </div>
-        <div v-if="isSignedIn" class="icon-pop">
+        <button
+          v-if="!isSignedIn"
+          class="avatar auth-avatar"
+          type="button"
+          :aria-label="txt('navLogin')"
+          @click="openAuth('login')"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="9" r="3.2" />
+            <path d="M5.5 19.2c1.6-3.2 3.8-4.7 6.5-4.7s4.9 1.5 6.5 4.7" />
+          </svg>
+        </button>
+        <div v-if="isSignedIn" class="icon-pop account-slot">
           <button
             class="avatar"
             type="button"
@@ -847,17 +870,15 @@ onUnmounted(() => {
             <button type="button" @click="handleLogout">{{ txt('navLogout') }}</button>
           </div>
         </div>
-        <button
-          class="round mobile-toggle"
-          type="button"
-          :aria-label="txt('menu')"
-          @click="menuOpen = !menuOpen; if (menuOpen) closePops()"
-        >
-          ☰
-        </button>
       </div>
     </div>
   </header>
+  <div
+    v-if="menuOpen"
+    class="nav-scrim"
+    aria-hidden="true"
+    @click="closeMenu"
+  ></div>
 
   <NewsArticle v-if="newsPage.name === 'article'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsAuthorPage v-else-if="newsPage.name === 'author'" :slug="newsPage.slug" :locale="newsPage.locale" />
@@ -870,6 +891,7 @@ onUnmounted(() => {
   <NewsCategoriesPage v-else-if="newsPage.name === 'categories'" :locale="newsPage.locale" />
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsTagPage v-else-if="newsPage.name === 'tag'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsStaticPage v-else-if="newsPage.name === 'static'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsProfilePage
     v-else-if="newsPage.name === 'profile'"
     :locale="newsPage.locale"
@@ -1302,27 +1324,39 @@ onUnmounted(() => {
     </template>
   </main>
 
-  <footer v-if="newsPage.name !== 'home' || homeReady || slides.length" id="contacto" class="footer">
+  <footer v-if="newsPage.name !== 'home' || homeReady || slides.length || newsPage.name === 'static'" id="contacto" class="footer">
     <div class="container foot-inner">
-      <div>
+      <div class="foot-brand">
         <a :href="loc('/')" class="brand">
           <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
           <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
         </a>
         <p>
-          {{ txt('footerBlurb') }}<br />
-          {{ txt('footerTag') }}
+          {{ txt('footerBlurb') }}
+          <span>{{ txt('footerTag') }}</span>
         </p>
       </div>
-      <div class="foot-links">
+      <nav class="foot-col" :aria-label="txt('navHome')">
+        <strong>{{ txt('explore') }}</strong>
         <a :href="loc('/')">{{ txt('navHome') }}</a>
         <a :href="loc('/kpop')">K-POP</a>
         <a :href="loc('/k-drama')">K-Dramas</a>
         <a :href="loc('/celebridades')">{{ txt('celebrities') }}</a>
         <a href="/vote/">{{ txt('navVote') }}</a>
         <a :href="loc('/forum')">{{ txt('navForum') }}</a>
-        <a href="mailto:hola@musicmundial.com">{{ txt('contact') }}</a>
-      </div>
+      </nav>
+      <nav class="foot-col foot-sitemap" :aria-label="txt('footerSitemap')">
+        <strong>{{ txt('footerSitemap') }}</strong>
+        <a :href="loc(siteLocale === 'en' ? '/about-us' : '/sobre-nosotros')">{{ txt('footerAbout') }}</a>
+        <a :href="loc(siteLocale === 'en' ? '/terms-and-conditions' : '/terminos-y-condiciones')">{{ txt('footerTerms') }}</a>
+        <a :href="loc('/cookies')">{{ txt('footerCookies') }}</a>
+        <a :href="loc(siteLocale === 'en' ? '/privacy-policy' : '/politica-de-privacidad')">{{ txt('footerPrivacy') }}</a>
+        <a :href="loc('/dmca')">{{ txt('footerDmca') }}</a>
+        <a :href="loc(siteLocale === 'en' ? '/contact-us' : '/contactanos')">{{ txt('footerContact') }}</a>
+      </nav>
+    </div>
+    <div class="foot-bottom">
+      <p class="foot-copy">{{ txt('footerCopy').replace('{year}', String(new Date().getFullYear())) }}</p>
     </div>
   </footer>
 

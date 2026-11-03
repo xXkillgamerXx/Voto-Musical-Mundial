@@ -58,3 +58,7 @@ export const getNewsPopular = ({ exclude = '', limit = 5, locale } = {}) => {
   if (exclude) params.set('exclude', exclude)
   return apiRequest(`/news/popular?${params.toString()}`)
 }
+export const getNewsPage = (slug, locale) =>
+  apiRequest(withLocale(`/news/pages/${encodeURIComponent(slug)}`, locale))
+export const postNewsContact = (body) =>
+  apiRequest('/news/contact', { method: 'POST', body })

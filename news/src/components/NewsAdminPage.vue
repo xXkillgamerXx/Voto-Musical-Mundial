@@ -4,6 +4,7 @@ import AuthDialog from './AuthDialog.vue'
 import NewsAdminAuthors from './NewsAdminAuthors.vue'
 import NewsAdminCategories from './NewsAdminCategories.vue'
 import NewsAdminForum from './NewsAdminForum.vue'
+import NewsAdminPages from './NewsAdminPages.vue'
 import NewsAdminTags from './NewsAdminTags.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
@@ -65,29 +66,43 @@ type Overview = {
 }
 
 const props = defineProps<{
-  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'post-form'
+  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'post-form'
   postId?: string
   newsLocale?: 'es' | 'en'
 }>()
 const section = computed(() => props.section || 'dashboard')
 
 const ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
+const postsLocale = ref<'es' | 'en'>('es')
+const newPostHref = computed(() =>
+  postsLocale.value === 'en' ? '/es/admin/noticias/en/nueva' : '/es/admin/noticias/nueva',
+)
+
 const pageTitle = computed(() => {
-  if (section.value === 'post-form') return props.postId ? 'Editar noticia' : 'Nueva noticia'
+  if (section.value === 'post-form') {
+    if (props.postId) return props.newsLocale === 'en' ? 'Edit note (EN)' : 'Editar noticia (ES)'
+    return props.newsLocale === 'en' ? 'Nueva noticia (EN)' : 'Nueva noticia (ES)'
+  }
   if (section.value === 'posts') return 'Noticias'
   if (section.value === 'categories') return 'Categorías'
   if (section.value === 'authors') return 'Autores'
   if (section.value === 'tags') return 'Etiquetas'
   if (section.value === 'forum') return 'Foro'
+  if (section.value === 'pages') return 'Páginas'
   return 'Dashboard'
 })
 const pageLead = computed(() => {
-  if (section.value === 'post-form') return 'La nota se firma con tu correo. Solo un admin puede cambiar el autor.'
-  if (section.value === 'posts') return 'Crea, edita y publica notas en español e inglés.'
-  if (section.value === 'categories') return 'Categorías de musicmundial_es y musicmundial_en.'
-  if (section.value === 'authors') return 'Nombre, bio, foto y web que salen en las notas.'
+  if (section.value === 'post-form') {
+    return props.newsLocale === 'en'
+      ? 'English only · saves to musicmundial_en. Independent from Spanish.'
+      : 'Solo español · se guarda en musicmundial_es. Independiente del inglés.'
+  }
+  if (section.value === 'posts') return 'Español e inglés son bases distintas. El tab decide dónde se crea la nota.'
+  if (section.value === 'categories') return 'Categorías por base: musicmundial_es y musicmundial_en.'
+  if (section.value === 'authors') return 'Autores por idioma. Edítalos y vincula una cuenta Vote Music Mundial.'
   if (section.value === 'tags') return 'Cada etiqueta tiene su página. Aquí se configura la ficha.'
   if (section.value === 'forum') return 'Salas del foro, textos ES/EN, VIP y temas (fijar, cerrar u ocultar).'
+  if (section.value === 'pages') return 'About, términos, cookies, privacidad, DMCA y contacto. Editable por idioma.'
   return 'Resumen de musicmundial_es y musicmundial_en'
 })
 
@@ -199,12 +214,15 @@ const refreshAccess = async () => {
     return
   }
   try {
-    const me = await getMe()
+    const me = await Promise.race([
+      getMe(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ])
     user.value = me ? { ...current, ...me } : current
     allowed.value = ADMIN_ROLES.has(String(me?.role || current?.role || '').trim().toLowerCase())
     if (allowed.value && section.value === 'dashboard') await loadOverview()
   } catch {
-    allowed.value = false
+    allowed.value = ADMIN_ROLES.has(String(current?.role || '').trim().toLowerCase())
   } finally {
     checking.value = false
   }
@@ -240,16 +258,19 @@ onUnmounted(() => {
 <template>
   <div v-if="checking" class="news-admin na-loading">
     <div class="na-gate-card">
-      <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
-      <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
-      <p>Comprobando acceso…</p>
+      <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" width="220" height="36" />
+      <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" width="220" height="36" />
+      <div class="na-load" role="status" aria-live="polite">
+        <span class="na-load-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>Comprobando acceso…</span>
+      </div>
     </div>
   </div>
 
   <div v-else-if="!user || !allowed" class="news-admin na-gate">
     <div class="na-gate-card">
-      <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
-      <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
+      <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" width="220" height="36" />
+      <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" width="220" height="36" />
       <p class="kicker" style="color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase">
         Panel de noticias
       </p>
@@ -304,6 +325,10 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
           Foro
         </a>
+        <a :class="{ on: section === 'pages' }" href="/es/admin/paginas" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5" /></svg>
+          Páginas
+        </a>
       </nav>
       <div class="na-user">
         <div class="na-user-row">
@@ -333,7 +358,9 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="na-top-actions">
-          <a v-if="section === 'posts'" class="na-btn solid" href="/es/admin/noticias/nueva">Nueva noticia</a>
+          <a v-if="section === 'posts'" class="na-btn solid" :href="newPostHref">
+            {{ postsLocale === 'en' ? 'New note (EN)' : 'Nueva noticia (ES)' }}
+          </a>
           <button v-if="section === 'forum'" class="na-btn solid" type="button" @click="forumCreateTick += 1">Nueva sala</button>
           <div v-if="section === 'dashboard'" class="na-ranges" role="group" aria-label="Rango">
             <button v-for="option in [7, 30, 90]" :key="option" type="button" :class="{ on: days === option }" @click="setDays(option)">
@@ -360,11 +387,12 @@ onUnmounted(() => {
 
       <main class="na-body">
         <NewsAdminPostForm v-if="section === 'post-form'" :post-id="postId" :news-locale="newsLocale" />
-        <NewsAdminPosts v-else-if="section === 'posts'" />
+        <NewsAdminPosts v-else-if="section === 'posts'" @locale-change="postsLocale = $event" />
         <NewsAdminCategories v-else-if="section === 'categories'" />
         <NewsAdminAuthors v-else-if="section === 'authors'" />
         <NewsAdminTags v-else-if="section === 'tags'" />
         <NewsAdminForum v-else-if="section === 'forum'" :create-tick="forumCreateTick" />
+        <NewsAdminPages v-else-if="section === 'pages'" />
         <template v-else>
         <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
         <p v-else-if="loading && !overview" class="na-empty">Cargando dashboard…</p>

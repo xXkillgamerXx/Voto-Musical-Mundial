@@ -1,10 +1,14 @@
-# Deploy vote.musicmundial.com to production.
-# Frontend: Apache static files
+# Deploy production:
+# - Vote SPA + backend Docker on 213 (vote.musicmundial.com)
+# - News + vote static HTML on 161 (www.musicmundial.com)
+#
+# Frontend: Apache/nginx static files
 # Backend: Docker (docker-compose.vote-db.yml)
 
 param(
   [switch]$FrontendOnly,
-  [switch]$BackendOnly
+  [switch]$BackendOnly,
+  [switch]$SkipNewsHost
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,7 +36,7 @@ function Invoke-Ssh {
 }
 
 if (-not $BackendOnly) {
-  Write-Host "Building frontend..." -ForegroundColor Cyan
+  Write-Host "Building vote frontend..." -ForegroundColor Cyan
   Push-Location $root
   $env:VITE_API_BASE_URL = "/vote/api"
   $env:VITE_FIREBASE_VAPID_KEY = "BNQEx4dNvUVEV_CJ1qV64yzOA3xXPB2Y30EN_m4RLTf22tbVe_E1lkV-jNK7lbh4pbTxN2aOAN5mLPUMdYcRZuc"
@@ -41,14 +45,30 @@ if (-not $BackendOnly) {
   $env:VITE_INSTAGRAM_URL = "https://www.instagram.com/musicmundial_awards/"
   npm run build
   Remove-Item Env:VITE_API_BASE_URL, Env:VITE_FIREBASE_VAPID_KEY, Env:VITE_TURNSTILE_SITE_KEY, Env:VITE_INSTAGRAM_HANDLE, Env:VITE_INSTAGRAM_URL -ErrorAction SilentlyContinue
+
+  Write-Host "Building news frontend (www.musicmundial.com)..." -ForegroundColor Cyan
+  npx vite build --config news/vite.config.js
   Pop-Location
 
-  Write-Host "Uploading frontend dist..." -ForegroundColor Cyan
+  Write-Host "Uploading vote frontend to 213..." -ForegroundColor Cyan
   & scp @scp -r "$root\dist\*" "${sshUser}@${hostName}:${siteRoot}/"
   if ($LASTEXITCODE -ne 0) { throw "Frontend upload failed" }
 
-  Write-Host "Fixing frontend permissions..." -ForegroundColor Cyan
+  Write-Host "Fixing vote frontend permissions..." -ForegroundColor Cyan
   Invoke-Ssh "chmod 755 ${siteRoot}/assets && find ${siteRoot}/assets -type d -exec chmod 755 {} \; && find ${siteRoot}/assets -type f -exec chmod 644 {} \;"
+
+  if (-not $SkipNewsHost) {
+    if (-not $env:NMM_SSH_PASSWORD) {
+      Write-Host "NMM_SSH_PASSWORD no esta definida. No se pudo subir news/vote HTML al host 161." -ForegroundColor Yellow
+      Write-Host "Define NMM_SSH_PASSWORD y corre: py -3 deploy\new_musicmundial\scripts\upload_html_161.py" -ForegroundColor Yellow
+    } else {
+      Write-Host "Uploading news+vote HTML to 161 (www.musicmundial.com)..." -ForegroundColor Cyan
+      Push-Location $root
+      py -3 .\deploy\new_musicmundial\scripts\upload_html_161.py
+      if ($LASTEXITCODE -ne 0) { throw "News host upload failed" }
+      Pop-Location
+    }
+  }
 }
 
 if (-not $FrontendOnly) {

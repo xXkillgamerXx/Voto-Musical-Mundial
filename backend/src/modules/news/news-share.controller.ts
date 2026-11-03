@@ -215,6 +215,7 @@ export class NewsShareController {
           {
             locale,
             title: escapeHtml(stripHtml(article?.title || titleRaw)),
+            dek: escapeHtml(clip(stripHtml(article?.dek || ''), 320)),
             excerpt: escapeHtml(clip(stripHtml(article?.excerpt || ''), 280)),
             author: escapeHtml(author),
             authorHref: authorHref ? escapeHtml(authorHref.startsWith('http') ? authorHref : authorHref) : '',

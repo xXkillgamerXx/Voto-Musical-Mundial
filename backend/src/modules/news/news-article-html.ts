@@ -23,6 +23,8 @@ export type ArticleHead = {
 export type ArticleBody = {
   locale: 'es' | 'en';
   title: string;
+  /** Subtítulo manual (h2). Solo si el editor lo escribió. */
+  dek?: string;
   excerpt?: string;
   author?: string;
   authorHref?: string;
@@ -206,6 +208,7 @@ export const renderArticleBody = (body: ArticleBody) => {
           ${crumbs}
           </nav>
           <h1>${body.title}</h1>
+          ${body.dek ? `<h2 class="article-dek">${body.dek}</h2>` : ''}
           <p class="article-meta">
             ${author ? `<span class="article-by">${byLabel} ${author}</span>` : ''}
             ${
@@ -216,12 +219,13 @@ export const renderArticleBody = (body: ArticleBody) => {
           </p>
           ${
             body.image
-              ? `<figure class="article-cover"><img src="${body.image}" alt="${body.imageAlt || body.title}" width="1600" height="900" fetchpriority="high" decoding="async"><figcaption>${
-                  body.imageCaption || body.imageAlt || body.title || ''
-                }</figcaption></figure>`
+              ? `<figure class="article-cover"><img src="${body.image}" alt="${body.imageAlt || body.title}" width="1600" height="900" fetchpriority="high" decoding="async">${
+                  body.imageCaption
+                    ? `<figcaption>${body.imageCaption}</figcaption>`
+                    : ''
+                }</figure>`
               : ''
           }
-          ${body.excerpt ? `<p class="article-lead">${body.excerpt}</p>` : ''}
           <div class="article-body">
             ${content}
           </div>

@@ -55,6 +55,7 @@ export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter | null;
   private readonly from: string;
+  private readonly contactTo: string;
   private readonly logoPath: string | null;
   private readonly smtpHost: string;
   private readonly smtpPort: number;
@@ -81,6 +82,10 @@ export class MailService implements OnModuleInit {
     this.from =
       String(config.get<string>('MAIL_FROM') || '').trim() ||
       'Music Mundial VOTING <noreply@musicmundial.com>';
+    this.contactTo =
+      String(config.get<string>('CONTACT_TO') || config.get<string>('MAIL_CONTACT_TO') || '')
+        .trim()
+        .toLowerCase() || 'hola@musicmundial.com';
 
     const candidate = join(process.cwd(), 'assets', 'email', 'logo-votos.png');
     this.logoPath = existsSync(candidate) ? candidate : null;
@@ -275,6 +280,61 @@ export class MailService implements OnModuleInit {
     };
   }
 
+  async sendContactForm(input: {
+    name: string;
+    email: string;
+    subject: string;
+    message: string;
+  }) {
+    const name = String(input.name || '').trim().slice(0, 120);
+    const email = String(input.email || '')
+      .trim()
+      .toLowerCase()
+      .slice(0, 180);
+    const subject = String(input.subject || '').trim().slice(0, 180);
+    const message = String(input.message || '').trim().slice(0, 5000);
+    if (!name || !email || !subject || !message) {
+      throw new Error('Completa todos los campos del formulario.');
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('El correo no es válido.');
+    }
+    if (!this.transporter) {
+      throw new Error(
+        'SMTP no configurado. Revisa SMTP_HOST, SMTP_USER y SMTP_PASS en backend/.env',
+      );
+    }
+    const to = this.contactTo;
+    const mailSubject = `[Contacto Music Mundial] ${subject}`;
+    const text = `Nombre: ${name}\nEmail: ${email}\nAsunto: ${subject}\n\n${message}`;
+    const html = `<div style="font:14px/1.5 Arial,sans-serif;color:#111">
+      <p><strong>Nombre:</strong> ${name.replace(/</g, '&lt;')}</p>
+      <p><strong>Email:</strong> ${email.replace(/</g, '&lt;')}</p>
+      <p><strong>Asunto:</strong> ${subject.replace(/</g, '&lt;')}</p>
+      <hr/>
+      <p style="white-space:pre-wrap">${message.replace(/</g, '&lt;')}</p>
+    </div>`;
+    try {
+      await this.sendMail({
+        to,
+        subject: mailSubject,
+        text,
+        html,
+        replyTo: `${name} <${email}>`,
+        kind: 'test',
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|SMTP no configurado/i.test(detail)) {
+        throw new Error(
+          'No se pudo conectar al servidor de correo. Revisa SMTP_HOST/SMTP_PORT en backend/.env (en local no uses la IP Docker 172.17.0.1).',
+        );
+      }
+      throw new Error(`No se pudo enviar el correo: ${detail}`);
+    }
+    return { ok: true, to };
+  }
+
   async sendTestEmail(input: {
     to: string;
     subject?: string;
@@ -440,6 +500,7 @@ export class MailService implements OnModuleInit {
     subject: string;
     text: string;
     html: string;
+    replyTo?: string;
     kind?: MailMetricKind;
     attachments?: Array<{
       filename: string;
@@ -460,6 +521,7 @@ export class MailService implements OnModuleInit {
       const info = await this.transporter.sendMail({
         from: this.from,
         to: input.to,
+        replyTo: input.replyTo || undefined,
         subject: input.subject,
         text: input.text,
         html: input.html,

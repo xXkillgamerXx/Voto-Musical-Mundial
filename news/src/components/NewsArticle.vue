@@ -187,8 +187,13 @@ watch(bodyHtml, async () => {
           >{{ cat.name }}</a>
         </div>
         <h1>{{ post.title }}</h1>
+        <h2 v-if="post.dek" class="article-dek">{{ post.dek }}</h2>
         <p class="article-meta">
           <span class="article-by">
+            <span class="article-author-avatar" aria-hidden="true">
+              <img v-if="post.authorPhotoUrl" :src="post.authorPhotoUrl" :alt="''" />
+              <span v-else class="ph">{{ (post.authorName || t(loc, 'staff') || 'A').slice(0, 1) }}</span>
+            </span>
             {{ t(loc, 'byAuthor') }}
             <NewsAuthorHover
               :locale="loc"
@@ -199,13 +204,13 @@ watch(bodyHtml, async () => {
               :post-count="post.authorPostCount"
             />
           </span>
-          <span v-if="post.publishedAt"> · {{ formatNewsDate(post.publishedAt, loc) }}</span>
+          <span v-if="post.publishedAt" class="article-meta-sep" aria-hidden="true"></span>
+          <time v-if="post.publishedAt" :datetime="post.publishedAt">{{ formatNewsDate(post.publishedAt, loc) }}</time>
         </p>
         <figure v-if="post.coverUrl" class="article-cover">
           <img :src="coverOf(post)" :alt="post.coverAlt || post.title" width="1600" height="900" fetchpriority="high" decoding="async" />
-          <figcaption>{{ post.coverCaption || post.coverAlt || post.title }}</figcaption>
+          <figcaption v-if="post.coverCaption">{{ post.coverCaption }}</figcaption>
         </figure>
-        <p v-if="post.excerpt" class="article-lead">{{ post.excerpt }}</p>
         <div class="article-body" v-html="bodyHtml"></div>
         <div v-if="post.tags?.length" class="article-post-tags">
           <span>{{ t(loc, 'articleTags') }}</span>

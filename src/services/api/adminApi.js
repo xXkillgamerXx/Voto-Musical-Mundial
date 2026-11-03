@@ -305,6 +305,13 @@ export const updateAdminNewsCategory = (id, body) =>
 export const deleteAdminNewsCategory = (id) =>
   adminRequest(`/news/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
+export const getAdminNewsPages = (locale = 'es') =>
+  adminRequest(`/news/pages?locale=${encodeURIComponent(locale)}`)
+export const getAdminNewsPage = (key, locale = 'es') =>
+  adminRequest(`/news/pages/${encodeURIComponent(key)}?locale=${encodeURIComponent(locale)}`)
+export const updateAdminNewsPage = (key, body) =>
+  adminRequest(`/news/pages/${encodeURIComponent(key)}`, { method: 'PATCH', body })
+
 export const getAdminForumCategories = () => adminRequest('/forum/categories')
 export const createAdminForumCategory = (body) => adminRequest('/forum/categories', { method: 'POST', body })
 export const updateAdminForumCategory = (slug, body) =>

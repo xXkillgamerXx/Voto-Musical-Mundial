@@ -1,14 +1,18 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { MailService } from '../mail/mail.service';
 import { CreateNewsCommentDto } from './dto/upsert-news-post.dto';
 import { ListNewsDto } from './dto/list-news.dto';
 import { NewsService } from './news.service';
 
 @Controller('news')
 export class NewsController {
-  constructor(private readonly news: NewsService) {}
+  constructor(
+    private readonly news: NewsService,
+    private readonly mail: MailService,
+  ) {}
 
   @Get('home')
   home(@Query('locale') locale?: string) {
@@ -74,5 +78,32 @@ export class NewsController {
   @Get('posts/:slug')
   findOne(@Param('slug') slug: string, @Query('locale') locale?: string) {
     return this.news.findBySlug(slug, locale);
+  }
+
+  @Get('pages')
+  listPages(@Query('locale') locale?: string) {
+    return this.news.listSitePages(locale);
+  }
+
+  @Get('pages/:slug')
+  getPage(@Param('slug') slug: string, @Query('locale') locale?: string) {
+    return this.news.getSitePage(slug, locale);
+  }
+
+  @Post('contact')
+  async contact(
+    @Body()
+    body: { name?: string; email?: string; subject?: string; message?: string },
+  ) {
+    try {
+      return await this.mail.sendContactForm({
+        name: String(body?.name || ''),
+        email: String(body?.email || ''),
+        subject: String(body?.subject || ''),
+        message: String(body?.message || ''),
+      });
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'No se pudo enviar el mensaje.');
+    }
   }
 }

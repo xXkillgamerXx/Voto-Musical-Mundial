@@ -73,6 +73,16 @@ const RESERVED_SLUGS = new Set([
   'author',
   'forum',
   'foro',
+  'sobre-nosotros',
+  'about-us',
+  'terminos-y-condiciones',
+  'terms-and-conditions',
+  'cookies',
+  'politica-de-privacidad',
+  'privacy-policy',
+  'dmca',
+  'contactanos',
+  'contact-us',
 ])
 
 const articleShareTarget = (urlPath) => {
@@ -238,14 +248,16 @@ export const musicMundialLandingPlugin = () => ({
       const rootSlug = urlPath.match(/^\/([A-Za-z0-9_-]+)\/?$/)
       if (rootSlug && !RESERVED_SLUGS.has(rootSlug[1])) {
         proxyLegacyRoot(rootSlug[1], req, res, () => {
-          proxyNewsShare({ slug: rootSlug[1], locale: 'en' }, req, res, '', () => serveNewsHtml(res, base))
+          // En Vite local la SPA carga el CSS vivo; el HTML SSR de /api/news/share
+          // apunta a /assets/*.css del build y aquí suele 404 → página sin estilos.
+          serveNewsHtml(res, base)
         })
         return
       }
 
       const shareTarget = articleShareTarget(urlPath)
       if (shareTarget) {
-        proxyNewsShare(shareTarget, req, res, '', () => serveNewsHtml(res, base))
+        serveNewsHtml(res, base)
         return
       }
 
