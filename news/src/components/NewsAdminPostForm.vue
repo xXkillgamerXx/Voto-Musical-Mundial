@@ -270,6 +270,12 @@ const uploadCover = async (event: Event) => {
   try {
     const uploaded = await uploadAdminImage('news-cover', file)
     form.value.coverUrl = uploaded.path || uploaded.url || ''
+    if (!form.value.coverAlt.trim() && form.value.title.trim()) {
+      form.value.coverAlt = form.value.title.trim()
+    }
+    if (!form.value.coverCaption.trim() && form.value.title.trim()) {
+      form.value.coverCaption = form.value.title.trim()
+    }
   } catch {
     errorMessage.value = 'No se pudo subir la portada.'
   } finally {
@@ -327,8 +333,8 @@ const save = async () => {
     excerpt: form.value.excerpt || '',
     content: form.value.content || '',
     coverUrl: form.value.coverUrl || undefined,
-    coverCaption: form.value.coverCaption || '',
-    coverAlt: form.value.coverAlt || '',
+    coverCaption: form.value.coverCaption || form.value.title || '',
+    coverAlt: form.value.coverAlt || form.value.title || '',
     status: form.value.status,
     featured: Boolean(form.value.featured),
     publishedAt: form.value.publishedAt ? new Date(form.value.publishedAt).toISOString() : undefined,
@@ -414,7 +420,7 @@ onUnmounted(() => {
             <small>{{ enHref }}</small>
           </label>
         </div>
-        <NewsRichEditor v-model="form.content" />
+        <NewsRichEditor v-model="form.content" :default-alt="form.title" />
         <label>
           Extracto
           <textarea v-model="form.excerpt" rows="3" placeholder="Resumen corto de la nota" />
@@ -460,11 +466,11 @@ onUnmounted(() => {
           </label>
           <label>
             Pie de foto (SEO)
-            <input v-model="form.coverCaption" placeholder="Texto debajo de la imagen" />
+            <input v-model="form.coverCaption" :placeholder="form.title || 'Título de la noticia'" />
           </label>
           <label>
-            Texto alternativo
-            <input v-model="form.coverAlt" placeholder="Describe la foto" />
+            Texto alternativo (SEO)
+            <input v-model="form.coverAlt" :placeholder="form.title || 'Título de la noticia'" />
           </label>
           <label class="na-file">
             {{ uploading ? 'Subiendo…' : 'Subir imagen' }}

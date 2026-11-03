@@ -25,6 +25,9 @@ export class NewsAdminController {
     @Query('q') q?: string,
     @Query('status') status?: string,
     @Query('locale') locale?: string,
+    @Query('author') author?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.news.adminList({
       page: Number(page || 1),
@@ -32,17 +35,53 @@ export class NewsAdminController {
       q,
       status,
       locale,
+      author,
+      from,
+      to,
     });
   }
 
   @Get('authors')
-  authors(@Query('locale') locale?: string) {
-    return this.news.adminAuthors(locale);
+  authors(@Query('locale') locale?: string, @Query('q') q?: string) {
+    return this.news.adminAuthors(locale, q);
+  }
+
+  @Patch('authors/:id')
+  updateAuthor(
+    @Param('id') id: string,
+    @Body() body: { locale?: string; name?: string; bio?: string; website?: string; photoUrl?: string },
+  ) {
+    return this.news.adminUpdateAuthor(id, body);
   }
 
   @Get('tags')
   tags(@Query('locale') locale?: string, @Query('q') q?: string) {
     return this.news.adminTags(locale, q);
+  }
+
+  @Get('tags/:id')
+  tag(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.news.adminTag(id, locale);
+  }
+
+  @Patch('tags/:id')
+  updateTag(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      locale?: string;
+      name?: string;
+      description?: string;
+      about?: string;
+      logoUrl?: string;
+      coverUrl?: string;
+      verified?: boolean;
+      followers?: number;
+      related?: string[];
+      supporters?: Array<{ name?: string; tier?: string; points?: number }>;
+    },
+  ) {
+    return this.news.updateTag(id, body);
   }
 
   @Get('categories')
@@ -95,6 +134,11 @@ export class NewsAdminController {
   @Delete('comments/:id')
   removeComment(@Param('id') id: string, @Query('locale') locale?: string) {
     return this.news.removeComment(id, locale);
+  }
+
+  @Post('posts/:id/restore')
+  restore(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.news.restore(id, locale);
   }
 
   @Delete('posts/:id')

@@ -1,4 +1,4 @@
-const EMBED_RE = /\[embed\]\s*(https?:\/\/[^[\s<]+?)\s*\[\/embed\]/gi
+const EMBED_RE = /\[embed(?:\s+[^\]]*)?\]\s*(https?:\/\/[^[\s<]+?)\s*\[\/embed\]/gi
 const TWEET_RE = /(?:twitter|x)\.com\/(?:[^/\s]+\/status|i\/web\/status)\/(\d+)/i
 const YOUTUBE_RE =
   /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/i
@@ -35,11 +35,45 @@ export const youtubeVideoIds = (html: string) => {
 const twitterHtml = (url: string) =>
   `<blockquote class="twitter-tweet" data-dnt="true"><a href="${escapeAttr(url)}">${escapeAttr(url)}</a></blockquote>`
 
+const youtubeSrc = (id: string) => `https://www.youtube.com/embed/${escapeAttr(id)}?feature=oembed`
+
 const youtubeHtml = (id: string) =>
-  `<div class="yt-embed"><iframe src="https://www.youtube.com/embed/${escapeAttr(id)}" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe></div>`
+  `<div class="yt-embed"><iframe src="${youtubeSrc(id)}" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
 
 const linkHtml = (url: string) =>
   `<p class="embed-link"><a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeAttr(url)}</a></p>`
+
+export const isEmbeddableUrl = (raw: string) => {
+  const url = cleanUrl(raw)
+  return Boolean(
+    tweetId(url) ||
+      youtubeId(url) ||
+      /tiktok\.com\//i.test(url) ||
+      /instagram\.com\/(p|reel|tv)\//i.test(url) ||
+      /open\.spotify\.com\//i.test(url),
+  )
+}
+
+export const editorEmbedHtml = (raw: string) => {
+  const href = cleanUrl(raw)
+  const video = youtubeId(href)
+  if (video) {
+    return `<div class="na-embed yt-embed" contenteditable="false" data-embed="${escapeAttr(href)}"><iframe src="${youtubeSrc(video)}" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
+  }
+  const label = tweetId(href) ? 'X' : /tiktok\.com/i.test(href) ? 'TikTok' : /spotify\.com/i.test(href) ? 'Spotify' : /instagram\.com/i.test(href) ? 'Instagram' : 'Embed'
+  return `<div class="na-embed" contenteditable="false" data-embed="${escapeAttr(href)}"><span><b>${label}</b><small>${escapeAttr(href)}</small></span></div>`
+}
+
+const expandBareMedia = (html: string, editor = false) =>
+  String(html || '').replace(/<p>\s*(https?:\/\/[^<\s]+)\s*<\/p>/gi, (match, url) => {
+    if (!isEmbeddableUrl(url)) return match
+    return editor ? editorEmbedHtml(url) : embedHtmlForUrl(url)
+  })
+
+const expandIframesForEditor = (html: string) =>
+  String(html || '').replace(/<iframe\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/iframe>/gi, (match, src) =>
+    isEmbeddableUrl(src) ? editorEmbedHtml(src) : match,
+  )
 
 export const embedHtmlForUrl = (raw: string) => {
   const url = cleanUrl(raw)
@@ -83,17 +117,29 @@ export const preserveTextLineBreaks = (html: string) => {
 }
 
 export const expandNewsEmbeds = (html: string) =>
-  preserveTextLineBreaks(expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url))))
+  preserveTextLineBreaks(
+    expandBareMedia(expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url)))),
+  )
 
-export const expandNewsEmbedsForEditor = (html: string) =>
-  expandWpCaptions(String(html || '')).replace(EMBED_RE, (_match, url) => {
-    const href = cleanUrl(url)
-    return `<div class="na-embed" contenteditable="false" data-embed="${escapeAttr(href)}">${embedHtmlForUrl(href)}</div>`
+const holdEditorEmbeds = (html: string) => {
+  const blocks: string[] = []
+  const tokenized = html.replace(/<div class="na-embed\b[^>]*>[\s\S]*?<\/div>/gi, (block) => {
+    blocks.push(block)
+    return `<!--vmm-embed-${blocks.length - 1}-->`
   })
+  return { tokenized, blocks }
+}
+
+export const expandNewsEmbedsForEditor = (html: string) => {
+  const withShortcodes = expandWpCaptions(String(html || '')).replace(EMBED_RE, (_match, url) => editorEmbedHtml(url))
+  const held = holdEditorEmbeds(withShortcodes)
+  const expanded = expandBareMedia(expandIframesForEditor(held.tokenized), true)
+  return expanded.replace(/<!--vmm-embed-(\d+)-->/g, (_match, index) => held.blocks[Number(index)] || '')
+}
 
 export const collapseNewsEmbeds = (html: string) =>
   String(html || '').replace(
-    /<div class="na-embed"[^>]*data-embed="([^"]+)"[^>]*>[\s\S]*?<\/div>/gi,
+    /<div\b(?=[^>]*\bclass="[^"]*\bna-embed\b)[^>]*\bdata-embed="([^"]+)"[^>]*>[\s\S]*?<\/div>/gi,
     (_match, url) => `[embed]${String(url).replace(/&amp;/g, '&')}[/embed]`,
   )
 

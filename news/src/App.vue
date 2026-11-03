@@ -8,12 +8,13 @@ import NewsArticle from './components/NewsArticle.vue'
 import NewsAuthorPage from './components/NewsAuthorPage.vue'
 import NewsCategoriesPage from './components/NewsCategoriesPage.vue'
 import NewsCategoryPage from './components/NewsCategoryPage.vue'
+import NewsTagPage from './components/NewsTagPage.vue'
 import NewsForumPage from './components/NewsForumPage.vue'
 import { FORUM_BOARDS, forumCover } from './lib/forum'
 import NewsProfilePage from './components/NewsProfilePage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
-import { coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
+import { categoryHref, coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
 import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, withPageCacheBuster, type SiteLocale } from './lib/locale'
 import { applyHomeSeo, applyPrivateSeo } from './lib/seo'
 import { newsRouteState } from './lib/route-state'
@@ -262,7 +263,7 @@ function syncNewsPage(opts?: { keepScroll?: boolean }) {
     applyPrivateSeo(
       `${t(newsPage.value.locale, newsPage.value.edit ? 'profileEdit' : newsPage.value.username ? 'profilePublicTitle' : 'profileTitle')} — Music Mundial`,
     )
-  } else if (!['article', 'category', 'author', 'categories', 'forum'].includes(newsPage.value.name)) {
+  } else if (!['article', 'category', 'tag', 'author', 'categories', 'forum'].includes(newsPage.value.name)) {
     applyHomeSeo(newsPage.value.locale)
   }
   if (!opts?.keepScroll) scrollToTop()
@@ -703,7 +704,7 @@ onUnmounted(() => {
         </div>
         <a :class="{ active: newsPage.name === 'home' }" :href="loc('/')" @click="closeMenu">{{ txt('navHome') }}</a>
         <a :class="{ active: newsPage.name === 'category' && newsPage.slug === 'kpop' }" :href="loc('/kpop')" @click="closeMenu">KPOP</a>
-        <a :href="loc('/categoria/viral')" @click="closeMenu">{{ txt('navEntertainment') }}</a>
+        <a :href="categoryHref(siteLocale, 'viral')" @click="closeMenu">{{ txt('navEntertainment') }}</a>
         <a :href="loc('/celebridades')" @click="closeMenu">{{ txt('navPopular') }}</a>
         <a :href="loc('/series')" @click="closeMenu">{{ txt('navSeries') }}</a>
         <a href="/vote/" @click="closeMenu">{{ txt('navVote') }}</a>
@@ -868,6 +869,7 @@ onUnmounted(() => {
   />
   <NewsCategoriesPage v-else-if="newsPage.name === 'categories'" :locale="newsPage.locale" />
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsTagPage v-else-if="newsPage.name === 'tag'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsProfilePage
     v-else-if="newsPage.name === 'profile'"
     :locale="newsPage.locale"
@@ -978,7 +980,7 @@ onUnmounted(() => {
               <h2><span>{{ txt('entertainment') }}</span></h2>
               <p>{{ txt('entertainmentBlurb') }}</p>
             </div>
-            <a class="cats-link" :href="loc('/categoria/viral')">{{ txt('seeMoreArrow') }}</a>
+            <a class="cats-link" :href="categoryHref(siteLocale, 'viral')">{{ txt('seeMoreArrow') }}</a>
           </div>
           <div v-if="entertainmentStories[0]" class="entertain-grid">
             <a class="entertain-feature" :href="postHref(entertainmentStories[0])">
@@ -1201,7 +1203,7 @@ onUnmounted(() => {
                 </svg>
                 {{ block.title }}
               </h2>
-              <a :href="loc('/categoria/entrevista')">{{ txt('seeAllArrow') }}</a>
+              <a :href="categoryHref(siteLocale, 'entrevista')">{{ txt('seeAllArrow') }}</a>
             </div>
             <a
               v-for="(story, index) in block.items"

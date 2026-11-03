@@ -56,10 +56,10 @@ onMounted(load)
       <article v-for="cat in items" :key="cat.id || cat.slug" class="na-cat-row">
         <div>
           <h3>{{ cat.name }}</h3>
-          <small>{{ locale === 'es' ? `/es/categoria/${cat.slug}` : `/categoria/${cat.slug}` }}</small>
+          <small>{{ locale === 'es' ? `/es/categoria/${cat.slug}` : `/category/${cat.slug}` }}</small>
         </div>
         <span class="na-chip">{{ Number(cat.postCount || 0).toLocaleString('es') }} notas</span>
-        <a class="na-btn" :href="cat.href || (locale === 'es' ? `/es/categoria/${cat.slug}` : `/categoria/${cat.slug}`)" target="_blank">Ver</a>
+        <a class="na-btn" :href="cat.href || (locale === 'es' ? `/es/categoria/${cat.slug}` : `/category/${cat.slug}`)" target="_blank">Ver</a>
       </article>
     </div>
   </section>

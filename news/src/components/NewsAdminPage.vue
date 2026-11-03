@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AuthDialog from './AuthDialog.vue'
+import NewsAdminAuthors from './NewsAdminAuthors.vue'
 import NewsAdminCategories from './NewsAdminCategories.vue'
 import NewsAdminForum from './NewsAdminForum.vue'
+import NewsAdminTags from './NewsAdminTags.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
 import { getAdminNewsOverview } from '../../../src/services/api/adminApi'
@@ -63,7 +65,7 @@ type Overview = {
 }
 
 const props = defineProps<{
-  section?: 'dashboard' | 'posts' | 'categories' | 'forum' | 'post-form'
+  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'post-form'
   postId?: string
   newsLocale?: 'es' | 'en'
 }>()
@@ -74,6 +76,8 @@ const pageTitle = computed(() => {
   if (section.value === 'post-form') return props.postId ? 'Editar noticia' : 'Nueva noticia'
   if (section.value === 'posts') return 'Noticias'
   if (section.value === 'categories') return 'Categorías'
+  if (section.value === 'authors') return 'Autores'
+  if (section.value === 'tags') return 'Etiquetas'
   if (section.value === 'forum') return 'Foro'
   return 'Dashboard'
 })
@@ -81,6 +85,8 @@ const pageLead = computed(() => {
   if (section.value === 'post-form') return 'La nota se firma con tu correo. Solo un admin puede cambiar el autor.'
   if (section.value === 'posts') return 'Crea, edita y publica notas en español e inglés.'
   if (section.value === 'categories') return 'Categorías de musicmundial_es y musicmundial_en.'
+  if (section.value === 'authors') return 'Nombre, bio, foto y web que salen en las notas.'
+  if (section.value === 'tags') return 'Cada etiqueta tiene su página. Aquí se configura la ficha.'
   if (section.value === 'forum') return 'Salas del foro, textos ES/EN, VIP y temas (fijar, cerrar u ocultar).'
   return 'Resumen de musicmundial_es y musicmundial_en'
 })
@@ -286,6 +292,14 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h10" /></svg>
           Categorías
         </a>
+        <a :class="{ on: section === 'tags' }" href="/es/admin/etiquetas" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l8-8h7v7l-8 8a2 2 0 0 1-2.8 0L4 14.8A2 2 0 0 1 4 12zm11.5-4.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z" /></svg>
+          Etiquetas
+        </a>
+        <a :class="{ on: section === 'authors' }" href="/es/admin/autores" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-7 8a7 7 0 0 1 14 0" /></svg>
+          Autores
+        </a>
         <a :class="{ on: section === 'forum' }" href="/es/admin/foro" @click="closeNav">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
           Foro
@@ -348,6 +362,8 @@ onUnmounted(() => {
         <NewsAdminPostForm v-if="section === 'post-form'" :post-id="postId" :news-locale="newsLocale" />
         <NewsAdminPosts v-else-if="section === 'posts'" />
         <NewsAdminCategories v-else-if="section === 'categories'" />
+        <NewsAdminAuthors v-else-if="section === 'authors'" />
+        <NewsAdminTags v-else-if="section === 'tags'" />
         <NewsAdminForum v-else-if="section === 'forum'" :create-tick="forumCreateTick" />
         <template v-else>
         <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>

@@ -181,7 +181,7 @@ export class NewsShareController {
         sections: categories.map((item: { name?: string }) => String(item.name || '')),
         categoryName: String(category?.name || article?.category || ''),
         categoryUrl: category?.slug
-          ? `${origin}${locale === 'es' ? '/es' : ''}/categoria/${category.slug}`
+          ? `${origin}${locale === 'es' ? `/es/categoria/${category.slug}` : `/category/${category.slug}`}`
           : '',
         imageCaption: stripHtml(article?.coverCaption || article?.coverAlt || titleRaw),
         videos,
@@ -226,11 +226,12 @@ export class NewsShareController {
             imageCaption: escapeHtml(String(article?.coverCaption || '')),
             categoryName: escapeHtml(String(category?.name || article?.category || '')),
             categoryHref: category?.slug
-              ? escapeHtml(`${locale === 'es' ? '/es' : ''}/categoria/${category.slug}`)
+              ? escapeHtml(`${locale === 'es' ? `/es/categoria/${category.slug}` : `/category/${category.slug}`}`)
               : '',
             homeHref: locale === 'es' ? '/es' : '/',
             bodyHtml: rssBodyHtml(String(article?.content || '')),
             videos,
+            editId: String(article?.id || '').replace(/\D/g, ''),
           },
         )
       : '';

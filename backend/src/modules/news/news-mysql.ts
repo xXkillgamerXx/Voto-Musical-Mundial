@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 // mysql2's export map omits types for './promise' under this tsconfig.
@@ -49,12 +49,25 @@ export class NewsMysqlService implements OnModuleDestroy {
   }
 
   async exec(locale: NewsLocale, sql: string, params: unknown[] = []): Promise<{ insertId: number; affectedRows: number }> {
-    const [result] = await this.pool(locale).query(this.withPrefix(locale, sql), params);
-    const header = result as { insertId?: number; affectedRows?: number };
-    return {
-      insertId: Number(header.insertId || 0),
-      affectedRows: Number(header.affectedRows || 0),
-    };
+    try {
+      const [result] = await this.pool(locale).query(this.withPrefix(locale, sql), params);
+      const header = result as { insertId?: number; affectedRows?: number };
+      return {
+        insertId: Number(header.insertId || 0),
+        affectedRows: Number(header.affectedRows || 0),
+      };
+    } catch (error) {
+      const sqlMessage =
+        error && typeof error === 'object' && 'sqlMessage' in error
+          ? String((error as { sqlMessage?: string }).sqlMessage || '')
+          : '';
+      const detail = sqlMessage.replace(/\s+/g, ' ').slice(0, 240);
+      throw new BadRequestException(
+        detail
+          ? `No se pudo guardar la noticia en ${locale === 'en' ? 'inglés' : 'español'}: ${detail}`
+          : `No se pudo guardar la noticia en ${locale === 'en' ? 'inglés' : 'español'}.`,
+      );
+    }
   }
 
   async onModuleDestroy() {

@@ -253,7 +253,7 @@ export const thankAdminContentReporter = (id, body = {}) =>
   })
 
 export const getAdminNewsOverview = (days = 30) => adminRequest(`/news/overview?days=${days}`)
-export const getAdminNewsPosts = ({ page = 1, limit = 20, q = '', status = '', locale = '' } = {}) => {
+export const getAdminNewsPosts = ({ page = 1, limit = 20, q = '', status = '', locale = '', author = '', from = '', to = '' } = {}) => {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
@@ -261,6 +261,9 @@ export const getAdminNewsPosts = ({ page = 1, limit = 20, q = '', status = '', l
   if (q) params.set('q', q)
   if (status) params.set('status', status)
   if (locale) params.set('locale', locale)
+  if (author) params.set('author', author)
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
   return adminRequest(`/news/posts?${params.toString()}`)
 }
 export const getAdminNewsPost = (id, locale = 'es') =>
@@ -270,8 +273,19 @@ export const updateAdminNewsPost = (id, body) =>
   adminRequest(`/news/posts/${encodeURIComponent(id)}`, { method: 'PATCH', body })
 export const deleteAdminNewsPost = (id, locale = 'es') =>
   adminRequest(`/news/posts/${encodeURIComponent(id)}?locale=${encodeURIComponent(locale)}`, { method: 'DELETE' })
-export const getAdminNewsAuthors = (locale = 'es') =>
-  adminRequest(`/news/authors?locale=${encodeURIComponent(locale)}`)
+export const restoreAdminNewsPost = (id, locale = 'es') =>
+  adminRequest(`/news/posts/${encodeURIComponent(id)}/restore?locale=${encodeURIComponent(locale)}`, { method: 'POST' })
+export const getAdminNewsAuthors = (locale = 'es', q = '') => {
+  const params = new URLSearchParams({ locale })
+  if (q) params.set('q', q)
+  return adminRequest(`/news/authors?${params.toString()}`)
+}
+export const updateAdminNewsAuthor = (id, body) =>
+  adminRequest(`/news/authors/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const getAdminNewsTagProfile = (id, locale = 'es') =>
+  adminRequest(`/news/tags/${encodeURIComponent(id)}?locale=${encodeURIComponent(locale)}`)
+export const updateAdminNewsTag = (id, body) =>
+  adminRequest(`/news/tags/${encodeURIComponent(id)}`, { method: 'PATCH', body })
 export const getAdminNewsTags = (locale = 'es', q = '') => {
   const params = new URLSearchParams({ locale })
   if (q) params.set('q', q)

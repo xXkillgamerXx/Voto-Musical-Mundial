@@ -25,6 +25,10 @@ export class AdminListForumTopicsDto {
   @IsOptional()
   @IsIn(['es', 'en'])
   locale?: 'es' | 'en';
+
+  @IsOptional()
+  @IsString()
+  _?: string;
 }
 
 export class AdminUpdateForumTopicDto {

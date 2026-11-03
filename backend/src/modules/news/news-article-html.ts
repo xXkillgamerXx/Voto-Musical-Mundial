@@ -37,6 +37,7 @@ export type ArticleBody = {
   homeHref?: string;
   bodyHtml: string;
   videos?: string[];
+  editId?: string;
 };
 
 let cache = { path: '', mtime: 0, html: '' };
@@ -158,6 +159,44 @@ export const renderArticleBody = (body: ArticleBody) => {
     .filter(Boolean)
     .join('\n          ');
   const content = withYoutubeEmbeds(body);
+  const editId = String(body.editId || '').replace(/\D/g, '');
+  const editHref = `/es/admin/noticias/${body.locale === 'en' ? 'en/' : ''}${editId}`;
+  const editLabel = body.locale === 'es' ? 'Editar en el admin' : 'Edit in admin';
+  const editScript = editId
+    ? `<script>
+      (function () {
+        var href = ${JSON.stringify(editHref)};
+        var label = ${JSON.stringify(editLabel)};
+        function isAdmin() {
+          try {
+            var auth = JSON.parse(localStorage.getItem('vmm_api_auth') || 'null');
+            var role = String((auth && auth.user && auth.user.role) || '').trim().toLowerCase();
+            return role === 'admin' || role === 'superadmin' || role === 'owner';
+          } catch (e) {
+            return false;
+          }
+        }
+        function paint() {
+          var article = document.querySelector('#news-ssr article.article');
+          if (!article) return;
+          var existing = article.querySelector('.article-admin-edit');
+          if (!isAdmin()) {
+            if (existing) existing.remove();
+            return;
+          }
+          if (existing) return;
+          var link = document.createElement('a');
+          link.className = 'article-admin-edit';
+          link.href = href;
+          link.textContent = label;
+          link.style.cssText = 'display:inline-flex;align-items:center;min-height:36px;margin:0 0 14px;padding:0 14px;border-radius:999px;background:#2f6bff;color:#fff;font:800 13px/1 Manrope,sans-serif;text-decoration:none';
+          article.insertBefore(link, article.firstChild);
+        }
+        paint();
+        window.addEventListener('vmm-api-auth-change', paint);
+      })();
+    </script>`
+    : '';
 
   return `<main id="news-ssr" class="article-page">
     <div class="container article-layout">
@@ -177,11 +216,9 @@ export const renderArticleBody = (body: ArticleBody) => {
           </p>
           ${
             body.image
-              ? `<figure class="article-cover"><img src="${body.image}" alt="${body.imageAlt || body.title}" width="1600" height="900" fetchpriority="high" decoding="async">${
-                  body.imageCaption
-                    ? `<figcaption>${body.imageCaption}</figcaption>`
-                    : ''
-                }</figure>`
+              ? `<figure class="article-cover"><img src="${body.image}" alt="${body.imageAlt || body.title}" width="1600" height="900" fetchpriority="high" decoding="async"><figcaption>${
+                  body.imageCaption || body.imageAlt || body.title || ''
+                }</figcaption></figure>`
               : ''
           }
           ${body.excerpt ? `<p class="article-lead">${body.excerpt}</p>` : ''}
@@ -191,6 +228,7 @@ export const renderArticleBody = (body: ArticleBody) => {
         </article>
       </div>
     </div>
+    ${editScript}
   </main>`;
 };
 

@@ -1,4 +1,4 @@
-const EMBED_RE = /\[embed\]\s*(https?:\/\/[^[\s<]+?)\s*\[\/embed\]/gi
+const EMBED_RE = /\[embed(?:\s+[^\]]*)?\]\s*(https?:\/\/[^[\s<]+?)\s*\[\/embed\]/gi
 const TWEET_RE = /(?:twitter|x)\.com\/(?:[^/\s]+\/status|i\/web\/status)\/(\d+)/i
 const YOUTUBE_RE =
   /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/i
@@ -23,7 +23,7 @@ const embedHtmlForUrl = (raw: string) => {
   }
   const video = url.match(YOUTUBE_RE)?.[1]
   if (video) {
-    return `<div class="yt-embed"><iframe src="https://www.youtube.com/embed/${escapeAttr(video)}" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe></div>`
+    return `<div class="yt-embed"><iframe src="https://www.youtube.com/embed/${escapeAttr(video)}?feature=oembed" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
   }
   return `<p class="embed-link"><a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeAttr(url)}</a></p>`
 }
@@ -111,6 +111,24 @@ export const sanitizeNewsHtml = (html: string) =>
     .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
     .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
     .replace(/javascript:/gi, '');
+
+/** Fill empty/missing img alt with the article title for SEO. */
+export const ensureImageAlts = (html: string, title: string) => {
+  const alt = escapeAttr(String(title || '').trim())
+  if (!alt) return String(html || '')
+  return String(html || '').replace(/<img\b([^>]*)>/gi, (tag, rawAttrs = '') => {
+    const attrs = String(rawAttrs)
+    const altMatch = attrs.match(/\salt\s*=\s*(["'])(.*?)\1/i)
+    if (altMatch && String(altMatch[2] || '').trim()) return tag
+    const cleaned = attrs
+      .replace(/\salt\s*=\s*(["']).*?\1/i, '')
+      .replace(/\salt\s*=\s*[^\s/>]+/i, '')
+      .replace(/\/\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return `<img${cleaned ? ` ${cleaned}` : ''} alt="${alt}">`
+  })
+}
 
 export const plainExcerpt = (html: string, max = 220) => {
   const text = String(html || '')

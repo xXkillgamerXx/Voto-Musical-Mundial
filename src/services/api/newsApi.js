@@ -14,6 +14,14 @@ const withLocale = (path, locale) => {
 
 export const getNewsHome = (locale) => apiRequest(withLocale('/news/home', locale))
 export const getNewsCategories = (locale) => apiRequest(withLocale('/news/categories', locale))
+export const getNewsTag = (slug, { page = 1, limit = 12, locale } = {}) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+    locale: newsLocale(locale),
+  })
+  return apiRequest(`/news/tags/${encodeURIComponent(slug)}?${params.toString()}`)
+}
 export const getNewsPosts = ({ page = 1, limit = 12, category = '', q = '', locale } = {}) => {
   const params = new URLSearchParams({
     page: String(page),

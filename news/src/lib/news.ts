@@ -106,18 +106,25 @@ export const largeNewsImage = (url?: string | null) => {
 export const coverOf = (post?: Partial<NewsCard> | null, fallback = '/images/jungkook-hero.jpg') =>
   largeNewsImage(post?.coverUrl) || fallback
 
+export const categoryHref = (locale: 'es' | 'en', slug: string) =>
+  locale === 'es' ? `/es/categoria/${slug}` : `/category/${slug}`
+
+export const tagHref = (locale: 'es' | 'en', slug: string) =>
+  locale === 'es' ? `/es/tag/${encodeURIComponent(slug)}` : `/tag/${encodeURIComponent(slug)}`
+
 export type NewsPage =
   | { name: 'home'; locale: 'es' | 'en' }
   | {
       name: 'admin'
       locale: 'es' | 'en'
-      section?: 'dashboard' | 'posts' | 'categories' | 'forum' | 'post-form'
+      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'post-form'
       postId?: string
       newsLocale?: 'es' | 'en'
     }
   | { name: 'profile'; locale: 'es' | 'en'; username?: string; edit?: boolean }
   | { name: 'categories'; locale: 'es' | 'en' }
   | { name: 'category'; locale: 'es' | 'en'; slug: string }
+  | { name: 'tag'; locale: 'es' | 'en'; slug: string }
   | { name: 'author'; locale: 'es' | 'en'; slug: string }
   | { name: 'forum'; locale: 'es' | 'en'; board?: string; post?: string }
   | { name: 'article'; locale: 'es' | 'en'; slug: string }
@@ -157,7 +164,7 @@ export const toCategoryCard = (
     fallback: '/images/jungkook-hero.jpg',
   }
   return {
-    href: row.href || (locale === 'es' ? `/es/categoria/${row.slug}` : `/categoria/${row.slug}`),
+    href: row.href || categoryHref(locale, row.slug),
     image: row.coverUrl || meta.fallback,
     title: row.name,
     sub: `${Number(row.postCount || 0).toLocaleString(locale === 'en' ? 'en' : 'es')} ${t(locale, 'notesCount')}`,
@@ -181,6 +188,8 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (editNews) return { name: 'admin', locale, section: 'post-form', postId: editNews[1], newsLocale: 'es' }
   if (path === '/admin/noticias') return { name: 'admin', locale, section: 'posts' }
   if (path === '/admin/categorias') return { name: 'admin', locale, section: 'categories' }
+  if (path === '/admin/autores') return { name: 'admin', locale, section: 'authors' }
+  if (path === '/admin/etiquetas') return { name: 'admin', locale, section: 'tags' }
   if (path === '/admin/foro') return { name: 'admin', locale, section: 'forum' }
   if (path.startsWith('/admin/')) return { name: 'admin', locale, section: 'dashboard' }
   if (path === '/perfil/editar' || path === '/profile/edit') return { name: 'profile', locale, edit: true }
@@ -195,9 +204,12 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   const forumBoard = path.match(/^\/(?:forum|foro)\/([a-z0-9-]+)$/)
   if (forumBoard) return { name: 'forum', locale, board: forumBoard[1] }
   if (path === '/categorias' || path === '/categories') return { name: 'categories', locale }
-  if (path.startsWith('/categoria/')) {
-    return { name: 'category', locale, slug: path.slice('/categoria/'.length) }
+  if (path.startsWith('/categoria/') || path.startsWith('/category/')) {
+    const slug = path.split('/').filter(Boolean)[1] || ''
+    return { name: 'category', locale, slug }
   }
+  const tag = path.match(/^\/tag\/([^/]+)$/)
+  if (tag) return { name: 'tag', locale, slug: tag[1].toLowerCase() }
   const shortcut = CATEGORY_PATHS[path.replace(/^\//, '').toLowerCase()]
   if (shortcut) return { name: 'category', locale, slug: shortcut }
   return { name: 'article', locale, slug: path.replace(/^\//, '') }

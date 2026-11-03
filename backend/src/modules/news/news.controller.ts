@@ -29,6 +29,11 @@ export class NewsController {
     return this.news.popular(locale, exclude, Number(limit || 5));
   }
 
+  @Get('tags/:slug')
+  tag(@Param('slug') slug: string, @Query() query: ListNewsDto, @Query('locale') locale?: string) {
+    return this.news.findTag(slug, locale, query.page, query.limit);
+  }
+
   @Get('posts')
   list(@Query() query: ListNewsDto, @Query('locale') locale?: string) {
     return this.news.listPublic({ ...query, locale });

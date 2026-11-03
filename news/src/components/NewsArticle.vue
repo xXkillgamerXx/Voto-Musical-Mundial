@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onStoredAuthChange } from '../../../src/services/api/client'
 import { getNewsPopular, getNewsPost } from '../../../src/services/api/newsApi'
+import { isStoredAdminUser } from '../../../src/utils/suppressPageAds'
 import { t } from '../lib/copy'
 import { expandNewsEmbeds, loadTwitterEmbeds, youtubeVideoIds } from '../lib/embeds'
 import { withLocale } from '../lib/locale'
-import { coverOf, formatNewsDate, type NewsCard } from '../lib/news'
+import { categoryHref, coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
 import { newsRouteState } from '../lib/route-state'
 import { applyHomeSeo, applyNewsSeo } from '../lib/seo'
 import NewsComments from './NewsComments.vue'
@@ -17,6 +19,17 @@ const popularLoading = ref(true)
 const error = ref('')
 const loading = ref(true)
 const loc = computed(() => (props.locale === 'es' ? 'es' : 'en'))
+const authVersion = ref(0)
+const canEdit = computed(() => {
+  authVersion.value
+  return isStoredAdminUser()
+})
+const adminEditHref = computed(() => {
+  const id = post.value?.id
+  if (!id) return '/es/admin/noticias'
+  return `/es/admin/noticias/${loc.value === 'en' ? 'en/' : ''}${id}`
+})
+let stopAuthWatch: (() => void) | null = null
 const homeHref = computed(() => withLocale('/', loc.value))
 const crumbCategory = computed(() => {
   const cats = post.value?.categories || []
@@ -25,7 +38,7 @@ const crumbCategory = computed(() => {
     || cats[0]
     || { slug: post.value?.categorySlug || 'noticias', name: post.value?.category || (loc.value === 'en' ? 'News' : 'Noticias') }
 })
-const crumbHref = computed(() => withLocale(`/categoria/${crumbCategory.value.slug}`, loc.value))
+const crumbHref = computed(() => categoryHref(loc.value, crumbCategory.value.slug))
 const bodyHtml = computed(() => expandNewsEmbeds(post.value?.content || ''))
 const copiedShare = ref('')
 const shareUrl = () => window.location.href
@@ -110,8 +123,14 @@ async function load() {
   popularLoading.value = false
 }
 
-onMounted(load)
+onMounted(() => {
+  stopAuthWatch = onStoredAuthChange(() => {
+    authVersion.value += 1
+  })
+  load()
+})
 onUnmounted(() => {
+  stopAuthWatch?.()
   newsRouteState.alternateHref = ''
 })
 watch(() => [props.slug, props.locale], load)
@@ -151,6 +170,7 @@ watch(bodyHtml, async () => {
       </div>
       <p v-else-if="error" class="article-status">{{ error }} <a :href="homeHref">{{ t(loc, 'backHome') }}</a></p>
       <article v-else-if="post" class="article">
+        <a v-if="canEdit" class="article-admin-edit" :href="adminEditHref">{{ t(loc, 'editInAdmin') }}</a>
         <nav class="crumbs" aria-label="breadcrumb">
           <a :href="homeHref">Music Mundial</a>
           <span class="crumbs-sep" aria-hidden="true">›</span>
@@ -163,7 +183,7 @@ watch(bodyHtml, async () => {
             v-for="cat in (post.categories?.length ? post.categories : [{ slug: post.categorySlug, name: post.category }])"
             :key="cat.slug"
             class="chip"
-            :href="withLocale(`/categoria/${cat.slug}`, locale === 'en' ? 'en' : 'es')"
+            :href="categoryHref(locale === 'en' ? 'en' : 'es', cat.slug)"
           >{{ cat.name }}</a>
         </div>
         <h1>{{ post.title }}</h1>
@@ -183,13 +203,13 @@ watch(bodyHtml, async () => {
         </p>
         <figure v-if="post.coverUrl" class="article-cover">
           <img :src="coverOf(post)" :alt="post.coverAlt || post.title" width="1600" height="900" fetchpriority="high" decoding="async" />
-          <figcaption v-if="post.coverCaption">{{ post.coverCaption }}</figcaption>
+          <figcaption>{{ post.coverCaption || post.coverAlt || post.title }}</figcaption>
         </figure>
         <p v-if="post.excerpt" class="article-lead">{{ post.excerpt }}</p>
         <div class="article-body" v-html="bodyHtml"></div>
         <div v-if="post.tags?.length" class="article-post-tags">
           <span>{{ t(loc, 'articleTags') }}</span>
-          <b v-for="tag in post.tags" :key="tag.slug || tag.name">{{ tag.name }}</b>
+          <a v-for="tag in post.tags" :key="tag.slug || tag.name" :href="tagHref(loc, tag.slug || tag.name)">{{ tag.name }}</a>
         </div>
         <section v-if="post.attachments?.length" class="article-files">
           <h2>{{ t(loc, 'articleFiles') }}</h2>

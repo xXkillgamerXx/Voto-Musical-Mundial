@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getNewsPopular, getNewsPosts } from '../../../src/services/api/newsApi'
 import { withLocale } from '../lib/locale'
 import { t } from '../lib/copy'
-import { categoryHero, categoryTitle, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
+import { categoryHero, categoryHref, categoryTitle, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale?: string }>()
@@ -58,11 +58,11 @@ async function load(reset = true) {
           loc.value === 'es'
             ? `${countLabel.value} de ${title.value} en Music Mundial.`
             : `${countLabel.value} in ${title.value} on Music Mundial.`,
-        path: withLocale(`/categoria/${props.slug}`, loc.value),
+        path: categoryHref(loc.value, props.slug),
         image: coverOf(items.value[0]),
         imageAlt: title.value,
-        hreflangEn: withLocale(`/categoria/${props.slug}`, 'en'),
-        hreflangEs: withLocale(`/categoria/${props.slug}`, 'es'),
+        hreflangEn: categoryHref('en', props.slug),
+        hreflangEs: categoryHref('es', props.slug),
       })
     }
   } catch {

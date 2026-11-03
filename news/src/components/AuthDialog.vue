@@ -37,7 +37,7 @@ const isLogin = computed(() => props.mode !== 'register')
 const lang = computed(() => (props.locale === 'en' ? 'en' : 'es'))
 const title = computed(() => {
   if (isResetOpen.value) return t(lang.value, 'authReset')
-  return isLogin.value ? t(lang.value, 'authLogin') : t(lang.value, 'authRegister')
+  return isLogin.value ? t(lang.value, 'authWelcome') : t(lang.value, 'authRegister')
 })
 
 watch(
@@ -190,139 +190,185 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="notice-modal" @click.self="close">
+    <div v-if="open" class="notice-modal auth-modal" @click.self="close">
       <div class="notice-dialog auth-dialog" role="dialog" aria-modal="true" :aria-label="title">
-        <div class="auth-head">
-          <h2>{{ title }}</h2>
-          <p v-if="!isResetOpen" class="auth-lead">
-            {{ isLogin ? t(lang, 'authLoginLead') : t(lang, 'authRegisterLead') }}
-          </p>
-          <p v-else class="auth-lead">{{ t(lang, 'authResetLead') }}</p>
+        <aside class="auth-brand" aria-hidden="true">
+          <div class="auth-brand-bg"></div>
+          <div class="auth-brand-shade"></div>
+          <div class="auth-brand-inner">
+            <div class="auth-brand-logo">
+              <span>MUSICMUNDIAL</span>
+              <i aria-hidden="true"></i>
+            </div>
+            <h2 class="auth-brand-title">
+              {{ t(lang, 'authBrandTitleA') }}
+              <em>{{ t(lang, 'authBrandTitleB') }}</em>
+            </h2>
+            <p class="auth-brand-lead">{{ t(lang, 'authBrandLead') }}</p>
+            <ul class="auth-brand-features">
+              <li>
+                <span class="auth-feat-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 21s-7-4.4-9.5-8.2C.7 10.2 1.6 7 4.4 6.2c1.8-.5 3.5.3 4.6 1.7C10.1 6.5 11.8 5.7 13.6 6.2c2.8.8 3.7 4 1.9 6.6C19 16.6 12 21 12 21z"/></svg>
+                </span>
+                <span>{{ t(lang, 'authFeatureFollow') }}</span>
+              </li>
+              <li>
+                <span class="auth-feat-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H10l-4.5 3.2V16H6.5A2.5 2.5 0 0 1 4 13.5z"/></svg>
+                </span>
+                <span>{{ t(lang, 'authFeatureChat') }}</span>
+              </li>
+              <li>
+                <span class="auth-feat-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M4 19V9h3v10H4zm6.5 0V5h3v14h-3zM17 19v-6h3v6h-3z"/></svg>
+                </span>
+                <span>{{ t(lang, 'authFeatureVote') }}</span>
+              </li>
+            </ul>
+            <p class="auth-brand-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 7.2H22l-6 4.4 2.3 7.1L12 16.8 5.7 20.7 8 13.6 2 9.2h7.6z"/></svg>
+              {{ t(lang, 'authStartlyNote') }}
+            </p>
+          </div>
+        </aside>
+
+        <div class="auth-panel">
           <button class="auth-close" type="button" :aria-label="t(lang, 'close')" @click="close">×</button>
-        </div>
 
-        <div class="auth-body">
-          <button
-            v-if="!isResetOpen"
-            type="button"
-            class="auth-google"
-            :disabled="isLoading"
-            @click="handleGoogle"
-          >
-            <svg class="auth-google-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M23.49 12.27c0-.78-.07-1.53-.2-2.25H12v4.26h6.46c-.28 1.5-1.13 2.77-2.4 3.62v3h3.89c2.27-2.1 3.54-5.18 3.54-8.63z"/>
-              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.94-2.92l-3.89-3c-1.08.72-2.46 1.15-4.05 1.15-3.12 0-5.77-2.11-6.72-4.94H1.26v3.09C3.24 21.31 7.3 24 12 24z"/>
-              <path fill="#FBBC05" d="M5.28 14.29c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.26C.45 8.24 0 10.07 0 12s.45 3.76 1.26 5.38l4.02-3.09z"/>
-              <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.45-3.45C17.95 1.17 15.24 0 12 0 7.3 0 3.24 2.69 1.26 6.62l4.02 3.09C6.23 6.88 8.88 4.77 12 4.77z"/>
-            </svg>
-            {{ t(lang, 'google') }}
-          </button>
-
-          <div v-if="!isResetOpen" class="auth-or"><span>{{ t(lang, 'or') }}</span></div>
-
-          <form v-if="isResetOpen" class="auth-form" @submit.prevent="handleReset">
-            <label>
-              {{ t(lang, 'email') }}
-              <input v-model="resetEmail" type="email" required placeholder="you@email.com" />
-            </label>
-            <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
-            <p v-if="successMessage" class="auth-ok">{{ successMessage }}</p>
-            <button class="auth-submit" type="submit" :disabled="isLoading">
-              {{ isLoading ? t(lang, 'sending') : t(lang, 'sendLink') }}
-            </button>
-            <button class="auth-ghost" type="button" @click="isResetOpen = false">{{ t(lang, 'backToLogin') }}</button>
-          </form>
-
-          <form v-else-if="isLogin" class="auth-form" @submit.prevent="handleLogin">
-            <label>
-              {{ t(lang, 'email') }}
-              <input v-model="email" type="email" required placeholder="you@email.com" />
-            </label>
-            <label>
-              {{ t(lang, 'password') }}
-              <span class="auth-pass">
-                <input
-                  v-model="password"
-                  :type="showPassword ? 'text' : 'password'"
-                  required
-                  minlength="8"
-                  :placeholder="t(lang, 'passwordPlaceholder')"
-                />
-                <button
-                  type="button"
-                  class="auth-eye"
-                  :aria-label="showPassword ? t(lang, 'hidePassword') : t(lang, 'showPassword')"
-                  @click="showPassword = !showPassword"
-                >
-                  <svg v-if="!showPassword" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M2.6 12S6.2 6.5 12 6.5 21.4 12 21.4 12 17.8 17.5 12 17.5 2.6 12 2.6 12Z" />
-                    <circle cx="12" cy="12" r="2.7" />
-                  </svg>
-                  <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 3l18 18" />
-                    <path d="M9.9 6.7A7.6 7.6 0 0 1 12 6.5c5.8 0 9.4 5.5 9.4 5.5a16 16 0 0 1-3.2 3.5" />
-                    <path d="M6.6 8.7A16 16 0 0 0 2.6 12S6.2 17.5 12 17.5c1.1 0 2.1-.2 3.1-.5" />
-                    <path d="M10.1 10.2a2.7 2.7 0 0 0 3.7 3.7" />
-                  </svg>
-                </button>
-              </span>
-            </label>
-            <button class="auth-link" type="button" @click="isResetOpen = true; resetEmail = email">
-              {{ t(lang, 'forgot') }}
-            </button>
-            <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
-            <p v-if="successMessage" class="auth-ok">{{ successMessage }}</p>
-            <button class="auth-submit" type="submit" :disabled="isLoading">
-              {{ isLoading ? t(lang, 'entering') : t(lang, 'authLogin') }}
-            </button>
-            <p class="auth-switch">
-              {{ t(lang, 'noAccount') }}
-              <button type="button" @click="setMode('register')">{{ t(lang, 'signUp') }}</button>
+          <div class="auth-head">
+            <h2>{{ title }}</h2>
+            <p v-if="!isResetOpen" class="auth-lead">
+              {{ isLogin ? t(lang, 'authLoginLead') : t(lang, 'authRegisterLead') }}
             </p>
-          </form>
+            <p v-else class="auth-lead">{{ t(lang, 'authResetLead') }}</p>
+          </div>
 
-          <form v-else class="auth-form" @submit.prevent="handleRegister">
-            <label>
-              {{ t(lang, 'username') }}
-              <input v-model="username" type="text" required minlength="3" maxlength="20" placeholder="your_user" />
-            </label>
-            <label>
-              {{ t(lang, 'firstName') }}
-              <input v-model="firstName" type="text" required :placeholder="t(lang, 'firstName')" />
-            </label>
-            <label>
-              {{ t(lang, 'lastName') }}
-              <input v-model="lastName" type="text" required :placeholder="t(lang, 'lastName')" />
-            </label>
-            <label>
-              {{ t(lang, 'email') }}
-              <input v-model="email" type="email" required placeholder="you@email.com" />
-            </label>
-            <label>
-              {{ t(lang, 'password') }}
-              <input v-model="password" type="password" required minlength="8" :placeholder="t(lang, 'passwordPlaceholder')" />
-            </label>
-            <label>
-              {{ t(lang, 'confirmPassword') }}
-              <input v-model="confirmPassword" type="password" required minlength="8" :placeholder="t(lang, 'repeatPassword')" />
-            </label>
-            <label class="auth-check">
-              <input v-model="acceptedTerms" type="checkbox" />
-              <span>
-                {{ t(lang, 'acceptTerms') }}
-                <a href="https://www.musicmundial.com/terminos-y-condiciones/" target="_blank" rel="noreferrer">{{ t(lang, 'terms') }}</a>
-              </span>
-            </label>
-            <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
-            <p v-if="successMessage" class="auth-ok">{{ successMessage }}</p>
-            <button class="auth-submit" type="submit" :disabled="isLoading">
-              {{ isLoading ? t(lang, 'creating') : t(lang, 'authRegister') }}
-            </button>
-            <p class="auth-switch">
-              {{ t(lang, 'hasAccount') }}
-              <button type="button" @click="setMode('login')">{{ t(lang, 'signIn') }}</button>
-            </p>
-          </form>
+          <div class="auth-body">
+            <div v-if="!isResetOpen" class="auth-social">
+              <button type="button" class="auth-google" :disabled="isLoading" @click="handleGoogle">
+                <svg class="auth-google-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.49 12.27c0-.78-.07-1.53-.2-2.25H12v4.26h6.46c-.28 1.5-1.13 2.77-2.4 3.62v3h3.89c2.27-2.1 3.54-5.18 3.54-8.63z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.94-2.92l-3.89-3c-1.08.72-2.46 1.15-4.05 1.15-3.12 0-5.77-2.11-6.72-4.94H1.26v3.09C3.24 21.31 7.3 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.29c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.26C.45 8.24 0 10.07 0 12s.45 3.76 1.26 5.38l4.02-3.09z"/>
+                  <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.45-3.45C17.95 1.17 15.24 0 12 0 7.3 0 3.24 2.69 1.26 6.62l4.02 3.09C6.23 6.88 8.88 4.77 12 4.77z"/>
+                </svg>
+                {{ t(lang, 'google') }}
+              </button>
+            </div>
+
+            <div v-if="!isResetOpen" class="auth-or"><span>{{ t(lang, 'authOrEmail') }}</span></div>
+
+            <form v-if="isResetOpen" class="auth-form" @submit.prevent="handleReset">
+              <label>
+                {{ t(lang, 'email') }}
+                <input v-model="resetEmail" type="email" required placeholder="you@example.com" />
+              </label>
+              <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+              <p v-if="successMessage" class="auth-ok">{{ successMessage }}</p>
+              <button class="auth-submit" type="submit" :disabled="isLoading">
+                {{ isLoading ? t(lang, 'sending') : t(lang, 'sendLink') }}
+              </button>
+              <button class="auth-ghost" type="button" @click="isResetOpen = false">{{ t(lang, 'backToLogin') }}</button>
+            </form>
+
+            <form v-else-if="isLogin" class="auth-form" @submit.prevent="handleLogin">
+              <label>
+                {{ t(lang, 'email') }}
+                <input v-model="email" type="email" required placeholder="you@example.com" />
+              </label>
+              <label>
+                <span class="auth-label-row">
+                  {{ t(lang, 'password') }}
+                  <button class="auth-link" type="button" @click="isResetOpen = true; resetEmail = email">
+                    {{ t(lang, 'forgot') }}
+                  </button>
+                </span>
+                <span class="auth-pass">
+                  <input
+                    v-model="password"
+                    :type="showPassword ? 'text' : 'password'"
+                    required
+                    minlength="8"
+                    :placeholder="t(lang, 'passwordPlaceholder')"
+                  />
+                  <button
+                    type="button"
+                    class="auth-eye"
+                    :aria-label="showPassword ? t(lang, 'hidePassword') : t(lang, 'showPassword')"
+                    @click="showPassword = !showPassword"
+                  >
+                    <svg v-if="!showPassword" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M2.6 12S6.2 6.5 12 6.5 21.4 12 21.4 12 17.8 17.5 12 17.5 2.6 12 2.6 12Z" />
+                      <circle cx="12" cy="12" r="2.7" />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 3l18 18" />
+                      <path d="M9.9 6.7A7.6 7.6 0 0 1 12 6.5c5.8 0 9.4 5.5 9.4 5.5a16 16 0 0 1-3.2 3.5" />
+                      <path d="M6.6 8.7A16 16 0 0 0 2.6 12S6.2 17.5 12 17.5c1.1 0 2.1-.2 3.1-.5" />
+                      <path d="M10.1 10.2a2.7 2.7 0 0 0 3.7 3.7" />
+                    </svg>
+                  </button>
+                </span>
+              </label>
+              <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+              <p v-if="successMessage" class="auth-ok">{{ successMessage }}</p>
+              <button class="auth-submit" type="submit" :disabled="isLoading">
+                {{ isLoading ? t(lang, 'entering') : t(lang, 'authLogin') }}
+              </button>
+              <p class="auth-switch">
+                {{ t(lang, 'noAccount') }}
+                <button type="button" @click="setMode('register')">{{ t(lang, 'signUp') }}</button>
+              </p>
+              <button class="auth-trouble" type="button" @click="isResetOpen = true; resetEmail = email">
+                {{ t(lang, 'authTrouble') }}
+              </button>
+            </form>
+
+            <form v-else class="auth-form" @submit.prevent="handleRegister">
+              <label>
+                {{ t(lang, 'username') }}
+                <input v-model="username" type="text" required minlength="3" maxlength="20" placeholder="your_user" />
+              </label>
+              <div class="auth-row">
+                <label>
+                  {{ t(lang, 'firstName') }}
+                  <input v-model="firstName" type="text" required :placeholder="t(lang, 'firstName')" />
+                </label>
+                <label>
+                  {{ t(lang, 'lastName') }}
+                  <input v-model="lastName" type="text" required :placeholder="t(lang, 'lastName')" />
+                </label>
+              </div>
+              <label>
+                {{ t(lang, 'email') }}
+                <input v-model="email" type="email" required placeholder="you@example.com" />
+              </label>
+              <label>
+                {{ t(lang, 'password') }}
+                <input v-model="password" type="password" required minlength="8" :placeholder="t(lang, 'passwordPlaceholder')" />
+              </label>
+              <label>
+                {{ t(lang, 'confirmPassword') }}
+                <input v-model="confirmPassword" type="password" required minlength="8" :placeholder="t(lang, 'repeatPassword')" />
+              </label>
+              <label class="auth-check">
+                <input v-model="acceptedTerms" type="checkbox" />
+                <span>
+                  {{ t(lang, 'acceptTerms') }}
+                  <a href="https://www.musicmundial.com/terminos-y-condiciones/" target="_blank" rel="noreferrer">{{ t(lang, 'terms') }}</a>
+                </span>
+              </label>
+              <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+              <p v-if="successMessage" class="auth-ok">{{ successMessage }}</p>
+              <button class="auth-submit" type="submit" :disabled="isLoading">
+                {{ isLoading ? t(lang, 'creating') : t(lang, 'authRegister') }}
+              </button>
+              <p class="auth-switch">
+                {{ t(lang, 'hasAccount') }}
+                <button type="button" @click="setMode('login')">{{ t(lang, 'signIn') }}</button>
+              </p>
+            </form>
+          </div>
         </div>
       </div>
     </div>

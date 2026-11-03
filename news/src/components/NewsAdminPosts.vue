@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { getAdminNewsPosts } from '../../../src/services/api/adminApi'
+import { deleteAdminNewsPost, getAdminNewsPosts, restoreAdminNewsPost } from '../../../src/services/api/adminApi'
 
 type Post = {
   id: string
@@ -20,9 +20,14 @@ const posts = ref<Post[]>([])
 const total = ref(0)
 const page = ref(1)
 const q = ref('')
+const author = ref('')
+const from = ref('')
+const to = ref('')
+const status = ref('')
 const locale = ref<'es' | 'en'>('es')
 const loading = ref(true)
 const errorMessage = ref('')
+const busyId = ref('')
 const limit = 20
 
 const formatDate = (value?: string) => {
@@ -51,6 +56,10 @@ const load = async () => {
       page: page.value,
       limit,
       q: q.value,
+      author: author.value,
+      from: from.value,
+      to: to.value,
+      status: status.value,
       locale: locale.value,
     })
     posts.value = payload.items || []
@@ -76,6 +85,38 @@ const setLocale = (next: 'es' | 'en') => {
   load()
 }
 
+const setStatus = (next: string) => {
+  status.value = next
+  page.value = 1
+  load()
+}
+
+const removePost = async (post: Post) => {
+  const ok = window.confirm(`¿Eliminar “${post.title}”? Quedará en notas eliminadas.`)
+  if (!ok) return
+  busyId.value = post.id
+  try {
+    await deleteAdminNewsPost(post.id, locale.value)
+    await load()
+  } catch {
+    errorMessage.value = 'No se pudo eliminar la nota.'
+  } finally {
+    busyId.value = ''
+  }
+}
+
+const restorePost = async (post: Post) => {
+  busyId.value = post.id
+  try {
+    await restoreAdminNewsPost(post.id, locale.value)
+    await load()
+  } catch {
+    errorMessage.value = 'No se pudo restaurar la nota.'
+  } finally {
+    busyId.value = ''
+  }
+}
+
 const setPage = (next: number) => {
   const max = pages()
   const value = Math.min(max, Math.max(1, next))
@@ -90,25 +131,53 @@ onMounted(load)
 
 <template>
   <section>
-    <div class="na-toolbar">
-      <div class="na-ranges" role="group" aria-label="Idioma">
-        <button type="button" :class="{ on: locale === 'en' }" @click="setLocale('en')">EN</button>
-        <button type="button" :class="{ on: locale === 'es' }" @click="setLocale('es')">ES</button>
+    <div class="na-filters">
+      <div class="na-toolbar">
+        <div class="na-ranges" role="group" aria-label="Idioma">
+          <button type="button" :class="{ on: locale === 'en' }" @click="setLocale('en')">EN</button>
+          <button type="button" :class="{ on: locale === 'es' }" @click="setLocale('es')">ES</button>
+        </div>
+        <input
+          v-model="q"
+          class="na-search"
+          type="search"
+          placeholder="Buscar título o slug"
+          @keydown.enter="search"
+        />
+        <input v-model="author" class="na-search na-search-author" type="search" placeholder="Autor" @keydown.enter="search" />
+        <label class="na-date-field">
+          <span>Desde</span>
+          <input v-model="from" type="date" />
+        </label>
+        <label class="na-date-field">
+          <span>Hasta</span>
+          <input v-model="to" type="date" />
+        </label>
+        <button class="na-btn" type="button" @click="search">Buscar</button>
       </div>
-      <input
-        v-model="q"
-        class="na-search"
-        type="search"
-        placeholder="Buscar título o slug"
-        @keydown.enter="search"
-      />
-      <button class="na-btn" type="button" @click="search">Buscar</button>
+      <div class="na-ranges" role="group" aria-label="Estado">
+        <button type="button" :class="{ on: status === '' }" @click="setStatus('')">Todas</button>
+        <button type="button" :class="{ on: status === 'publish' }" @click="setStatus('publish')">Publicadas</button>
+        <button type="button" :class="{ on: status === 'draft' }" @click="setStatus('draft')">Borradores</button>
+        <button type="button" :class="{ on: status === 'scheduled' }" @click="setStatus('scheduled')">Programadas</button>
+        <button type="button" :class="{ on: status === 'trash' }" @click="setStatus('trash')">Eliminadas</button>
+      </div>
+      <p class="na-count" :aria-busy="loading">
+        <template v-if="loading">Cargando noticias…</template>
+        <template v-else>{{ total.toLocaleString('es') }} notas · {{ locale === 'en' ? 'English' : 'Español' }}</template>
+      </p>
     </div>
-    <p class="na-count">{{ total.toLocaleString('es') }} notas · {{ locale === 'en' ? 'English' : 'Español' }}</p>
     <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
-    <p v-else-if="loading" class="na-empty">Cargando noticias…</p>
+    <div v-else-if="loading && !posts.length" class="na-load" role="status" aria-live="polite">
+      <span class="na-load-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span>Cargando noticias…</span>
+    </div>
     <div v-else-if="!posts.length" class="na-empty">No hay notas con esa búsqueda.</div>
-    <div v-else class="na-news">
+    <div v-else class="na-news" :class="{ 'is-loading': loading }" :aria-busy="loading">
+      <div v-if="loading" class="na-load na-load-inline" role="status" aria-live="polite">
+        <span class="na-load-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>Cargando noticias…</span>
+      </div>
       <article v-for="post in posts" :key="post.id" class="na-news-card">
         <a class="na-news-cover" :href="editHref(post)">
           <img v-if="post.coverUrl" :src="post.coverUrl" :alt="post.title" />
@@ -119,7 +188,7 @@ onMounted(load)
             <span class="na-chip cat">{{ post.category || 'Noticias' }}</span>
             <span v-if="statusLabel(post.status)" class="na-chip draft">{{ statusLabel(post.status) }}</span>
             <time>{{ formatDate(post.publishedAt) }}</time>
-            <span v-if="post.authorName" class="na-news-by">{{ post.authorName }}</span>
+            <span v-if="post.authorName" class="na-news-by">Publicó {{ post.authorName }}</span>
           </div>
           <h3>
             <a :href="editHref(post)">{{ post.title }}</a>
@@ -128,14 +197,16 @@ onMounted(load)
         </div>
         <div class="na-news-actions">
           <a class="na-btn solid" :href="editHref(post)">Editar</a>
-          <a class="na-btn" :href="post.href || (locale === 'es' ? `/es/${post.slug}` : `/${post.slug}`)" target="_blank">Ver</a>
+          <a v-if="post.status !== 'trash'" class="na-btn" :href="post.href || (locale === 'es' ? `/es/${post.slug}` : `/${post.slug}`)" target="_blank">Ver</a>
+          <button v-if="post.status === 'trash'" class="na-btn" type="button" :disabled="busyId === post.id" @click="restorePost(post)">Restaurar</button>
+          <button v-else class="na-btn" type="button" :disabled="busyId === post.id" @click="removePost(post)">Eliminar</button>
         </div>
       </article>
     </div>
     <div v-if="pages() > 1" class="na-pager">
-      <button type="button" :disabled="page <= 1" @click="setPage(page - 1)">Anterior</button>
+      <button type="button" :disabled="loading || page <= 1" @click="setPage(page - 1)">Anterior</button>
       <span>{{ page }} / {{ pages() }}</span>
-      <button type="button" :disabled="page >= pages()" @click="setPage(page + 1)">Siguiente</button>
+      <button type="button" :disabled="loading || page >= pages()" @click="setPage(page + 1)">Siguiente</button>
     </div>
   </section>
 </template>

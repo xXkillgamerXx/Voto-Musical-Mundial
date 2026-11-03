@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { uploadAdminImage } from '../../../src/services/api/adminApi'
-import { collapseNewsEmbeds, expandNewsEmbedsForEditor, loadTwitterEmbeds } from '../lib/embeds'
+import { collapseNewsEmbeds, editorEmbedHtml, expandNewsEmbedsForEditor, isEmbeddableUrl } from '../lib/embeds'
 
+const props = defineProps<{ defaultAlt?: string }>()
 const content = defineModel<string>({ default: '' })
 const mode = ref<'visual' | 'html'>('visual')
 const editor = ref<HTMLElement | null>(null)
@@ -22,7 +23,6 @@ const fillEditor = async (html: string) => {
   await nextTick()
   if (!editor.value) return
   editor.value.innerHTML = expandNewsEmbedsForEditor(html || '')
-  loadTwitterEmbeds(editor.value)
 }
 
 watch(content, (html) => {
@@ -72,6 +72,31 @@ const addQuote = () => {
   )
 }
 
+const insertEmbed = (raw: string) => {
+  const text = raw.trim()
+  if (!text) return
+  if (isEmbeddableUrl(text)) {
+    run('insertHTML', editorEmbedHtml(text))
+    return
+  }
+  const expanded = expandNewsEmbedsForEditor(text)
+  if (expanded.includes('na-embed')) run('insertHTML', expanded)
+}
+
+const addEmbed = () => {
+  const url = window.prompt('Pega el enlace o el shortcode [embed]…[/embed]', 'https://')?.trim()
+  if (!url) return
+  insertEmbed(url)
+}
+
+const onPaste = (event: ClipboardEvent) => {
+  const text = event.clipboardData?.getData('text/plain')?.trim() || ''
+  if (!text || text.includes('\n')) return
+  if (!isEmbeddableUrl(text) && !/\[embed\b/i.test(text)) return
+  event.preventDefault()
+  insertEmbed(text)
+}
+
 const addImage = () => {
   const input = document.createElement('input')
   input.type = 'file'
@@ -87,12 +112,13 @@ const addImage = () => {
       if (file.type.startsWith('video/')) {
         run('insertHTML', `<p><video src="${url}" controls playsinline></video></p>`)
       } else {
-        const alt = window.prompt('Texto alternativo (SEO)', file.name.replace(/\.[^.]+$/, '')) || ''
-        const caption = window.prompt('Pie de foto (opcional)', '') || ''
+        const suggested = String(props.defaultAlt || '').trim() || file.name.replace(/\.[^.]+$/, '')
+        const alt = window.prompt('Texto alternativo (SEO)', suggested) || suggested
+        const caption = window.prompt('Pie de foto (opcional)', suggested) || ''
         const safe = (value: string) =>
           value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
         const cap = caption.trim() ? `<figcaption>${safe(caption.trim())}</figcaption>` : ''
-        run('insertHTML', `<figure class="wp-block-image"><img src="${url}" alt="${safe(alt)}" />${cap}</figure>`)
+        run('insertHTML', `<figure class="wp-block-image"><img src="${url}" alt="${safe(alt.trim() || suggested)}" />${cap}</figure>`)
       }
     } finally {
       uploading.value = false
@@ -125,6 +151,7 @@ onMounted(() => {
         <button type="button" title="Cita" @mousedown.prevent @click="addQuote">“</button>
         <span></span>
         <button type="button" title="Enlace" @mousedown.prevent @click="addLink">Link</button>
+        <button type="button" title="Insertar video o embed" @mousedown.prevent @click="addEmbed">Embed</button>
         <button type="button" title="Imagen, GIF o video" :disabled="uploading" @mousedown.prevent @click="addImage">
           {{ uploading ? '…' : 'Img' }}
         </button>
@@ -141,6 +168,7 @@ onMounted(() => {
       class="na-wp-visual"
       contenteditable="true"
       @input="syncFromEditor"
+      @paste="onPaste"
     ></div>
     <textarea
       v-show="mode === 'html'"

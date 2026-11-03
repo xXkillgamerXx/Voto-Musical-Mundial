@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ListNewsDto } from './dto/list-news.dto';
 import { UpsertNewsPostDto } from './dto/upsert-news-post.dto';
 import { NewsLocale, NewsMysqlService } from './news-mysql';
-import { expandNewsEmbeds, firstYoutubeEmbed, plainExcerpt, rssBodyHtml, sanitizeNewsHtml, youtubeVideoIds } from './news-html';
+import { ensureImageAlts, expandNewsEmbeds, firstYoutubeEmbed, plainExcerpt, rssBodyHtml, sanitizeNewsHtml, youtubeVideoIds } from './news-html';
 import { NewsSitemapService } from './news-sitemap.service';
 
 type NewsActor = { id: bigint; role?: string };
@@ -109,7 +109,7 @@ const toCard = (post: PostRow, categories: Array<{ slug: string; name: string }>
     excerpt,
     coverUrl: largeNewsImage(post.cover_url) || firstImage(post.post_content),
     coverCaption: String(post.cover_caption || '').trim() || undefined,
-    coverAlt: String(post.cover_alt || '').trim() || undefined,
+    coverAlt: String(post.cover_alt || '').trim() || String(post.post_title || '').trim() || undefined,
     featured: false,
     status: fromWpStatus(post.post_status),
     wpAuthorId: post.post_author ? String(post.post_author) : undefined,
@@ -360,17 +360,29 @@ export class NewsService {
         nav: NAV_SLUGS.has(row.slug),
         order: NAV_SLUGS.has(row.slug) ? index : 100 + index,
         postCount: Number(row.count || 0),
-        href: publicHref(locale, `categoria/${row.slug}`),
+        href: publicHref(locale, `${locale === 'en' ? 'category' : 'categoria'}/${row.slug}`),
       })),
     );
   }
 
-  async adminList(input: { page?: number; limit?: number; q?: string; status?: string; locale?: string }) {
+  async adminList(input: {
+    page?: number;
+    limit?: number;
+    q?: string;
+    status?: string;
+    locale?: string;
+    author?: string;
+    from?: string;
+    to?: string;
+  }) {
     const locale = this.mysql.locale(input.locale);
     const page = Math.max(1, Number(input.page || 1));
     const limit = Math.min(50, Math.max(1, Number(input.limit || 20)));
     const q = String(input.q || '').trim();
     const status = String(input.status || '').trim();
+    const author = String(input.author || '').trim();
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.from || '')) ? String(input.from) : '';
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.to || '')) ? String(input.to) : '';
     const where = [`p.post_type = 'post'`];
     const params: unknown[] = [];
     if (status === 'scheduled') {
@@ -388,6 +400,18 @@ export class NewsService {
       where.push('(p.post_title LIKE ? OR p.post_name LIKE ?)');
       params.push(`%${q}%`, `%${q}%`);
     }
+    if (author) {
+      where.push('(u.display_name LIKE ? OR u.user_nicename LIKE ? OR u.user_login LIKE ?)');
+      params.push(`%${author}%`, `%${author}%`, `%${author}%`);
+    }
+    if (from) {
+      where.push('p.post_date >= ?');
+      params.push(`${from} 00:00:00`);
+    }
+    if (to) {
+      where.push('p.post_date < DATE_ADD(?, INTERVAL 1 DAY)');
+      params.push(`${to} 00:00:00`);
+    }
     const whereSql = where.join(' AND ');
     const offset = (page - 1) * limit;
     const rows = await this.mysql.query<PostRow>(
@@ -400,43 +424,99 @@ export class NewsService {
       locale,
       rows.map((row) => toCard(row, cats.get(row.ID) || [], locale)),
     );
+    const countFrom = author
+      ? 'FROM wpgn_posts p LEFT JOIN wpgn_users u ON u.ID = p.post_author'
+      : 'FROM wpgn_posts p';
     const countRows = await this.mysql.query<{ total: number }>(
       locale,
-      `SELECT COUNT(*) AS total FROM wpgn_posts p WHERE ${whereSql}`,
+      `SELECT COUNT(*) AS total ${countFrom} WHERE ${whereSql}`,
       params,
     );
     return serialize({ page, limit, total: Number(countRows[0]?.total || 0), items, locale });
   }
 
-  async adminAuthors(localeValue?: string) {
+  async adminAuthors(localeValue?: string, q?: string) {
     const locale = this.mysql.locale(localeValue);
+    const query = String(q || '').trim();
+    const like = `%${query}%`;
     const rows = await this.mysql.query<{
       ID: number;
       display_name: string;
       user_email: string;
       user_login: string;
+      user_nicename: string;
       user_url: string;
       posts: number;
+      bio: string | null;
+      photo: string | null;
+      site: string | null;
     }>(
       locale,
-      `SELECT u.ID, u.display_name, u.user_email, u.user_login, u.user_url,
-        SUM(p.post_type = 'post' AND p.post_status = 'publish') AS posts
+      `SELECT u.ID, u.display_name, u.user_email, u.user_login, u.user_nicename, u.user_url,
+        SUM(p.post_type = 'post' AND p.post_status = 'publish') AS posts,
+        (SELECT meta_value FROM wpgn_usermeta WHERE user_id = u.ID AND meta_key = 'description' LIMIT 1) AS bio,
+        (SELECT meta_value FROM wpgn_usermeta WHERE user_id = u.ID AND meta_key = 'vmm_avatar' LIMIT 1) AS photo,
+        (SELECT meta_value FROM wpgn_usermeta WHERE user_id = u.ID AND meta_key = 'vmm_website' LIMIT 1) AS site
        FROM wpgn_users u
        LEFT JOIN wpgn_posts p ON p.post_author = u.ID
-       GROUP BY u.ID, u.display_name, u.user_email, u.user_login, u.user_url
+       ${query ? 'WHERE u.display_name LIKE ? OR u.user_nicename LIKE ? OR u.user_login LIKE ? OR u.user_email LIKE ?' : ''}
+       GROUP BY u.ID, u.display_name, u.user_email, u.user_login, u.user_nicename, u.user_url
        ORDER BY posts DESC, u.display_name ASC
-       LIMIT 200`,
+       LIMIT 80`,
+      query ? [like, like, like, like] : [],
     );
     return serialize(
-      rows.map((row) => ({
-        id: String(row.ID),
-        name: row.display_name || row.user_login,
-        email: row.user_email || '',
-        login: row.user_login,
-        linkedUserId: String(row.user_url || '').startsWith('vmm:') ? String(row.user_url).slice(4) : '',
-        postCount: Number(row.posts || 0),
-      })),
+      rows.map((row) => {
+        const linked = String(row.user_url || '').startsWith('vmm:');
+        return {
+          id: String(row.ID),
+          name: row.display_name || row.user_login,
+          email: row.user_email || '',
+          login: row.user_login,
+          slug: row.user_nicename || row.user_login,
+          bio: String(row.bio || ''),
+          photoUrl: String(row.photo || '') || gravatarUrl(row.user_email),
+          website: linked ? String(row.site || '') : String(row.user_url || ''),
+          linkedUserId: linked ? String(row.user_url).slice(4) : '',
+          postCount: Number(row.posts || 0),
+          href: publicHref(locale, `author/${row.user_nicename || row.user_login}`),
+        };
+      }),
     );
+  }
+
+  async adminUpdateAuthor(
+    id: string,
+    body: { locale?: string; name?: string; bio?: string; website?: string; photoUrl?: string },
+  ) {
+    const locale = this.mysql.locale(body.locale);
+    const userId = Number(id);
+    if (!Number.isFinite(userId) || userId <= 0) throw new NotFoundException('No encontramos a ese autor.');
+    const rows = await this.mysql.query<{ ID: number; user_nicename: string; user_url: string }>(
+      locale,
+      `SELECT ID, user_nicename, user_url FROM wpgn_users WHERE ID = ? LIMIT 1`,
+      [userId],
+    );
+    const user = rows[0];
+    if (!user) throw new NotFoundException('No encontramos a ese autor.');
+    const name = String(body.name || '').trim();
+    if (name) {
+      await this.mysql.exec(locale, `UPDATE wpgn_users SET display_name = ? WHERE ID = ?`, [name.slice(0, 250), userId]);
+    }
+    if (body.website != null) {
+      const website = String(body.website || '').trim().slice(0, 300);
+      if (String(user.user_url || '').startsWith('vmm:')) {
+        await this.setUserMeta(locale, userId, 'vmm_website', website);
+      } else {
+        await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = ? WHERE ID = ?`, [website, userId]);
+      }
+    }
+    if (body.bio != null) await this.setUserMeta(locale, userId, 'description', String(body.bio).slice(0, 2000));
+    if (body.photoUrl != null) {
+      await this.setUserMeta(locale, userId, 'vmm_avatar', String(body.photoUrl || '').trim().slice(0, 500));
+    }
+    const profile = await this.authorProfile(locale, user.user_nicename);
+    return serialize(profile);
   }
 
   async adminGet(id: string, localeValue?: string) {
@@ -527,6 +607,17 @@ export class NewsService {
     return serialize({ ok: true, id: String(postId), locale });
   }
 
+  async restore(id: string, localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    const postId = await this.requirePostId(locale, id);
+    await this.mysql.exec(
+      locale,
+      `UPDATE wpgn_posts SET post_status = 'draft', post_modified = ? WHERE ID = ? AND post_status = 'trash'`,
+      [this.wpStamp(new Date()), postId],
+    );
+    return serialize({ ok: true, id: String(postId), locale, status: 'draft' });
+  }
+
   async adminTags(localeValue?: string, q?: string) {
     const locale = this.mysql.locale(localeValue);
     const query = String(q || '').trim();
@@ -547,8 +638,99 @@ export class NewsService {
         slug: row.slug,
         name: String(row.name || '').replace(/&amp;/g, '&'),
         postCount: Number(row.count || 0),
+        href: publicHref(locale, `tag/${row.slug}`),
       })),
     );
+  }
+
+  async adminTag(id: string, localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    const term = await this.tagTerm(locale, id);
+    if (!term) throw new NotFoundException('No encontramos esa etiqueta.');
+    const profile = await this.tagProfile(locale, term.term_id);
+    return serialize(this.presentTag(locale, term, profile));
+  }
+
+  async updateTag(
+    id: string,
+    body: {
+      locale?: string;
+      name?: string;
+      description?: string;
+      about?: string;
+      logoUrl?: string;
+      coverUrl?: string;
+      verified?: boolean;
+      followers?: number;
+      related?: string[];
+      supporters?: Array<{ name?: string; tier?: string; points?: number }>;
+    },
+  ) {
+    const locale = this.mysql.locale(body.locale);
+    const term = await this.tagTerm(locale, id);
+    if (!term) throw new NotFoundException('No encontramos esa etiqueta.');
+    const name = String(body.name || term.name).trim().slice(0, 200);
+    const description = String(body.description ?? term.description).trim().slice(0, 500);
+    if (name) {
+      await this.mysql.exec(locale, `UPDATE wpgn_terms SET name = ? WHERE term_id = ?`, [name, term.term_id]);
+    }
+    await this.mysql.exec(
+      locale,
+      `UPDATE wpgn_term_taxonomy SET description = ? WHERE term_id = ? AND taxonomy = 'post_tag'`,
+      [description, term.term_id],
+    );
+    const current = await this.tagProfile(locale, term.term_id);
+    const supporters = Array.isArray(body.supporters)
+      ? body.supporters
+          .map((item) => ({
+            name: String(item?.name || '').trim().slice(0, 80),
+            tier: String(item?.tier || '').trim().slice(0, 40),
+            points: Math.max(0, Number(item?.points || 0)),
+          }))
+          .filter((item) => item.name)
+          .slice(0, 12)
+      : current.supporters;
+    const next = {
+      about: body.about != null ? String(body.about).slice(0, 4000) : current.about,
+      logoUrl: body.logoUrl != null ? String(body.logoUrl).trim().slice(0, 500) : current.logoUrl,
+      coverUrl: body.coverUrl != null ? String(body.coverUrl).trim().slice(0, 500) : current.coverUrl,
+      verified: body.verified != null ? Boolean(body.verified) : current.verified,
+      followers: body.followers != null ? Math.max(0, Number(body.followers || 0)) : current.followers,
+      related: Array.isArray(body.related)
+        ? body.related.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean).slice(0, 12)
+        : current.related,
+      supporters,
+    };
+    await this.setTermMeta(locale, term.term_id, '_vmm_tag', JSON.stringify(next));
+    return this.adminTag(String(term.term_id), locale);
+  }
+
+  async findTag(slug: string, localeValue?: string, pageValue = 1, limitValue = 12) {
+    const locale = this.mysql.locale(localeValue);
+    const key = String(slug || '')
+      .trim()
+      .toLowerCase();
+    const term = await this.tagTerm(locale, key);
+    if (!term) throw new NotFoundException('No encontramos esa etiqueta.');
+    const page = Math.max(1, Number(pageValue || 1));
+    const limit = Math.min(24, Math.max(1, Number(limitValue || 12)));
+    const profile = await this.tagProfile(locale, term.term_id);
+    const [{ items, total }, trending, stats, related] = await Promise.all([
+      this.loadPosts(locale, { page, limit, tag: term.slug }),
+      this.loadPosts(locale, { page: 1, limit: 5, tag: term.slug, skipCount: true, order: 'comments' }),
+      this.tagStats(locale, term.term_id),
+      profile.related.length ? this.tagsBySlug(locale, profile.related) : this.relatedTags(locale, term.term_id),
+    ]);
+    return serialize({
+      ...this.presentTag(locale, term, profile),
+      stats,
+      page,
+      limit,
+      total,
+      items,
+      trending: trending.items,
+      related,
+    });
   }
 
   async listComments(slug: string, localeValue?: string) {
@@ -804,6 +986,8 @@ export class NewsService {
       light?: boolean;
       authorId?: number;
       authorSlug?: string;
+      tag?: string;
+      order?: 'date' | 'comments';
     },
   ) {
     const slugs = (input.slugs?.length ? input.slugs : input.category ? [input.category] : []).filter(Boolean);
@@ -829,6 +1013,16 @@ export class NewsService {
       )`);
       params.push(...slugs);
     }
+    const tag = String(input.tag || '').trim().toLowerCase();
+    if (tag) {
+      where.push(`EXISTS (
+        SELECT 1 FROM wpgn_term_relationships tr
+        JOIN wpgn_term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'post_tag'
+        JOIN wpgn_terms t ON t.term_id = tt.term_id
+        WHERE tr.object_id = p.ID AND t.slug = ?
+      )`);
+      params.push(tag);
+    }
     if (input.q) {
       where.push('(p.post_title LIKE ? OR p.post_excerpt LIKE ?)');
       params.push(`%${input.q}%`, `%${input.q}%`);
@@ -837,7 +1031,7 @@ export class NewsService {
     const offset = (input.page - 1) * input.limit;
     const rows = await this.mysql.query<PostRow>(
       locale,
-      `${this.postSelect(input.light !== false)} WHERE ${whereSql} ORDER BY p.post_date DESC LIMIT ? OFFSET ?`,
+      `${this.postSelect(input.light !== false)} WHERE ${whereSql} ORDER BY ${input.order === 'comments' ? 'p.comment_count DESC, p.post_date DESC' : 'p.post_date DESC'} LIMIT ? OFFSET ?`,
       [...params, input.limit, offset],
     );
     const cats = await this.categoriesFor(locale, rows.map((row) => row.ID));
@@ -920,8 +1114,9 @@ export class NewsService {
   private async writePost(locale: NewsLocale, body: UpsertNewsPostDto, actorId?: bigint, postId?: number) {
     const title = String(body.title || '').trim();
     if (title.length < 3) throw new BadRequestException('El título es obligatorio.');
-    const content = sanitizeNewsHtml(body.content || '');
+    const content = ensureImageAlts(sanitizeNewsHtml(body.content || ''), title);
     const excerpt = String(body.excerpt || '').trim() || plainExcerpt(content);
+    const coverAlt = String(body.coverAlt || '').trim() || title;
     const status = toWpStatus(body.status);
     const publishedAt = body.publishedAt ? new Date(body.publishedAt) : new Date();
     if (Number.isNaN(publishedAt.getTime())) throw new BadRequestException('La fecha no es válida.');
@@ -972,7 +1167,7 @@ export class NewsService {
     await this.setCategories(locale, id, body.categoryIds || []);
     if (Array.isArray(body.tags)) await this.setTags(locale, id, body.tags);
     if (Array.isArray(body.attachments)) await this.setAttachments(locale, id, body.attachments);
-    await this.setCover(locale, id, body.coverUrl, body.coverCaption, body.coverAlt);
+    await this.setCover(locale, id, body.coverUrl, body.coverCaption, coverAlt);
     await this.setMeta(locale, id, '_vmm_featured', body.featured ? '1' : '');
     const linkedId = String(body.authorUserId || (!keepAuthor ? actorId : '') || '').trim();
     if (linkedId) await this.setMeta(locale, id, '_vmm_user_id', linkedId);
@@ -1131,14 +1326,14 @@ export class NewsService {
     while (index < 50) {
       const rows = await this.mysql.query<{ ID: number }>(
         locale,
-        `SELECT ID FROM wpgn_posts WHERE post_name = ? AND post_type = 'post'${excludeId ? ' AND ID <> ?' : ''} LIMIT 1`,
+        `SELECT ID FROM wpgn_posts WHERE post_name = ?${excludeId ? ' AND ID <> ?' : ''} LIMIT 1`,
         excludeId ? [slug, excludeId] : [slug],
       );
       if (!rows.length) return slug;
-      slug = `${base}-${index}`;
+      slug = `${base.slice(0, 160)}-${index}`;
       index += 1;
     }
-    return `${base}-${Date.now()}`;
+    return `${base.slice(0, 150)}-${Date.now()}`;
   }
 
   private async resolveAuthor(locale: NewsLocale, body: UpsertNewsPostDto, actorId?: bigint) {
@@ -1213,15 +1408,35 @@ export class NewsService {
       }
     }
 
-    const inserted = await this.mysql.exec(
-      locale,
-      `INSERT INTO wpgn_users (
-        user_login, user_pass, user_nicename, user_email, user_url,
-        user_registered, user_activation_key, user_status, display_name
-      ) VALUES (?, '', ?, ?, ?, ?, '', 0, ?)`,
-      [login, nicename, email, marker, this.wpStamp(new Date()), name],
-    );
-    return inserted.insertId || 1;
+    let nice = nicename || login;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const taken = await this.mysql.query<{ ID: number }>(
+        locale,
+        `SELECT ID FROM wpgn_users WHERE user_nicename = ? OR user_login = ? LIMIT 1`,
+        [nice, attempt === 0 ? login : `${login}-${attempt}`],
+      );
+      if (!taken[0]) break;
+      nice = `${nicename.slice(0, 40)}-${attempt + 2}`.slice(0, 50);
+    }
+    try {
+      const inserted = await this.mysql.exec(
+        locale,
+        `INSERT INTO wpgn_users (
+          user_login, user_pass, user_nicename, user_email, user_url,
+          user_registered, user_activation_key, user_status, display_name
+        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, ?)`,
+        [login, `vmm-${user.id}`, nice, email, marker, this.wpStamp(new Date()), name],
+      );
+      return inserted.insertId || 1;
+    } catch (error) {
+      const again = await this.mysql.query<{ ID: number }>(
+        locale,
+        `SELECT ID FROM wpgn_users WHERE user_login = ? OR user_email = ? OR user_url = ? LIMIT 1`,
+        [login, email, marker],
+      );
+      if (again[0]) return Number(again[0].ID);
+      throw error;
+    }
   }
 
   private async setCategories(locale: NewsLocale, postId: number, categoryIds: string[]) {
@@ -1338,6 +1553,241 @@ export class NewsService {
       [postId, key],
     );
     return String(rows[0]?.meta_value || '').trim();
+  }
+
+  private emptyTagProfile() {
+    return {
+      about: '',
+      logoUrl: '',
+      coverUrl: '',
+      verified: false,
+      followers: 0,
+      related: [] as string[],
+      supporters: [] as Array<{ name: string; tier: string; points: number }>,
+    };
+  }
+
+  private async tagTerm(locale: NewsLocale, idOrSlug: string) {
+    const key = String(idOrSlug || '').trim();
+    const numeric = Number(key);
+    const byId = Number.isFinite(numeric) && String(numeric) === key;
+    if (!key) return null;
+    const rows = await this.mysql.query<{
+      term_id: number;
+      slug: string;
+      name: string;
+      description: string;
+      count: number;
+    }>(
+      locale,
+      `SELECT t.term_id, t.slug, t.name, tt.description, tt.count
+       FROM wpgn_terms t
+       JOIN wpgn_term_taxonomy tt ON tt.term_id = t.term_id AND tt.taxonomy = 'post_tag'
+       WHERE ${byId ? 't.term_id = ?' : 't.slug = ?'}
+       LIMIT 1`,
+      [byId ? numeric : key.toLowerCase()],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      term_id: Number(row.term_id),
+      slug: row.slug,
+      name: String(row.name || '').replace(/&amp;/g, '&'),
+      description: String(row.description || ''),
+      count: Number(row.count || 0),
+    };
+  }
+
+  private presentTag(
+    locale: NewsLocale,
+    term: { term_id: number; slug: string; name: string; description: string },
+    profile: ReturnType<NewsService['emptyTagProfile']>,
+  ) {
+    return {
+      id: String(term.term_id),
+      slug: term.slug,
+      name: term.name,
+      description: term.description,
+      about: profile.about || term.description,
+      logoUrl: profile.logoUrl,
+      coverUrl: profile.coverUrl,
+      verified: profile.verified,
+      followers: profile.followers,
+      related: profile.related,
+      supporters: profile.supporters,
+      href: publicHref(locale, `tag/${term.slug}`),
+      locale,
+    };
+  }
+
+  private async tagProfile(locale: NewsLocale, termId: number) {
+    const empty = this.emptyTagProfile();
+    try {
+      await this.ensureTermMeta(locale);
+      const rows = await this.mysql.query<{ meta_value: string }>(
+        locale,
+        `SELECT meta_value FROM wpgn_termmeta WHERE term_id = ? AND meta_key = '_vmm_tag' LIMIT 1`,
+        [termId],
+      );
+      const data = JSON.parse(String(rows[0]?.meta_value || '{}')) as Partial<ReturnType<NewsService['emptyTagProfile']>>;
+      return {
+        about: String(data.about || '').slice(0, 4000),
+        logoUrl: String(data.logoUrl || '').slice(0, 500),
+        coverUrl: String(data.coverUrl || '').slice(0, 500),
+        verified: Boolean(data.verified),
+        followers: Math.max(0, Number(data.followers || 0)),
+        related: Array.isArray(data.related)
+          ? data.related.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean).slice(0, 12)
+          : [],
+        supporters: Array.isArray(data.supporters)
+          ? data.supporters
+              .map((item) => ({
+                name: String(item?.name || '').trim().slice(0, 80),
+                tier: String(item?.tier || '').trim().slice(0, 40),
+                points: Math.max(0, Number(item?.points || 0)),
+              }))
+              .filter((item) => item.name)
+              .slice(0, 12)
+          : [],
+      };
+    } catch {
+      return empty;
+    }
+  }
+
+  private async tagStats(locale: NewsLocale, termId: number) {
+    const rows = await this.mysql.query<{ articles: number; images: number; videos: number; updated_at: Date | string | null }>(
+      locale,
+      `SELECT COUNT(*) AS articles,
+         SUM(th.meta_id IS NOT NULL) AS images,
+         SUM(
+           p.post_content LIKE '%youtube.com%'
+           OR p.post_content LIKE '%youtu.be%'
+           OR p.post_content LIKE '%[embed]%'
+         ) AS videos,
+         MAX(p.post_modified) AS updated_at
+       FROM wpgn_posts p
+       JOIN wpgn_term_relationships tr ON tr.object_id = p.ID
+       JOIN wpgn_term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+         AND tt.taxonomy = 'post_tag' AND tt.term_id = ?
+       LEFT JOIN wpgn_postmeta th ON th.post_id = p.ID AND th.meta_key = '_thumbnail_id' AND th.meta_value <> ''
+       WHERE p.post_type = 'post' AND p.post_status = 'publish'`,
+      [termId],
+    );
+    const row = rows[0];
+    return {
+      articles: Number(row?.articles || 0),
+      images: Number(row?.images || 0),
+      videos: Number(row?.videos || 0),
+      updatedAt: row?.updated_at || null,
+    };
+  }
+
+  private async relatedTags(locale: NewsLocale, termId: number) {
+    const rows = await this.mysql.query<{ slug: string; name: string }>(
+      locale,
+      `SELECT t.slug, t.name
+       FROM wpgn_term_relationships tr
+       JOIN wpgn_term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+         AND tt.taxonomy = 'post_tag' AND tt.term_id = ?
+       JOIN wpgn_posts p ON p.ID = tr.object_id AND p.post_type = 'post' AND p.post_status = 'publish'
+         AND p.post_date >= DATE_SUB(NOW(), INTERVAL 18 MONTH)
+       JOIN wpgn_term_relationships tr2 ON tr2.object_id = tr.object_id AND tr2.term_taxonomy_id <> tr.term_taxonomy_id
+       JOIN wpgn_term_taxonomy tt2 ON tt2.term_taxonomy_id = tr2.term_taxonomy_id AND tt2.taxonomy = 'post_tag'
+       JOIN wpgn_terms t ON t.term_id = tt2.term_id
+       GROUP BY t.term_id, t.slug, t.name
+       ORDER BY COUNT(*) DESC
+       LIMIT 8`,
+      [termId],
+    );
+    return rows.map((row) => ({
+      slug: row.slug,
+      name: String(row.name || '').replace(/&amp;/g, '&'),
+      href: publicHref(locale, `tag/${row.slug}`),
+    }));
+  }
+
+  private async tagsBySlug(locale: NewsLocale, slugs: string[]) {
+    const clean = slugs.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean);
+    if (!clean.length) return [];
+    const rows = await this.mysql.query<{ slug: string; name: string }>(
+      locale,
+      `SELECT t.slug, t.name
+       FROM wpgn_terms t
+       JOIN wpgn_term_taxonomy tt ON tt.term_id = t.term_id AND tt.taxonomy = 'post_tag'
+       WHERE t.slug IN (${clean.map(() => '?').join(', ')})`,
+      clean,
+    );
+    const order = new Map(clean.map((slug, index) => [slug, index]));
+    return rows
+      .sort((a, b) => (order.get(a.slug) ?? 99) - (order.get(b.slug) ?? 99))
+      .map((row) => ({
+        slug: row.slug,
+        name: String(row.name || '').replace(/&amp;/g, '&'),
+        href: publicHref(locale, `tag/${row.slug}`),
+      }));
+  }
+
+  private termMetaReady = new Set<NewsLocale>();
+
+  private async ensureTermMeta(locale: NewsLocale) {
+    if (this.termMetaReady.has(locale)) return;
+    await this.mysql.exec(
+      locale,
+      `CREATE TABLE IF NOT EXISTS wpgn_termmeta (
+        meta_id bigint unsigned NOT NULL AUTO_INCREMENT,
+        term_id bigint unsigned NOT NULL DEFAULT 0,
+        meta_key varchar(255) DEFAULT NULL,
+        meta_value longtext,
+        PRIMARY KEY (meta_id),
+        KEY term_id (term_id),
+        KEY meta_key (meta_key(191))
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    );
+    this.termMetaReady.add(locale);
+  }
+
+  private async setTermMeta(locale: NewsLocale, termId: number, key: string, value: string) {
+    await this.ensureTermMeta(locale);
+    const rows = await this.mysql.query<{ meta_id: number }>(
+      locale,
+      `SELECT meta_id FROM wpgn_termmeta WHERE term_id = ? AND meta_key = ? LIMIT 1`,
+      [termId, key],
+    );
+    if (!value) {
+      if (rows[0]) await this.mysql.exec(locale, `DELETE FROM wpgn_termmeta WHERE meta_id = ?`, [rows[0].meta_id]);
+      return;
+    }
+    if (rows[0]) {
+      await this.mysql.exec(locale, `UPDATE wpgn_termmeta SET meta_value = ? WHERE meta_id = ?`, [value, rows[0].meta_id]);
+      return;
+    }
+    await this.mysql.exec(locale, `INSERT INTO wpgn_termmeta (term_id, meta_key, meta_value) VALUES (?, ?, ?)`, [
+      termId,
+      key,
+      value,
+    ]);
+  }
+
+  private async setUserMeta(locale: NewsLocale, userId: number, key: string, value: string) {
+    const rows = await this.mysql.query<{ umeta_id: number }>(
+      locale,
+      `SELECT umeta_id FROM wpgn_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1`,
+      [userId, key],
+    );
+    if (!value) {
+      if (rows[0]) await this.mysql.exec(locale, `DELETE FROM wpgn_usermeta WHERE umeta_id = ?`, [rows[0].umeta_id]);
+      return;
+    }
+    if (rows[0]) {
+      await this.mysql.exec(locale, `UPDATE wpgn_usermeta SET meta_value = ? WHERE umeta_id = ?`, [value, rows[0].umeta_id]);
+      return;
+    }
+    await this.mysql.exec(locale, `INSERT INTO wpgn_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?)`, [
+      userId,
+      key,
+      value,
+    ]);
   }
 
   private async setMeta(locale: NewsLocale, postId: number, key: string, value: string) {
@@ -1581,14 +2031,20 @@ export class NewsService {
     const user = rows[0];
     if (!user) return null;
     let bio = '';
+    let photoUrl = '';
+    let extraSite = '';
     let postCount = 0;
     try {
-      const metas = await this.mysql.query<{ meta_value: string }>(
+      const metas = await this.mysql.query<{ meta_key: string; meta_value: string }>(
         locale,
-        `SELECT meta_value FROM wpgn_usermeta WHERE user_id = ? AND meta_key = 'description' LIMIT 1`,
+        `SELECT meta_key, meta_value FROM wpgn_usermeta WHERE user_id = ? AND meta_key IN ('description', 'vmm_avatar', 'vmm_website')`,
         [user.ID],
       );
-      bio = String(metas[0]?.meta_value || '').trim();
+      for (const row of metas) {
+        if (row.meta_key === 'description') bio = String(row.meta_value || '').trim();
+        if (row.meta_key === 'vmm_avatar') photoUrl = String(row.meta_value || '').trim();
+        if (row.meta_key === 'vmm_website') extraSite = String(row.meta_value || '').trim();
+      }
     } catch {
       bio = '';
     }
@@ -1602,13 +2058,14 @@ export class NewsService {
     } catch {
       postCount = 0;
     }
-    const website = String(user.user_url || '').startsWith('vmm:') ? '' : String(user.user_url || '').trim();
+    const linked = String(user.user_url || '').startsWith('vmm:');
+    const website = linked ? extraSite : String(user.user_url || '').trim();
     return {
       id: Number(user.ID),
       slug: user.user_nicename || key,
       name: user.display_name || user.user_nicename || key,
       bio,
-      photoUrl: gravatarUrl(user.user_email),
+      photoUrl: photoUrl || gravatarUrl(user.user_email),
       website,
       postCount,
     };

@@ -13,6 +13,7 @@ class AdService {
   AdService._();
 
   static bool _initialized = false;
+  static Future<void>? _initializing;
 
   /// Fondo negro bajo anuncios fullscreen (tapando el header de la app).
   static final ValueNotifier<bool> fullscreenCover =
@@ -26,12 +27,16 @@ class AdService {
     fullscreenCover.value = false;
   }
 
-  static Future<void> initialize() async {
-    if (_initialized) return;
-    if (kIsWeb) return;
+  static Future<void> initialize() {
+    if (_initialized || kIsWeb) return Future.value();
+    return _initializing ??= _initialize();
+  }
+
+  static Future<void> _initialize() async {
     try {
       // Inicializa siempre el SDK; la visibilidad la controla AdMobConfig.
-      await MobileAds.instance.initialize();
+      // En emulador la llamada a Google puede colgarse; no esperamos más de 8s.
+      await MobileAds.instance.initialize().timeout(const Duration(seconds: 8));
       _initialized = true;
       if (AdMobConfig.adsEnabled) {
         unawaited(RewardedAdService.preload());
@@ -39,6 +44,7 @@ class AdService {
         unawaited(AppOpenAdService.preload());
       }
     } catch (error, stack) {
+      _initializing = null;
       debugPrint('AdMob init failed: $error\n$stack');
     }
   }

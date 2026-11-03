@@ -30,4 +30,9 @@ export class ListNewsDto {
   @IsOptional()
   @IsString()
   locale?: string;
+
+  /** Cache buster added by the web client. Ignored. */
+  @IsOptional()
+  @IsString()
+  _?: string;
 }

@@ -20,4 +20,8 @@ export class ListForumTopicsDto {
   @IsOptional()
   @IsIn(['es', 'en'])
   locale?: 'es' | 'en';
+
+  @IsOptional()
+  @IsString()
+  _?: string;
 }

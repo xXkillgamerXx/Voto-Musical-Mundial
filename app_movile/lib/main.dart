@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
@@ -16,7 +18,8 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await ResponseCache.init();
-  await AdService.initialize();
+  // AdMob puede tardar varios segundos (sobre todo en emulador). No bloquea el primer frame.
+  unawaited(AdService.initialize());
 
   initI18n();
   await AppLocale.instance.load();
