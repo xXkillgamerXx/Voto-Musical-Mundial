@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getNewsTag } from '../../../src/services/api/newsApi'
 import { t } from '../lib/copy'
 import { withLocale } from '../lib/locale'
-import { coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
+import { coverErrorFallback, coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 
 type Related = { slug: string; name: string; href?: string }
@@ -82,7 +82,7 @@ async function load(reset = true) {
         title: `${payload.name} — Music Mundial`,
         description: payload.description || payload.about || `${payload.name} · Music Mundial`,
         path: tagHref(loc.value, payload.slug || props.slug),
-        image: payload.coverUrl || coverOf(payload.items?.[0]),
+        image: payload.coverUrl || coverOf(payload.items?.[0], '/images/jungkook-hero.jpg', 'full'),
         imageAlt: payload.name,
       })
     }
@@ -151,7 +151,7 @@ watch(() => [props.slug, props.locale], () => load(true))
         <h2>{{ loc === 'en' ? 'Latest news' : 'Últimas notas' }}</h2>
         <p v-if="error" class="article-status">{{ error }}</p>
         <article v-for="item in items" :key="item.id" class="tag-story">
-          <a class="tag-story-photo" :href="item.href"><img :src="coverOf(item)" :alt="item.title" /></a>
+          <a class="tag-story-photo" :href="item.href"><img :src="coverOf(item, '/images/jungkook-hero.jpg', 'thumb')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" /></a>
           <div>
             <small>{{ item.category }}</small>
             <h3><a :href="item.href">{{ item.title }}</a></h3>

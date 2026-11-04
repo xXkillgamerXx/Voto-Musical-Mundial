@@ -6,7 +6,7 @@ import { isStoredAdminUser } from '../../../src/utils/suppressPageAds'
 import { t } from '../lib/copy'
 import { expandNewsEmbeds, loadTwitterEmbeds, youtubeVideoIds } from '../lib/embeds'
 import { withLocale } from '../lib/locale'
-import { categoryHref, coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
+import { categoryHref, coverErrorFallback, coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
 import { newsRouteState } from '../lib/route-state'
 import { applyHomeSeo, applyNewsSeo } from '../lib/seo'
 import NewsComments from './NewsComments.vue'
@@ -210,7 +210,7 @@ watch(bodyHtml, async () => {
           <time v-if="post.publishedAt" :datetime="post.publishedAt">{{ formatNewsDate(post.publishedAt, loc) }}</time>
         </p>
         <figure v-if="post.coverUrl" class="article-cover">
-          <img :src="coverOf(post)" :alt="post.coverAlt || post.title" width="1600" height="900" fetchpriority="high" decoding="async" />
+          <img :src="coverOf(post, '/images/jungkook-hero.jpg', 'hero')" :alt="post.coverAlt || post.title" width="1600" height="900" fetchpriority="high" decoding="async" @error="coverErrorFallback" />
           <figcaption v-if="post.coverCaption">{{ post.coverCaption }}</figcaption>
         </figure>
         <div class="article-body" v-html="bodyHtml"></div>
@@ -261,7 +261,7 @@ watch(bodyHtml, async () => {
           :href="item.href"
         >
           <div class="most-read-photo">
-            <img :src="coverOf(item)" :alt="item.title" />
+            <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <span class="most-read-num">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="most-read-tags">
               <span class="chip">{{ item.category }}</span>
@@ -286,7 +286,7 @@ watch(bodyHtml, async () => {
         </div>
         <div class="entertain-grid">
           <a class="entertain-feature" :href="post.related[0].href">
-            <img :src="coverOf(post.related[0])" :alt="post.related[0].title" />
+            <img :src="coverOf(post.related[0], '/images/jungkook-hero.jpg', 'card')" :alt="post.related[0].title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <span class="etag">{{ post.related[0].category }}</span>
             <div>
               <h3>{{ post.related[0].title }}</h3>
@@ -295,8 +295,8 @@ watch(bodyHtml, async () => {
             </div>
           </a>
           <div class="entertain-side">
-            <a v-for="item in post.related.slice(1)" :key="item.id" :href="item.href">
-              <img :src="coverOf(item)" :alt="item.title" />
+            <a v-for="item in post.related.slice(1, 4)" :key="item.id" :href="item.href">
+              <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'square')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
               <div>
                 <span class="etag">{{ item.category }}</span>
                 <h3>{{ item.title }}</h3>

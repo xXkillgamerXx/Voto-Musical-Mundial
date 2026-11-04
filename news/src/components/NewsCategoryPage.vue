@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getNewsPopular, getNewsPosts } from '../../../src/services/api/newsApi'
 import { withLocale } from '../lib/locale'
 import { t } from '../lib/copy'
-import { categoryHero, categoryHref, categoryTitle, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
+import { categoryHero, categoryHref, categoryTitle, coverErrorFallback, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale?: string }>()
@@ -59,7 +59,7 @@ async function load(reset = true) {
             ? `${countLabel.value} de ${title.value} en Music Mundial.`
             : `${countLabel.value} in ${title.value} on Music Mundial.`,
         path: categoryHref(loc.value, props.slug),
-        image: coverOf(items.value[0]),
+        image: coverOf(items.value[0], '/images/jungkook-hero.jpg', 'full'),
         imageAlt: title.value,
         hreflangEn: categoryHref('en', props.slug),
         hreflangEs: categoryHref('es', props.slug),
@@ -139,7 +139,7 @@ watch(() => [props.slug, props.locale], () => load(true))
       <div class="pop-mag category-grid">
         <a v-for="item in items" :key="item.id" class="pop-card" :href="item.href">
           <div class="photo">
-            <img :src="coverOf(item)" :alt="item.title" />
+            <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <div class="tag-row"><span class="category">{{ item.category }}</span></div>
           </div>
           <h3>{{ item.title }}</h3>
@@ -176,7 +176,7 @@ watch(() => [props.slug, props.locale], () => load(true))
           :href="item.href"
         >
           <div class="most-read-photo">
-            <img :src="coverOf(item)" :alt="item.title" />
+            <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <span class="most-read-num">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="most-read-tags">
               <span class="chip">{{ item.category }}</span>

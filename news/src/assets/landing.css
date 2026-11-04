@@ -3657,11 +3657,13 @@ footer[id] {
   grid-template-columns: 1.35fr 0.9fr;
   gap: 12px;
   margin-top: 12px;
+  align-items: stretch;
 }
 
 .entertain-feature {
   position: relative;
   min-height: 340px;
+  height: 100%;
   border-radius: 16px;
   overflow: hidden;
   color: #fff;
@@ -3729,20 +3731,23 @@ footer[id] {
 
 .entertain-side {
   display: grid;
-  align-content: start;
-  gap: 14px;
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  min-height: 340px;
+  height: 100%;
 }
 
 .entertain-side a {
   display: grid;
-  grid-template-columns: 84px 1fr;
+  grid-template-columns: 96px 1fr;
   gap: 12px;
   align-items: center;
+  min-height: 0;
 }
 
 .entertain-side img {
-  width: 84px;
-  height: 84px;
+  width: 96px;
+  height: 96px;
   object-fit: cover;
   border-radius: 12px;
 }
@@ -4068,6 +4073,12 @@ footer[id] {
 
   .entertain-grid {
     grid-template-columns: 1fr;
+  }
+
+  .entertain-side {
+    min-height: 0;
+    height: auto;
+    grid-auto-rows: auto;
   }
 
   .home-rail {

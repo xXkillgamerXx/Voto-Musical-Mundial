@@ -15,7 +15,17 @@ import NewsProfilePage from './components/NewsProfilePage.vue'
 import NewsStaticPage from './components/NewsStaticPage.vue'
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
-import { categoryHref, coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
+import {
+  categoryHref,
+  coverErrorFallback,
+  coverOf,
+  formatNewsDate,
+  parseNewsPage,
+  toCategoryCard,
+  type NewsCard,
+  type NewsImageSize,
+  type NewsPage,
+} from './lib/news'
 import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, withPageCacheBuster, type SiteLocale } from './lib/locale'
 import { trackCurrentPage } from './lib/analytics'
 import { applyHomeSeo, applyPrivateSeo } from './lib/seo'
@@ -148,12 +158,12 @@ function onDocumentKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') closePops()
 }
 
-function asStory(post: NewsCard, fallbackImage: string): Story {
+function asStory(post: NewsCard, fallbackImage: string, size: NewsImageSize = 'card'): Story {
   const tags = (post.categories?.map((item) => item.name).filter(Boolean) || [post.category]).slice(0, 4)
   return {
     category: post.category,
     title: post.title,
-    image: coverOf(post, fallbackImage),
+    image: coverOf(post, fallbackImage, size),
     alt: post.title,
     meta: formatNewsDate(post.publishedAt, siteLocale.value),
     lead: post.excerpt,
@@ -194,7 +204,7 @@ async function loadHomeFeed(force = false) {
       title: post.title,
       text: post.excerpt,
       date: formatNewsDate(post.publishedAt, fromFeed),
-      image: coverOf(post, '/images/jungkook-hero.jpg'),
+      image: coverOf(post, '/images/jungkook-hero.jpg', 'hero'),
       alt: post.title,
       href: post.href,
     }))
@@ -205,7 +215,7 @@ async function loadHomeFeed(force = false) {
         : [post.category]),
       title: post.title,
       date: formatNewsDate(post.publishedAt, fromFeed),
-      image: coverOf(post),
+      image: coverOf(post, '/images/jungkook-hero.jpg', 'card'),
       alt: post.title,
       href: post.href,
     }))
@@ -213,21 +223,23 @@ async function loadHomeFeed(force = false) {
       tag: post.category,
       title: post.title,
       date: formatNewsDate(post.publishedAt, fromFeed),
-      image: coverOf(post),
+      image: coverOf(post, '/images/jungkook-hero.jpg', 'thumb'),
       alt: post.title,
       href: post.href,
     }))
-    entertainmentStories.value = (feed?.entertainment || []).map((post: NewsCard) => asStory(post, '/images/stray-kids-grammy.jpg'))
-    kpopFeatureStories.value = (feed?.kpop || []).slice(0, 3).map((post: NewsCard) => asStory(post, '/images/jungkook-hero.jpg'))
-    kpopMoreStories.value = (feed?.kpop || []).slice(3, 6).map((post: NewsCard) => asStory(post, '/images/jungkook-hero.jpg'))
-    moreStories.value = (feed?.more || []).map((post: NewsCard) => asStory(post, '/images/katseye.jpg'))
+    entertainmentStories.value = (feed?.entertainment || []).slice(0, 4).map((post: NewsCard, index: number) =>
+      asStory(post, '/images/stray-kids-grammy.jpg', index === 0 ? 'card' : 'square'),
+    )
+    kpopFeatureStories.value = (feed?.kpop || []).slice(0, 3).map((post: NewsCard) => asStory(post, '/images/jungkook-hero.jpg', 'card'))
+    kpopMoreStories.value = (feed?.kpop || []).slice(3, 6).map((post: NewsCard) => asStory(post, '/images/jungkook-hero.jpg', 'thumb'))
+    moreStories.value = (feed?.more || []).map((post: NewsCard) => asStory(post, '/images/katseye.jpg', 'thumb'))
     screenLeadStory.value = feed?.series?.[0]
-      ? asStory(feed.series[0], '/images/teach-you.jpg')
+      ? asStory(feed.series[0], '/images/teach-you.jpg', 'card')
       : { category: '', title: '', image: '/images/teach-you.jpg', alt: '', meta: '' }
-    screenSideStories.value = (feed?.series || []).slice(1, 5).map((post: NewsCard) => asStory(post, '/images/screen-euphoria.jpg'))
-    popStories.value = (feed?.pop || []).map((post: NewsCard) => asStory(post, '/images/taylor-swift.jpg'))
-    socialStories.value = (feed?.social || []).map((post: NewsCard) => asStory(post, '/images/katseye.jpg'))
-    interviewStories.value = (feed?.interviews || []).map((post: NewsCard) => asStory(post, '/images/rm-museo.webp'))
+    screenSideStories.value = (feed?.series || []).slice(1, 5).map((post: NewsCard) => asStory(post, '/images/screen-euphoria.jpg', 'thumb'))
+    popStories.value = (feed?.pop || []).map((post: NewsCard) => asStory(post, '/images/taylor-swift.jpg', 'card'))
+    socialStories.value = (feed?.social || []).map((post: NewsCard) => asStory(post, '/images/katseye.jpg', 'thumb'))
+    interviewStories.value = (feed?.interviews || []).map((post: NewsCard) => asStory(post, '/images/rm-museo.webp', 'thumb'))
     categories.value = (feed?.categories || [])
       .filter((row: { slug?: string; postCount?: number }) => Number(row.postCount || 0) > 0)
       .sort((a: { nav?: boolean }, b: { nav?: boolean }) => Number(Boolean(b.nav)) - Number(Boolean(a.nav)))
@@ -725,7 +737,7 @@ onUnmounted(() => {
             :href="item.href"
             @click="closeMenu()"
           >
-            <img :src="coverOf(item)" :alt="item.title" />
+            <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'thumb')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <div>
               <small>{{ item.category }}</small>
               <h3>{{ item.title }}</h3>
@@ -807,7 +819,7 @@ onUnmounted(() => {
               :href="item.href"
               @click="searchOpen = false"
             >
-              <img :src="coverOf(item)" :alt="item.title" />
+              <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'thumb')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
               <div>
                 <small>{{ item.category }}</small>
                 <h3>{{ item.title }}</h3>
@@ -986,7 +998,7 @@ onUnmounted(() => {
     <template v-else>
     <div class="container home-grid">
         <article v-if="currentSlide" class="spotlight rise" @mouseenter="stopSlides" @mouseleave="startSlides">
-          <img :key="slide" :src="currentSlide.image" :alt="currentSlide.alt" />
+          <img :key="slide" :src="currentSlide.image" :alt="currentSlide.alt" decoding="async" fetchpriority="high" @error="coverErrorFallback" />
           <div :key="slide" class="spotlight-copy">
             <span class="chip">{{ currentSlide.tag }}</span>
             <h1>{{ currentSlide.title }}</h1>
@@ -1004,7 +1016,7 @@ onUnmounted(() => {
         <div class="home-cards rise">
           <a v-for="card in homeCards" :key="card.title" class="mini-card" :href="postHref(card)">
             <div class="mini-card-photo">
-              <img :src="card.image" :alt="card.alt" />
+              <img :src="card.image" :alt="card.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
               <span class="tag-row">
                 <span v-for="tag in card.tags" :key="tag" class="pill">{{ tag }}</span>
               </span>
@@ -1025,7 +1037,7 @@ onUnmounted(() => {
           </div>
           <div v-if="entertainmentStories[0]" class="entertain-grid">
             <a class="entertain-feature" :href="postHref(entertainmentStories[0])">
-              <img :src="entertainmentStories[0].image" :alt="entertainmentStories[0].alt" />
+              <img :src="entertainmentStories[0].image" :alt="entertainmentStories[0].alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
               <span class="etag">{{ entertainmentStories[0].category }}</span>
               <div>
                 <h3>{{ entertainmentStories[0].title }}</h3>
@@ -1035,7 +1047,7 @@ onUnmounted(() => {
             </a>
             <div class="entertain-side">
               <a v-for="story in entertainmentStories.slice(1, 4)" :key="story.title" :href="postHref(story)">
-                <img :src="story.image" :alt="story.alt" />
+                <img :src="story.image" :alt="story.alt" width="96" height="96" loading="lazy" decoding="async" @error="coverErrorFallback" />
                 <div>
                   <span class="etag" :class="story.category.toLowerCase()">{{ story.category }}</span>
                   <h3>{{ story.title }}</h3>
@@ -1059,7 +1071,7 @@ onUnmounted(() => {
           </div>
           <a v-for="(item, index) in trends" :key="item.title" class="trend-row" :href="postHref(item)">
             <span>{{ index + 1 }}</span>
-            <img :src="item.image" :alt="item.alt" />
+            <img :src="item.image" :alt="item.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <div>
               <small :class="item.tag.toLowerCase()">{{ item.tag }}</small>
               <h3>{{ item.title }}</h3>
@@ -1107,7 +1119,7 @@ onUnmounted(() => {
         </div>
         <div class="dark-grid">
           <a v-for="(story, index) in kpopFeatureStories" :key="story.title" class="feature" :href="postHref(story)">
-            <img :src="story.image" :alt="story.alt" />
+            <img :src="story.image" :alt="story.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <span class="feature-num">{{ String(index + 1).padStart(2, '0') }}</span>
             <div class="info">
               <span class="tag-row">
@@ -1120,7 +1132,7 @@ onUnmounted(() => {
         </div>
         <div class="kpop-more">
           <a v-for="(story, index) in kpopMoreStories" :key="story.title" class="kpop-mini" :href="postHref(story)">
-            <img :src="story.image" :alt="story.alt" />
+            <img :src="story.image" :alt="story.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <div>
               <h3>{{ story.title }}</h3>
               <time>{{ story.meta }}</time>
@@ -1225,7 +1237,7 @@ onUnmounted(() => {
                 {{ story.meta }}
               </span>
             </div>
-            <div class="photo"><img loading="lazy" :src="story.image" :alt="story.alt" /></div>
+            <div class="photo"><img loading="lazy" decoding="async" :src="story.image" :alt="story.alt" @error="coverErrorFallback" /></div>
           </a>
         </div>
         <aside>
@@ -1254,7 +1266,7 @@ onUnmounted(() => {
               :href="postHref(story)"
             >
               <span>{{ index + 1 }}</span>
-              <img loading="lazy" :src="story.image" :alt="story.alt" />
+              <img loading="lazy" decoding="async" :src="story.image" :alt="story.alt" @error="coverErrorFallback" />
               <div>
                 <small :class="story.category.toLowerCase()">{{ story.category }}</small>
                 <h3>{{ story.title }}</h3>
@@ -1289,7 +1301,7 @@ onUnmounted(() => {
         </div>
         <div class="screen-layout">
           <a v-if="screenLeadStory.title" class="screen-feature" :href="postHref(screenLeadStory)">
-            <img :src="screenLeadStory.image" :alt="screenLeadStory.alt" />
+            <img :src="screenLeadStory.image" :alt="screenLeadStory.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <div class="info">
               <span class="screen-tags">
                 <span v-for="tag in storyTags(screenLeadStory).slice(0, 3)" :key="tag">{{ tag }}</span>
@@ -1304,7 +1316,7 @@ onUnmounted(() => {
                 <h3>{{ story.title }}</h3>
                 <time>{{ story.meta }}</time>
               </div>
-              <img loading="lazy" :src="story.image" :alt="story.alt" />
+              <img loading="lazy" decoding="async" :src="story.image" :alt="story.alt" @error="coverErrorFallback" />
             </a>
           </div>
         </div>
@@ -1330,7 +1342,7 @@ onUnmounted(() => {
           :href="postHref(story)"
         >
           <div class="photo">
-            <img loading="lazy" :src="story.image" :alt="story.alt" />
+            <img loading="lazy" decoding="async" :src="story.image" :alt="story.alt" @error="coverErrorFallback" />
             <div class="tag-row">
               <span v-for="tag in storyTags(story).slice(0, 3)" :key="tag" class="category">{{ tag }}</span>
             </div>

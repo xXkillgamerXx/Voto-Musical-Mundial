@@ -99,14 +99,48 @@ export const formatNewsDate = (value?: string | Date | null, locale: 'es' | 'en'
   return date.toLocaleDateString(locale === 'en' ? 'en' : 'es', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+export type NewsImageSize = 'thumb' | 'square' | 'card' | 'hero' | 'full'
+
+const WP_UPLOAD_RE = /\/(?:en\/)?wp-content\/uploads\//i
+const IMAGE_EXT_RE = /(\.(?:jpe?g|png|webp|gif))(?=$|\?|#)/i
+
+/** Common WordPress intermediate sizes for covers (landscape + small square thumbs). */
+const SIZE_SUFFIX: Record<Exclude<NewsImageSize, 'full'>, string> = {
+  thumb: '-300x169',
+  square: '-150x150',
+  card: '-768x432',
+  hero: '-1536x864',
+}
+
 export const largeNewsImage = (url?: string | null) => {
   const raw = String(url || '').trim()
   if (!raw) return raw
   return raw.replace(/-(?:scaled|[0-9]+x[0-9]+)(?=\.(?:jpe?g|png|webp|gif)(?:\?|#|$))/i, '')
 }
 
-export const coverOf = (post?: Partial<NewsCard> | null, fallback = '/images/jungkook-hero.jpg') =>
-  largeNewsImage(post?.coverUrl) || fallback
+/** Pick a WP-sized URL for the UI slot; non-WP/admin/local paths stay full-size. */
+export const newsImage = (url?: string | null, size: NewsImageSize = 'card') => {
+  const full = largeNewsImage(url)
+  if (!full || size === 'full' || !WP_UPLOAD_RE.test(full) || !IMAGE_EXT_RE.test(full)) return full
+  const suffix = SIZE_SUFFIX[size]
+  return full.replace(IMAGE_EXT_RE, (_match, ext: string) => `${suffix}${ext}`)
+}
+
+export const coverOf = (
+  post?: Partial<NewsCard> | null,
+  fallback = '/images/jungkook-hero.jpg',
+  size: NewsImageSize = 'card',
+) => newsImage(post?.coverUrl, size) || fallback
+
+/** If a sized WP variant 404s, fall back to the original upload. */
+export const coverErrorFallback = (event: Event) => {
+  const img = event.target as HTMLImageElement | null
+  if (!img?.src) return
+  const full = largeNewsImage(img.currentSrc || img.src)
+  if (!full || full === img.src) return
+  img.onerror = null
+  img.src = full
+}
 
 export const categoryHref = (locale: 'es' | 'en', slug: string) =>
   locale === 'es' ? `/es/categoria/${slug}` : `/category/${slug}`

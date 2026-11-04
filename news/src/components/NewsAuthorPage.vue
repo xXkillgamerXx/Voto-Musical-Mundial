@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getNewsAuthor, getNewsPopular } from '../../../src/services/api/newsApi'
 import { t } from '../lib/copy'
 import { withLocale } from '../lib/locale'
-import { coverOf, formatNewsDate, type NewsCard } from '../lib/news'
+import { coverErrorFallback, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale?: string }>()
@@ -67,7 +67,7 @@ async function load(reset = true) {
             ? `${author.value.name} escribe en Music Mundial.`
             : `${author.value.name} writes for Music Mundial.`),
         path: author.value.href || withLocale(`/author/${props.slug}`, loc.value),
-        image: author.value.photoUrl || coverOf(items.value[0]),
+        image: author.value.photoUrl || coverOf(items.value[0], '/images/jungkook-hero.jpg', 'full'),
         imageAlt: author.value.name,
         author: author.value.name,
         authorUrl: author.value.href,
@@ -132,7 +132,7 @@ watch(() => [props.slug, props.locale], () => load(true))
         <div class="pop-mag category-grid">
           <a v-for="item in items" :key="item.id" class="pop-card" :href="item.href">
             <div class="photo">
-              <img :src="coverOf(item)" :alt="item.title" />
+              <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
               <div class="tag-row"><span class="category">{{ item.category }}</span></div>
             </div>
             <h3>{{ item.title }}</h3>
@@ -155,7 +155,7 @@ watch(() => [props.slug, props.locale], () => load(true))
         <div class="cats-eyebrow">{{ t(loc, 'mostRead') }}</div>
         <a v-for="(item, index) in popular" :key="item.id" class="most-read-card" :href="item.href">
           <div class="most-read-photo">
-            <img :src="coverOf(item)" :alt="item.title" />
+            <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <span class="most-read-num">{{ String(index + 1).padStart(2, '0') }}</span>
           </div>
           <h3>{{ item.title }}</h3>

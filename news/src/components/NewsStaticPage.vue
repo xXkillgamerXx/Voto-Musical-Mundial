@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getNewsPage, getNewsPopular, postNewsContact } from '../../../src/services/api/newsApi'
 import { t } from '../lib/copy'
 import { withLocale } from '../lib/locale'
-import { coverOf, type NewsCard } from '../lib/news'
+import { coverErrorFallback, coverOf, type NewsCard } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale: 'es' | 'en' }>()
@@ -306,7 +306,7 @@ onMounted(load)
           :href="item.href"
         >
           <div class="most-read-photo">
-            <img :src="coverOf(item)" :alt="item.title" />
+            <img :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')" :alt="item.title" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <span class="most-read-num">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="most-read-tags">
               <span class="chip">{{ item.category }}</span>
