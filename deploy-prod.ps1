@@ -1,38 +1,32 @@
-# Deploy production:
-# - Vote SPA + backend Docker on 213 (vote.musicmundial.com)
-# - News + vote static HTML on 161 (www.musicmundial.com)
+# Deploy production to host 161 (www.musicmundial.com).
+# - News HTML + vote SPA static files
+# - Backend Docker stack (new_musicmundial / nmm-*)
 #
-# Frontend: Apache/nginx static files
-# Backend: Docker (docker-compose.vote-db.yml)
+# Requires: NMM_SSH_PASSWORD (root @ 161.97.154.152:2981)
 
 param(
   [switch]$FrontendOnly,
-  [switch]$BackendOnly,
-  [switch]$SkipNewsHost
+  [switch]$BackendOnly
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$key = "$env:USERPROFILE\.ssh\vmm_server"
-$hostName = "213.136.69.57"
-$sshPort = "2981"
-$sshUser = "root"
-$siteRoot = "/www/wwwroot/vote.musicmundial.com"
-$backendRoot = "$siteRoot/backend"
-$composeFile = "docker-compose.vote-db.yml"
+$hostName = "161.97.154.152"
 
-if (-not (Test-Path $key)) {
-  Write-Host "No se encontro la llave SSH en $key" -ForegroundColor Red
-  exit 1
+if (-not $env:NMM_SSH_PASSWORD) {
+  $envFile = Join-Path $root "deploy\new_musicmundial\.env.contabo"
+  if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+      if ($_ -match '^\s*NMM_SSH_PASSWORD\s*=\s*(.*)\s*$') {
+        $env:NMM_SSH_PASSWORD = $Matches[1].Trim().Trim("'").Trim('"')
+      }
+    }
+  }
 }
 
-$ssh = @("-p", $sshPort, "-i", $key, "${sshUser}@${hostName}")
-$scp = @("-P", $sshPort, "-i", $key)
-
-function Invoke-Ssh {
-  param([string]$Command)
-  & ssh @ssh $Command
-  if ($LASTEXITCODE -ne 0) { throw "SSH command failed: $Command" }
+if (-not $env:NMM_SSH_PASSWORD) {
+  Write-Host "Define NMM_SSH_PASSWORD (root del host 161) y vuelve a correr deploy-prod.ps1" -ForegroundColor Red
+  exit 1
 }
 
 if (-not $BackendOnly) {
@@ -44,55 +38,69 @@ if (-not $BackendOnly) {
   $env:VITE_INSTAGRAM_HANDLE = "musicmundial_awards"
   $env:VITE_INSTAGRAM_URL = "https://www.instagram.com/musicmundial_awards/"
   npm run build
+  if ($LASTEXITCODE -ne 0) { throw "Vote frontend build failed" }
   Remove-Item Env:VITE_API_BASE_URL, Env:VITE_FIREBASE_VAPID_KEY, Env:VITE_TURNSTILE_SITE_KEY, Env:VITE_INSTAGRAM_HANDLE, Env:VITE_INSTAGRAM_URL -ErrorAction SilentlyContinue
 
   Write-Host "Building news frontend (www.musicmundial.com)..." -ForegroundColor Cyan
   npx vite build --config news/vite.config.js
+  if ($LASTEXITCODE -ne 0) { throw "News frontend build failed" }
   Pop-Location
-
-  Write-Host "Uploading vote frontend to 213..." -ForegroundColor Cyan
-  & scp @scp -r "$root\dist\*" "${sshUser}@${hostName}:${siteRoot}/"
-  if ($LASTEXITCODE -ne 0) { throw "Frontend upload failed" }
-
-  Write-Host "Fixing vote frontend permissions..." -ForegroundColor Cyan
-  Invoke-Ssh "chmod 755 ${siteRoot}/assets && find ${siteRoot}/assets -type d -exec chmod 755 {} \; && find ${siteRoot}/assets -type f -exec chmod 644 {} \;"
-
-  if (-not $SkipNewsHost) {
-    if (-not $env:NMM_SSH_PASSWORD) {
-      Write-Host "NMM_SSH_PASSWORD no esta definida. No se pudo subir news/vote HTML al host 161." -ForegroundColor Yellow
-      Write-Host "Define NMM_SSH_PASSWORD y corre: py -3 deploy\new_musicmundial\scripts\upload_html_161.py" -ForegroundColor Yellow
-    } else {
-      Write-Host "Uploading news+vote HTML to 161 (www.musicmundial.com)..." -ForegroundColor Cyan
-      Push-Location $root
-      py -3 .\deploy\new_musicmundial\scripts\upload_html_161.py
-      if ($LASTEXITCODE -ne 0) { throw "News host upload failed" }
-      Pop-Location
-    }
-  }
 }
 
-if (-not $FrontendOnly) {
+if ($FrontendOnly) {
+  Write-Host "Uploading news+vote HTML to 161..." -ForegroundColor Cyan
+  Push-Location $root
+  py -3 .\deploy\new_musicmundial\scripts\upload_html_161.py
+  if ($LASTEXITCODE -ne 0) { throw "HTML upload to 161 failed" }
+  Pop-Location
+} elseif ($BackendOnly) {
   Write-Host "Validating backend..." -ForegroundColor Cyan
   Push-Location "$root\backend"
   npm run lint
+  if ($LASTEXITCODE -ne 0) { throw "Backend lint failed" }
   npm run build
+  if ($LASTEXITCODE -ne 0) { throw "Backend build failed" }
   Pop-Location
 
-  Write-Host "Packaging backend source..." -ForegroundColor Cyan
-  $archive = Join-Path $root "backend-deploy.tgz"
-  if (Test-Path $archive) { Remove-Item $archive -Force }
-  & tar -czf $archive --exclude=node_modules --exclude=dist --exclude=.env -C "$root\backend" .
+  Write-Host "Deploying backend+HTML stack to 161..." -ForegroundColor Cyan
+  Push-Location $root
+  py -3 .\deploy\new_musicmundial\scripts\deploy_contabo.py
+  if ($LASTEXITCODE -ne 0) { throw "161 deploy failed" }
+  Pop-Location
+} else {
+  Write-Host "Validating backend..." -ForegroundColor Cyan
+  Push-Location "$root\backend"
+  npm run lint
+  if ($LASTEXITCODE -ne 0) { throw "Backend lint failed" }
+  npm run build
+  if ($LASTEXITCODE -ne 0) { throw "Backend build failed" }
+  Pop-Location
 
-  Write-Host "Uploading backend source..." -ForegroundColor Cyan
-  & scp @scp $archive "${sshUser}@${hostName}:/tmp/backend-deploy.tgz"
-  if ($LASTEXITCODE -ne 0) { throw "Backend upload failed" }
-  Remove-Item $archive -Force
-
-  Write-Host "Rebuilding Docker stack..." -ForegroundColor Cyan
-  Invoke-Ssh "cd ${backendRoot} && tar -xzf /tmp/backend-deploy.tgz && rm /tmp/backend-deploy.tgz && docker compose -f ${composeFile} build && docker compose -f ${composeFile} up -d"
+  Write-Host "Deploying full stack (HTML + Docker) to 161 ($hostName)..." -ForegroundColor Cyan
+  Push-Location $root
+  py -3 .\deploy\new_musicmundial\scripts\deploy_contabo.py
+  if ($LASTEXITCODE -ne 0) { throw "161 deploy failed" }
+  Pop-Location
 }
 
-Write-Host "Verifying production..." -ForegroundColor Cyan
-Invoke-Ssh "echo WEB:; curl -sI http://127.0.0.1/vote/ -H 'Host: vote.musicmundial.com' | head -1; echo API:; curl -s http://127.0.0.1/api/health -H 'Host: vote.musicmundial.com'; echo; echo VOTE_API:; curl -s http://127.0.0.1/vote/api/health -H 'Host: vote.musicmundial.com'; echo; echo ASSET:; curl -sI http://127.0.0.1/vote/assets/ -H 'Host: vote.musicmundial.com' | head -1; echo DOCKER:; docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'NAMES|vmm-'"
+Write-Host "Verifying www.musicmundial.com..." -ForegroundColor Cyan
+try {
+  $home = Invoke-WebRequest -Uri "https://www.musicmundial.com/" -UseBasicParsing -TimeoutSec 25
+  Write-Host "HOME: $($home.StatusCode)"
+} catch {
+  Write-Host "HOME: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+try {
+  $vote = Invoke-WebRequest -Uri "https://www.musicmundial.com/vote/" -UseBasicParsing -TimeoutSec 25
+  Write-Host "VOTE: $($vote.StatusCode)"
+} catch {
+  Write-Host "VOTE: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+try {
+  $api = Invoke-WebRequest -Uri "https://www.musicmundial.com/api/health" -UseBasicParsing -TimeoutSec 25
+  Write-Host "API: $($api.Content)"
+} catch {
+  Write-Host "API: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
-Write-Host "Deploy finished." -ForegroundColor Green
+Write-Host "Deploy finished (host 161)." -ForegroundColor Green

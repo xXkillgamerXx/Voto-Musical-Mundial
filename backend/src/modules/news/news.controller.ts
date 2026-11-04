@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res, Us
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { MailService } from '../mail/mail.service';
 import { CreateNewsCommentDto } from './dto/upsert-news-post.dto';
 import { ListNewsDto } from './dto/list-news.dto';
@@ -60,8 +61,13 @@ export class NewsController {
   }
 
   @Get('posts/:slug/comments')
-  comments(@Param('slug') slug: string, @Query('locale') locale?: string) {
-    return this.news.listComments(slug, locale);
+  @UseGuards(OptionalJwtAuthGuard)
+  comments(
+    @Param('slug') slug: string,
+    @Query('locale') locale?: string,
+    @CurrentUser() user?: { id: bigint } | null,
+  ) {
+    return this.news.listComments(slug, locale, user || null);
   }
 
   @Post('posts/:slug/comments')
@@ -72,7 +78,48 @@ export class NewsController {
     @CurrentUser() user: { id: bigint },
     @Query('locale') locale?: string,
   ) {
-    return this.news.createComment(slug, locale, user, body.text);
+    return this.news.createComment(slug, locale, user, body.text, body.parentId);
+  }
+
+  @Post('posts/:slug/comments/:id/vote')
+  @UseGuards(JwtAuthGuard)
+  voteComment(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() body: { value?: number },
+    @CurrentUser() user: { id: bigint },
+    @Query('locale') locale?: string,
+  ) {
+    return this.news.voteComment(slug, id, locale, user, Number(body?.value || 0));
+  }
+
+  @Post('posts/:slug/comments/:id/react')
+  @UseGuards(JwtAuthGuard)
+  reactComment(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() body: { reaction?: string },
+    @CurrentUser() user: { id: bigint },
+    @Query('locale') locale?: string,
+  ) {
+    return this.news.reactComment(slug, id, locale, user, String(body?.reaction || ''));
+  }
+
+  @Get('comment-report-options')
+  listCommentReportOptions(@Query('locale') locale?: string) {
+    return this.news.listCommentReportOptions(locale);
+  }
+
+  @Post('posts/:slug/comments/:id/report')
+  @UseGuards(JwtAuthGuard)
+  reportComment(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() body: { reason?: string; details?: string },
+    @CurrentUser() user: { id: bigint },
+    @Query('locale') locale?: string,
+  ) {
+    return this.news.reportComment(slug, id, locale, user, body || {});
   }
 
   @Get('posts/:slug')

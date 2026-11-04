@@ -77,7 +77,13 @@ export class NewsSitemapService {
   async listNews(localeValue?: string, hours = 48) {
     const locale = this.mysql.locale(localeValue);
     const windowHours = Math.min(72, Math.max(24, Number(hours || 48)));
-    const rows = await this.mysql.query<{
+    const select = `SELECT p.post_name, p.post_title, p.post_date, p.post_modified, att.guid AS cover_url, alt.meta_value AS alt_slug
+       FROM wpgn_posts p
+       LEFT JOIN wpgn_postmeta th ON th.post_id = p.ID AND th.meta_key = '_thumbnail_id'
+       LEFT JOIN wpgn_posts att ON att.ID = CAST(th.meta_value AS UNSIGNED)
+       LEFT JOIN wpgn_postmeta alt ON alt.post_id = p.ID AND alt.meta_key = '_vmm_alt_slug'`;
+    // Prefer Google News window (~48h). Also count updates via post_modified.
+    let rows = await this.mysql.query<{
       post_name: string;
       post_title: string;
       post_date: Date | string;
@@ -86,17 +92,28 @@ export class NewsSitemapService {
       alt_slug: string | null;
     }>(
       locale,
-      `SELECT p.post_name, p.post_title, p.post_date, p.post_modified, att.guid AS cover_url, alt.meta_value AS alt_slug
-       FROM wpgn_posts p
-       LEFT JOIN wpgn_postmeta th ON th.post_id = p.ID AND th.meta_key = '_thumbnail_id'
-       LEFT JOIN wpgn_posts att ON att.ID = CAST(th.meta_value AS UNSIGNED)
-       LEFT JOIN wpgn_postmeta alt ON alt.post_id = p.ID AND alt.meta_key = '_vmm_alt_slug'
+      `${select}
        WHERE p.post_type = 'post' AND p.post_status = 'publish'
-         AND p.post_date >= DATE_SUB(NOW(), INTERVAL ? HOUR)
-       ORDER BY p.post_date DESC, p.ID DESC
+         AND (
+           p.post_date >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
+           OR p.post_modified >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
+         )
+       ORDER BY GREATEST(p.post_date, p.post_modified) DESC, p.ID DESC
        LIMIT 1000`,
-      [windowHours],
+      [windowHours, windowHours],
     );
+    // Empty urlset fails Google Search Console ("falta etiqueta url").
+    // If nothing is inside the news window, fall back to the newest published notes
+    // so the sitemap stays valid until fresh articles are published.
+    if (!rows.length) {
+      rows = await this.mysql.query(
+        locale,
+        `${select}
+         WHERE p.post_type = 'post' AND p.post_status = 'publish'
+         ORDER BY p.post_date DESC, p.ID DESC
+         LIMIT 40`,
+      );
+    }
     const other: NewsLocale = locale === 'es' ? 'en' : 'es';
     return rows.map((row) => ({
       slug: row.post_name,
@@ -114,10 +131,13 @@ export class NewsSitemapService {
     const locale = this.mysql.locale(localeValue);
     const newsRows = await this.mysql.query<{ lastmod: Date | string | null }>(
       locale,
-      `SELECT MAX(p.post_date) AS lastmod
+      `SELECT MAX(GREATEST(p.post_date, p.post_modified)) AS lastmod
        FROM wpgn_posts p
        WHERE p.post_type = 'post' AND p.post_status = 'publish'
-         AND p.post_date >= DATE_SUB(NOW(), INTERVAL 48 HOUR)`,
+         AND (
+           p.post_date >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 48 HOUR)
+           OR p.post_modified >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 48 HOUR)
+         )`,
     );
     const countRows = await this.mysql.query<{ total: number }>(
       locale,
@@ -142,9 +162,19 @@ export class NewsSitemapService {
       );
       pages.push({ page, lastmod: rows[0]?.lastmod || null });
     }
+    let newsLastmod = newsRows[0]?.lastmod || null;
+    if (!newsLastmod) {
+      const latest = await this.mysql.query<{ lastmod: Date | string | null }>(
+        locale,
+        `SELECT MAX(p.post_date) AS lastmod
+         FROM wpgn_posts p
+         WHERE p.post_type = 'post' AND p.post_status = 'publish'`,
+      );
+      newsLastmod = latest[0]?.lastmod || null;
+    }
     return {
       locale,
-      newsLastmod: newsRows[0]?.lastmod || null,
+      newsLastmod,
       pages,
     };
   }

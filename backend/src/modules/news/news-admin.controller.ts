@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -142,6 +142,33 @@ export class NewsAdminController {
   @Delete('comments/:id')
   removeComment(@Param('id') id: string, @Query('locale') locale?: string) {
     return this.news.removeComment(id, locale);
+  }
+
+  @Get('comment-reports')
+  listCommentReports(@Query('locale') locale?: string, @Query('status') status?: string) {
+    return this.news.adminListCommentReports(locale, status);
+  }
+
+  @Patch('comment-reports/:id')
+  updateCommentReport(
+    @Param('id') id: string,
+    @Query('locale') locale?: string,
+    @Body() body?: { status?: string; deleteComment?: boolean },
+  ) {
+    return this.news.adminUpdateCommentReport(id, locale, body || {});
+  }
+
+  @Get('comment-report-options')
+  getCommentReportOptions(@Query('locale') locale?: string) {
+    return this.news.adminGetCommentReportOptions(locale);
+  }
+
+  @Put('comment-report-options')
+  saveCommentReportOptions(
+    @Query('locale') locale?: string,
+    @Body() body?: { items?: Array<{ key?: string; labelEs?: string; labelEn?: string; enabled?: boolean; sort?: number }> },
+  ) {
+    return this.news.adminSaveCommentReportOptions(locale, body?.items || []);
   }
 
   @Post('posts/:id/restore')

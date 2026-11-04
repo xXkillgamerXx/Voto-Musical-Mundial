@@ -1,38 +1,38 @@
 ---
-description: Production deployment instructions for vote.musicmundial.com
+description: Production deployment instructions for www.musicmundial.com
 alwaysApply: true
 ---
 
 # Production Deploy
 
-When the user asks to deploy production (for example: "sube prod", "sube produccion", "deploy prod"), follow `DEPLOYMENT.md` first.
+When the user asks to deploy production (for example: "sube prod", "sube produccion", "deploy prod"), follow `DEPLOYMENT.md` and run `deploy-prod.ps1`.
+
+**Primary host is 161** (`161.97.154.152`). Do not deploy to the old 213 host.
 
 Key facts:
 
-- Production domain: `https://www.musicmundial.com/vote/` (news at `https://www.musicmundial.com/`)
-- API / Flutter: `https://vote.musicmundial.com/api`
-- SSH host: `213.136.69.57`
+- Production domain: `https://www.musicmundial.com/` (news) and `https://www.musicmundial.com/vote/` (voting)
+- API: `https://www.musicmundial.com/api` (also `https://vote.musicmundial.com/api` if proxied)
+- SSH host: `161.97.154.152`
 - SSH port: `2981`
 - SSH user: `root`
-- SSH key: `~/.ssh/vmm_server`
-- Frontend root: `/www/wwwroot/vote.musicmundial.com` (Apache static files)
-- Backend root: `/www/wwwroot/vote.musicmundial.com/backend`
-- Active server compose: `/www/wwwroot/vote.musicmundial.com/backend/docker-compose.vote-db.yml`
+- Auth: password via `NMM_SSH_PASSWORD` (not the old `vmm_server` key)
+- Site root: `/www/wwwroot/new_musicmundial`
+- HTML: `/www/wwwroot/new_musicmundial/html`
+- Backend: Docker project `new_musicmundial` (`nmm-api`, `nmm-worker`, `nmm-redis`, …)
 
 Architecture:
 
-- Frontend = Apache static build
-- Backend = Docker (`vmm-api`, `vmm-worker`, `vmm-redis`)
-- PostgreSQL = aaPanel on host, not Docker
-- Never run backend with `npm start` on the host for production
+- Frontend = static build in `html/` (+ `html/vote/`) behind nginx/Apache on 161
+- Backend = Docker compose in `/www/wwwroot/new_musicmundial`
+- Preserve server `.env` and `uploads/`
 
 Rules:
 
-- Do not deploy with Firebase Hosting. Firebase is only used for Web Push notifications.
-- Do not upload local `.env`, `node_modules`, `dist`, `backend/dist`, or generated deploy archives.
-- Preserve server folders/files: `backend`, `uploads`, `.well-known`, `.user.ini`, and server `.env`.
-- Build frontend locally with `VITE_API_BASE_URL=/vote/api`, `VITE_FIREBASE_VAPID_KEY`, and `VITE_TURNSTILE_SITE_KEY` from `DEPLOYMENT.md`. The SPA is served at `/vote/`. Flutter keeps using `https://vote.musicmundial.com/api`.
-- Validate backend with `npm run lint` and `npm run build` inside `backend`.
-- Deploy backend source only, then run `docker compose -f docker-compose.vote-db.yml build` and `docker compose -f docker-compose.vote-db.yml up -d` on the server.
-- After uploading frontend `dist`, always fix permissions on the server: `assets/` must be `755`, files `644`. Otherwise Apache returns 403 on JS/CSS and the page appears broken.
-- Verify after deploy: `/vote/` returns `200 OK`, at least one `/vote/assets/*.js` returns `200 OK`, `/api/health` returns `ok: true`, and containers `vmm-api`, `vmm-worker`, `vmm-redis` are running.
+- Build vote with `VITE_API_BASE_URL=/vote/api` plus Firebase/Turnstile keys from `DEPLOYMENT.md`
+- Build news with `npx vite build --config news/vite.config.js` → `dist-news`
+- Prefer `powershell -ExecutionPolicy Bypass -File .\deploy-prod.ps1`
+- Full stack uses `deploy/new_musicmundial/scripts/deploy_contabo.py`
+- HTML-only uses `upload_html_161.py`
+- After upload, `html/` dirs `755`, files `644`
+- Verify: `https://www.musicmundial.com/` 200, `/vote/` 200, `/api/health` ok

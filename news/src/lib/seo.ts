@@ -1,3 +1,4 @@
+import { trackPageView } from './analytics'
 import { stripLocale, withLocale } from './locale'
 import { FACEBOOK_PAGE, SITE_NAME, TWITTER_SITE, buildAuthorProfileGraph, buildNewsArticleGraph } from './schema'
 
@@ -7,7 +8,6 @@ const LOGO_IMAGE_RE =
 const TITLE_MAX = 110
 const DESC_MAX = 160
 const SCHEMA_DESC_MAX = 320
-const GA_ID = 'G-MYCSLDGEHG'
 const ARTICLE_SCHEMA_ID = 'news-article-schema'
 
 const setAttr = (attr: 'name' | 'property', key: string, content?: string | null) => {
@@ -248,6 +248,7 @@ export const applyPrivateSeo = (title: string) => {
   setAttr('name', 'robots', 'noindex, nofollow')
   setAttr('name', 'googlebot', 'noindex, nofollow')
   setAttr('name', 'googlebot-news', '')
+  trackPageView(title, window.location.href)
 }
 
 export const applyHomeSeo = (locale: 'es' | 'en') =>
@@ -266,18 +267,4 @@ export const applyHomeSeo = (locale: 'es' | 'en') =>
     hreflangEs: '/es',
   })
 
-let firstPageView = true
-export const trackPageView = (title: string, url: string) => {
-  if (firstPageView) {
-    firstPageView = false
-    return
-  }
-  const gtag = (window as Window & { gtag?: (...args: unknown[]) => void }).gtag
-  if (typeof gtag !== 'function') return
-  gtag('event', 'page_view', {
-    page_title: title,
-    page_location: url,
-    page_path: window.location.pathname,
-    send_to: GA_ID,
-  })
-}
+export { trackPageView } from './analytics'

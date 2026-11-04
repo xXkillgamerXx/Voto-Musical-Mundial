@@ -4,6 +4,7 @@ import { getNewsCategories, getNewsPosts } from '../../../src/services/api/newsA
 import { withLocale } from '../lib/locale'
 import { t } from '../lib/copy'
 import { toCategoryCard, type CategoryCard } from '../lib/news'
+import { applyNewsSeo } from '../lib/seo'
 import CatsCard from './CatsCard.vue'
 
 const props = defineProps<{ locale?: string }>()
@@ -35,7 +36,19 @@ async function load() {
       .map((row: { slug: string; name: string; href?: string; coverUrl?: string | null; postCount?: number }, index: number) =>
         toCategoryCard({ ...row, coverUrl: row.coverUrl || covers.get(row.slug) || null }, index, loc.value),
       )
-    document.title = `${t(loc.value, 'categoriesCrumb')} — Music Mundial`
+    const title = `${t(loc.value, 'categoriesCrumb')} — Music Mundial`
+    applyNewsSeo({
+      type: 'website',
+      locale: loc.value,
+      title,
+      description:
+        loc.value === 'es'
+          ? 'Explora todas las categorías de noticias en Music Mundial.'
+          : 'Browse every news category on Music Mundial.',
+      path: withLocale(loc.value === 'es' ? '/categorias' : '/categories', loc.value),
+      hreflangEn: withLocale('/categories', 'en'),
+      hreflangEs: withLocale('/categorias', 'es'),
+    })
   } catch {
     error.value = t(loc.value, 'categoryMissing')
   } finally {

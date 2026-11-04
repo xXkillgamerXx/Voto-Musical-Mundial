@@ -1,173 +1,81 @@
 # Production Deploy Notes
 
-## Server
+## Server (primary: 161)
 
-- Host: `213.136.69.57`
+- Host: `161.97.154.152`
 - SSH port: `2981`
 - SSH user: `root`
-- SSH key: `~/.ssh/vmm_server`
+- Auth: `NMM_SSH_PASSWORD` (password; the old `vmm_server` key is for the retired 213 host)
+- Public news URL: `https://www.musicmundial.com/`
 - Public vote URL: `https://www.musicmundial.com/vote/`
-- API / app domain: `https://vote.musicmundial.com` (`/api` for Flutter)
-- Site root: `/www/wwwroot/vote.musicmundial.com`
-- Backend root: `/www/wwwroot/vote.musicmundial.com/backend`
+- API: `https://www.musicmundial.com/api` (Flutter may still use `https://vote.musicmundial.com/api` if DNS/proxy points here)
+- Site root: `/www/wwwroot/new_musicmundial`
+- HTML root: `/www/wwwroot/new_musicmundial/html`
+- Backend: Docker project `new_musicmundial` in that same folder
 
-## Runtime (important)
+## Runtime
 
 | Layer | How it runs |
 | --- | --- |
-| Frontend | Static Vue build (`base: /vote/`) served by **aaPanel Apache**. News site stays at `/`; voting is `/vote/` |
-| Backend API | **Docker** container `vmm-api` |
-| Background jobs | **Docker** container `vmm-worker` |
-| Redis | **Docker** container `vmm-redis` on `127.0.0.1:6379` |
-| PostgreSQL | **aaPanel**, not Docker (`127.0.0.1:5432`, db `vote_db`) |
-| Uploads | Host folder mounted into Docker: `/www/wwwroot/vote.musicmundial.com/uploads:/app/uploads` |
+| Frontend | Static builds: news in `html/`, vote in `html/vote/` |
+| Backend API | Docker `nmm-api` |
+| Background jobs | Docker `nmm-worker` |
+| Redis | Docker `nmm-redis` |
+| PostgreSQL | Docker `nmm-postgres` (or host DB if configured in server `.env`) |
+| News MySQL | Host MySQL via `nmm-mysql-proxy` |
+| Uploads | `/www/wwwroot/new_musicmundial/uploads` |
 
-Do **not** deploy backend with `npm start` on the host. Always rebuild/restart the Docker stack.
+Do **not** deploy backend with `npm start` on the host. Always rebuild/restart the Docker stack on 161.
 
-## Active Docker Compose
+## Quick deploy
 
-Use this compose file on the server:
+From repo root:
 
-```bash
-/www/wwwroot/vote.musicmundial.com/backend/docker-compose.vote-db.yml
+```powershell
+$env:NMM_SSH_PASSWORD = '...'
+powershell -ExecutionPolicy Bypass -File .\deploy-prod.ps1
 ```
 
-Active containers:
+Optional flags:
 
-- `vmm-api`
-- `vmm-worker`
-- `vmm-redis`
+- `-FrontendOnly` — only upload `dist-news` + `dist` HTML
+- `-BackendOnly` — skip rebuild if HTML already built; still runs full 161 stack deploy script
 
-Do not use `vmm-postgres` for production. PostgreSQL is managed by aaPanel.
+Scripts:
 
-## Frontend Deploy
+- Full stack: `py -3 deploy\new_musicmundial\scripts\deploy_contabo.py`
+- HTML only: `py -3 deploy\new_musicmundial\scripts\upload_html_161.py`
 
-From local repo:
+## Frontend build values
 
 ```powershell
 $env:VITE_API_BASE_URL='/vote/api'
 $env:VITE_FIREBASE_VAPID_KEY='BNQEx4dNvUVEV_CJ1qV64yzOA3xXPB2Y30EN_m4RLTf22tbVe_E1lkV-jNK7lbh4pbTxN2aOAN5mLPUMdYcRZuc'
 $env:VITE_TURNSTILE_SITE_KEY='0x4AAAAAADscx-A_CXbgnFea'
 npm run build
-Remove-Item Env:VITE_API_BASE_URL
-Remove-Item Env:VITE_FIREBASE_VAPID_KEY
-Remove-Item Env:VITE_TURNSTILE_SITE_KEY
+npx vite build --config news/vite.config.js
 ```
 
-Upload the generated `dist` contents to:
+## After upload
 
 ```bash
-/www/wwwroot/vote.musicmundial.com
+find /www/wwwroot/new_musicmundial/html -type d -exec chmod 755 {} +
+find /www/wwwroot/new_musicmundial/html -type f -exec chmod 644 {} +
 ```
-
-Preserve these server folders/files:
-
-- `/www/wwwroot/vote.musicmundial.com/backend`
-- `/www/wwwroot/vote.musicmundial.com/uploads`
-- `/www/wwwroot/vote.musicmundial.com/.well-known`
-- aaPanel config files such as `.user.ini`
-
-### Fix permissions after upload (required)
-
-`scp` as `root` can recreate `assets/` with mode `700`. Apache then returns **403** on JS/CSS and the page looks frozen.
-
-Run on the server immediately after uploading `dist`:
-
-```bash
-chmod 755 /www/wwwroot/vote.musicmundial.com/assets
-find /www/wwwroot/vote.musicmundial.com/assets -type d -exec chmod 755 {} \;
-find /www/wwwroot/vote.musicmundial.com/assets -type f -exec chmod 644 {} \;
-```
-
-## Backend Deploy (Docker)
-
-Upload backend **source** to:
-
-```bash
-/www/wwwroot/vote.musicmundial.com/backend
-```
-
-Do not upload:
-
-- `node_modules`
-- `dist`
-- local `.env`
-
-Then rebuild and restart the Docker stack on the server:
-
-```bash
-cd /www/wwwroot/vote.musicmundial.com/backend
-docker compose -f docker-compose.vote-db.yml build
-docker compose -f docker-compose.vote-db.yml up -d
-```
-
-The API runs inside `vmm-api`. Apache proxies `/api` (Flutter + subdomain) and `/vote/api` (web SPA) to that container.
-
-Apache notes for combining both sites live in `apache/vote-under-musicmundial.conf.example`.
 
 ## Verification
 
-Check web:
+```bash
+curl -I https://www.musicmundial.com/
+curl -I https://www.musicmundial.com/vote/
+curl https://www.musicmundial.com/api/health
+```
+
+On the server:
 
 ```bash
-curl -I http://127.0.0.1/vote/ -H 'Host: vote.musicmundial.com'
+docker compose -p new_musicmundial ps
+curl http://127.0.0.1:8088/api/health
 ```
 
-Check a JS asset (must be `200`, not `403`):
-
-```bash
-curl -I http://127.0.0.1/vote/assets/index-*.js -H 'Host: vote.musicmundial.com'
-```
-
-Check API:
-
-```bash
-curl http://127.0.0.1/api/health -H 'Host: vote.musicmundial.com'
-```
-
-Check Docker:
-
-```bash
-docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
-```
-
-Expected running containers: `vmm-api`, `vmm-worker`, `vmm-redis`.
-
-Check uploads mount:
-
-```bash
-docker inspect vmm-api --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'
-```
-
-Expected upload mount:
-
-```text
-/www/wwwroot/vote.musicmundial.com/uploads -> /app/uploads
-```
-
-## App Links (abrir app desde links compartidos)
-
-Para que `https://vote.musicmundial.com/votacion/...` abra la app si está instalada:
-
-1. Desplegar frontend (incluye `public/.well-known/`).
-2. En Play Console → App signing → copiar el **SHA-256** y reemplazar `REPLACE_WITH_PLAY_APP_SIGNING_SHA256` en `.well-known/assetlinks.json`.
-3. En Apple Developer → Team ID: reemplazar `TEAMID` en `.well-known/apple-app-site-association`.
-4. Verificar:
-   - `https://vote.musicmundial.com/.well-known/assetlinks.json`
-   - `https://vote.musicmundial.com/.well-known/apple-app-site-association`
-5. Apache debe servir `apple-app-site-association` como `application/json` (sin redirect).
-
-Scheme de respaldo (siempre funciona en builds con el intent-filter): `vmm://votacion/2026/slug`
-
-## Quick deploy script
-
-From repo root:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy-prod.ps1
-```
-
-Optional flags:
-
-- `-FrontendOnly` — only upload `dist` and fix permissions
-- `-BackendOnly` — only upload backend source and rebuild Docker
+Expected containers include `nmm-api`, `nmm-worker`, `nmm-redis`.

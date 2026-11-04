@@ -17,6 +17,7 @@ import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
 import { categoryHref, coverOf, formatNewsDate, parseNewsPage, toCategoryCard, type NewsCard, type NewsPage } from './lib/news'
 import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, withPageCacheBuster, type SiteLocale } from './lib/locale'
+import { trackCurrentPage } from './lib/analytics'
 import { applyHomeSeo, applyPrivateSeo } from './lib/seo'
 import { newsRouteState } from './lib/route-state'
 import { getTheme, toggleTheme as flipTheme, type SiteTheme } from './lib/theme'
@@ -39,6 +40,7 @@ const searchHits = ref<NewsCard[]>([])
 const searchLoading = ref(false)
 const searchInput = ref<HTMLInputElement | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let analyticsTimer: ReturnType<typeof setTimeout> | null = null
 const slide = ref(0)
 const catPage = ref(0)
 const catSize = ref(4)
@@ -254,6 +256,15 @@ function scrollToTop() {
   document.body.scrollTop = 0
 }
 
+function queueAnalyticsHit() {
+  if (analyticsTimer) window.clearTimeout(analyticsTimer)
+  // Wait for page components to finish SEO/title updates, then hit GA if still needed.
+  analyticsTimer = window.setTimeout(() => {
+    analyticsTimer = null
+    trackCurrentPage()
+  }, 350)
+}
+
 function syncNewsPage(opts?: { keepScroll?: boolean }) {
   ensureLocalePath()
   newsPage.value = parseNewsPage()
@@ -264,12 +275,13 @@ function syncNewsPage(opts?: { keepScroll?: boolean }) {
     applyPrivateSeo(
       `${t(newsPage.value.locale, newsPage.value.edit ? 'profileEdit' : newsPage.value.username ? 'profilePublicTitle' : 'profileTitle')} — Music Mundial`,
     )
-  } else if (!['article', 'category', 'tag', 'author', 'categories', 'forum'].includes(newsPage.value.name)) {
+  } else if (!['article', 'category', 'tag', 'author', 'categories', 'forum', 'static'].includes(newsPage.value.name)) {
     applyHomeSeo(newsPage.value.locale)
   }
   if (!opts?.keepScroll) scrollToTop()
   if (newsPage.value.name === 'home') loadHomeFeed(true)
   applySearchFromUrl()
+  queueAnalyticsHit()
 }
 
 const slides = ref<Array<{
@@ -368,6 +380,10 @@ function markHomeStale() {
   homeFeedLocale.value = null
 }
 
+function onGtagReady() {
+  trackCurrentPage({ force: true })
+}
+
 onMounted(() => {
   startSlides()
   syncCatSize()
@@ -378,6 +394,7 @@ onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   window.addEventListener('keydown', onDocumentKeydown)
   window.addEventListener('nmm:news-home-stale', markHomeStale)
+  window.addEventListener('mm-gtag-ready', onGtagReady)
   revealObserver = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return
@@ -399,11 +416,13 @@ watch(
 onUnmounted(() => {
   stopSlides()
   stopCats()
+  if (analyticsTimer) window.clearTimeout(analyticsTimer)
   window.removeEventListener('resize', syncCatSize)
   window.removeEventListener('popstate', onPopState)
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('keydown', onDocumentKeydown)
   window.removeEventListener('nmm:news-home-stale', markHomeStale)
+  window.removeEventListener('mm-gtag-ready', onGtagReady)
   revealObserver?.disconnect()
 })
 
@@ -796,7 +815,7 @@ onUnmounted(() => {
             </a>
           </div>
         </div>
-        <div v-if="isSignedIn && notices.length" class="icon-pop">
+        <div v-if="isSignedIn && notices.length" class="icon-pop notices-slot">
           <button
             class="round"
             type="button"

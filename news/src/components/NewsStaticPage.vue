@@ -4,6 +4,7 @@ import { getNewsPage, getNewsPopular, postNewsContact } from '../../../src/servi
 import { t } from '../lib/copy'
 import { withLocale } from '../lib/locale'
 import { coverOf, type NewsCard } from '../lib/news'
+import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale: 'es' | 'en' }>()
 
@@ -170,7 +171,20 @@ const load = async () => {
   const popularPromise = getNewsPopular({ limit: 5, locale: props.locale }).catch(() => ({ items: [] }))
   try {
     page.value = await getNewsPage(props.slug, props.locale)
-    if (page.value?.title) document.title = `${page.value.title} — Music Mundial`
+    if (page.value?.title) {
+      const path = withLocale(`/${props.slug}`, props.locale)
+      const pack = HEROES[String(page.value.key || '')]
+      const blurb = pack ? (props.locale === 'en' ? pack.en.blurb : pack.es.blurb) : page.value.title
+      applyNewsSeo({
+        type: 'website',
+        locale: props.locale,
+        title: `${page.value.title} — Music Mundial`,
+        description: blurb,
+        path,
+        hreflangEn: path,
+        hreflangEs: path,
+      })
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t(props.locale, 'pageMissing')
   } finally {

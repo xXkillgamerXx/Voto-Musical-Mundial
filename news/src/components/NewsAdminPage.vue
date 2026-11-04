@@ -5,6 +5,7 @@ import NewsAdminAuthors from './NewsAdminAuthors.vue'
 import NewsAdminCategories from './NewsAdminCategories.vue'
 import NewsAdminForum from './NewsAdminForum.vue'
 import NewsAdminPages from './NewsAdminPages.vue'
+import NewsAdminReports from './NewsAdminReports.vue'
 import NewsAdminTags from './NewsAdminTags.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
@@ -66,7 +67,7 @@ type Overview = {
 }
 
 const props = defineProps<{
-  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'post-form'
+  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'post-form'
   postId?: string
   newsLocale?: 'es' | 'en'
 }>()
@@ -89,6 +90,7 @@ const pageTitle = computed(() => {
   if (section.value === 'tags') return 'Etiquetas'
   if (section.value === 'forum') return 'Foro'
   if (section.value === 'pages') return 'Páginas'
+  if (section.value === 'reports') return 'Reportes'
   return 'Dashboard'
 })
 const pageLead = computed(() => {
@@ -103,6 +105,7 @@ const pageLead = computed(() => {
   if (section.value === 'tags') return 'Cada etiqueta tiene su página. Aquí se configura la ficha.'
   if (section.value === 'forum') return 'Salas del foro, textos ES/EN, VIP y temas (fijar, cerrar u ocultar).'
   if (section.value === 'pages') return 'About, términos, cookies, privacidad, DMCA y contacto. Editable por idioma.'
+  if (section.value === 'reports') return 'Bandeja de comentarios reportados y opciones del modal de reporte.'
   return 'Resumen de musicmundial_es y musicmundial_en'
 })
 
@@ -329,6 +332,10 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5" /></svg>
           Páginas
         </a>
+        <a :class="{ on: section === 'reports' }" href="/es/admin/reportes" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3L12 3zm0 5v5m0 3h.01" /></svg>
+          Reportes
+        </a>
       </nav>
       <div class="na-user">
         <div class="na-user-row">
@@ -393,6 +400,7 @@ onUnmounted(() => {
         <NewsAdminTags v-else-if="section === 'tags'" />
         <NewsAdminForum v-else-if="section === 'forum'" :create-tick="forumCreateTick" />
         <NewsAdminPages v-else-if="section === 'pages'" />
+        <NewsAdminReports v-else-if="section === 'reports'" />
         <template v-else>
         <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
         <p v-else-if="loading && !overview" class="na-empty">Cargando dashboard…</p>

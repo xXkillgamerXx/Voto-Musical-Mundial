@@ -312,6 +312,21 @@ export const getAdminNewsPage = (key, locale = 'es') =>
 export const updateAdminNewsPage = (key, body) =>
   adminRequest(`/news/pages/${encodeURIComponent(key)}`, { method: 'PATCH', body })
 
+export const getAdminNewsCommentReports = (locale = 'es', status = 'open') =>
+  adminRequest(`/news/comment-reports?locale=${encodeURIComponent(locale)}&status=${encodeURIComponent(status)}`)
+export const updateAdminNewsCommentReport = (id, body, locale = 'es') =>
+  adminRequest(`/news/comment-reports/${encodeURIComponent(id)}?locale=${encodeURIComponent(locale)}`, {
+    method: 'PATCH',
+    body,
+  })
+export const getAdminNewsCommentReportOptions = (locale = 'es') =>
+  adminRequest(`/news/comment-report-options?locale=${encodeURIComponent(locale)}`)
+export const saveAdminNewsCommentReportOptions = (items, locale = 'es') =>
+  adminRequest(`/news/comment-report-options?locale=${encodeURIComponent(locale)}`, {
+    method: 'PUT',
+    body: { items },
+  })
+
 export const getAdminForumCategories = () => adminRequest('/forum/categories')
 export const createAdminForumCategory = (body) => adminRequest('/forum/categories', { method: 'POST', body })
 export const updateAdminForumCategory = (slug, body) =>

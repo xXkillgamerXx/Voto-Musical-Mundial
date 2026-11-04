@@ -98,6 +98,10 @@ export class CreateNewsCommentDto {
   @IsString()
   @Length(2, 800)
   text: string;
+
+  @IsOptional()
+  @IsString()
+  parentId?: string;
 }
 
 export class UpsertNewsCategoryDto {

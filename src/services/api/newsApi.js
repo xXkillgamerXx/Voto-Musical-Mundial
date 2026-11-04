@@ -43,13 +43,44 @@ export const getNewsAuthor = (slug, { page = 1, limit = 18, locale } = {}) => {
   return apiRequest(`/news/authors/${encodeURIComponent(slug)}?${params.toString()}`)
 }
 export const getNewsComments = (slug, locale) =>
-  apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale))
-export const postNewsComment = (slug, text, locale) =>
   apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale), {
-    method: 'POST',
-    body: { text },
     token: getStoredAuth()?.accessToken,
   })
+export const postNewsComment = (slug, text, locale, parentId) =>
+  apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale), {
+    method: 'POST',
+    body: { text, ...(parentId ? { parentId: String(parentId) } : {}) },
+    token: getStoredAuth()?.accessToken,
+  })
+export const voteNewsComment = (slug, commentId, value, locale) =>
+  apiRequest(
+    withLocale(`/news/posts/${encodeURIComponent(slug)}/comments/${encodeURIComponent(commentId)}/vote`, locale),
+    {
+      method: 'POST',
+      body: { value },
+      token: getStoredAuth()?.accessToken,
+    },
+  )
+export const reactNewsComment = (slug, commentId, reaction, locale) =>
+  apiRequest(
+    withLocale(`/news/posts/${encodeURIComponent(slug)}/comments/${encodeURIComponent(commentId)}/react`, locale),
+    {
+      method: 'POST',
+      body: { reaction },
+      token: getStoredAuth()?.accessToken,
+    },
+  )
+export const getNewsCommentReportOptions = (locale) =>
+  apiRequest(withLocale('/news/comment-report-options', locale))
+export const reportNewsComment = (slug, commentId, { reason, details } = {}, locale) =>
+  apiRequest(
+    withLocale(`/news/posts/${encodeURIComponent(slug)}/comments/${encodeURIComponent(commentId)}/report`, locale),
+    {
+      method: 'POST',
+      body: { reason, details },
+      token: getStoredAuth()?.accessToken,
+    },
+  )
 export const getNewsPopular = ({ exclude = '', limit = 5, locale } = {}) => {
   const params = new URLSearchParams({
     locale: newsLocale(locale),

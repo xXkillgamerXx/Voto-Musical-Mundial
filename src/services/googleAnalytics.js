@@ -1,9 +1,11 @@
-const MEASUREMENT_ID = 'G-GSXPF4JEXS'
+const MEASUREMENT_IDS = ['G-MYCSLDGEHG', 'G-GSXPF4JEXS']
+const PRIMARY_ID = MEASUREMENT_IDS[0]
 const CONSENT_KEY = 'vmm_cookie_consent'
 const CONSENT_CHANGE_EVENT = 'vmm-cookie-consent-change'
 const SCRIPT_ID = 'vmm-gtag-js'
 
 let started = false
+let lastTrackedPath = ''
 
 const readConsent = () => {
   try {
@@ -31,17 +33,20 @@ const loadScript = () => {
   const script = document.createElement('script')
   script.id = SCRIPT_ID
   script.async = true
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${MEASUREMENT_ID}`
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${PRIMARY_ID}`
   document.head.appendChild(script)
 }
 
-export const trackPageView = (path = window.location.pathname) => {
+export const trackPageView = (path = `${window.location.pathname}${window.location.search}`) => {
   if (!started || typeof window.gtag !== 'function') return
+  if (path === lastTrackedPath) return
+  lastTrackedPath = path
 
   window.gtag('event', 'page_view', {
     page_path: path,
     page_location: window.location.href,
     page_title: document.title,
+    send_to: MEASUREMENT_IDS,
   })
 }
 
@@ -51,10 +56,14 @@ export const enableGoogleAnalytics = () => {
   ensureGtag()
   loadScript()
   window.gtag('js', new Date())
-  window.gtag('config', MEASUREMENT_ID, {
-    send_page_view: false,
-  })
+  for (const id of MEASUREMENT_IDS) {
+    window.gtag('config', id, {
+      send_page_view: false,
+      anonymize_ip: true,
+    })
+  }
   started = true
+  lastTrackedPath = ''
   trackPageView()
 }
 

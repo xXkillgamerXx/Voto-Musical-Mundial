@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BLOCKED_LANGUAGE_MESSAGE, isCommentLanguageBlocked } from '../../common/comment-profanity';
 import { normalizeSlug } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
@@ -22,6 +22,7 @@ type NewsAttachment = { url: string; type: string; name: string };
 type NewsCommentRow = {
   id: number;
   post_id: number;
+  parent_id: number | null;
   user_id: string;
   author_name: string;
   author_username: string | null;
@@ -838,10 +839,296 @@ export class NewsService {
     });
   }
 
-  async listComments(slug: string, localeValue?: string) {
+  async listComments(slug: string, localeValue?: string, actor?: { id: bigint } | null) {
     const locale = this.mysql.locale(localeValue);
     const postId = await this.requirePublishedId(locale, slug);
-    return serialize({ items: await this.commentsFor(locale, postId) });
+    return serialize({ items: await this.commentsFor(locale, postId, actor?.id ? String(actor.id) : '') });
+  }
+
+  async reactComment(
+    slug: string,
+    commentId: string,
+    localeValue: string | undefined,
+    actor: { id: bigint },
+    reaction: string,
+  ) {
+    const locale = this.mysql.locale(localeValue);
+    const postId = await this.requirePublishedId(locale, slug);
+    await this.ensureCommentsTable(locale);
+    await this.ensureCommentVotesTable(locale);
+    await this.ensureCommentReactionsTable(locale);
+    const id = Number(commentId);
+    if (!Number.isFinite(id) || id <= 0) throw new NotFoundException('El comentario no existe.');
+    const rows = await this.mysql.query<{ id: number }>(
+      locale,
+      `SELECT id FROM vmm_comments WHERE id = ? AND post_id = ? LIMIT 1`,
+      [id, postId],
+    );
+    if (!rows[0]) throw new NotFoundException('El comentario no existe.');
+    const key = String(reaction || '').trim().toLowerCase();
+    const allowed = new Set(['love', 'laugh', 'wow', 'fire']);
+    if (!allowed.has(key)) throw new BadRequestException('Reacción no válida.');
+    const userId = String(actor.id);
+    const existing = await this.mysql.query<{ reaction: string }>(
+      locale,
+      `SELECT reaction FROM vmm_comment_reactions WHERE comment_id = ? AND user_id = ? LIMIT 1`,
+      [id, userId],
+    );
+    const prev = String(existing[0]?.reaction || '');
+    if (prev === key) {
+      await this.mysql.exec(locale, `DELETE FROM vmm_comment_reactions WHERE comment_id = ? AND user_id = ?`, [
+        id,
+        userId,
+      ]);
+    } else if (prev) {
+      await this.mysql.exec(
+        locale,
+        `UPDATE vmm_comment_reactions SET reaction = ?, updated_at = ? WHERE comment_id = ? AND user_id = ?`,
+        [key, this.wpStamp(new Date()), id, userId],
+      );
+    } else {
+      await this.mysql.exec(
+        locale,
+        `INSERT INTO vmm_comment_reactions (comment_id, user_id, reaction, updated_at) VALUES (?, ?, ?, ?)`,
+        [id, userId, key, this.wpStamp(new Date())],
+      );
+    }
+    return serialize(await this.commentReactionState(locale, id, userId));
+  }
+
+  async listCommentReportOptions(localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    const options = await this.getCommentReportOptions(locale);
+    return serialize({
+      items: options
+        .filter((item) => item.enabled)
+        .sort((a, b) => a.sort - b.sort)
+        .map((item) => ({
+          key: item.key,
+          label: locale === 'en' ? item.labelEn : item.labelEs,
+        })),
+    });
+  }
+
+  async reportComment(
+    slug: string,
+    commentId: string,
+    localeValue: string | undefined,
+    actor: { id: bigint },
+    body: { reason?: string; details?: string },
+  ) {
+    const locale = this.mysql.locale(localeValue);
+    const postId = await this.requirePublishedId(locale, slug);
+    await this.ensureCommentsTable(locale);
+    await this.ensureCommentReportsTable(locale);
+    const id = Number(commentId);
+    if (!Number.isFinite(id) || id <= 0) throw new NotFoundException('El comentario no existe.');
+    const rows = await this.mysql.query<{ id: number; user_id: string; body: string }>(
+      locale,
+      `SELECT id, user_id, body FROM vmm_comments WHERE id = ? AND post_id = ? LIMIT 1`,
+      [id, postId],
+    );
+    if (!rows[0]) throw new NotFoundException('El comentario no existe.');
+    const options = await this.getCommentReportOptions(locale);
+    const reasonKey = String(body?.reason || '').trim().toLowerCase();
+    const option = options.find((item) => item.enabled && item.key === reasonKey);
+    if (!option) throw new BadRequestException('Motivo de reporte no válido.');
+    const details = String(body?.details || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 500);
+    const reporterId = String(actor.id);
+    const existing = await this.mysql.query<{ id: number }>(
+      locale,
+      `SELECT id FROM vmm_comment_reports WHERE comment_id = ? AND reporter_user_id = ? LIMIT 1`,
+      [id, reporterId],
+    );
+    if (existing[0]) throw new ConflictException('Ya reportaste este comentario.');
+    await this.mysql.exec(
+      locale,
+      `INSERT INTO vmm_comment_reports
+        (comment_id, post_id, post_slug, reporter_user_id, reported_user_id, reason_key, reason_label, details, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
+      [
+        id,
+        postId,
+        String(slug || '').slice(0, 200),
+        reporterId,
+        String(rows[0].user_id || ''),
+        option.key,
+        locale === 'en' ? option.labelEn : option.labelEs,
+        details || null,
+        this.wpStamp(new Date()),
+      ],
+    );
+    return serialize({ ok: true });
+  }
+
+  async adminListCommentReports(localeValue?: string, status = 'open') {
+    const locale = this.mysql.locale(localeValue);
+    await this.ensureCommentReportsTable(locale);
+    const statusKey = String(status || 'open').trim().toLowerCase();
+    const where = statusKey === 'all' ? '' : 'WHERE r.status = ?';
+    const params = statusKey === 'all' ? [] : [statusKey];
+    const rows = await this.mysql.query<{
+      id: number;
+      comment_id: number;
+      post_id: number;
+      post_slug: string | null;
+      reporter_user_id: string;
+      reported_user_id: string | null;
+      reason_key: string;
+      reason_label: string;
+      details: string | null;
+      status: string;
+      created_at: Date | string;
+      comment_body: string | null;
+      author_name: string | null;
+    }>(
+      locale,
+      `SELECT r.id, r.comment_id, r.post_id, r.post_slug, r.reporter_user_id, r.reported_user_id,
+              r.reason_key, r.reason_label, r.details, r.status, r.created_at,
+              c.body AS comment_body, c.author_name
+       FROM vmm_comment_reports r
+       LEFT JOIN vmm_comments c ON c.id = r.comment_id
+       ${where}
+       ORDER BY r.created_at DESC, r.id DESC
+       LIMIT 200`,
+      params,
+    );
+    return serialize({
+      items: rows.map((row) => ({
+        id: String(row.id),
+        commentId: String(row.comment_id),
+        postId: String(row.post_id),
+        postSlug: row.post_slug || '',
+        reporterUserId: row.reporter_user_id,
+        reportedUserId: row.reported_user_id || '',
+        reasonKey: row.reason_key,
+        reasonLabel: row.reason_label,
+        details: row.details || '',
+        status: row.status,
+        createdAt: row.created_at,
+        commentBody: row.comment_body || '',
+        authorName: row.author_name || '',
+      })),
+    });
+  }
+
+  async adminUpdateCommentReport(
+    id: string,
+    localeValue: string | undefined,
+    body: { status?: string; deleteComment?: boolean },
+  ) {
+    const locale = this.mysql.locale(localeValue);
+    await this.ensureCommentReportsTable(locale);
+    const reportId = Number(id);
+    if (!Number.isFinite(reportId) || reportId <= 0) throw new NotFoundException('El reporte no existe.');
+    const rows = await this.mysql.query<{ id: number; comment_id: number }>(
+      locale,
+      `SELECT id, comment_id FROM vmm_comment_reports WHERE id = ? LIMIT 1`,
+      [reportId],
+    );
+    if (!rows[0]) throw new NotFoundException('El reporte no existe.');
+    const status = String(body?.status || '').trim().toLowerCase();
+    const allowed = new Set(['open', 'reviewed', 'resolved', 'dismissed']);
+    if (!allowed.has(status)) throw new BadRequestException('Estado no válido.');
+    await this.mysql.exec(
+      locale,
+      `UPDATE vmm_comment_reports SET status = ?, resolved_at = ? WHERE id = ?`,
+      [status, status === 'open' ? null : this.wpStamp(new Date()), reportId],
+    );
+    if (body?.deleteComment) {
+      await this.removeComment(String(rows[0].comment_id), locale);
+    }
+    return serialize({ ok: true, id: String(reportId), status });
+  }
+
+  async adminGetCommentReportOptions(localeValue?: string) {
+    const locale = this.mysql.locale(localeValue);
+    return serialize({ items: await this.getCommentReportOptions(locale) });
+  }
+
+  async adminSaveCommentReportOptions(
+    localeValue: string | undefined,
+    items: Array<{ key?: string; labelEs?: string; labelEn?: string; enabled?: boolean; sort?: number }>,
+  ) {
+    const locale = this.mysql.locale(localeValue);
+    await this.ensureCommentReportOptionsTable(locale);
+    const cleaned = (Array.isArray(items) ? items : [])
+      .map((item, index) => {
+        const key = String(item?.key || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, '')
+          .slice(0, 64);
+        if (!key) return null;
+        return {
+          key,
+          labelEs: String(item?.labelEs || key).trim().slice(0, 120) || key,
+          labelEn: String(item?.labelEn || key).trim().slice(0, 120) || key,
+          enabled: item?.enabled !== false,
+          sort: Number.isFinite(Number(item?.sort)) ? Number(item?.sort) : index + 1,
+        };
+      })
+      .filter(Boolean) as Array<{ key: string; labelEs: string; labelEn: string; enabled: boolean; sort: number }>;
+    if (!cleaned.length) throw new BadRequestException('Agrega al menos una opción de reporte.');
+    await this.mysql.exec(
+      locale,
+      `INSERT INTO vmm_comment_report_options (id, options_json, updated_at)
+       VALUES (1, ?, ?)
+       ON DUPLICATE KEY UPDATE options_json = VALUES(options_json), updated_at = VALUES(updated_at)`,
+      [JSON.stringify(cleaned), this.wpStamp(new Date())],
+    );
+    return serialize({ items: cleaned.sort((a, b) => a.sort - b.sort) });
+  }
+
+  async voteComment(
+    slug: string,
+    commentId: string,
+    localeValue: string | undefined,
+    actor: { id: bigint },
+    value: number,
+  ) {
+    const locale = this.mysql.locale(localeValue);
+    const postId = await this.requirePublishedId(locale, slug);
+    await this.ensureCommentsTable(locale);
+    await this.ensureCommentVotesTable(locale);
+    const id = Number(commentId);
+    if (!Number.isFinite(id) || id <= 0) throw new NotFoundException('El comentario no existe.');
+    const rows = await this.mysql.query<{ id: number; post_id: number }>(
+      locale,
+      `SELECT id, post_id FROM vmm_comments WHERE id = ? AND post_id = ? LIMIT 1`,
+      [id, postId],
+    );
+    if (!rows[0]) throw new NotFoundException('El comentario no existe.');
+    const vote = value === 1 || value === -1 ? value : 0;
+    const userId = String(actor.id);
+    if (vote === 0) {
+      await this.mysql.exec(locale, `DELETE FROM vmm_comment_votes WHERE comment_id = ? AND user_id = ?`, [
+        id,
+        userId,
+      ]);
+    } else {
+      await this.mysql.exec(
+        locale,
+        `INSERT INTO vmm_comment_votes (comment_id, user_id, value, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)`,
+        [id, userId, vote, this.wpStamp(new Date())],
+      );
+    }
+    const scoreRows = await this.mysql.query<{ score: number }>(
+      locale,
+      `SELECT COALESCE(SUM(value), 0) AS score FROM vmm_comment_votes WHERE comment_id = ?`,
+      [id],
+    );
+    return serialize({
+      id: String(id),
+      score: Number(scoreRows[0]?.score || 0),
+      myVote: vote,
+    });
   }
 
   async adminListComments(id: string, localeValue?: string) {
@@ -850,7 +1137,13 @@ export class NewsService {
     return serialize({ items: await this.commentsFor(locale, postId) });
   }
 
-  async createComment(slug: string, localeValue: string | undefined, actor: { id: bigint }, text: string) {
+  async createComment(
+    slug: string,
+    localeValue: string | undefined,
+    actor: { id: bigint },
+    text: string,
+    parentIdValue?: string,
+  ) {
     const locale = this.mysql.locale(localeValue);
     const postId = await this.requirePublishedId(locale, slug);
     const body = String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -863,12 +1156,25 @@ export class NewsService {
     });
     if (!user) throw new BadRequestException('Inicia sesión para comentar.');
     await this.ensureCommentsTable(locale);
+    let parentId: number | null = null;
+    const rawParent = Number(parentIdValue || 0);
+    if (Number.isFinite(rawParent) && rawParent > 0) {
+      const parents = await this.mysql.query<{ id: number; parent_id: number | null }>(
+        locale,
+        `SELECT id, parent_id FROM vmm_comments WHERE id = ? AND post_id = ? LIMIT 1`,
+        [rawParent, postId],
+      );
+      if (!parents[0]) throw new BadRequestException('El comentario al que respondes no existe.');
+      // Keep threads shallow: reply-to-reply attaches under the same root.
+      parentId = parents[0].parent_id ? Number(parents[0].parent_id) : Number(parents[0].id);
+    }
     const inserted = await this.mysql.exec(
       locale,
-      `INSERT INTO vmm_comments (post_id, user_id, author_name, author_username, author_photo, body, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO vmm_comments (post_id, parent_id, user_id, author_name, author_username, author_photo, body, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         postId,
+        parentId,
         String(user.id),
         String(user.displayName || user.username || 'Usuario').slice(0, 160),
         String(user.username || '').slice(0, 64) || null,
@@ -881,12 +1187,17 @@ export class NewsService {
     return serialize({
       id: String(inserted.insertId || ''),
       postId: String(postId),
+      parentId: parentId ? String(parentId) : null,
       userId: String(user.id),
       authorName: user.displayName || user.username || 'Usuario',
       authorUsername: user.username || '',
       authorPhotoUrl: user.photoUrl || '',
       body,
       createdAt: new Date().toISOString(),
+      score: 0,
+      myVote: 0,
+      reactions: { love: 0, laugh: 0, wow: 0, fire: 0 },
+      myReaction: null,
     });
   }
 
@@ -2040,6 +2351,21 @@ export class NewsService {
   }
 
   private commentsReady = new Set<NewsLocale>();
+  private commentVotesReady = new Set<NewsLocale>();
+  private commentReactionsReady = new Set<NewsLocale>();
+  private commentReportsReady = new Set<NewsLocale>();
+  private commentReportOptionsReady = new Set<NewsLocale>();
+
+  private defaultCommentReportOptions() {
+    return [
+      { key: 'spam', labelEs: 'Spam', labelEn: 'Spam', enabled: true, sort: 1 },
+      { key: 'offensive', labelEs: 'Contenido ofensivo', labelEn: 'Offensive content', enabled: true, sort: 2 },
+      { key: 'sexual', labelEs: 'Contenido sexual', labelEn: 'Sexual content', enabled: true, sort: 3 },
+      { key: 'harassment', labelEs: 'Acoso', labelEn: 'Harassment', enabled: true, sort: 4 },
+      { key: 'misinformation', labelEs: 'Desinformación', labelEn: 'Misinformation', enabled: true, sort: 5 },
+      { key: 'other', labelEs: 'Otro', labelEn: 'Other', enabled: true, sort: 6 },
+    ];
+  }
 
   private async ensureCommentsTable(locale: NewsLocale) {
     if (this.commentsReady.has(locale)) return;
@@ -2048,6 +2374,7 @@ export class NewsService {
       `CREATE TABLE IF NOT EXISTS vmm_comments (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         post_id BIGINT UNSIGNED NOT NULL,
+        parent_id BIGINT UNSIGNED NULL,
         user_id VARCHAR(32) NOT NULL,
         author_name VARCHAR(160) NOT NULL,
         author_username VARCHAR(64) NULL,
@@ -2056,33 +2383,272 @@ export class NewsService {
         created_at DATETIME NOT NULL,
         PRIMARY KEY (id),
         KEY post_id (post_id),
+        KEY parent_id (parent_id),
         KEY user_id (user_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     );
+    try {
+      await this.mysql.exec(
+        locale,
+        `ALTER TABLE vmm_comments
+         ADD COLUMN parent_id BIGINT UNSIGNED NULL AFTER post_id,
+         ADD KEY parent_id (parent_id)`,
+      );
+    } catch {
+      /* column/index already exists on upgraded DBs */
+    }
+    await this.backfillOrphanReplies(locale);
     this.commentsReady.add(locale);
   }
 
-  private mapComment(row: NewsCommentRow) {
+  /** Link old @mention replies that were saved flat before parent_id existed. */
+  private async backfillOrphanReplies(locale: NewsLocale) {
+    try {
+      const orphans = await this.mysql.query<{
+        id: number;
+        post_id: number;
+        body: string;
+        created_at: Date | string;
+      }>(
+        locale,
+        `SELECT id, post_id, body, created_at
+         FROM vmm_comments
+         WHERE parent_id IS NULL AND body LIKE '@%'
+         ORDER BY id ASC
+         LIMIT 500`,
+      );
+      for (const orphan of orphans) {
+        const mention = String(orphan.body || '')
+          .trim()
+          .match(/^@([A-Za-z0-9._-]+)/)?.[1];
+        if (!mention) continue;
+        const parents = await this.mysql.query<{ id: number }>(
+          locale,
+          `SELECT id
+           FROM vmm_comments
+           WHERE post_id = ?
+             AND id < ?
+             AND parent_id IS NULL
+             AND (
+               LOWER(author_username) = LOWER(?)
+               OR LOWER(REPLACE(author_name, ' ', '')) = LOWER(?)
+             )
+           ORDER BY id DESC
+           LIMIT 1`,
+          [orphan.post_id, orphan.id, mention, mention],
+        );
+        if (!parents[0]) continue;
+        await this.mysql.exec(locale, `UPDATE vmm_comments SET parent_id = ? WHERE id = ? AND parent_id IS NULL`, [
+          parents[0].id,
+          orphan.id,
+        ]);
+      }
+    } catch {
+      /* ignore backfill failures */
+    }
+  }
+
+  private async ensureCommentVotesTable(locale: NewsLocale) {
+    if (this.commentVotesReady.has(locale)) return;
+    await this.mysql.exec(
+      locale,
+      `CREATE TABLE IF NOT EXISTS vmm_comment_votes (
+        comment_id BIGINT UNSIGNED NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        value TINYINT NOT NULL,
+        updated_at DATETIME NOT NULL,
+        PRIMARY KEY (comment_id, user_id),
+        KEY comment_id (comment_id),
+        KEY user_id (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    );
+    this.commentVotesReady.add(locale);
+  }
+
+  private async ensureCommentReactionsTable(locale: NewsLocale) {
+    if (this.commentReactionsReady.has(locale)) return;
+    await this.mysql.exec(
+      locale,
+      `CREATE TABLE IF NOT EXISTS vmm_comment_reactions (
+        comment_id BIGINT UNSIGNED NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        reaction VARCHAR(16) NOT NULL,
+        updated_at DATETIME NOT NULL,
+        PRIMARY KEY (comment_id, user_id),
+        KEY comment_id (comment_id),
+        KEY reaction (reaction)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    );
+    this.commentReactionsReady.add(locale);
+  }
+
+  private async ensureCommentReportsTable(locale: NewsLocale) {
+    if (this.commentReportsReady.has(locale)) return;
+    await this.mysql.exec(
+      locale,
+      `CREATE TABLE IF NOT EXISTS vmm_comment_reports (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        comment_id BIGINT UNSIGNED NOT NULL,
+        post_id BIGINT UNSIGNED NOT NULL,
+        post_slug VARCHAR(200) NULL,
+        reporter_user_id VARCHAR(32) NOT NULL,
+        reported_user_id VARCHAR(32) NULL,
+        reason_key VARCHAR(64) NOT NULL,
+        reason_label VARCHAR(160) NOT NULL,
+        details TEXT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'open',
+        created_at DATETIME NOT NULL,
+        resolved_at DATETIME NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_reporter_comment (comment_id, reporter_user_id),
+        KEY status (status),
+        KEY post_id (post_id),
+        KEY created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    );
+    this.commentReportsReady.add(locale);
+  }
+
+  private async ensureCommentReportOptionsTable(locale: NewsLocale) {
+    if (this.commentReportOptionsReady.has(locale)) return;
+    await this.mysql.exec(
+      locale,
+      `CREATE TABLE IF NOT EXISTS vmm_comment_report_options (
+        id TINYINT UNSIGNED NOT NULL,
+        options_json LONGTEXT NOT NULL,
+        updated_at DATETIME NOT NULL,
+        PRIMARY KEY (id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    );
+    const rows = await this.mysql.query<{ id: number }>(
+      locale,
+      `SELECT id FROM vmm_comment_report_options WHERE id = 1 LIMIT 1`,
+    );
+    if (!rows[0]) {
+      await this.mysql.exec(
+        locale,
+        `INSERT INTO vmm_comment_report_options (id, options_json, updated_at) VALUES (1, ?, ?)`,
+        [JSON.stringify(this.defaultCommentReportOptions()), this.wpStamp(new Date())],
+      );
+    }
+    this.commentReportOptionsReady.add(locale);
+  }
+
+  private async getCommentReportOptions(locale: NewsLocale) {
+    await this.ensureCommentReportOptionsTable(locale);
+    const rows = await this.mysql.query<{ options_json: string }>(
+      locale,
+      `SELECT options_json FROM vmm_comment_report_options WHERE id = 1 LIMIT 1`,
+    );
+    try {
+      const parsed = JSON.parse(rows[0]?.options_json || '[]');
+      if (!Array.isArray(parsed) || !parsed.length) return this.defaultCommentReportOptions();
+      return parsed
+        .map((item: any, index: number) => ({
+          key: String(item?.key || '').trim().toLowerCase(),
+          labelEs: String(item?.labelEs || item?.key || '').trim(),
+          labelEn: String(item?.labelEn || item?.key || '').trim(),
+          enabled: item?.enabled !== false,
+          sort: Number.isFinite(Number(item?.sort)) ? Number(item.sort) : index + 1,
+        }))
+        .filter((item: { key: string }) => item.key)
+        .sort((a: { sort: number }, b: { sort: number }) => a.sort - b.sort);
+    } catch {
+      return this.defaultCommentReportOptions();
+    }
+  }
+
+  private async commentReactionState(locale: NewsLocale, commentId: number, viewerUserId = '') {
+    const counts = await this.mysql.query<{ reaction: string; total: number }>(
+      locale,
+      `SELECT reaction, COUNT(*) AS total
+       FROM vmm_comment_reactions
+       WHERE comment_id = ?
+       GROUP BY reaction`,
+      [commentId],
+    );
+    const mine = viewerUserId
+      ? await this.mysql.query<{ reaction: string }>(
+          locale,
+          `SELECT reaction FROM vmm_comment_reactions WHERE comment_id = ? AND user_id = ? LIMIT 1`,
+          [commentId, viewerUserId],
+        )
+      : [];
+    const reactions = { love: 0, laugh: 0, wow: 0, fire: 0 };
+    for (const row of counts) {
+      if (row.reaction in reactions) reactions[row.reaction as keyof typeof reactions] = Number(row.total || 0);
+    }
+    return {
+      id: String(commentId),
+      reactions,
+      myReaction: String(mine[0]?.reaction || '') || null,
+    };
+  }
+
+  private mapComment(
+    row: NewsCommentRow & {
+      score?: number;
+      my_vote?: number | null;
+      love_count?: number;
+      laugh_count?: number;
+      wow_count?: number;
+      fire_count?: number;
+      my_reaction?: string | null;
+    },
+  ) {
     const username = String(row.author_username || '').trim();
+    const parentId = row.parent_id ? String(row.parent_id) : null;
     return {
       id: String(row.id),
       postId: String(row.post_id),
+      parentId,
       userId: String(row.user_id),
       authorName: row.author_name || 'Usuario',
       authorUsername: username || undefined,
       authorPhotoUrl: row.author_photo || undefined,
       body: row.body,
       createdAt: row.created_at,
+      score: Number(row.score || 0),
+      myVote: Number(row.my_vote || 0) === 1 || Number(row.my_vote || 0) === -1 ? Number(row.my_vote) : 0,
+      reactions: {
+        love: Number(row.love_count || 0),
+        laugh: Number(row.laugh_count || 0),
+        wow: Number(row.wow_count || 0),
+        fire: Number(row.fire_count || 0),
+      },
+      myReaction: String(row.my_reaction || '') || null,
     };
   }
 
-  private async commentsFor(locale: NewsLocale, postId: number) {
+  private async commentsFor(locale: NewsLocale, postId: number, viewerUserId = '') {
     await this.ensureCommentsTable(locale);
-    const rows = await this.mysql.query<NewsCommentRow>(
+    await this.ensureCommentVotesTable(locale);
+    await this.ensureCommentReactionsTable(locale);
+    const rows = await this.mysql.query<
+      NewsCommentRow & {
+        score: number;
+        my_vote: number | null;
+        love_count: number;
+        laugh_count: number;
+        wow_count: number;
+        fire_count: number;
+        my_reaction: string | null;
+      }
+    >(
       locale,
-      `SELECT id, post_id, user_id, author_name, author_username, author_photo, body, created_at
-       FROM vmm_comments WHERE post_id = ? ORDER BY created_at ASC, id ASC LIMIT 200`,
-      [postId],
+      `SELECT c.id, c.post_id, c.parent_id, c.user_id, c.author_name, c.author_username, c.author_photo, c.body, c.created_at,
+              COALESCE((SELECT SUM(v.value) FROM vmm_comment_votes v WHERE v.comment_id = c.id), 0) AS score,
+              (SELECT v.value FROM vmm_comment_votes v WHERE v.comment_id = c.id AND v.user_id = ? LIMIT 1) AS my_vote,
+              COALESCE((SELECT COUNT(*) FROM vmm_comment_reactions r WHERE r.comment_id = c.id AND r.reaction = 'love'), 0) AS love_count,
+              COALESCE((SELECT COUNT(*) FROM vmm_comment_reactions r WHERE r.comment_id = c.id AND r.reaction = 'laugh'), 0) AS laugh_count,
+              COALESCE((SELECT COUNT(*) FROM vmm_comment_reactions r WHERE r.comment_id = c.id AND r.reaction = 'wow'), 0) AS wow_count,
+              COALESCE((SELECT COUNT(*) FROM vmm_comment_reactions r WHERE r.comment_id = c.id AND r.reaction = 'fire'), 0) AS fire_count,
+              (SELECT r.reaction FROM vmm_comment_reactions r WHERE r.comment_id = c.id AND r.user_id = ? LIMIT 1) AS my_reaction
+       FROM vmm_comments c
+       WHERE c.post_id = ?
+       ORDER BY c.created_at ASC, c.id ASC
+       LIMIT 200`,
+      [viewerUserId || '', viewerUserId || '', postId],
     );
     return rows.map((row) => this.mapComment(row));
   }

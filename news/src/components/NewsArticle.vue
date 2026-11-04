@@ -170,14 +170,16 @@ watch(bodyHtml, async () => {
       </div>
       <p v-else-if="error" class="article-status">{{ error }} <a :href="homeHref">{{ t(loc, 'backHome') }}</a></p>
       <article v-else-if="post" class="article">
-        <a v-if="canEdit" class="article-admin-edit" :href="adminEditHref">{{ t(loc, 'editInAdmin') }}</a>
-        <nav class="crumbs" aria-label="breadcrumb">
-          <a :href="homeHref">Music Mundial</a>
-          <span class="crumbs-sep" aria-hidden="true">›</span>
-          <a :href="crumbHref">{{ crumbCategory.name }}</a>
-          <span class="crumbs-sep" aria-hidden="true">›</span>
-          <span class="crumbs-now">{{ post.title }}</span>
-        </nav>
+        <div class="article-topbar">
+          <nav class="crumbs" aria-label="breadcrumb">
+            <a :href="homeHref">Music Mundial</a>
+            <span class="crumbs-sep" aria-hidden="true">›</span>
+            <a :href="crumbHref">{{ crumbCategory.name }}</a>
+            <span class="crumbs-sep" aria-hidden="true">›</span>
+            <span class="crumbs-now">{{ post.title }}</span>
+          </nav>
+          <a v-if="canEdit" class="article-admin-edit" :href="adminEditHref">{{ t(loc, 'editInAdmin') }}</a>
+        </div>
         <div class="article-tags">
           <a
             v-for="cat in (post.categories?.length ? post.categories : [{ slug: post.categorySlug, name: post.category }])"
@@ -213,8 +215,7 @@ watch(bodyHtml, async () => {
         </figure>
         <div class="article-body" v-html="bodyHtml"></div>
         <div v-if="post.tags?.length" class="article-post-tags">
-          <span>{{ t(loc, 'articleTags') }}</span>
-          <a v-for="tag in post.tags" :key="tag.slug || tag.name" :href="tagHref(loc, tag.slug || tag.name)">{{ tag.name }}</a>
+          <a v-for="tag in post.tags" :key="tag.slug || tag.name" :href="tagHref(loc, tag.slug || tag.name)">#{{ tag.name.replace(/^#/, '') }}</a>
         </div>
         <section v-if="post.attachments?.length" class="article-files">
           <h2>{{ t(loc, 'articleFiles') }}</h2>
