@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { uploadAdminImage } from '../../../src/services/api/adminApi'
-import { collapseNewsEmbeds, editorEmbedHtml, expandNewsEmbedsForEditor, isEmbeddableUrl } from '../lib/embeds'
+import { compressImageFile } from '../lib/compressImage'
+import {
+  collapseNewsEmbeds,
+  editorEmbedHtml,
+  embedUrlFromHtml,
+  expandNewsEmbedsForEditor,
+  firstEmbeddableUrl,
+  isEmbeddableUrl,
+} from '../lib/embeds'
 
 const props = defineProps<{ defaultAlt?: string }>()
 const content = defineModel<string>({ default: '' })
 const mode = ref<'visual' | 'html'>('visual')
 const editor = ref<HTMLElement | null>(null)
 const uploading = ref(false)
+const uploadError = ref('')
 let skipWatch = false
 
 const syncFromEditor = () => {
@@ -79,6 +88,11 @@ const insertEmbed = (raw: string) => {
     run('insertHTML', editorEmbedHtml(text))
     return
   }
+  const fromText = firstEmbeddableUrl(text)
+  if (fromText) {
+    run('insertHTML', editorEmbedHtml(fromText))
+    return
+  }
   const expanded = expandNewsEmbedsForEditor(text)
   if (expanded.includes('na-embed')) run('insertHTML', expanded)
 }
@@ -89,12 +103,97 @@ const addEmbed = () => {
   insertEmbed(url)
 }
 
+const safeAttr = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const insertUploadedMedia = async (file: File, opts?: { askSeo?: boolean }) => {
+  uploading.value = true
+  uploadError.value = ''
+  try {
+    const prepared =
+      file.type.startsWith('image/') && !file.type.includes('gif')
+        ? await compressImageFile(file)
+        : file
+    const uploaded = await uploadAdminImage('news-file', prepared)
+    const url = uploaded.path || uploaded.url
+    if (!url) throw new Error('La subida no devolvió URL.')
+    if (file.type.startsWith('video/')) {
+      run('insertHTML', `<p><video src="${url}" controls playsinline></video></p>`)
+      return
+    }
+    const suggested = String(props.defaultAlt || '').trim() || file.name.replace(/\.[^.]+$/, '') || 'Imagen'
+    let alt = suggested
+    let caption = ''
+    if (opts?.askSeo !== false) {
+      alt = window.prompt('Texto alternativo (SEO)', suggested) || suggested
+      caption = window.prompt('Pie de foto (opcional)', '') || ''
+    }
+    const cap = caption.trim() ? `<figcaption>${safeAttr(caption.trim())}</figcaption>` : ''
+    run(
+      'insertHTML',
+      `<figure class="wp-block-image"><img src="${url}" alt="${safeAttr(alt.trim() || suggested)}" />${cap}</figure>`,
+    )
+  } catch (error) {
+    uploadError.value = error instanceof Error ? error.message : 'No se pudo subir la imagen.'
+  } finally {
+    uploading.value = false
+  }
+}
+
+const clipboardMediaFile = (data: DataTransfer | null) => {
+  if (!data) return null
+  const fromFiles = Array.from(data.files || []).find(
+    (file) => file.type.startsWith('image/') || file.type.startsWith('video/'),
+  )
+  if (fromFiles) return fromFiles
+  for (const item of Array.from(data.items || [])) {
+    if (item.kind !== 'file') continue
+    if (!item.type.startsWith('image/') && !item.type.startsWith('video/')) continue
+    const file = item.getAsFile()
+    if (file) return file
+  }
+  return null
+}
+
 const onPaste = (event: ClipboardEvent) => {
-  const text = event.clipboardData?.getData('text/plain')?.trim() || ''
-  if (!text || text.includes('\n')) return
-  if (!isEmbeddableUrl(text) && !/\[embed\b/i.test(text)) return
-  event.preventDefault()
-  insertEmbed(text)
+  const data = event.clipboardData
+  if (!data) return
+
+  const media = clipboardMediaFile(data)
+  if (media) {
+    event.preventDefault()
+    void insertUploadedMedia(media, { askSeo: false })
+    return
+  }
+
+  const plain = String(data.getData('text/plain') || '')
+  const html = String(data.getData('text/html') || '')
+
+  // Avoid huge base64 dumps from some editors; force upload path instead.
+  if (/data:image\//i.test(html) || /data:image\//i.test(plain)) {
+    event.preventDefault()
+    uploadError.value = 'Pega la foto como archivo (Ctrl+V de imagen) o usa el botón Img.'
+    return
+  }
+
+  const embedFromPlain = firstEmbeddableUrl(plain)
+  if (embedFromPlain) {
+    event.preventDefault()
+    insertEmbed(embedFromPlain)
+    return
+  }
+
+  if (/\[embed\b/i.test(plain.trim())) {
+    event.preventDefault()
+    insertEmbed(plain.trim())
+    return
+  }
+
+  const embedFromHtml = embedUrlFromHtml(html)
+  if (embedFromHtml) {
+    event.preventDefault()
+    insertEmbed(embedFromHtml)
+  }
 }
 
 const addImage = () => {
@@ -104,25 +203,7 @@ const addImage = () => {
   input.onchange = async () => {
     const [file] = input.files || []
     if (!file) return
-    uploading.value = true
-    try {
-      const uploaded = await uploadAdminImage('news-file', file)
-      const url = uploaded.path || uploaded.url
-      if (!url) return
-      if (file.type.startsWith('video/')) {
-        run('insertHTML', `<p><video src="${url}" controls playsinline></video></p>`)
-      } else {
-        const suggested = String(props.defaultAlt || '').trim() || file.name.replace(/\.[^.]+$/, '')
-        const alt = window.prompt('Texto alternativo (SEO)', suggested) || suggested
-        const caption = window.prompt('Pie de foto (opcional)', suggested) || ''
-        const safe = (value: string) =>
-          value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-        const cap = caption.trim() ? `<figcaption>${safe(caption.trim())}</figcaption>` : ''
-        run('insertHTML', `<figure class="wp-block-image"><img src="${url}" alt="${safe(alt.trim() || suggested)}" />${cap}</figure>`)
-      }
-    } finally {
-      uploading.value = false
-    }
+    await insertUploadedMedia(file, { askSeo: true })
   }
   input.click()
 }
@@ -162,6 +243,7 @@ onMounted(() => {
         <button type="button" :class="{ on: mode === 'html' }" @click="mode = 'html'">Texto</button>
       </div>
     </div>
+    <p v-if="uploadError" class="na-wp-error" role="alert">{{ uploadError }}</p>
     <div
       v-show="mode === 'visual'"
       ref="editor"

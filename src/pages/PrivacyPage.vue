@@ -113,6 +113,14 @@ onMounted(loadPrivacy)
               <p class="mt-2">
                 {{ $t('privacy.rightsText') }}
               </p>
+              <p class="mt-3">
+                <a
+                  class="font-black text-fuchsia-300 transition hover:text-white"
+                  :href="routePath('deleteAccount', locale)"
+                >
+                  {{ $t('privacy.deleteAccountLink') }} →
+                </a>
+              </p>
             </div>
           </div>
         </template>

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/auth/auth_models.dart';
 import '../../../../core/auth/auth_session.dart';
 import '../../../../core/ads/ad_service.dart';
+import '../../../../core/fan/fan_features.dart';
 import '../../../../core/fan/fan_perks.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/navigation/app_deep_link.dart';
@@ -181,6 +182,9 @@ class _SignedInPageState extends State<_SignedInPage> {
         path == '/fan-store' ||
         path == '/membresia' ||
         path == '/membership') {
+      if (!kFanPlansVisible) {
+        return;
+      }
       unawaited(
         Navigator.of(navContext, rootNavigator: true).push(
           MaterialPageRoute(
@@ -450,6 +454,9 @@ class _SignedInPageState extends State<_SignedInPage> {
                   return;
                 }
                 if (section == 'Planes') {
+                  if (!kFanPlansVisible) {
+                    return;
+                  }
                   Navigator.of(context, rootNavigator: true).push(
                     MaterialPageRoute(
                       builder: (_) =>
@@ -942,7 +949,7 @@ class _HomeMenuDrawer extends StatelessWidget {
   final ValueChanged<String> onSectionSelected;
   final GlobalKey<NavigatorState>? shellNavigatorKey;
 
-  static const _items = [
+  static const _allItems = [
     _HomeMenuItem('Inicio', Icons.home_rounded),
     _HomeMenuItem('Noticias', Icons.article_rounded),
     _HomeMenuItem('Notificaciones', Icons.notifications_rounded),
@@ -952,6 +959,10 @@ class _HomeMenuDrawer extends StatelessWidget {
     _HomeMenuItem('Salón de la fama', Icons.workspace_premium_rounded),
     _HomeMenuItem('Planes', Icons.workspace_premium_outlined),
   ];
+
+  static List<_HomeMenuItem> get _items => kFanPlansVisible
+      ? _allItems
+      : _allItems.where((item) => item.label != 'Planes').toList();
 
   @override
   Widget build(BuildContext context) {

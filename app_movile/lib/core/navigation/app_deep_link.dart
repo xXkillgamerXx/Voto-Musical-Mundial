@@ -94,6 +94,8 @@ class AppDeepLinkService {
   static String? pathFromUri(Uri uri) {
     final host = uri.host.toLowerCase();
     final isWebHost =
+        host == 'www.musicmundial.com' ||
+        host == 'musicmundial.com' ||
         host == 'vote.musicmundial.com' ||
         host == 'www.vote.musicmundial.com' ||
         host.isEmpty;
@@ -115,6 +117,12 @@ class AppDeepLinkService {
 
     if (!path.startsWith('/')) {
       path = '/$path';
+    }
+
+    // Web canónica: /vote/votacion/... → path interno de la app.
+    if (path.startsWith('/vote/')) {
+      path = path.substring('/vote'.length);
+      if (path.isEmpty) path = '/';
     }
 
     return path;

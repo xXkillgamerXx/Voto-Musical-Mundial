@@ -10,6 +10,7 @@ import '../../../artists/presentation/widgets/artist_avatar.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../../core/ads/banner_ad_widget.dart';
 import '../../../../core/ads/native_ad_widget.dart';
+import '../../../../core/fan/fan_features.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../polls/presentation/pages/poll_detail_page.dart';
 import '../../../polls/presentation/widgets/pulsing_stat_text.dart';
@@ -103,7 +104,10 @@ class _HomePageState extends State<HomePage> {
       limit: 100,
       forceRefresh: forceRefresh,
     );
-    final newsFuture = _newsApi.getLatestNews(forceRefresh: forceRefresh);
+    // News must not take down the whole home screen.
+    final newsFuture = _newsApi
+        .getLatestNews(forceRefresh: forceRefresh)
+        .catchError((_) => const <NewsItem>[]);
     final missionsFuture = _missionsApi.getMissions(forceRefresh: forceRefresh);
 
     final livePolls = await livePollsFuture;
@@ -485,9 +489,10 @@ class _HomePageState extends State<HomePage> {
               SliverToBoxAdapter(
                 child: DailyRewardBanner(authService: widget.authService),
               ),
-              SliverToBoxAdapter(
-                child: HomeFanPlansSection(authService: widget.authService),
-              ),
+              if (kFanPlansVisible)
+                SliverToBoxAdapter(
+                  child: HomeFanPlansSection(authService: widget.authService),
+                ),
               SliverToBoxAdapter(
                 child: MissionsSection(
                   authService: widget.authService,

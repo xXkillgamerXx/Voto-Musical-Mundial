@@ -77,6 +77,8 @@ const VOTE_ROOTS = new Set([
   'terms-and-conditions',
   'politica-de-privacidad',
   'privacy-policy',
+  'eliminar-cuenta',
+  'delete-account',
   'planes',
   'plans',
   'pago',

@@ -1,8 +1,9 @@
 class ApiConfig {
   ApiConfig._();
 
-  /// API de producción (vote.musicmundial.com).
-  static const productionApiUrl = 'https://vote.musicmundial.com/api';
+  /// API de producción actual (host 161 / www.musicmundial.com).
+  /// `vote.musicmundial.com` ya no resuelve; el stack vive en www.
+  static const productionApiUrl = 'https://www.musicmundial.com/api';
 
   /// URL activa. Por defecto = producción.
   /// Solo para desarrollo local:
@@ -16,6 +17,7 @@ class ApiConfig {
       baseUrl.replaceAll(RegExp(r'/api$'), '');
 
   static bool get isProduction =>
+      baseUrl.contains('www.musicmundial.com') ||
       baseUrl.contains('vote.musicmundial.com');
 
   /// Web / server OAuth client (aud del idToken que valida el backend).

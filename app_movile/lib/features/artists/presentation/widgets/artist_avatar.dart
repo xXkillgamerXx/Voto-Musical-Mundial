@@ -5,7 +5,7 @@ import '../../../../core/api/api_config.dart';
 import '../../data/artist.dart';
 
 const defaultArtistBanner =
-    'https://vote.musicmundial.com/uploads/admin/artist-banner/1782781525589-ceb83658-97de-42f4-9471-f0902c29c1c5.png';
+    'https://www.musicmundial.com/uploads/admin/artist-banner/1782781525589-ceb83658-97de-42f4-9471-f0902c29c1c5.png';
 
 String resolveArtistBanner(Artist artist) {
   final banner = resolveArtistMediaUrl(artist.banner);

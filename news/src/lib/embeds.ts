@@ -54,6 +54,27 @@ export const isEmbeddableUrl = (raw: string) => {
   )
 }
 
+/** First embeddable http(s) URL in plain text (tolerates trailing newlines). */
+export const firstEmbeddableUrl = (raw: string) => {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  if (/^https?:\/\/\S+$/i.test(text) && isEmbeddableUrl(text)) return cleanUrl(text)
+  const match = text.match(/https?:\/\/[^\s<>"']+/i)
+  const url = match?.[0] || ''
+  return url && isEmbeddableUrl(url) ? cleanUrl(url) : ''
+}
+
+/** Pull embed URL from pasted HTML (iframe src, blockquote cite, bare link). */
+export const embedUrlFromHtml = (html: string) => {
+  const raw = String(html || '')
+  if (!raw.trim()) return ''
+  const iframe = raw.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1]
+  if (iframe && isEmbeddableUrl(iframe)) return cleanUrl(iframe)
+  const href = raw.match(/<a\b[^>]*\bhref=["'](https?:\/\/[^"']+)["']/i)?.[1]
+  if (href && isEmbeddableUrl(href)) return cleanUrl(href)
+  return firstEmbeddableUrl(raw.replace(/<[^>]+>/g, ' '))
+}
+
 export const editorEmbedHtml = (raw: string) => {
   const href = cleanUrl(raw)
   const video = youtubeId(href)

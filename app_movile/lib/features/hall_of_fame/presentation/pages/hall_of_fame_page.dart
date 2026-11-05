@@ -94,7 +94,7 @@ class _HallOfFamePageState extends State<HallOfFamePage> {
   Future<void> _openPoll(HallOfFameEntry entry) async {
     final year = entry.year ?? entry.poll.year;
     final slug = entry.poll.slug.isNotEmpty ? entry.poll.slug : entry.poll.id;
-    final uri = Uri.parse('https://vote.musicmundial.com/votacion/$year/$slug');
+    final uri = Uri.parse('https://www.musicmundial.com/vote/votacion/$year/$slug');
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 

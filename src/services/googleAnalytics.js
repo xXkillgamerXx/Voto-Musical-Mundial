@@ -1,4 +1,5 @@
-const MEASUREMENT_IDS = ['G-MYCSLDGEHG', 'G-GSXPF4JEXS']
+/** Vote SPA property (Music Mundial news uses G-MYCSLDGEHG separately). */
+const MEASUREMENT_IDS = ['G-J5XQB5YM72']
 const PRIMARY_ID = MEASUREMENT_IDS[0]
 const CONSENT_KEY = 'vmm_cookie_consent'
 const CONSENT_CHANGE_EVENT = 'vmm-cookie-consent-change'

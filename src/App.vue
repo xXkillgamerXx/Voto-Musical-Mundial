@@ -44,6 +44,7 @@ const VerifyEmailPage = defineAsyncComponent(() => import('./pages/VerifyEmailPa
 const ResetPasswordPage = defineAsyncComponent(() => import('./pages/ResetPasswordPage.vue'))
 const TermsPage = defineAsyncComponent(() => import('./pages/TermsPage.vue'))
 const PrivacyPage = defineAsyncComponent(() => import('./pages/PrivacyPage.vue'))
+const DeleteAccountPage = defineAsyncComponent(() => import('./pages/DeleteAccountPage.vue'))
 const UserProfilePage = defineAsyncComponent(() => import('./pages/UserProfilePage.vue'))
 const AccountSettingsPage = defineAsyncComponent(() => import('./pages/AccountSettingsPage.vue'))
 const VersusEmbed = defineAsyncComponent(() => import('./pages/VersusEmbed.vue'))
@@ -65,6 +66,7 @@ const isVerifyEmailPage = computed(() => matchStaticRoute(currentPath.value, 've
 const isResetPasswordPage = computed(() => matchStaticRoute(currentPath.value, 'resetPassword'))
 const isTermsPage = computed(() => matchStaticRoute(currentPath.value, 'terms'))
 const isPrivacyPage = computed(() => matchStaticRoute(currentPath.value, 'privacy'))
+const isDeleteAccountPage = computed(() => matchStaticRoute(currentPath.value, 'deleteAccount'))
 const isPollsPage = computed(() => matchStaticRoute(currentPath.value, 'polls'))
 const isHallOfFamePage = computed(() => matchStaticRoute(currentPath.value, 'hallOfFame'))
 const isArtistsPage = computed(() => matchStaticRoute(currentPath.value, 'artists'))
@@ -90,7 +92,7 @@ const isEmbeddedPage = computed(() => {
 const isPlainPage = computed(() => isEmbeddedPage.value || isRegisterPage.value || isVerifyEmailPage.value || isResetPasswordPage.value || isVersusEmbedPage.value || isAdminPage.value)
 const shouldForceEmbedDarkTheme = computed(() => isEmbeddedPage.value || isVersusEmbedPage.value)
 const shouldShowDailyRewardModal = computed(
-  () => !isPlainPage.value && !isTermsPage.value && !isPrivacyPage.value,
+  () => !isPlainPage.value && !isTermsPage.value && !isPrivacyPage.value && !isDeleteAccountPage.value,
 )
 
 let savedThemeBeforeEmbed = null
@@ -343,6 +345,7 @@ onUnmounted(() => {
       <ResetPasswordPage v-else-if="isResetPasswordPage" />
       <TermsPage v-else-if="isTermsPage" />
       <PrivacyPage v-else-if="isPrivacyPage" />
+      <DeleteAccountPage v-else-if="isDeleteAccountPage" />
       <PollsPage v-else-if="isPollsPage" />
       <HallOfFamePage v-else-if="isHallOfFamePage" />
       <ArtistsPage v-else-if="isArtistsPage" />

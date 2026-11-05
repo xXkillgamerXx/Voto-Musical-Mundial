@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/fan/fan_features.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../../artists/data/artists_api.dart';
 import '../../artists/presentation/pages/artist_profile_page.dart';
 import '../../artists/presentation/pages/ranking_popularity_page.dart';
 import '../../auth/data/auth_service.dart';
 import '../../fan/presentation/pages/fan_store_page.dart';
-import '../../legal/presentation/pages/privacy_page.dart';
 import '../../hall_of_fame/presentation/pages/hall_of_fame_page.dart';
 import '../../home/presentation/pages/news_page.dart';
+import '../../legal/presentation/pages/privacy_page.dart';
 import '../../polls/presentation/pages/poll_detail_page.dart';
 import '../../users/presentation/pages/user_profile_page.dart';
-import '../../../core/widgets/app_snackbar.dart';
 import '../data/app_notification.dart';
 import '../presentation/pages/notifications_page.dart';
 import 'notification_controller.dart';
@@ -125,6 +126,9 @@ class NotificationDeepLink {
       case 'fan-store':
       case 'membresia':
       case 'membership':
+        if (!kFanPlansVisible) {
+          return;
+        }
         await Navigator.of(context).push<void>(
           MaterialPageRoute(
             builder: (_) => FanStorePage(authService: authService),

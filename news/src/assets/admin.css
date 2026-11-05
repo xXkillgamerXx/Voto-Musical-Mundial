@@ -1323,6 +1323,13 @@ html[data-theme='dark'] .na-ok {
   background: var(--card);
 }
 
+.na-wp-error {
+  margin: 0 0 8px;
+  color: #fda4af;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .na-wp-bar {
   position: sticky;
   top: 72px;

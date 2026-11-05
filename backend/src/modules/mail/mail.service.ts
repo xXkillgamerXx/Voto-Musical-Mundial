@@ -9,6 +9,10 @@ import {
   PASSWORD_RESET_LOGO_CID,
 } from './password-reset.email';
 import {
+  buildAccountDeletionEmail,
+  ACCOUNT_DELETION_LOGO_CID,
+} from './account-deletion.email';
+import {
   buildEmailVerificationEmail,
   EMAIL_VERIFICATION_LOGO_CID,
 } from './email-verification.email';
@@ -164,6 +168,37 @@ export class MailService implements OnModuleInit {
               filename: 'logo-votos.png',
               path: this.logoPath,
               cid: PASSWORD_RESET_LOGO_CID,
+              contentType: 'image/png',
+            },
+          ]
+        : undefined,
+    });
+  }
+
+  async sendAccountDeletionConfirm(input: {
+    to: string;
+    name: string;
+    confirmUrl: string;
+    locale?: string | null;
+  }) {
+    if (!this.transporter) {
+      throw new Error('SMTP no configurado.');
+    }
+
+    const { subject, text, html } = buildAccountDeletionEmail(input);
+
+    await this.sendMail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      kind: 'lifecycle',
+      attachments: this.logoPath
+        ? [
+            {
+              filename: 'logo-votos.png',
+              path: this.logoPath,
+              cid: ACCOUNT_DELETION_LOGO_CID,
               contentType: 'image/png',
             },
           ]

@@ -516,7 +516,7 @@ class WinnerCertificateView extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '◆ vote.musicmundial.com',
+                          '◆ www.musicmundial.com',
                           style: TextStyle(
                             color: Color(0xFFA1A1AA),
                             fontSize: 9,

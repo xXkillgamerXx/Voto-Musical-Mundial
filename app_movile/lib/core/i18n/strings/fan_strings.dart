@@ -305,6 +305,16 @@ const Map<String, Map<String, String>> fanStrings = {
     'en': 'How we use your data',
     'ko': '데이터 이용 방법',
   },
+  'settings.deleteAccount': {
+    'es': 'Eliminar cuenta',
+    'en': 'Delete account',
+    'ko': '계정 삭제',
+  },
+  'settings.deleteAccountSubtitle': {
+    'es': 'Solicita borrar tu cuenta y datos',
+    'en': 'Request account and data deletion',
+    'ko': '계정 및 데이터 삭제 요청',
+  },
   'privacy.loadError': {
     'es': 'No se pudo cargar la política de privacidad.',
     'en': 'Could not load the privacy policy.',

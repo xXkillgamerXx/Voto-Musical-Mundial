@@ -17,6 +17,7 @@ export const STATIC_ROUTES = {
   resetPassword: { es: '/recuperar-contrasena', en: '/reset-password' },
   terms: { es: '/terminos-y-condiciones', en: '/terms-and-conditions' },
   privacy: { es: '/politica-de-privacidad', en: '/privacy-policy' },
+  deleteAccount: { es: '/eliminar-cuenta', en: '/delete-account' },
   plans: { es: '/planes', en: '/plans' },
   checkout: { es: '/pago', en: '/checkout' },
 }

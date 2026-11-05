@@ -232,7 +232,7 @@ async function loadHomeFeed(force = false) {
     )
     kpopFeatureStories.value = (feed?.kpop || []).slice(0, 3).map((post: NewsCard) => asStory(post, '/images/jungkook-hero.jpg', 'card'))
     kpopMoreStories.value = (feed?.kpop || []).slice(3, 6).map((post: NewsCard) => asStory(post, '/images/jungkook-hero.jpg', 'thumb'))
-    moreStories.value = (feed?.more || []).map((post: NewsCard) => asStory(post, '/images/katseye.jpg', 'thumb'))
+    moreStories.value = (feed?.more || []).map((post: NewsCard) => asStory(post, '/images/katseye.jpg', 'card'))
     screenLeadStory.value = feed?.series?.[0]
       ? asStory(feed.series[0], '/images/teach-you.jpg', 'card')
       : { category: '', title: '', image: '/images/teach-you.jpg', alt: '', meta: '' }

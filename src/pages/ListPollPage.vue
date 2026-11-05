@@ -5473,14 +5473,14 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="voteModalContestant"
-        class="fixed inset-0 z-90 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-md"
+        class="fixed inset-0 z-90 flex items-end justify-center overflow-y-auto overscroll-contain bg-black/75 px-3 py-3 backdrop-blur-md sm:items-center sm:px-4 sm:py-6"
         @click.self="closeVoteModal"
       >
         <div
-          class="w-full max-w-lg overflow-hidden rounded-4xl border border-fuchsia-300/30 bg-[#090b19] text-white shadow-2xl shadow-fuchsia-950/50"
+          class="my-auto w-full max-w-lg max-h-[min(92dvh,920px)] overflow-y-auto overscroll-contain rounded-4xl border border-fuchsia-300/30 bg-[#090b19] text-white shadow-2xl shadow-fuchsia-950/50"
           @click.stop
         >
-          <div class="relative p-5 sm:p-6">
+          <div class="relative p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-6">
             <div
               class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,0.22),transparent_32%),radial-gradient(circle_at_95%_100%,rgba(34,211,238,0.18),transparent_34%)]"
             ></div>
@@ -5749,17 +5749,12 @@ onUnmounted(() => {
                   {{ errorMessage }}
                 </p>
 
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    class="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10"
-                    @click="closeVoteModal"
-                  >
-                    {{ $t("common.actions.cancel") }}
-                  </button>
+                <div
+                  class="sticky bottom-0 z-20 -mx-5 mt-1 grid gap-3 border-t border-white/10 bg-[#090b19]/95 px-5 pt-3 backdrop-blur sm:-mx-6 sm:grid-cols-2 sm:px-6"
+                >
                   <button
                     type="submit"
-                    class="min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                    class="order-1 min-h-12 rounded-2xl bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-fuchsia-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2"
                     :disabled="
                       isVoting === getContestantArtistId(voteModalContestant) ||
                       (isAnonymousVotingFlow
@@ -5788,6 +5783,13 @@ onUnmounted(() => {
                                 count: normalizedVoteAmount.toLocaleString("es"),
                               })
                     }}
+                  </button>
+                  <button
+                    type="button"
+                    class="order-2 min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 text-sm font-black text-slate-200 transition hover:bg-white/10 sm:order-1"
+                    @click="closeVoteModal"
+                  >
+                    {{ $t("common.actions.cancel") }}
                   </button>
                 </div>
               </form>

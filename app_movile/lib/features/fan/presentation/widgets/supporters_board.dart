@@ -1,12 +1,13 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/fan/fan_features.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../data/fan_api.dart';
 import '../../data/fan_models.dart';
-import 'fan_badge.dart';
 import '../pages/fan_store_page.dart';
+import 'fan_badge.dart';
 
 class SupportersBoard extends StatefulWidget {
   const SupportersBoard({
@@ -48,19 +49,20 @@ class _SupportersBoardState extends State<SupportersBoard> {
                 ),
               ),
             ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute(
-                    builder: (_) => FanStorePage(
-                      authService: widget.authService,
-                      preselectedArtistId: widget.artistId,
+            if (kFanPlansVisible)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                      builder: (_) => FanStorePage(
+                        authService: widget.authService,
+                        preselectedArtistId: widget.artistId,
+                      ),
                     ),
-                  ),
-                );
-              },
-              child: Text(tr('fan.supportCta')),
-            ),
+                  );
+                },
+                child: Text(tr('fan.supportCta')),
+              ),
           ],
         ),
         const SizedBox(height: 8),

@@ -1,5 +1,5 @@
 # Ejecuta la app móvil contra la API de producción.
-# No pasa API_BASE_URL → usa https://vote.musicmundial.com/api
+# No pasa API_BASE_URL → usa https://www.musicmundial.com/api
 # GIPHY: usa $env:GIPHY_API_KEY, $env:VITE_GIPHY_API_KEY o .env del repo.
 
 Set-Location $PSScriptRoot

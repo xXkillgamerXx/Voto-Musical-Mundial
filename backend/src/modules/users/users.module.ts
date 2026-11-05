@@ -1,13 +1,14 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AdminModule } from '../admin/admin.module';
 import { MissionProgressModule } from '../missions/mission-progress.module';
+import { AccountDeletionController } from './account-deletion.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { FanModule } from '../fan/fan.module';
 
 @Module({
   imports: [MissionProgressModule, FanModule, forwardRef(() => AdminModule)],
-  controllers: [UsersController],
+  controllers: [UsersController, AccountDeletionController],
   providers: [UsersService],
   exports: [UsersService],
 })

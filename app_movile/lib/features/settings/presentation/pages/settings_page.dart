@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/fan/fan_features.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/tr.dart';
 import '../../../../core/widgets/app_snackbar.dart';
@@ -9,6 +11,8 @@ import '../../../fan/presentation/pages/membership_page.dart';
 import '../../../legal/presentation/pages/privacy_page.dart';
 import '../../../users/data/users_api.dart';
 import '../../../users/presentation/pages/edit_profile_page.dart';
+
+const _accountDeletionUrl = 'https://www.musicmundial.com/eliminar-cuenta/';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({required this.authService, super.key});
@@ -108,38 +112,40 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
-            const SizedBox(height: 12),
-            _SettingsCard(
-              child: _SettingsTile(
-                icon: Icons.workspace_premium_outlined,
-                title: tr('settings.membership'),
-                subtitle: tr('settings.membershipSubtitle'),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          MembershipPage(authService: widget.authService),
-                    ),
-                  );
-                },
+            if (kFanPlansVisible) ...[
+              const SizedBox(height: 12),
+              _SettingsCard(
+                child: _SettingsTile(
+                  icon: Icons.workspace_premium_outlined,
+                  title: tr('settings.membership'),
+                  subtitle: tr('settings.membershipSubtitle'),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            MembershipPage(authService: widget.authService),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _SettingsCard(
-              child: _SettingsTile(
-                icon: Icons.storefront_outlined,
-                title: tr('fan.storeTitle'),
-                subtitle: tr('fan.seePlans'),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          FanStorePage(authService: widget.authService),
-                    ),
-                  );
-                },
+              const SizedBox(height: 12),
+              _SettingsCard(
+                child: _SettingsTile(
+                  icon: Icons.storefront_outlined,
+                  title: tr('fan.storeTitle'),
+                  subtitle: tr('fan.seePlans'),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            FanStorePage(authService: widget.authService),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
+            ],
             const SizedBox(height: 12),
             _SettingsCard(
               child: _SettingsTile(
@@ -153,6 +159,18 @@ class _SettingsPageState extends State<SettingsPage> {
                           PrivacyPage(authService: widget.authService),
                     ),
                   );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SettingsCard(
+              child: _SettingsTile(
+                icon: Icons.delete_forever_outlined,
+                title: tr('settings.deleteAccount'),
+                subtitle: tr('settings.deleteAccountSubtitle'),
+                onTap: () async {
+                  final uri = Uri.parse(_accountDeletionUrl);
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
                 },
               ),
             ),

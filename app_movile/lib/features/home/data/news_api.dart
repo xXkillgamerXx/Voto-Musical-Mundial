@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../../core/api/api_config.dart';
 import '../../../core/cache/response_cache.dart';
 import '../../../core/i18n/tr.dart';
 
@@ -51,8 +52,6 @@ class NewsPageResult {
 }
 
 class NewsApi {
-  static const _baseHost = 'www.musicmundial.com';
-  static const _postsPath = '/wp-json/wp/v2/posts';
   static const _cacheTtl = Duration(minutes: 10);
 
   static const _gradients = [
@@ -150,19 +149,26 @@ class NewsApi {
     final safePage = page < 1 ? 1 : page;
     final safePerPage = perPage.clamp(1, 100);
     final query = <String, String>{
-      'per_page': '$safePerPage',
+      'limit': '$safePerPage',
       'page': '$safePage',
-      '_embed': '1',
+      'locale': 'es',
     };
 
     final trimmedSearch = search.trim();
     if (trimmedSearch.isNotEmpty) {
-      query['search'] = trimmedSearch;
+      query['q'] = trimmedSearch;
     }
 
     try {
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}/news/posts',
+      ).replace(queryParameters: query);
       final response = await http.get(
-        Uri.https(_baseHost, _postsPath, query),
+        uri,
+        headers: const {
+          'Accept': 'application/json',
+          'X-Vmm-Client': 'mobile-app',
+        },
       );
 
       if (response.statusCode == 400 && safePage > 1) {
@@ -178,20 +184,24 @@ class NewsApi {
       }
 
       final payload = jsonDecode(response.body);
-      if (payload is! List) {
+      if (payload is! Map<String, dynamic>) {
         throw NewsApiException(tr('data.newsInvalidResponse'));
       }
 
-      final items = payload
+      final rawItems = payload['items'];
+      if (rawItems is! List) {
+        throw NewsApiException(tr('data.newsInvalidResponse'));
+      }
+
+      final items = rawItems
           .whereType<Map<String, dynamic>>()
-          .map(_mapPost)
+          .map(_mapApiPost)
           .where((item) => item.title.isNotEmpty)
           .toList(growable: false);
 
-      final total = _headerInt(response.headers, 'x-wp-total') ?? items.length;
+      final total = _toInt(payload['total'], fallback: items.length);
       final totalPages =
-          _headerInt(response.headers, 'x-wp-totalpages') ??
-          (total == 0 ? 1 : ((total + safePerPage - 1) / safePerPage).ceil());
+          total == 0 ? 1 : ((total + safePerPage - 1) / safePerPage).ceil();
 
       return NewsPageResult(
         items: items,
@@ -212,7 +222,7 @@ class NewsApi {
     required String search,
   }) {
     final normalizedSearch = search.trim().toLowerCase();
-    return 'news::$page::$perPage::$normalizedSearch';
+    return 'news::api::$page::$perPage::$normalizedSearch';
   }
 
   NewsPageResult _pageResultFromCache(Map<String, dynamic> payload) {
@@ -264,34 +274,23 @@ class NewsApi {
     return int.tryParse('$value') ?? fallback;
   }
 
-  NewsItem _mapPost(Map<String, dynamic> post) {
-    final embedded = post['_embedded'];
-    final featuredMedia = embedded is Map<String, dynamic>
-        ? (embedded['wp:featuredmedia'] as List<dynamic>? ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .firstOrNull
-        : null;
-    final terms = embedded is Map<String, dynamic>
-        ? (embedded['wp:term'] as List<dynamic>? ?? const [])
-            .expand((entry) => entry is List ? entry : const [])
-            .whereType<Map<String, dynamic>>()
-            .toList(growable: false)
-        : const <Map<String, dynamic>>[];
-
-    var tag = 'News';
-    for (final term in terms) {
-      if (term['taxonomy'] == 'category') {
-        tag = _stripHtml('${term['name'] ?? tag}');
-        break;
-      }
-    }
-
-    final title = _stripHtml('${post['title']?['rendered'] ?? ''}');
-    final description = _stripHtml('${post['excerpt']?['rendered'] ?? ''}');
-    final link = '${post['link'] ?? 'https://www.musicmundial.com/'}';
-    final rawDateString = '${post['date_gmt'] ?? post['date'] ?? ''}';
-    final imageUrl = '${featuredMedia?['source_url'] ?? ''}';
-    final rawDate = DateTime.tryParse(rawDateString);
+  NewsItem _mapApiPost(Map<String, dynamic> post) {
+    final title = _stripHtml('${post['title'] ?? ''}');
+    final description = _stripHtml('${post['excerpt'] ?? ''}');
+    final href = '${post['href'] ?? ''}'.trim();
+    final link = href.isEmpty
+        ? 'https://www.musicmundial.com/'
+        : href.startsWith('http')
+            ? href
+            : 'https://www.musicmundial.com$href';
+    final cover = '${post['coverUrl'] ?? ''}'.trim();
+    final imageUrl = cover.isEmpty
+        ? ''
+        : cover.startsWith('http')
+            ? cover
+            : '${ApiConfig.uploadsOrigin}$cover';
+    final tag = _stripHtml('${post['category'] ?? post['categorySlug'] ?? 'News'}');
+    final rawDate = DateTime.tryParse('${post['publishedAt'] ?? ''}');
 
     return NewsItem(
       title: title.isEmpty ? 'Noticia' : title,
@@ -307,15 +306,6 @@ class NewsApi {
 
   static List<int> gradientColorsFor(int index) =>
       _gradients[index % _gradients.length];
-
-  static int? _headerInt(Map<String, String> headers, String key) {
-    final value = headers[key];
-    if (value == null) {
-      return null;
-    }
-
-    return int.tryParse(value);
-  }
 }
 
 class NewsApiException implements Exception {
@@ -365,15 +355,4 @@ String _formatDate(DateTime? date) {
   final minute = local.minute.toString().padLeft(2, '0');
 
   return '${local.day} $month ${local.year}, $hour:$minute';
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final iterator = this.iterator;
-    if (!iterator.moveNext()) {
-      return null;
-    }
-
-    return iterator.current;
-  }
 }
