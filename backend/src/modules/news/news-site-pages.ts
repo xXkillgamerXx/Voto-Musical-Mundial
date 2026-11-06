@@ -20,21 +20,21 @@ export const SITE_PAGES: SitePageDef[] = [
     esTitle: 'Sobre nosotros',
     enTitle: 'About us',
     esHtml: `<h2>Titular del Sitio Web</h2>
-<p><strong>Razón Social:</strong> Starflare Group S.A.S<br/>
-<strong>NIT:</strong> 902024591<br/>
-<strong>Denominación comercial:</strong> Music Mundial – Music Mundial News<br/>
-<strong>Domicilio fiscal:</strong> CL 9E NRO 6A-90 PISO 3 PRADOS DEL ESTE, Cúcuta, Norte de Santander, Colombia.<br/>
-<strong>Contacto:</strong> <a href="mailto:hola@musicmundial.com">hola@musicmundial.com</a></p>
+<p><strong>Razón Social:</strong> Starflare Group S.A.S</p>
+<p><strong>NIT:</strong> 902024591</p>
+<p><strong>Denominación comercial:</strong> Music Mundial – Music Mundial News</p>
+<p><strong>Domicilio fiscal:</strong> CL 9E NRO 6A-90 PISO 3 PRADOS DEL ESTE, Cúcuta, Norte de Santander, Colombia.</p>
+<p><strong>Contacto:</strong> <a href="mailto:hola@musicmundial.com">hola@musicmundial.com</a></p>
 <p>Music Mundial es un sitio web internacional de noticias de entretenimiento fundado en 2012, creado para ofrecer una cobertura precisa, atractiva y de alta calidad de la industria musical global, el cine y los principales eventos culturales que dan forma a la cultura pop. Desde sus inicios, Music Mundial nació con la misión de informar a las audiencias de todo el mundo y construir un espacio confiable donde los lectores puedan acceder a diversas perspectivas sobre el entretenimiento.</p>
 <p>Con más de una década de presencia continua en línea, nuestra plataforma ha consolidado una audiencia fiel que valora la credibilidad y la responsabilidad. Music Mundial publica tanto en español como en inglés, ofreciendo contenido accesible y relevante adaptado a públicos internacionales. Nuestro equipo editorial está conformado por escritores, traductores y analistas culturales con experiencia en música, cine y periodismo de entretenimiento.</p>
 <p>Nuestro proceso editorial prioriza la claridad, la transparencia y la precisión. Toda la información es cuidadosamente validada a través de fuentes oficiales, referencias de la industria y revisión editorial. Seguimos comprometidos con el periodismo ético, la independencia y la excelencia informativa.</p>
 <p>[contact-form]</p>`,
-    enHtml: `<h2>Website Owner</h2>
-<p><strong>Legal name:</strong> Starflare Group S.A.S<br/>
-<strong>Tax ID (NIT):</strong> 902024591<br/>
-<strong>Trade name:</strong> Music Mundial – Music Mundial News<br/>
-<strong>Address:</strong> CL 9E NRO 6A-90 PISO 3 PRADOS DEL ESTE, Cúcuta, Norte de Santander, Colombia.<br/>
-<strong>Contact:</strong> <a href="mailto:hola@musicmundial.com">hola@musicmundial.com</a></p>
+    enHtml: `<h2>Website &amp; APPs Owner</h2>
+<p><strong>Legal Name:</strong> Starflare Group S.A.S</p>
+<p><strong>Tax ID (NIT):</strong> 902024591</p>
+<p><strong>Trade Name:</strong> Music Mundial – Music Mundial News</p>
+<p><strong>Registered Address:</strong> CL 9E NRO 6A-90 PISO 3 PRADOS DEL ESTE, Cúcuta, Norte de Santander, Colombia.</p>
+<p><strong>Contact:</strong> <a href="mailto:hola@musicmundial.com">hola@musicmundial.com</a></p>
 <p>Music Mundial is an international entertainment news site founded in 2012 to deliver accurate, engaging coverage of global music, film and pop culture. We publish in Spanish and English for readers worldwide.</p>
 <p>Our editorial process prioritizes clarity, transparency and accuracy. We remain committed to ethical journalism, independence and trustworthy reporting.</p>
 <p>[contact-form]</p>`,

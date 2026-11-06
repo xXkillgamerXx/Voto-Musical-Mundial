@@ -78,7 +78,7 @@ export class NewsController {
     @CurrentUser() user: { id: bigint },
     @Query('locale') locale?: string,
   ) {
-    return this.news.createComment(slug, locale, user, body.text, body.parentId);
+    return this.news.createComment(slug, locale, user, body.text || '', body.parentId, body.gif);
   }
 
   @Post('posts/:slug/comments/:id/vote')

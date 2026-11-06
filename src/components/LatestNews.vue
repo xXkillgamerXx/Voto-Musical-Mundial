@@ -106,7 +106,7 @@ watch(locale, loadNews)
         class="group flex h-full overflow-hidden rounded-3xl border border-violet-300/10 bg-[#090b19]/85 shadow-xl shadow-violet-950/25 transition hover:-translate-y-1 hover:border-fuchsia-300/30"
       >
         <a :href="item.link" class="flex h-full min-h-full w-full flex-col">
-          <div class="relative h-48 overflow-hidden bg-linear-to-br" :class="item.visual">
+          <div class="on-dark-media relative h-48 overflow-hidden bg-linear-to-br" :class="item.visual">
             <img
               v-if="item.image"
               :src="item.image"

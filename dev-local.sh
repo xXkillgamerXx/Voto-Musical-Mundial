@@ -7,15 +7,16 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")" && pwd)"
-key="${VMM_SSH_KEY:-$HOME/.ssh/vmm_server}"
-ssh_host="213.136.69.57"
+ssh_host="161.97.154.152"
 ssh_port="2981"
 ssh_user="root"
-frontend_port=5173
+frontend_port=5174
 api_port=4000
 tunnel_pid=""
 api_pid=""
 worker_pid=""
+tunnel_script="$root/deploy/new_musicmundial/scripts/ssh_tunnel_prod.py"
+env_contabo="$root/deploy/new_musicmundial/.env.contabo"
 
 cyan() { printf '\033[36m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -72,15 +73,24 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-if [ ! -f "$key" ]; then
-  red "No se encontro la llave SSH en $key"
-  gray "Copia la llave vmm_server a ~/.ssh/vmm_server (chmod 600) o define VMM_SSH_KEY."
-  exit 1
-fi
-
 if [ ! -f "$root/backend/.env" ]; then
   red "Falta backend/.env"
   gray "Copia backend/.env.example a backend/.env y ajusta los secretos de produccion."
+  exit 1
+fi
+
+if [ -z "${NMM_SSH_PASSWORD:-}" ] && [ -f "$env_contabo" ]; then
+  NMM_SSH_PASSWORD="$(grep -E '^\s*NMM_SSH_PASSWORD\s*=' "$env_contabo" | tail -n1 | cut -d= -f2- | tr -d "\"'" | xargs || true)"
+  export NMM_SSH_PASSWORD
+fi
+
+if [ -z "${NMM_SSH_PASSWORD:-}" ]; then
+  red "Define NMM_SSH_PASSWORD (root @ ${ssh_host}) o agregalo en deploy/new_musicmundial/.env.contabo"
+  exit 1
+fi
+
+if [ ! -f "$tunnel_script" ]; then
+  red "No se encontro el script de tunel: $tunnel_script"
   exit 1
 fi
 
@@ -89,22 +99,15 @@ if [ ! -d "$root/backend/node_modules" ]; then
   (cd "$root/backend" && npm install)
 fi
 
-cyan "=== Entorno local (DB produccion via tunel SSH) ==="
+cyan "=== Entorno local (DB produccion via tunel SSH @ ${ssh_host}) ==="
 
 if ! port_listening 5432 || ! port_listening 6379; then
-  cyan "1/4  Abriendo tunel SSH (PostgreSQL 5432 + Redis 6379)..."
-  ssh -N \
-    -L 127.0.0.1:5432:127.0.0.1:5432 \
-    -L 127.0.0.1:6379:127.0.0.1:6379 \
-    -p "$ssh_port" \
-    -i "$key" \
-    -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=30 \
-    "${ssh_user}@${ssh_host}" &
+  cyan "1/4  Abriendo tunel SSH (PostgreSQL 5432 -> 5433 + Redis nmm-redis)..."
+  py -3 "$tunnel_script" &
   tunnel_pid=$!
 
   if ! wait_port 5432 || ! wait_port 6379; then
-    red "No se pudo abrir el tunel SSH a produccion."
+    red "No se pudo abrir el tunel SSH a produccion (${ssh_user}@${ssh_host}:${ssh_port})."
     exit 1
   fi
 else
@@ -156,7 +159,7 @@ green "Listo:"
 green "  Web:  http://localhost:${frontend_port}"
 green "  API:  http://localhost:${api_port}/api/health"
 green "  Worker: bots + vote-sync"
-yellow "  DB:   produccion via tunel SSH (5432/6379)"
+yellow "  DB:   produccion 161 via tunel SSH (5432->nmm-postgres, 6379->nmm-redis)"
 echo
 gray "Ctrl+C cierra el frontend, la API, el worker y el tunel."
 echo

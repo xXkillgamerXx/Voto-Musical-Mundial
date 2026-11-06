@@ -19,7 +19,9 @@ import {
   categoryHref,
   coverErrorFallback,
   coverOf,
+  FORUM_ENABLED,
   formatNewsDate,
+  isForumPath,
   parseNewsPage,
   toCategoryCard,
   type NewsCard,
@@ -175,7 +177,6 @@ function asStory(post: NewsCard, fallbackImage: string, size: NewsImageSize = 'c
 function clearHomeFeed() {
   slides.value = []
   homeCards.value = []
-  trends.value = []
   entertainmentStories.value = []
   kpopFeatureStories.value = []
   kpopMoreStories.value = []
@@ -216,14 +217,6 @@ async function loadHomeFeed(force = false) {
       title: post.title,
       date: formatNewsDate(post.publishedAt, fromFeed),
       image: coverOf(post, '/images/jungkook-hero.jpg', 'card'),
-      alt: post.title,
-      href: post.href,
-    }))
-    trends.value = (feed?.trends || []).map((post: NewsCard) => ({
-      tag: post.category,
-      title: post.title,
-      date: formatNewsDate(post.publishedAt, fromFeed),
-      image: coverOf(post, '/images/jungkook-hero.jpg', 'thumb'),
       alt: post.title,
       href: post.href,
     }))
@@ -279,6 +272,9 @@ function queueAnalyticsHit() {
 
 function syncNewsPage(opts?: { keepScroll?: boolean }) {
   ensureLocalePath()
+  if (!FORUM_ENABLED && isForumPath(window.location.pathname)) {
+    window.history.replaceState(null, '', withLocale('/', localeFromPath(window.location.pathname)))
+  }
   newsPage.value = parseNewsPage()
   document.documentElement.lang = newsPage.value.locale
   if (newsPage.value.name === 'admin') {
@@ -439,7 +435,6 @@ onUnmounted(() => {
 })
 
 const homeCards = ref<Array<{ tags: string[]; title: string; date: string; image: string; alt: string; href?: string }>>([])
-const trends = ref<Array<{ tag: string; title: string; date: string; image: string; alt: string; href?: string }>>([])
 const entertainmentStories = ref<Story[]>([])
 const kpopFeatureStories = ref<Story[]>([])
 const kpopMoreStories = ref<Story[]>([])
@@ -750,7 +745,7 @@ onUnmounted(() => {
         <a :href="loc('/celebridades')" @click="closeMenu">{{ txt('navPopular') }}</a>
         <a :href="loc('/series')" @click="closeMenu">{{ txt('navSeries') }}</a>
         <a href="/vote/" @click="closeMenu">{{ txt('navVote') }}</a>
-        <a :class="{ active: newsPage.name === 'forum' }" :href="loc('/forum')" @click="closeMenu">{{ txt('navForum') }}</a>
+        <a v-if="FORUM_ENABLED" :class="{ active: newsPage.name === 'forum' }" :href="loc('/forum')" @click="closeMenu">{{ txt('navForum') }}</a>
         <template v-if="!isSignedIn">
           <button class="nav-auth" type="button" @click="openAuth('login')">{{ txt('navLogin') }}</button>
           <button class="nav-auth nav-auth-solid" type="button" @click="openAuth('register')">{{ txt('navRegister') }}</button>
@@ -864,18 +859,6 @@ onUnmounted(() => {
           <button class="auth-login" type="button" @click="openAuth('login')">{{ txt('navLogin') }}</button>
           <button class="auth-register" type="button" @click="openAuth('register')">{{ txt('navRegister') }}</button>
         </div>
-        <button
-          v-if="!isSignedIn"
-          class="avatar auth-avatar"
-          type="button"
-          :aria-label="txt('navLogin')"
-          @click="openAuth('login')"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="9" r="3.2" />
-            <path d="M5.5 19.2c1.6-3.2 3.8-4.7 6.5-4.7s4.9 1.5 6.5 4.7" />
-          </svg>
-        </button>
         <div v-if="isSignedIn" class="icon-pop account-slot">
           <button
             class="avatar"
@@ -952,13 +935,19 @@ onUnmounted(() => {
           <span class="skel home-boot-btn"></span>
         </div>
       </article>
-      <div class="home-cards">
-        <div v-for="n in 3" :key="'home-skel-' + n" class="mini-card">
-          <div class="mini-card-photo skel"></div>
-          <span class="skel skel-line home-boot-line"></span>
-          <span class="skel skel-meta home-boot-meta"></span>
+      <section class="home-latest">
+        <div class="home-latest-head">
+          <span class="skel home-boot-head"></span>
+          <span class="skel skel-meta"></span>
         </div>
-      </div>
+        <div class="home-cards">
+          <div v-for="n in 8" :key="'home-skel-' + n" class="mini-card">
+            <div class="mini-card-photo skel"></div>
+            <span class="skel skel-line home-boot-line"></span>
+            <span class="skel skel-meta home-boot-meta"></span>
+          </div>
+        </div>
+      </section>
       <section class="entertain home-boot-ent">
         <div class="entertain-head">
           <span class="skel skel-title two"></span>
@@ -978,20 +967,6 @@ onUnmounted(() => {
         </div>
       </section>
       <aside class="home-rail">
-        <section class="trend-card">
-          <div class="trend-head">
-            <span class="skel home-boot-head"></span>
-            <span class="skel skel-meta"></span>
-          </div>
-          <div v-for="n in 5" :key="'trend-skel-' + n" class="trend-row home-boot-trend">
-            <span class="skel"></span>
-            <span class="skel"></span>
-            <div>
-              <span class="skel skel-line"></span>
-              <span class="skel skel-meta"></span>
-            </div>
-          </div>
-        </section>
         <section class="spotify-band home-boot-spotify skel"></section>
       </aside>
     </div>
@@ -1013,18 +988,24 @@ onUnmounted(() => {
           </div>
         </article>
 
-        <div class="home-cards rise">
-          <a v-for="card in homeCards" :key="card.title" class="mini-card" :href="postHref(card)">
-            <div class="mini-card-photo">
-              <img :src="card.image" :alt="card.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
-              <span class="tag-row">
-                <span v-for="tag in card.tags" :key="tag" class="pill">{{ tag }}</span>
-              </span>
-            </div>
-            <h2>{{ card.title }}</h2>
-            <time>{{ card.date }}</time>
-          </a>
-        </div>
+        <section class="home-latest rise">
+          <div class="home-latest-head">
+            <h2>{{ txt('latestNews') }}</h2>
+            <a :href="loc('/')">{{ txt('seeAllArrow') }}</a>
+          </div>
+          <div class="home-cards">
+            <a v-for="card in homeCards" :key="card.title" class="mini-card" :href="postHref(card)">
+              <div class="mini-card-photo">
+                <img :src="card.image" :alt="card.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
+                <span class="tag-row">
+                  <span v-for="tag in card.tags" :key="tag" class="pill">{{ tag }}</span>
+                </span>
+              </div>
+              <h2>{{ card.title }}</h2>
+              <time>{{ card.date }}</time>
+            </a>
+          </div>
+        </section>
 
         <section class="entertain rise" id="dramas">
           <div class="entertain-head cats-head">
@@ -1059,26 +1040,6 @@ onUnmounted(() => {
         </section>
 
       <aside class="home-rail rise">
-      <section class="trend-card">
-          <div class="trend-head">
-            <h2>
-              <svg class="flame" viewBox="0 0 16 20" aria-hidden="true">
-                <path d="M8.1.2c.5 3.4-1.8 5.2-2.9 7.4-.7-.8-1-2-1-2C2.5 7.4 1 9.7 1 12.4 1 16.2 4.1 19.2 8 19.2s7-3 7-6.8c0-3.5-2.3-6-3.7-8-.2 1.8-1.1 3-2.1 3.3.6-2.2 1-4.8-1.1-7.5z" />
-              </svg>
-              {{ txt('trends') }}
-            </h2>
-            <a :href="loc('/viral')">{{ txt('seeAllArrow') }}</a>
-          </div>
-          <a v-for="(item, index) in trends" :key="item.title" class="trend-row" :href="postHref(item)">
-            <span>{{ index + 1 }}</span>
-            <img :src="item.image" :alt="item.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
-            <div>
-              <small :class="item.tag.toLowerCase()">{{ item.tag }}</small>
-              <h3>{{ item.title }}</h3>
-              <time>{{ item.date }}</time>
-            </div>
-          </a>
-        </section>
         <section class="spotify-band">
           <iframe
             data-testid="embed-iframe"
@@ -1143,7 +1104,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="section container forum-home rise" id="foro">
+    <section v-if="FORUM_ENABLED" class="section container forum-home rise" id="foro">
       <div class="cats-head">
         <div>
           <div class="cats-eyebrow">{{ txt('navForum') }}</div>
@@ -1374,7 +1335,7 @@ onUnmounted(() => {
         <a :href="loc('/k-drama')">K-Dramas</a>
         <a :href="loc('/celebridades')">{{ txt('celebrities') }}</a>
         <a href="/vote/">{{ txt('navVote') }}</a>
-        <a :href="loc('/forum')">{{ txt('navForum') }}</a>
+        <a v-if="FORUM_ENABLED" :href="loc('/forum')">{{ txt('navForum') }}</a>
       </nav>
       <nav class="foot-col foot-sitemap" :aria-label="txt('footerSitemap')">
         <strong>{{ txt('footerSitemap') }}</strong>

@@ -1392,10 +1392,36 @@ html[data-theme='dark'] .na-ok {
 }
 
 .na-wp-html {
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: ui-monospace, Consolas, 'Cascadia Mono', monospace;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
   resize: vertical;
+  background: #0f172a;
+  color: #e2e8f0;
+  caret-color: #93c5fd;
+}
+
+.na-wp-tabs .na-wp-format {
+  margin-left: 4px;
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+  color: var(--blue);
+}
+
+.na-wp-tabs .na-wp-advanced {
+  opacity: 0.72;
+  font-weight: 700;
+}
+
+.na-wp-hint {
+  margin: 0;
+  padding: 8px 24px 0;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .na-wp-visual:focus,
@@ -1403,8 +1429,28 @@ html[data-theme='dark'] .na-ok {
   outline: none;
 }
 
+/* Mirror published article spacing so writers see the real result. */
+.na-wp-visual {
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.na-wp-visual:empty::before,
+.na-wp-visual[data-placeholder]:not(:focus):has(> br:only-child)::before,
+.na-wp-visual[data-placeholder]:not(:focus):has(> p:only-child:empty)::before {
+  content: attr(data-placeholder);
+  color: color-mix(in srgb, var(--ink) 35%, transparent);
+  pointer-events: none;
+}
+
 .na-wp-visual p {
-  margin: 0 0 1em;
+  margin: 0 0 0.95em;
+}
+
+.na-wp-visual p br {
+  content: '';
+  display: block;
+  margin-top: 0.55em;
 }
 
 .na-wp-visual h2,

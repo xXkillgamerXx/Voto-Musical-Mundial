@@ -10,6 +10,8 @@ import NewsCommentReportModal from './NewsCommentReportModal.vue'
 
 type ReactionMap = { love: number; laugh: number; wow: number; fire: number }
 
+type CommentGif = { id?: string; url: string; previewUrl?: string; title: string; source?: string }
+
 type CommentItem = {
   id: string
   parentId?: string | null
@@ -17,6 +19,7 @@ type CommentItem = {
   authorUsername?: string
   authorPhotoUrl?: string
   body: string
+  gif?: CommentGif | null
   createdAt?: string
   score?: number
   myVote?: number
@@ -29,11 +32,12 @@ type CommentThread = {
   replies: CommentItem[]
 }
 
-type SortMode = 'best' | 'recent' | 'hot'
+type SortMode = 'best' | 'recent'
 type ReactionKey = 'love' | 'laugh' | 'wow' | 'fire'
 
 const PAGE_SIZE = 3
 const MAX_LEN = 800
+const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || ''
 const REACTIONS: Array<{ key: ReactionKey; emoji: string }> = [
   { key: 'love', emoji: '😍' },
   { key: 'laugh', emoji: '😂' },
@@ -64,6 +68,11 @@ const meName = ref('')
 const listAnimKey = ref(0)
 const reportOpen = ref(false)
 const reportCommentId = ref('')
+const isGifPickerOpen = ref(false)
+const isLoadingGifs = ref(false)
+const gifSearchTerm = ref('')
+const gifResults = ref<CommentGif[]>([])
+const selectedGif = ref<CommentGif | null>(null)
 
 const emptyReactions = (): ReactionMap => ({ love: 0, laugh: 0, wow: 0, fire: 0 })
 
@@ -112,6 +121,7 @@ const loadMe = async () => {
 const normalizeComment = (item: CommentItem): CommentItem => ({
   ...item,
   parentId: item.parentId ? String(item.parentId) : null,
+  gif: item.gif?.url ? { url: item.gif.url, title: item.gif.title || 'GIF', source: item.gif.source || 'giphy' } : null,
   score: Number(item.score || 0),
   myVote: Number(item.myVote || 0),
   reactions: {
@@ -132,13 +142,6 @@ const sortRoots = (list: CommentItem[]) => {
   if (sortMode.value === 'recent') {
     return copy.sort((a, b) => +new Date(b.createdAt || 0) - +new Date(a.createdAt || 0))
   }
-  if (sortMode.value === 'hot') {
-    return copy.sort(
-      (a, b) =>
-        reactionTotal(b) * 3 + Math.abs(scoreOf(b)) - (reactionTotal(a) * 3 + Math.abs(scoreOf(a))) ||
-        +new Date(b.createdAt || 0) - +new Date(a.createdAt || 0),
-    )
-  }
   return copy.sort(
     (a, b) =>
       reactionTotal(b) - reactionTotal(a) ||
@@ -146,6 +149,77 @@ const sortRoots = (list: CommentItem[]) => {
       +new Date(b.createdAt || 0) - +new Date(a.createdAt || 0),
   )
 }
+
+const normalizeGiphyResult = (gif: {
+  id?: string
+  title?: string
+  images?: Record<string, { url?: string } | undefined>
+}): CommentGif => ({
+  id: gif.id || '',
+  url: gif.images?.fixed_height?.url || gif.images?.original?.url || '',
+  previewUrl:
+    gif.images?.fixed_width_small_still?.url ||
+    gif.images?.fixed_height_small_still?.url ||
+    gif.images?.fixed_height?.url ||
+    '',
+  title: gif.title || 'GIF',
+  source: 'giphy',
+})
+
+const searchGifs = async (term = gifSearchTerm.value) => {
+  if (!GIPHY_API_KEY) {
+    errorMessage.value = t(loc.value, 'commentsGifMissingKey')
+    return
+  }
+  isLoadingGifs.value = true
+  errorMessage.value = ''
+  try {
+    const endpoint = term.trim()
+      ? 'https://api.giphy.com/v1/gifs/search'
+      : 'https://api.giphy.com/v1/gifs/trending'
+    const params = new URLSearchParams({
+      api_key: GIPHY_API_KEY,
+      limit: '12',
+      rating: 'pg-13',
+    })
+    if (term.trim()) {
+      params.set('q', term.trim())
+      params.set('lang', loc.value === 'en' ? 'en' : 'es')
+    }
+    const response = await fetch(`${endpoint}?${params.toString()}`)
+    if (!response.ok) throw new Error('giphy-error')
+    const payload = await response.json()
+    gifResults.value = (payload.data || [])
+      .map(normalizeGiphyResult)
+      .filter((gif: CommentGif) => gif.url)
+  } catch {
+    errorMessage.value = t(loc.value, 'commentsGifError')
+  } finally {
+    isLoadingGifs.value = false
+  }
+}
+
+const toggleGifPicker = () => {
+  isGifPickerOpen.value = !isGifPickerOpen.value
+  if (isGifPickerOpen.value && !gifResults.value.length) void searchGifs()
+}
+
+const closeGifPicker = () => {
+  isGifPickerOpen.value = false
+}
+
+const selectGif = (gif: CommentGif) => {
+  selectedGif.value = gif
+  closeGifPicker()
+}
+
+const clearSelectedGif = () => {
+  selectedGif.value = null
+}
+
+const canSend = computed(
+  () => !sending.value && (draft.value.trim().length >= 2 || Boolean(selectedGif.value?.url)),
+)
 
 const resolveParentId = (item: CommentItem, byId: Map<string, CommentItem>) => {
   if (item.parentId && byId.has(item.parentId)) return item.parentId
@@ -302,13 +376,17 @@ const startReply = async (item: CommentItem) => {
 const cancelReply = () => {
   replyTo.value = null
   if (draft.value.startsWith('@')) draft.value = ''
+  selectedGif.value = null
 }
 
 const shareComment = async (item: CommentItem) => {
   const url = `${window.location.origin}${window.location.pathname}#comment-${item.id}`
   try {
     if (navigator.share) {
-      await navigator.share({ url, text: item.body.slice(0, 120) })
+      await navigator.share({
+        url,
+        text: (item.body || item.gif?.title || '').slice(0, 120),
+      })
       return
     }
   } catch {
@@ -359,7 +437,10 @@ const clearSendFeedbackSoon = () => {
 
 const send = async () => {
   const text = draft.value.trim()
-  if (text.length < 2 || sending.value) return
+  const gif = selectedGif.value?.url
+    ? { url: selectedGif.value.url, title: selectedGif.value.title || 'GIF' }
+    : null
+  if ((text.length < 2 && !gif) || sending.value) return
   if (!ensureAuth()) return
   sending.value = true
   sendStatus.value = 'sending'
@@ -367,10 +448,11 @@ const send = async () => {
   errorMessage.value = ''
   try {
     const parentId = replyTo.value?.id || undefined
-    const created = await postNewsComment(props.slug, text.slice(0, MAX_LEN), loc.value, parentId)
+    const created = await postNewsComment(props.slug, text.slice(0, MAX_LEN), loc.value, parentId, gif)
     const next = normalizeComment(created)
     items.value = [...items.value, next]
     draft.value = ''
+    selectedGif.value = null
     replyTo.value = null
     sendStatus.value = 'ok'
     sendFeedback.value = t(loc.value, 'commentsSent')
@@ -439,9 +521,6 @@ onUnmounted(() => {
         <button type="button" role="tab" :class="{ on: sortMode === 'recent' }" @click="setSort('recent')">
           {{ t(loc, 'commentsSortRecent') }}
         </button>
-        <button type="button" role="tab" :class="{ on: sortMode === 'hot' }" @click="setSort('hot')">
-          {{ t(loc, 'commentsSortHot') }}
-        </button>
       </div>
     </div>
 
@@ -465,16 +544,32 @@ onUnmounted(() => {
           :disabled="sending"
           :aria-busy="sending"
         />
+        <div v-if="selectedGif" class="mm-composer-gif">
+          <div class="mm-composer-gif-media">
+            <img :src="selectedGif.url" :alt="selectedGif.title" />
+            <button type="button" :disabled="sending" @click="clearSelectedGif">{{ t(loc, 'commentsGifRemove') }}</button>
+          </div>
+          <p>{{ t(loc, 'commentsGifBy') }}</p>
+        </div>
         <div class="mm-composer-bar">
-          <div class="mm-composer-tools" aria-hidden="true">
+          <div class="mm-composer-tools">
             <button type="button" title="Bold" :disabled="sending" @click="wrapSelection('**')">B</button>
             <button type="button" title="Italic" :disabled="sending" @click="wrapSelection('_')"><i>I</i></button>
             <button type="button" title="Link" :disabled="sending" @click="wrapSelection('[', '](https://)')">🔗</button>
             <button type="button" title="List" :disabled="sending" @click="wrapSelection('\n- ', '')">≡</button>
+            <button
+              type="button"
+              class="mm-composer-gif-btn"
+              :title="t(loc, 'commentsGif')"
+              :disabled="sending"
+              @click="toggleGifPicker"
+            >
+              {{ t(loc, 'commentsGif') }}
+            </button>
           </div>
           <div class="mm-composer-actions">
             <span>{{ draft.length }}/{{ MAX_LEN }}</span>
-            <button class="mm-composer-send" type="button" :disabled="sending || draft.trim().length < 2" @click="send">
+            <button class="mm-composer-send" type="button" :disabled="!canSend" @click="send">
               <span v-if="sending" class="mm-composer-spin" aria-hidden="true"></span>
               {{ sending ? t(loc, 'commentsSending') : t(loc, 'commentsSend') }}
             </button>
@@ -530,7 +625,11 @@ onUnmounted(() => {
               <time>{{ relativeTime(thread.root.createdAt) }}</time>
             </div>
           </div>
-          <p class="mm-comment-body">{{ thread.root.body }}</p>
+          <p v-if="thread.root.body" class="mm-comment-body">{{ thread.root.body }}</p>
+          <div v-if="thread.root.gif?.url" class="mm-comment-gif">
+            <img :src="thread.root.gif.url" :alt="thread.root.gif.title || 'GIF'" />
+            <p>{{ t(loc, 'commentsGifBy') }}</p>
+          </div>
           <div class="mm-comment-foot">
             <div class="mm-comment-actions">
               <button type="button" @click="startReply(thread.root)">{{ t(loc, 'commentsReply') }}</button>
@@ -605,7 +704,11 @@ onUnmounted(() => {
                 <time>{{ relativeTime(reply.createdAt) }}</time>
               </div>
             </div>
-            <p class="mm-comment-body">{{ reply.body }}</p>
+            <p v-if="reply.body" class="mm-comment-body">{{ reply.body }}</p>
+            <div v-if="reply.gif?.url" class="mm-comment-gif">
+              <img :src="reply.gif.url" :alt="reply.gif.title || 'GIF'" />
+              <p>{{ t(loc, 'commentsGifBy') }}</p>
+            </div>
             <div class="mm-comment-foot">
               <div class="mm-comment-actions">
                 <button type="button" @click="startReply(reply)">{{ t(loc, 'commentsReply') }}</button>
@@ -661,5 +764,47 @@ onUnmounted(() => {
       :locale="loc"
       @close="reportOpen = false"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="isGifPickerOpen"
+        class="mm-gif-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t(loc, 'commentsGifSearch')"
+        @click.self="closeGifPicker"
+      >
+        <div class="mm-gif-panel">
+          <div class="mm-gif-head">
+            <div>
+              <p class="mm-gif-kicker">GIPHY</p>
+              <h3>{{ t(loc, 'commentsGifSearch') }}</h3>
+            </div>
+            <button type="button" class="mm-gif-close" @click="closeGifPicker">×</button>
+          </div>
+          <form class="mm-gif-search" @submit.prevent="searchGifs()">
+            <input
+              v-model="gifSearchTerm"
+              type="search"
+              :placeholder="t(loc, 'commentsGifSearchPh')"
+              autofocus
+            />
+            <button type="submit" :disabled="isLoadingGifs">{{ t(loc, 'commentsGifSearch') }}</button>
+          </form>
+          <p v-if="isLoadingGifs" class="mm-gif-loading">{{ t(loc, 'commentsGifLoading') }}</p>
+          <div v-else class="mm-gif-grid">
+            <button
+              v-for="gif in gifResults"
+              :key="gif.id || gif.url"
+              type="button"
+              @click="selectGif(gif)"
+            >
+              <img :src="gif.previewUrl || gif.url" :alt="gif.title" />
+            </button>
+          </div>
+          <p class="mm-gif-credit">Powered by GIPHY</p>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>

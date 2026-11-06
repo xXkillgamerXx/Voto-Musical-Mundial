@@ -151,7 +151,7 @@ onMounted(loadArtists)
         class="group overflow-hidden rounded-4xl border border-white/10 bg-[#090b19]/90 shadow-2xl shadow-violet-950/20 transition hover:-translate-y-1 hover:border-fuchsia-300/35 hover:shadow-fuchsia-950/35"
       >
         <a :href="artistUrl(artist)" class="block">
-          <div class="relative h-72 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
+          <div class="on-dark-media relative h-72 overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
             <img
               :src="getArtistBanner(artist)"
               :alt="artist.name"

@@ -528,7 +528,7 @@ onUnmounted(() => {
 
           <form class="mt-6 grid gap-5" @submit.prevent="saveProfile">
             <section class="overflow-hidden rounded-4xl border border-white/10 bg-white/5">
-              <label class="group relative block min-h-56 cursor-pointer overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
+              <label class="on-dark-media group relative block min-h-56 cursor-pointer overflow-hidden bg-linear-to-br from-violet-950 via-fuchsia-950 to-slate-950">
                 <img
                   v-if="editForm.banner"
                   :src="editForm.banner"

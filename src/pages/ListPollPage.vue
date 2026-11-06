@@ -4037,7 +4037,7 @@ onUnmounted(() => {
         v-if="!isEmbeddedPage"
         class="overflow-hidden rounded-4xl border border-violet-300/20 bg-[#080a18] shadow-2xl shadow-fuchsia-950/25"
       >
-        <div class="relative bg-linear-to-br from-violet-950 to-fuchsia-950">
+        <div class="on-dark-media relative bg-linear-to-br from-violet-950 to-fuchsia-950">
           <img
             v-if="poll?.banner"
             :src="poll.banner"
@@ -4315,7 +4315,7 @@ onUnmounted(() => {
             class="winner-card overflow-hidden rounded-4xl border border-amber-300/25 bg-slate-950/60 text-left shadow-2xl shadow-amber-950/25"
           >
             <span
-              class="relative grid aspect-[4/5] max-h-[28rem] w-full place-items-center overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950 text-5xl font-black text-white sm:aspect-[5/4] sm:max-h-[22rem]"
+              class="on-dark-media relative grid aspect-[4/5] max-h-[28rem] w-full place-items-center overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950 text-5xl font-black text-white sm:aspect-[5/4] sm:max-h-[22rem]"
             >
               <img
                 v-if="getArtistImage(winnerEntry.artist)"
@@ -6015,7 +6015,7 @@ onUnmounted(() => {
           <button
             v-if="showMissionsPromptDownloadCta"
             type="button"
-            class="group relative mt-3 flex w-full items-center gap-3 overflow-hidden rounded-[1.35rem] border border-fuchsia-300/45 bg-linear-to-r from-[#3b0a58] via-[#1d0b33] to-[#0d0820] px-3 py-3 text-left shadow-[0_0_28px_rgba(217,70,239,0.28)] transition hover:border-fuchsia-200/60 hover:shadow-[0_0_36px_rgba(217,70,239,0.4)]"
+            class="on-dark-media group relative mt-3 flex w-full items-center gap-3 overflow-hidden rounded-[1.35rem] border border-fuchsia-300/45 bg-linear-to-r from-[#3b0a58] via-[#1d0b33] to-[#0d0820] px-3 py-3 text-left shadow-[0_0_28px_rgba(217,70,239,0.28)] transition hover:border-fuchsia-200/60 hover:shadow-[0_0_36px_rgba(217,70,239,0.4)]"
             @click="openAppDownloadFromPrompt"
           >
             <span

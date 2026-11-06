@@ -528,7 +528,7 @@ onUnmounted(() => {
           : 'border-violet-300/15 shadow-fuchsia-950/20'"
       >
         <div
-          class="relative min-h-72"
+          class="on-dark-media relative min-h-72"
           :class="isMegaFan
             ? 'profile-mega-hero'
             : 'bg-linear-to-br from-blue-950 via-violet-950 to-fuchsia-950'"

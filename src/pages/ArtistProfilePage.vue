@@ -392,7 +392,7 @@ onUnmounted(() => {
       class="mt-6 overflow-hidden rounded-3xl border border-violet-300/15 bg-[#090b19]/90 shadow-2xl shadow-fuchsia-950/20"
     >
       <div
-        class="relative min-h-72 bg-linear-to-br from-blue-950 via-violet-950 to-fuchsia-950"
+        class="on-dark-media relative min-h-72 bg-linear-to-br from-blue-950 via-violet-950 to-fuchsia-950"
       >
         <img
           :src="getArtistBanner(artist)"

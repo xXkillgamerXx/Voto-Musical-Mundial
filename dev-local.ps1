@@ -1,17 +1,17 @@
 # Levanta el entorno local completo contra la base de datos de PRODUCCION.
 # 1) Tunel SSH  2) API NestJS  3) Frontend en :5174 (/ landing, /vote votacion)
 #
-# Uso:  npm run dev:local
+# Uso:  npm run dev:local   |   npm run dev:prod
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $newsRoot = Join-Path $root "news"
-$key = "$env:USERPROFILE\.ssh\vmm_server"
-$sshHost = "213.136.69.57"
+$sshHost = "161.97.154.152"
 $sshPort = "2981"
 $sshUser = "root"
 $frontendPort = 5174
 $apiPort = 4000
+$tunnelScript = Join-Path $root "deploy\new_musicmundial\scripts\ssh_tunnel_prod.py"
 
 function Test-PortListening {
   param([int]$Port)
@@ -58,22 +58,44 @@ function Wait-ApiHealth {
   return $false
 }
 
-if (-not (Test-Path $key)) {
-  Write-Host "No se encontro la llave SSH en $key" -ForegroundColor Red
+function Ensure-SshPassword {
+  if ($env:NMM_SSH_PASSWORD) {
+    return
+  }
+  $envFile = Join-Path $root "deploy\new_musicmundial\.env.contabo"
+  if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+      if ($_ -match '^\s*NMM_SSH_PASSWORD\s*=\s*(.*)\s*$') {
+        $env:NMM_SSH_PASSWORD = $Matches[1].Trim().Trim("'").Trim('"')
+      }
+    }
+  }
+  if (-not $env:NMM_SSH_PASSWORD) {
+    Write-Host "Define NMM_SSH_PASSWORD (root @ ${sshHost}) o agregalo en deploy\new_musicmundial\.env.contabo" -ForegroundColor Red
+    exit 1
+  }
+}
+
+if (-not (Test-Path $tunnelScript)) {
+  Write-Host "No se encontro el script de tunel: $tunnelScript" -ForegroundColor Red
   exit 1
 }
 
-Write-Host "=== Entorno local (DB produccion via tunel SSH) ===" -ForegroundColor Cyan
+Ensure-SshPassword
+
+Write-Host "=== Entorno local (DB produccion via tunel SSH @ ${sshHost}) ===" -ForegroundColor Cyan
 
 if (-not (Test-PortListening -Port 5432) -or -not (Test-PortListening -Port 6379)) {
-  Write-Host "1/4  Abriendo tunel SSH (PostgreSQL 5432 + Redis 6379)..." -ForegroundColor Cyan
+  Write-Host "1/4  Abriendo tunel SSH (PostgreSQL 5432 -> 5433 + Redis nmm-redis)..." -ForegroundColor Cyan
+  $pw = $env:NMM_SSH_PASSWORD.Replace("'", "''")
   Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
-    "Write-Host 'Tunel SSH activo. No cierres esta ventana.' -ForegroundColor Green; ssh -N -L 127.0.0.1:5432:127.0.0.1:5432 -L 127.0.0.1:6379:127.0.0.1:6379 -p ${sshPort} -i `"$key`" -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 ${sshUser}@${sshHost}"
+    "`$env:NMM_SSH_PASSWORD = '$pw'; py -3 `"$tunnelScript`""
   )
 
   if (-not (Wait-Port -Port 5432) -or -not (Wait-Port -Port 6379)) {
-    Write-Host "No se pudo abrir el tunel SSH a produccion." -ForegroundColor Red
+    Write-Host "No se pudo abrir el tunel SSH a produccion (${sshUser}@${sshHost}:${sshPort})." -ForegroundColor Red
+    Write-Host "Revisa NMM_SSH_PASSWORD y que el host 161 este accesible." -ForegroundColor Red
     exit 1
   }
 } else {
@@ -149,6 +171,6 @@ Write-Host "  Landing: http://localhost:${frontendPort}/" -ForegroundColor Green
 Write-Host "  Votar:   http://localhost:${frontendPort}/vote/" -ForegroundColor Green
 Write-Host "  API:     http://localhost:${apiPort}/api/health" -ForegroundColor Green
 Write-Host "  Worker:  bots + vote-sync" -ForegroundColor Green
-Write-Host "  DB:      produccion via tunel SSH (5432/6379)" -ForegroundColor Yellow
+Write-Host "  DB:      produccion 161 via tunel SSH (5432->nmm-postgres, 6379->nmm-redis)" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "No cierres las ventanas del tunel SSH, la API, el worker ni los frontends." -ForegroundColor DarkGray
+Write-Host "No cierres las ventanas del tunel SSH, la API, el worker ni el frontend." -ForegroundColor DarkGray

@@ -67,7 +67,7 @@ onMounted(async () => {
     id="descargar-app"
     class="download-app mx-auto max-w-352 scroll-mt-28 px-4 py-5 sm:px-6 sm:py-6 lg:py-7"
   >
-    <div class="download-app__panel relative overflow-hidden rounded-[1.75rem] border border-white/10 sm:rounded-[2rem]">
+    <div class="download-app__panel on-dark-media relative overflow-hidden rounded-[1.75rem] border border-white/10 sm:rounded-[2rem]">
       <!-- Fondo limpio (anillo neon a la derecha; texto a la izquierda) -->
       <img
         :src="assetUrl('/app-download-bg.png')"

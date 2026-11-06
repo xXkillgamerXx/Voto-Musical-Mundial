@@ -4,10 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import {
-  buildPasswordResetEmail,
-  PASSWORD_RESET_LOGO_CID,
-} from './password-reset.email';
+import { buildPasswordResetEmail, PASSWORD_RESET_LOGO_CID } from './password-reset.email';
 import {
   buildAccountDeletionEmail,
   ACCOUNT_DELETION_LOGO_CID,
@@ -54,11 +51,15 @@ const emptyKindTotals = (): MailKindTotals =>
 
 const MAIL_METRICS_TTL_SECONDS = 120 * 24 * 3600;
 
+type MailIdentity = 'vote' | 'info';
+
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter | null;
+  private readonly infoTransporter: Transporter | null;
   private readonly from: string;
+  private readonly infoFrom: string;
   private readonly contactTo: string;
   private readonly logoPath: string | null;
   private readonly smtpHost: string;
@@ -78,6 +79,12 @@ export class MailService implements OnModuleInit {
     const pass = String(
       config.get<string>('SMTP_PASS') || config.get<string>('MAIL_PASSWORD') || '',
     ).trim();
+    const infoUser = String(
+      config.get<string>('SMTP_INFO_USER') || config.get<string>('MAIL_INFO_USERNAME') || '',
+    ).trim();
+    const infoPass = String(
+      config.get<string>('SMTP_INFO_PASS') || config.get<string>('MAIL_INFO_PASSWORD') || '',
+    ).trim();
     const port = Number(
       config.get<string>('SMTP_PORT') || config.get<string>('MAIL_PORT') || 2525,
     );
@@ -85,33 +92,40 @@ export class MailService implements OnModuleInit {
     this.smtpPort = port;
     this.from =
       String(config.get<string>('MAIL_FROM') || '').trim() ||
-      'Music Mundial VOTING <noreply@musicmundial.com>';
+      'Music Mundial Votes <vote@musicmundial.com>';
+    this.infoFrom =
+      String(config.get<string>('MAIL_FROM_INFO') || '').trim() ||
+      'Music Mundial <info@musicmundial.com>';
     this.contactTo =
       String(config.get<string>('CONTACT_TO') || config.get<string>('MAIL_CONTACT_TO') || '')
         .trim()
-        .toLowerCase() || 'hola@musicmundial.com';
+        .toLowerCase() || 'info@musicmundial.com';
 
     const candidate = join(process.cwd(), 'assets', 'email', 'logo-votos.png');
     this.logoPath = existsSync(candidate) ? candidate : null;
 
-    const isInternalHost =
+    const relaxTls =
       host === '127.0.0.1' ||
       host === 'localhost' ||
+      host === 'mail.musicmundial.com' ||
       host.startsWith('172.') ||
       host.startsWith('10.') ||
       host.startsWith('192.168.');
 
-    this.transporter =
-      host && user && pass
+    const buildTransport = (authUser: string, authPass: string) =>
+      host && authUser && authPass
         ? nodemailer.createTransport({
             host,
             port,
             secure: port === 465,
             requireTLS: port === 587,
-            auth: { user, pass },
-            ...(isInternalHost ? { tls: { rejectUnauthorized: false } } : {}),
+            auth: { user: authUser, pass: authPass },
+            ...(relaxTls ? { tls: { rejectUnauthorized: false } } : {}),
           })
         : null;
+
+    this.transporter = buildTransport(user, pass);
+    this.infoTransporter = buildTransport(infoUser || user, infoPass || pass);
   }
 
   isConfigured() {
@@ -127,7 +141,7 @@ export class MailService implements OnModuleInit {
     try {
       await this.transporter.verify();
       this.smtpVerified = true;
-      this.logger.log('SMTP listo para enviar correos.');
+      this.logger.log(`SMTP listo (${this.from}).`);
     } catch (error) {
       this.smtpVerified = false;
       this.logger.warn(`SMTP no responde: ${(error as Error).message}`);
@@ -156,22 +170,14 @@ export class MailService implements OnModuleInit {
 
     const { subject, text, html } = buildPasswordResetEmail(input);
 
+    // Logos go inline as base64 (welcome Music Mundial design). No CID attachments —
+    // Gmail often shows those as paperclips / broken images.
     await this.sendMail({
       to: input.to,
       subject,
       text,
       html,
       kind: 'password_reset',
-      attachments: this.logoPath
-        ? [
-            {
-              filename: 'logo-votos.png',
-              path: this.logoPath,
-              cid: PASSWORD_RESET_LOGO_CID,
-              contentType: 'image/png',
-            },
-          ]
-        : undefined,
     });
   }
 
@@ -357,6 +363,7 @@ export class MailService implements OnModuleInit {
         html,
         replyTo: `${name} <${email}>`,
         kind: 'test',
+        identity: 'info',
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -537,6 +544,7 @@ export class MailService implements OnModuleInit {
     html: string;
     replyTo?: string;
     kind?: MailMetricKind;
+    identity?: MailIdentity;
     attachments?: Array<{
       filename: string;
       path: string;
@@ -544,7 +552,11 @@ export class MailService implements OnModuleInit {
       contentType: string;
     }>;
   }) {
-    if (!this.transporter) {
+    const identity: MailIdentity = input.identity === 'info' ? 'info' : 'vote';
+    const transporter =
+      identity === 'info' ? this.infoTransporter || this.transporter : this.transporter;
+    const from = identity === 'info' ? this.infoFrom : this.from;
+    if (!transporter) {
       throw new Error('SMTP no configurado.');
     }
 
@@ -553,8 +565,8 @@ export class MailService implements OnModuleInit {
       : 'test';
 
     try {
-      const info = await this.transporter.sendMail({
-        from: this.from,
+      const info = await transporter.sendMail({
+        from,
         to: input.to,
         replyTo: input.replyTo || undefined,
         subject: input.subject,

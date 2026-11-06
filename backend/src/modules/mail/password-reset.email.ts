@@ -1,11 +1,8 @@
-import {
-  buildTransactionalEmail,
-  escapeHtml,
-  MAIL_LOGO_CID,
-  resolveMailLocale,
-} from './transactional-email.layout';
+import { buildMusicMundialEmail } from './music-mundial-email.layout';
+import { escapeHtml, resolveMailLocale } from './transactional-email.layout';
 
-export const PASSWORD_RESET_LOGO_CID = MAIL_LOGO_CID;
+/** Kept for backwards imports; Music Mundial emails use inline base64 logos (no CID). */
+export const PASSWORD_RESET_LOGO_CID = 'vmm-logo';
 
 export type MailLocale = 'es' | 'en';
 
@@ -14,37 +11,37 @@ export { resolveMailLocale } from './transactional-email.layout';
 const COPY = {
   es: {
     greeting: (name: string) => (name ? `Hola ${name}` : 'Hola'),
-    subject: 'Recupera tu contraseña · Music Mundial VOTING',
+    subject: 'Recupera tu contraseña · Music Mundial',
     preheader: 'El enlace caduca en 1 hora. Si no fuiste tú, ignora este correo.',
-    title: 'Recupera tu contraseña',
+    eyebrow: 'PASSWORD RESET',
+    titleHtml: 'Recupera tu<br><span style="color:#225df5;">contraseña</span>',
     intro: (greeting: string) =>
       `${greeting}, recibimos una solicitud para restablecer la contraseña de tu cuenta.`,
-    expiryBody:
-      'Pulsa el botón para elegir una nueva. El enlace caduca en <strong style="color:#fde68a;">1 hora</strong>.',
+    expiryBody: 'Pulsa el botón para elegir una nueva. El enlace caduca en <strong>1 hora</strong>.',
     cta: 'Crear nueva contraseña',
     expiryBadge: 'Válido por 60 minutos',
     fallback: 'Si el botón no funciona, copia y pega este enlace en tu navegador:',
     security:
       'Si no pediste este cambio, no tienes que hacer nada. Tu cuenta sigue segura y puedes ignorar este correo.',
-    textIntro: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta en Music Mundial VOTING.',
+    textIntro: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta en Music Mundial.',
     textLink: 'Abre este enlace para crear una nueva. Caduca en 1 hora:',
     textSecurity: 'Si no pediste este cambio, ignora este correo. Tu cuenta sigue segura.',
   },
   en: {
     greeting: (name: string) => (name ? `Hi ${name}` : 'Hi'),
-    subject: 'Reset your password · Music Mundial VOTING',
+    subject: 'Reset your password · Music Mundial',
     preheader: "This link expires in 1 hour. If this wasn't you, ignore this email.",
-    title: 'Reset your password',
+    eyebrow: 'PASSWORD RESET',
+    titleHtml: 'Reset your<br><span style="color:#225df5;">password</span>',
     intro: (greeting: string) =>
       `${greeting}, we received a request to reset the password for your account.`,
-    expiryBody:
-      'Tap the button to choose a new one. The link expires in <strong style="color:#fde68a;">1 hour</strong>.',
+    expiryBody: 'Tap the button to choose a new one. The link expires in <strong>1 hour</strong>.',
     cta: 'Create new password',
     expiryBadge: 'Valid for 60 minutes',
     fallback: "If the button doesn't work, copy and paste this link into your browser:",
     security:
       "If you didn't ask for this change, you don't need to do anything. Your account is still safe and you can ignore this email.",
-    textIntro: 'We received a request to reset the password for your Music Mundial VOTING account.',
+    textIntro: 'We received a request to reset the password for your Music Mundial account.',
     textLink: 'Open this link to create a new one. It expires in 1 hour:',
     textSecurity: "If you didn't ask for this change, ignore this email. Your account is still safe.",
   },
@@ -69,20 +66,24 @@ export const buildPasswordResetEmail = (input: {
     '',
     copy.textSecurity,
     '',
-    'Music Mundial VOTING',
-    'https://vote.musicmundial.com',
+    'Music Mundial',
+    'https://www.musicmundial.com',
   ].join('\n');
 
-  const html = buildTransactionalEmail({
+  const html = buildMusicMundialEmail({
     locale,
     preheader: copy.preheader,
-    title: copy.title,
-    introHtml: `<p style="margin:14px 0 0;font-size:16px;line-height:1.6;color:#cbd5e1;">
-                      ${escapeHtml(copy.intro(greeting))}
-                    </p>
-                    <p style="margin:10px 0 0;font-size:16px;line-height:1.6;color:#94a3b8;">
-                      ${copy.expiryBody}
-                    </p>`,
+    eyebrow: copy.eyebrow,
+    titleHtml: copy.titleHtml,
+    greetingHtml: `<p style="margin:22px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:1.2;font-weight:800;color:#121b2c;">
+                ${escapeHtml(greeting)}!
+              </p>`,
+    bodyHtml: `<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.55;color:#657083;">
+                ${escapeHtml(copy.intro(greeting))}
+              </p>
+              <p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.55;color:#657083;">
+                ${copy.expiryBody}
+              </p>`,
     cta: { label: copy.cta, url: input.resetUrl },
     badge: copy.expiryBadge,
     fallback: { label: copy.fallback, url: input.resetUrl },

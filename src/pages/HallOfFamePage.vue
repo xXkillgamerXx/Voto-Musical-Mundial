@@ -279,7 +279,7 @@ onMounted(loadPolls)
             :key="entry.poll.id"
             class="group overflow-hidden rounded-[1.5rem] border border-amber-300/20 bg-slate-950/55 shadow-xl shadow-violet-950/20 transition hover:-translate-y-1 hover:border-amber-300/40"
           >
-            <div class="relative aspect-[4/5] overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950">
+            <div class="on-dark-media relative aspect-[4/5] overflow-hidden bg-linear-to-br from-amber-300/30 via-fuchsia-500/20 to-slate-950">
               <img
                 v-if="getArtistImage(entry.artist)"
                 :src="getArtistImage(entry.artist)"

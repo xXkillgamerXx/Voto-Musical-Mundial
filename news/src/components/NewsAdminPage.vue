@@ -7,6 +7,7 @@ import NewsAdminForum from './NewsAdminForum.vue'
 import NewsAdminPages from './NewsAdminPages.vue'
 import NewsAdminReports from './NewsAdminReports.vue'
 import NewsAdminTags from './NewsAdminTags.vue'
+import NewsAdminUsers from './NewsAdminUsers.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
 import { getAdminNewsOverview } from '../../../src/services/api/adminApi'
@@ -67,7 +68,7 @@ type Overview = {
 }
 
 const props = defineProps<{
-  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'post-form'
+  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'users' | 'post-form'
   postId?: string
   newsLocale?: 'es' | 'en'
 }>()
@@ -91,6 +92,7 @@ const pageTitle = computed(() => {
   if (section.value === 'forum') return 'Foro'
   if (section.value === 'pages') return 'Páginas'
   if (section.value === 'reports') return 'Reportes'
+  if (section.value === 'users') return 'Usuarios'
   return 'Dashboard'
 })
 const pageLead = computed(() => {
@@ -106,6 +108,7 @@ const pageLead = computed(() => {
   if (section.value === 'forum') return 'Salas del foro, textos ES/EN, VIP y temas (fijar, cerrar u ocultar).'
   if (section.value === 'pages') return 'About, términos, cookies, privacidad, DMCA y contacto. Editable por idioma.'
   if (section.value === 'reports') return 'Bandeja de comentarios reportados y opciones del modal de reporte.'
+  if (section.value === 'users') return 'Cuentas de Vote Music Mundial: bloquear, roles, puntos y eliminar.'
   return 'Resumen de musicmundial_es y musicmundial_en'
 })
 
@@ -324,6 +327,10 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-7 8a7 7 0 0 1 14 0" /></svg>
           Autores
         </a>
+        <a :class="{ on: section === 'users' }" href="/es/admin/usuarios" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zM8 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm8 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4zM8 15c-.3 0-.7 0-1 .1C4.5 15.6 2 16.8 2 19v2h6v-2c0-1.5.7-2.7 2-3.5-.6-.3-1.3-.5-2-.5z" /></svg>
+          Usuarios
+        </a>
         <a :class="{ on: section === 'forum' }" href="/es/admin/foro" @click="closeNav">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
           Foro
@@ -401,6 +408,7 @@ onUnmounted(() => {
         <NewsAdminForum v-else-if="section === 'forum'" :create-tick="forumCreateTick" />
         <NewsAdminPages v-else-if="section === 'pages'" />
         <NewsAdminReports v-else-if="section === 'reports'" />
+        <NewsAdminUsers v-else-if="section === 'users'" />
         <template v-else>
         <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
         <p v-else-if="loading && !overview" class="na-empty">Cargando dashboard…</p>

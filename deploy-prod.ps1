@@ -85,8 +85,8 @@ if ($FrontendOnly) {
 
 Write-Host "Verifying www.musicmundial.com..." -ForegroundColor Cyan
 try {
-  $home = Invoke-WebRequest -Uri "https://www.musicmundial.com/" -UseBasicParsing -TimeoutSec 25
-  Write-Host "HOME: $($home.StatusCode)"
+  $landing = Invoke-WebRequest -Uri "https://www.musicmundial.com/" -UseBasicParsing -TimeoutSec 25
+  Write-Host "HOME: $($landing.StatusCode)"
 } catch {
   Write-Host "HOME: $($_.Exception.Message)" -ForegroundColor Yellow
 }

@@ -153,7 +153,7 @@ export type NewsPage =
   | {
       name: 'admin'
       locale: 'es' | 'en'
-      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'post-form'
+      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'users' | 'post-form'
       postId?: string
       newsLocale?: 'es' | 'en'
     }
@@ -223,6 +223,10 @@ export const toCategoryCard = (
   }
 }
 
+export const FORUM_ENABLED = false
+
+export const isForumPath = (path: string) => /^\/(?:(?:es|en)\/)?(?:forum|foro)(?:\/|$)/.test(path)
+
 export const parseNewsPage = (pathname = window.location.pathname): NewsPage => {
   const decoded = decodeURIComponent(pathname).replace(/\/+$/, '') || '/'
   const parts = decoded.split('/').filter(Boolean)
@@ -244,6 +248,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (path === '/admin/foro') return { name: 'admin', locale, section: 'forum' }
   if (path === '/admin/paginas') return { name: 'admin', locale, section: 'pages' }
   if (path === '/admin/reportes') return { name: 'admin', locale, section: 'reports' }
+  if (path === '/admin/usuarios') return { name: 'admin', locale, section: 'users' }
   if (path.startsWith('/admin/')) return { name: 'admin', locale, section: 'dashboard' }
   if (path === '/perfil/editar' || path === '/profile/edit') return { name: 'profile', locale, edit: true }
   if (path === '/perfil' || path === '/profile') return { name: 'profile', locale }
@@ -251,6 +256,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (person) return { name: 'profile', locale, username: person[1].toLowerCase() }
   const author = path.match(/^\/author\/([a-zA-Z0-9_-]+)$/)
   if (author) return { name: 'author', locale, slug: author[1].toLowerCase() }
+  if (!FORUM_ENABLED && isForumPath(path)) return { name: 'home', locale }
   if (path === '/forum' || path === '/foro') return { name: 'forum', locale }
   const forumPost = path.match(/^\/(?:forum|foro)\/([a-z0-9-]+)\/([A-Za-z0-9_-]+)$/)
   if (forumPost) return { name: 'forum', locale, board: forumPost[1], post: forumPost[2] }

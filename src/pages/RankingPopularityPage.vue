@@ -477,7 +477,7 @@ onUnmounted(() => {
         >
           <a :href="artistUrl(artist)" class="block">
             <div
-              class="relative h-64 overflow-hidden bg-linear-to-br from-slate-950 via-violet-950 to-fuchsia-950 sm:h-72 lg:h-80"
+              class="on-dark-media relative h-64 overflow-hidden bg-linear-to-br from-slate-950 via-violet-950 to-fuchsia-950 sm:h-72 lg:h-80"
             >
               <img
                 :src="getArtistCardImage(artist)"

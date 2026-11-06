@@ -1,5 +1,5 @@
 ---
-description: Local dev must use SSH tunnel + API + frontend on port 5173 with production DB
+description: Local dev must use SSH tunnel + API + frontend on port 5174 with production DB
 alwaysApply: true
 ---
 
@@ -7,9 +7,9 @@ When the user asks to run the web locally (for example: "ejecuta local", "run lo
 
 ## Required stack
 
-1. SSH tunnel to production PostgreSQL (`5432`) and Redis (`6379`)
+1. SSH tunnel to production PostgreSQL (`5432` local → `5433` on host / nmm-postgres) and Redis (`6379` → nmm-redis)
 2. Backend API on `http://localhost:4000`
-3. Frontend on **`http://localhost:5174/`** (Music Mundial landing) and **`http://localhost:5174/vote/`** (voting). One Vite server, two HTML routes. `npm run dev` starts it; `npm run dev:local` starts tunnel + API + that UI.
+3. Frontend on **`http://localhost:5174/`** (Music Mundial landing) and **`http://localhost:5174/vote/`** (voting). One Vite server, two HTML routes. `npm run dev` starts it; `npm run dev:local` / `npm run dev:prod` starts tunnel + API + that UI.
 
 ## Command
 
@@ -19,12 +19,14 @@ From repo root:
 powershell -ExecutionPolicy Bypass -File .\dev-local.ps1
 ```
 
-## SSH
+## SSH (host 161)
 
-- Key: `~/.ssh/vmm_server`
-- Host: `213.136.69.57`
+- Host: `161.97.154.152`
 - Port: `2981`
 - User: `root`
+- Auth: `NMM_SSH_PASSWORD` (also readable from `deploy/new_musicmundial/.env.contabo`)
+- Tunnel script: `deploy/new_musicmundial/scripts/ssh_tunnel_prod.py`
+- Do **not** use the retired 213 host or key-only auth against 161
 
 ## Verify before telling the user it is ready
 
@@ -35,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File .\dev-local.ps1
 
 ## Notes
 
-- Docker is not used locally; backend `.env` must exist in `backend/`.
+- Docker is not used locally; backend `.env` must exist in `backend/` and point at `nmm_vote` via the tunnel.
 - One Vite server serves two HTML routes: `/` from `news/` in this repo, `/vote/` from the vote SPA. No redirect between them. Do not edit the sibling `musicmundial` project.
 - Vite proxies `/vote/api` and `/api` to `localhost:4000`, and `/vote/uploads` plus `/uploads` to production.
 - This uses the **real production database**. Do not run destructive migrations locally without explicit user approval.

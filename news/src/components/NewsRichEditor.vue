@@ -10,11 +10,13 @@ import {
   firstEmbeddableUrl,
   isEmbeddableUrl,
 } from '../lib/embeds'
+import { formatHtmlForEdit, normalizeEditorHtml } from '../lib/formatHtml'
 
 const props = defineProps<{ defaultAlt?: string }>()
 const content = defineModel<string>({ default: '' })
 const mode = ref<'visual' | 'html'>('visual')
 const editor = ref<HTMLElement | null>(null)
+const htmlBox = ref<HTMLTextAreaElement | null>(null)
 const uploading = ref(false)
 const uploadError = ref('')
 let skipWatch = false
@@ -22,7 +24,7 @@ let skipWatch = false
 const syncFromEditor = () => {
   if (!editor.value) return
   skipWatch = true
-  content.value = collapseNewsEmbeds(editor.value.innerHTML)
+  content.value = normalizeEditorHtml(collapseNewsEmbeds(editor.value.innerHTML))
   queueMicrotask(() => {
     skipWatch = false
   })
@@ -31,7 +33,32 @@ const syncFromEditor = () => {
 const fillEditor = async (html: string) => {
   await nextTick()
   if (!editor.value) return
-  editor.value.innerHTML = expandNewsEmbedsForEditor(html || '')
+  const cleaned = normalizeEditorHtml(html || '')
+  editor.value.innerHTML = expandNewsEmbedsForEditor(cleaned)
+  // Keep model in sync when we auto-split jammed label lines.
+  if (cleaned !== (html || '')) {
+    skipWatch = true
+    content.value = collapseNewsEmbeds(cleaned)
+    queueMicrotask(() => {
+      skipWatch = false
+    })
+  }
+}
+
+const showHtmlSource = async (raw: string) => {
+  skipWatch = true
+  content.value = formatHtmlForEdit(normalizeEditorHtml(collapseNewsEmbeds(raw || '')))
+  await nextTick()
+  skipWatch = false
+  htmlBox.value?.focus()
+}
+
+const formatHtmlSource = () => {
+  skipWatch = true
+  content.value = formatHtmlForEdit(normalizeEditorHtml(content.value || ''))
+  queueMicrotask(() => {
+    skipWatch = false
+  })
 }
 
 watch(content, (html) => {
@@ -40,14 +67,12 @@ watch(content, (html) => {
 })
 
 watch(mode, async (next) => {
-  if (next === 'html' && editor.value) {
-    skipWatch = true
-    content.value = collapseNewsEmbeds(editor.value.innerHTML)
-    queueMicrotask(() => {
-      skipWatch = false
-    })
+  if (next === 'html') {
+    const raw = editor.value ? editor.value.innerHTML : content.value || ''
+    await showHtmlSource(raw)
+    return
   }
-  if (next === 'visual') await fillEditor(content.value || '')
+  await fillEditor(content.value || '')
 })
 
 const run = (command: string, value?: string) => {
@@ -239,24 +264,48 @@ onMounted(() => {
         <button type="button" title="Quitar formato" @mousedown.prevent @click="run('removeFormat')">Tx</button>
       </div>
       <div class="na-wp-tabs">
-        <button type="button" :class="{ on: mode === 'visual' }" @click="mode = 'visual'">Visual</button>
-        <button type="button" :class="{ on: mode === 'html' }" @click="mode = 'html'">Texto</button>
+        <button type="button" :class="{ on: mode === 'visual' }" @click="mode = 'visual'">Escribir</button>
+        <button
+          type="button"
+          class="na-wp-advanced"
+          :class="{ on: mode === 'html' }"
+          title="Solo avanzado: código HTML interno"
+          @click="mode = 'html'"
+        >
+          HTML
+        </button>
+        <button
+          v-if="mode === 'html'"
+          type="button"
+          class="na-wp-format"
+          title="Ordenar etiquetas HTML"
+          @click="formatHtmlSource"
+        >
+          Formatear
+        </button>
       </div>
     </div>
     <p v-if="uploadError" class="na-wp-error" role="alert">{{ uploadError }}</p>
+    <p v-if="mode === 'visual'" class="na-wp-hint">
+      Escribe aquí como se verá la noticia. Enter = nuevo párrafo. No hace falta ver etiquetas.
+    </p>
     <div
       v-show="mode === 'visual'"
       ref="editor"
       class="na-wp-visual"
       contenteditable="true"
+      data-placeholder="Empieza a escribir el contenido…"
       @input="syncFromEditor"
       @paste="onPaste"
     ></div>
     <textarea
       v-show="mode === 'html'"
+      ref="htmlBox"
       v-model="content"
       class="na-wp-html"
       spellcheck="false"
+      wrap="off"
+      aria-label="Código HTML interno (avanzado)"
     />
   </div>
 </template>

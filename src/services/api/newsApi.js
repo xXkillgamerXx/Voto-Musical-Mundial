@@ -46,10 +46,14 @@ export const getNewsComments = (slug, locale) =>
   apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale), {
     token: getStoredAuth()?.accessToken,
   })
-export const postNewsComment = (slug, text, locale, parentId) =>
+export const postNewsComment = (slug, text, locale, parentId, gif) =>
   apiRequest(withLocale(`/news/posts/${encodeURIComponent(slug)}/comments`, locale), {
     method: 'POST',
-    body: { text, ...(parentId ? { parentId: String(parentId) } : {}) },
+    body: {
+      text: text || '',
+      ...(parentId ? { parentId: String(parentId) } : {}),
+      ...(gif?.url ? { gif: { url: String(gif.url), title: String(gif.title || '') } } : {}),
+    },
     token: getStoredAuth()?.accessToken,
   })
 export const voteNewsComment = (slug, commentId, value, locale) =>

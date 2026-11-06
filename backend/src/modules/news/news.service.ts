@@ -19,6 +19,7 @@ import {
 
 type NewsActor = { id: bigint; role?: string };
 type NewsAttachment = { url: string; type: string; name: string };
+type NewsCommentGif = { url: string; title: string; source: string };
 type NewsCommentRow = {
   id: number;
   post_id: number;
@@ -28,6 +29,7 @@ type NewsCommentRow = {
   author_username: string | null;
   author_photo: string | null;
   body: string;
+  gif?: string | NewsCommentGif | null;
   created_at: Date | string;
 };
 
@@ -200,7 +202,7 @@ export class NewsService {
     const locale = this.mysql.locale(localeValue);
     const feed = { page: 1, skipCount: true as const };
     const [latest, kpop, pop, viral, series, social, interviews, categoryList] = await Promise.all([
-      this.loadPosts(locale, { ...feed, limit: 16 }),
+      this.loadPosts(locale, { ...feed, limit: 24 }),
       this.loadPosts(locale, { ...feed, limit: 8, slugs: ['kpop', 'k-pop'] }),
       this.loadPosts(locale, { ...feed, limit: 8, slugs: ['pop'] }),
       this.loadPosts(locale, { ...feed, limit: 16, slugs: ['viral'] }),
@@ -223,8 +225,8 @@ export class NewsService {
     const fallback = [...pool, ...viral.items, ...kpop.items];
     const above = new Set<string>();
     const spotlight = take(pool, 2, above);
-    const cards = take(pool, 3, above);
-    const trends = take(viral.items.length ? viral.items : fallback, 5, above);
+    const cards = take(pool, 8, above);
+    const trends: typeof latest.items = [];
     const entertainment = take(
       [...kpop.items, ...viral.items, ...fallback],
       4,
@@ -1143,13 +1145,15 @@ export class NewsService {
     actor: { id: bigint },
     text: string,
     parentIdValue?: string,
+    gifValue?: { url?: string; title?: string } | null,
   ) {
     const locale = this.mysql.locale(localeValue);
     const postId = await this.requirePublishedId(locale, slug);
     const body = String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (body.length < 2) throw new BadRequestException('Escribe un comentario.');
+    const gif = this.normalizeCommentGif(gifValue);
+    if (body.length < 2 && !gif) throw new BadRequestException('Escribe un comentario.');
     if (body.length > 800) throw new BadRequestException('El comentario es demasiado largo.');
-    if (await isCommentLanguageBlocked(body)) throw new BadRequestException(BLOCKED_LANGUAGE_MESSAGE);
+    if (body && (await isCommentLanguageBlocked(body))) throw new BadRequestException(BLOCKED_LANGUAGE_MESSAGE);
     const user = await this.prisma.user.findUnique({
       where: { id: actor.id },
       select: { id: true, username: true, displayName: true, photoUrl: true },
@@ -1170,8 +1174,8 @@ export class NewsService {
     }
     const inserted = await this.mysql.exec(
       locale,
-      `INSERT INTO vmm_comments (post_id, parent_id, user_id, author_name, author_username, author_photo, body, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO vmm_comments (post_id, parent_id, user_id, author_name, author_username, author_photo, body, gif, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         postId,
         parentId,
@@ -1180,6 +1184,7 @@ export class NewsService {
         String(user.username || '').slice(0, 64) || null,
         user.photoUrl || null,
         body,
+        gif ? JSON.stringify(gif) : null,
         this.wpStamp(new Date()),
       ],
     );
@@ -1193,6 +1198,7 @@ export class NewsService {
       authorUsername: user.username || '',
       authorPhotoUrl: user.photoUrl || '',
       body,
+      gif,
       createdAt: new Date().toISOString(),
       score: 0,
       myVote: 0,
@@ -2351,6 +2357,7 @@ export class NewsService {
   }
 
   private commentsReady = new Set<NewsLocale>();
+  private commentsGifReady = new Set<NewsLocale>();
   private commentVotesReady = new Set<NewsLocale>();
   private commentReactionsReady = new Set<NewsLocale>();
   private commentReportsReady = new Set<NewsLocale>();
@@ -2368,37 +2375,47 @@ export class NewsService {
   }
 
   private async ensureCommentsTable(locale: NewsLocale) {
-    if (this.commentsReady.has(locale)) return;
-    await this.mysql.exec(
-      locale,
-      `CREATE TABLE IF NOT EXISTS vmm_comments (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        post_id BIGINT UNSIGNED NOT NULL,
-        parent_id BIGINT UNSIGNED NULL,
-        user_id VARCHAR(32) NOT NULL,
-        author_name VARCHAR(160) NOT NULL,
-        author_username VARCHAR(64) NULL,
-        author_photo TEXT NULL,
-        body TEXT NOT NULL,
-        created_at DATETIME NOT NULL,
-        PRIMARY KEY (id),
-        KEY post_id (post_id),
-        KEY parent_id (parent_id),
-        KEY user_id (user_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-    );
-    try {
+    if (!this.commentsReady.has(locale)) {
       await this.mysql.exec(
         locale,
-        `ALTER TABLE vmm_comments
-         ADD COLUMN parent_id BIGINT UNSIGNED NULL AFTER post_id,
-         ADD KEY parent_id (parent_id)`,
+        `CREATE TABLE IF NOT EXISTS vmm_comments (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          post_id BIGINT UNSIGNED NOT NULL,
+          parent_id BIGINT UNSIGNED NULL,
+          user_id VARCHAR(32) NOT NULL,
+          author_name VARCHAR(160) NOT NULL,
+          author_username VARCHAR(64) NULL,
+          author_photo TEXT NULL,
+          body TEXT NOT NULL,
+          gif TEXT NULL,
+          created_at DATETIME NOT NULL,
+          PRIMARY KEY (id),
+          KEY post_id (post_id),
+          KEY parent_id (parent_id),
+          KEY user_id (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
       );
-    } catch {
-      /* column/index already exists on upgraded DBs */
+      try {
+        await this.mysql.exec(
+          locale,
+          `ALTER TABLE vmm_comments
+           ADD COLUMN parent_id BIGINT UNSIGNED NULL AFTER post_id,
+           ADD KEY parent_id (parent_id)`,
+        );
+      } catch {
+        /* column/index already exists on upgraded DBs */
+      }
+      await this.backfillOrphanReplies(locale);
+      this.commentsReady.add(locale);
     }
-    await this.backfillOrphanReplies(locale);
-    this.commentsReady.add(locale);
+    if (!this.commentsGifReady.has(locale)) {
+      try {
+        await this.mysql.exec(locale, `ALTER TABLE vmm_comments ADD COLUMN gif TEXT NULL AFTER body`);
+      } catch {
+        /* column already exists on upgraded DBs */
+      }
+      this.commentsGifReady.add(locale);
+    }
   }
 
   /** Link old @mention replies that were saved flat before parent_id existed. */
@@ -2585,6 +2602,26 @@ export class NewsService {
     };
   }
 
+  private normalizeCommentGif(value?: { url?: string; title?: string } | string | null): NewsCommentGif | null {
+    try {
+      const raw =
+        typeof value === 'string'
+          ? (JSON.parse(value) as { url?: string; title?: string })
+          : value && typeof value === 'object'
+            ? value
+            : null;
+      const url = String(raw?.url || '').trim();
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      return {
+        url: url.slice(0, 500),
+        title: String(raw?.title || '').slice(0, 200),
+        source: 'giphy',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private mapComment(
     row: NewsCommentRow & {
       score?: number;
@@ -2607,6 +2644,7 @@ export class NewsService {
       authorUsername: username || undefined,
       authorPhotoUrl: row.author_photo || undefined,
       body: row.body,
+      gif: this.normalizeCommentGif(row.gif || null),
       createdAt: row.created_at,
       score: Number(row.score || 0),
       myVote: Number(row.my_vote || 0) === 1 || Number(row.my_vote || 0) === -1 ? Number(row.my_vote) : 0,
@@ -2636,7 +2674,7 @@ export class NewsService {
       }
     >(
       locale,
-      `SELECT c.id, c.post_id, c.parent_id, c.user_id, c.author_name, c.author_username, c.author_photo, c.body, c.created_at,
+      `SELECT c.id, c.post_id, c.parent_id, c.user_id, c.author_name, c.author_username, c.author_photo, c.body, c.gif, c.created_at,
               COALESCE((SELECT SUM(v.value) FROM vmm_comment_votes v WHERE v.comment_id = c.id), 0) AS score,
               (SELECT v.value FROM vmm_comment_votes v WHERE v.comment_id = c.id AND v.user_id = ? LIMIT 1) AS my_vote,
               COALESCE((SELECT COUNT(*) FROM vmm_comment_reactions r WHERE r.comment_id = c.id AND r.reaction = 'love'), 0) AS love_count,

@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  ValidateNested,
 } from 'class-validator';
 
 export class UpsertNewsPostDto {
@@ -94,14 +95,31 @@ export class UpsertNewsPostDto {
   altPostId?: string;
 }
 
-export class CreateNewsCommentDto {
+export class NewsCommentGifDto {
   @IsString()
-  @Length(2, 800)
-  text: string;
+  @Length(8, 500)
+  url: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  title?: string;
+}
+
+export class CreateNewsCommentDto {
+  @IsOptional()
+  @IsString()
+  @Length(0, 800)
+  text?: string;
 
   @IsOptional()
   @IsString()
   parentId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewsCommentGifDto)
+  gif?: NewsCommentGifDto;
 }
 
 export class UpsertNewsCategoryDto {
