@@ -177,6 +177,7 @@ function asStory(post: NewsCard, fallbackImage: string, size: NewsImageSize = 'c
 function clearHomeFeed() {
   slides.value = []
   homeCards.value = []
+  trends.value = []
   entertainmentStories.value = []
   kpopFeatureStories.value = []
   kpopMoreStories.value = []
@@ -217,6 +218,14 @@ async function loadHomeFeed(force = false) {
       title: post.title,
       date: formatNewsDate(post.publishedAt, fromFeed),
       image: coverOf(post, '/images/jungkook-hero.jpg', 'card'),
+      alt: post.title,
+      href: post.href,
+    }))
+    trends.value = (feed?.trends || []).map((post: NewsCard) => ({
+      tag: post.category,
+      title: post.title,
+      date: formatNewsDate(post.publishedAt, fromFeed),
+      image: coverOf(post, '/images/jungkook-hero.jpg', 'thumb'),
       alt: post.title,
       href: post.href,
     }))
@@ -435,6 +444,7 @@ onUnmounted(() => {
 })
 
 const homeCards = ref<Array<{ tags: string[]; title: string; date: string; image: string; alt: string; href?: string }>>([])
+const trends = ref<Array<{ tag: string; title: string; date: string; image: string; alt: string; href?: string }>>([])
 const entertainmentStories = ref<Story[]>([])
 const kpopFeatureStories = ref<Story[]>([])
 const kpopMoreStories = ref<Story[]>([])
@@ -967,6 +977,20 @@ onUnmounted(() => {
         </div>
       </section>
       <aside class="home-rail">
+        <section class="trend-card">
+          <div class="trend-head">
+            <span class="skel home-boot-head"></span>
+            <span class="skel skel-meta"></span>
+          </div>
+          <div v-for="n in 5" :key="'trend-skel-' + n" class="trend-row home-boot-trend">
+            <span class="skel"></span>
+            <span class="skel"></span>
+            <div>
+              <span class="skel skel-line"></span>
+              <span class="skel skel-meta"></span>
+            </div>
+          </div>
+        </section>
         <section class="spotify-band home-boot-spotify skel"></section>
       </aside>
     </div>
@@ -1040,6 +1064,26 @@ onUnmounted(() => {
         </section>
 
       <aside class="home-rail rise">
+        <section class="trend-card">
+          <div class="trend-head">
+            <h2>
+              <svg class="flame" viewBox="0 0 16 20" aria-hidden="true">
+                <path d="M8.1.2c.5 3.4-1.8 5.2-2.9 7.4-.7-.8-1-2-1-2C2.5 7.4 1 9.7 1 12.4 1 16.2 4.1 19.2 8 19.2s7-3 7-6.8c0-3.5-2.3-6-3.7-8-.2 1.8-1.1 3-2.1 3.3.6-2.2 1-4.8-1.1-7.5z" />
+              </svg>
+              {{ txt('trends') }}
+            </h2>
+            <a :href="loc('/viral')">{{ txt('seeAllArrow') }}</a>
+          </div>
+          <a v-for="(item, index) in trends" :key="item.title" class="trend-row" :href="postHref(item)">
+            <span>{{ index + 1 }}</span>
+            <img :src="item.image" :alt="item.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
+            <div>
+              <small :class="item.tag.toLowerCase()">{{ item.tag }}</small>
+              <h3>{{ item.title }}</h3>
+              <time>{{ item.date }}</time>
+            </div>
+          </a>
+        </section>
         <section class="spotify-band">
           <iframe
             data-testid="embed-iframe"

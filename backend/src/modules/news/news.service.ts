@@ -226,7 +226,7 @@ export class NewsService {
     const above = new Set<string>();
     const spotlight = take(pool, 2, above);
     const cards = take(pool, 8, above);
-    const trends: typeof latest.items = [];
+    const trends = take(viral.items.length ? viral.items : fallback, 5, above);
     const entertainment = take(
       [...kpop.items, ...viral.items, ...fallback],
       4,
