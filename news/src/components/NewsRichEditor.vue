@@ -19,50 +19,69 @@ const editor = ref<HTMLElement | null>(null)
 const htmlBox = ref<HTMLTextAreaElement | null>(null)
 const uploading = ref(false)
 const uploadError = ref('')
+/** Ignore model→DOM sync while we push DOM→model (or programmatic model writes). */
 let skipWatch = false
+let syncEpoch = 0
 
-const syncFromEditor = () => {
-  if (!editor.value) return
+const editorSnapshot = () =>
+  editor.value ? normalizeEditorHtml(collapseNewsEmbeds(editor.value.innerHTML)) : ''
+
+const beginModelWrite = () => {
   skipWatch = true
-  content.value = normalizeEditorHtml(collapseNewsEmbeds(editor.value.innerHTML))
-  queueMicrotask(() => {
-    skipWatch = false
-  })
-}
-
-const fillEditor = async (html: string) => {
-  await nextTick()
-  if (!editor.value) return
-  const cleaned = normalizeEditorHtml(html || '')
-  editor.value.innerHTML = expandNewsEmbedsForEditor(cleaned)
-  // Keep model in sync when we auto-split jammed label lines.
-  if (cleaned !== (html || '')) {
-    skipWatch = true
-    content.value = collapseNewsEmbeds(cleaned)
-    queueMicrotask(() => {
-      skipWatch = false
+  syncEpoch += 1
+  const epoch = syncEpoch
+  return () => {
+    void nextTick(() => {
+      if (epoch === syncEpoch) skipWatch = false
     })
   }
 }
 
+const syncFromEditor = () => {
+  if (!editor.value) return
+  const end = beginModelWrite()
+  content.value = editorSnapshot()
+  end()
+}
+
+const fillEditor = async (html: string) => {
+  await nextTick()
+  if (!editor.value || mode.value !== 'visual') return
+  const cleaned = normalizeEditorHtml(html || '')
+  const expanded = expandNewsEmbedsForEditor(cleaned)
+  // Avoid wiping a non-empty draft with an empty/stale model write.
+  if (!cleaned.trim() && editorSnapshot().trim()) return
+  if (editor.value.innerHTML === expanded) return
+  editor.value.innerHTML = expanded
+  // Keep model in sync when we auto-split jammed label lines.
+  if (cleaned !== (html || '')) {
+    const end = beginModelWrite()
+    content.value = collapseNewsEmbeds(cleaned)
+    end()
+  }
+}
+
 const showHtmlSource = async (raw: string) => {
-  skipWatch = true
+  const end = beginModelWrite()
   content.value = formatHtmlForEdit(normalizeEditorHtml(collapseNewsEmbeds(raw || '')))
   await nextTick()
-  skipWatch = false
+  end()
   htmlBox.value?.focus()
 }
 
 const formatHtmlSource = () => {
-  skipWatch = true
+  const end = beginModelWrite()
   content.value = formatHtmlForEdit(normalizeEditorHtml(content.value || ''))
-  queueMicrotask(() => {
-    skipWatch = false
-  })
+  end()
 }
 
 watch(content, (html) => {
   if (skipWatch || mode.value !== 'visual') return
+  const incoming = normalizeEditorHtml(html || '')
+  const current = editorSnapshot()
+  if (incoming === current) return
+  // Never replace typed body with empty string from a race / accidental save path.
+  if (!incoming.trim() && current.trim()) return
   void fillEditor(html || '')
 })
 
@@ -75,6 +94,46 @@ watch(mode, async (next) => {
   await fillEditor(content.value || '')
 })
 
+const restoreSelection = (range: Range | null) => {
+  if (!range || !editor.value) return
+  editor.value.focus()
+  const sel = window.getSelection()
+  if (!sel) return
+  sel.removeAllRanges()
+  try {
+    sel.addRange(range)
+  } catch {
+    /* range may be detached after async work */
+  }
+}
+
+const captureSelection = () => {
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount || !editor.value) return null
+  const range = sel.getRangeAt(0)
+  if (!editor.value.contains(range.commonAncestorContainer)) return null
+  return range.cloneRange()
+}
+
+/**
+ * window.prompt + Enter often synthesizes a form submit on the parent <form>.
+ * Mark a short grace window so NewsAdminPostForm can ignore those submits.
+ */
+const markPromptGrace = () => {
+  try {
+    sessionStorage.setItem('nmm-editor-prompt-grace', String(Date.now()))
+  } catch {
+    /* ignore */
+  }
+}
+
+const ask = (message: string, defaultValue = '') => {
+  markPromptGrace()
+  const value = window.prompt(message, defaultValue)
+  markPromptGrace()
+  return value
+}
+
 const run = (command: string, value?: string) => {
   editor.value?.focus()
   document.execCommand(command, false, value)
@@ -86,20 +145,30 @@ const setBlock = (tag: string) => {
 }
 
 const addLink = () => {
+  const saved = captureSelection()
   const current = document.queryCommandValue('createLink')
-  const url = window.prompt('URL del enlace', current || 'https://')
-  if (!url) return
+  const url = ask('URL del enlace', current || 'https://')
+  if (!url) {
+    restoreSelection(saved)
+    return
+  }
+  restoreSelection(saved)
   run('createLink', url)
 }
 
 const addQuote = () => {
+  const saved = captureSelection()
   const selected = window.getSelection()?.toString().trim() || ''
-  const quote = selected || window.prompt('Cita', '') || ''
-  if (!quote.trim()) return
-  const cite = window.prompt('Autor de la cita (opcional)', '') || ''
+  const quote = selected || ask('Cita', '') || ''
+  if (!quote.trim()) {
+    restoreSelection(saved)
+    return
+  }
+  const cite = ask('Autor de la cita (opcional)', '') || ''
   const safe = (value: string) =>
     value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const citeHtml = cite.trim() ? `<cite>${safe(cite.trim())}</cite>` : ''
+  restoreSelection(saved)
   run(
     'insertHTML',
     `<figure class="wp-block-pullquote"><blockquote><p>${safe(quote.trim())}</p>${citeHtml}</blockquote></figure>`,
@@ -123,25 +192,53 @@ const insertEmbed = (raw: string) => {
 }
 
 const addEmbed = () => {
-  const url = window.prompt('Pega el enlace o el shortcode [embed]…[/embed]', 'https://')?.trim()
-  if (!url) return
+  const saved = captureSelection()
+  const url = ask('Pega el enlace o el shortcode [embed]…[/embed]', 'https://')?.trim()
+  if (!url) {
+    restoreSelection(saved)
+    return
+  }
+  restoreSelection(saved)
   insertEmbed(url)
 }
 
 const safeAttr = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+const uploadWithRetry = async (file: File) => {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await uploadAdminImage('news-file', file)
+    } catch (error) {
+      lastError = error
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400))
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('No se pudo subir la imagen.')
+}
+
 const insertUploadedMedia = async (file: File, opts?: { askSeo?: boolean }) => {
   uploading.value = true
   uploadError.value = ''
+  const saved = captureSelection()
+  const before = editorSnapshot()
   try {
     const prepared =
       file.type.startsWith('image/') && !file.type.includes('gif')
         ? await compressImageFile(file)
         : file
-    const uploaded = await uploadAdminImage('news-file', prepared)
+    const uploaded = await uploadWithRetry(prepared)
     const url = uploaded.path || uploaded.url
     if (!url) throw new Error('La subida no devolvió URL.')
+    // If a race emptied the model while we uploaded, restore the snapshot first.
+    if (!editorSnapshot().trim() && before.trim()) {
+      const end = beginModelWrite()
+      content.value = before
+      end()
+      await fillEditor(before)
+    }
+    restoreSelection(saved)
     if (file.type.startsWith('video/')) {
       run('insertHTML', `<p><video src="${url}" controls playsinline></video></p>`)
       return
@@ -150,8 +247,9 @@ const insertUploadedMedia = async (file: File, opts?: { askSeo?: boolean }) => {
     let alt = suggested
     let caption = ''
     if (opts?.askSeo !== false) {
-      alt = window.prompt('Texto alternativo (SEO)', suggested) || suggested
-      caption = window.prompt('Pie de foto (opcional)', '') || ''
+      alt = ask('Texto alternativo (SEO)', suggested) || suggested
+      caption = ask('Pie de foto (opcional)', '') || ''
+      restoreSelection(saved)
     }
     const cap = caption.trim() ? `<figcaption>${safeAttr(caption.trim())}</figcaption>` : ''
     run(
@@ -160,6 +258,7 @@ const insertUploadedMedia = async (file: File, opts?: { askSeo?: boolean }) => {
     )
   } catch (error) {
     uploadError.value = error instanceof Error ? error.message : 'No se pudo subir la imagen.'
+    restoreSelection(saved)
   } finally {
     uploading.value = false
   }
@@ -297,6 +396,7 @@ onMounted(() => {
       data-placeholder="Empieza a escribir el contenido…"
       @input="syncFromEditor"
       @paste="onPaste"
+      @keydown.enter.stop
     ></div>
     <textarea
       v-show="mode === 'html'"

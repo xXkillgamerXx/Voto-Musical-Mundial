@@ -338,28 +338,59 @@ watch(tagDraft, (value) => {
   tagTimer = setTimeout(() => searchTags(value), 220)
 })
 
+const uploadCoverWithRetry = async (file: File) => {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await withTimeout(uploadAdminImage('news-cover', file), 45000)
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('No se pudo subir la portada.')
+}
+
 const applyCoverFile = async (file?: File | null) => {
   if (!file || !file.type.startsWith('image/')) return
   uploading.value = true
   errorMessage.value = ''
+  const bodyBefore = form.value.content
   try {
     const optimized = await compressImageFile(file, { maxEdge: 1600, targetBytes: 170_000 })
-    clearCoverPreview()
+    // Keep previous remote cover until the new one succeeds; only swap local preview.
+    if (coverObjectUrl) {
+      URL.revokeObjectURL(coverObjectUrl)
+      coverObjectUrl = ''
+    }
     pendingCoverFile = optimized
     coverObjectUrl = URL.createObjectURL(optimized)
     coverPreview.value = coverObjectUrl
     if (!form.value.coverAlt.trim() && form.value.title.trim()) {
       form.value.coverAlt = form.value.title.trim()
     }
-    const uploaded = await uploadAdminImage('news-cover', optimized)
+    const uploaded = await uploadCoverWithRetry(optimized)
     const remote = uploaded.path || uploaded.url || ''
-    if (remote) {
-      form.value.coverUrl = remote
-      clearCoverPreview()
+    if (!remote) throw new Error('La subida no devolvió URL.')
+    form.value.coverUrl = remote
+    // Drop local blob preview only after remote URL is assigned; keep pending as save fallback
+    // until the next successful remote assignment is confirmed by keeping pending until clear.
+    if (coverObjectUrl) {
+      URL.revokeObjectURL(coverObjectUrl)
+      coverObjectUrl = ''
     }
-  } catch {
-    /* keep local preview; upload again on save */
+    coverPreview.value = ''
+    pendingCoverFile = null
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error
+        ? `Portada: ${error.message}. Se mantiene la vista previa local y se reintentará al guardar.`
+        : 'No se pudo subir la portada. Se reintentará al guardar.'
   } finally {
+    // Cover upload must never wipe the article body (prompt/form races).
+    if (!form.value.content?.trim() && bodyBefore?.trim()) {
+      form.value.content = bodyBefore
+    }
     uploading.value = false
   }
 }
@@ -390,9 +421,21 @@ const uploadAttachment = async (event: Event) => {
   if (!files.length) return
   uploadingFile.value = true
   errorMessage.value = ''
+  const bodyBefore = form.value.content
   try {
     for (const file of files) {
-      const uploaded = await uploadAdminImage('news-file', file)
+      let uploaded: { path?: string; url?: string } | null = null
+      let lastError: unknown
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          uploaded = await withTimeout(uploadAdminImage('news-file', file), 45000)
+          break
+        } catch (error) {
+          lastError = error
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 400))
+        }
+      }
+      if (!uploaded) throw lastError instanceof Error ? lastError : new Error('No se pudo subir el adjunto.')
       const url = uploaded.path || uploaded.url || ''
       if (!url) continue
       form.value.attachments = [
@@ -403,6 +446,9 @@ const uploadAttachment = async (event: Event) => {
   } catch {
     errorMessage.value = 'No se pudo subir el adjunto.'
   } finally {
+    if (!form.value.content?.trim() && bodyBefore?.trim()) {
+      form.value.content = bodyBefore
+    }
     uploadingFile.value = false
     input.value = ''
   }
@@ -508,7 +554,7 @@ onUnmounted(() => {
     <p v-if="successMessage" class="na-ok">{{ successMessage }}</p>
     <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
     <p v-if="loading" class="na-empty">Cargando formulario…</p>
-    <form v-show="!loading" class="na-form-grid" @submit.prevent="save">
+    <form v-show="!loading" class="na-form-grid" @submit.prevent>
       <article class="na-card na-form-main">
         <label class="na-title-field">
           <span>{{ form.locale === 'en' ? 'Title (English)' : 'Título (Español)' }}</span>
@@ -726,7 +772,7 @@ onUnmounted(() => {
         </article>
 
         <div class="na-form-actions">
-          <button class="na-btn solid" type="submit" :disabled="saving">
+          <button class="na-btn solid" type="button" :disabled="saving" @click="save">
             {{ saving ? 'Guardando…' : isEditing ? 'Guardar cambios' : 'Crear noticia' }}
           </button>
           <a class="na-btn" href="/es/admin/noticias">Volver</a>
