@@ -45,7 +45,12 @@ const busyPointsId = ref('')
 const busyRoleId = ref('')
 const busyStatusId = ref('')
 const deleteTarget = ref<AdminUserRow | null>(null)
+const deleteConfirmText = ref('')
 const deleting = ref(false)
+const DELETE_CONFIRM_WORD = 'ELIMINAR'
+const canConfirmDelete = computed(
+  () => deleteConfirmText.value.trim().toUpperCase() === DELETE_CONFIRM_WORD,
+)
 const blockTarget = ref<AdminUserRow | null>(null)
 const blockReason = ref('')
 const blockDuration = ref(24)
@@ -239,8 +244,20 @@ const confirmBlock = async () => {
   }
 }
 
+const openDelete = (user: AdminUserRow) => {
+  deleteTarget.value = user
+  deleteConfirmText.value = ''
+  errorMessage.value = ''
+}
+
+const closeDelete = () => {
+  if (deleting.value) return
+  deleteTarget.value = null
+  deleteConfirmText.value = ''
+}
+
 const confirmDelete = async () => {
-  if (!deleteTarget.value) return
+  if (!deleteTarget.value || !canConfirmDelete.value) return
   deleting.value = true
   errorMessage.value = ''
   notice.value = ''
@@ -248,6 +265,7 @@ const confirmDelete = async () => {
   try {
     await deleteAdminUser(deleteTarget.value.id)
     deleteTarget.value = null
+    deleteConfirmText.value = ''
     notice.value = `${name} eliminado.`
     await loadUsers({ keepMessages: true })
   } catch (error) {
@@ -302,56 +320,58 @@ onMounted(() => loadUsers())
     <p v-if="loading" class="na-empty">Cargando usuarios…</p>
 
     <div v-else class="na-users-list">
-      <article v-for="user in users" :key="user.id" class="na-user-card">
-        <div class="na-user-main">
-          <div>
-            <a class="na-user-name" :href="voteProfileHref(user.id)">{{ userLabel(user) }}</a>
-            <small>#{{ user.id }} · {{ user.email || 'Sin email' }}</small>
-          </div>
-          <span class="na-pill" :data-tone="accountStatus(user)">
-            {{ accountStatus(user) === 'blocked' ? 'Bloqueado' : 'Activo' }}
-          </span>
+      <div class="na-users-head" aria-hidden="true">
+        <span>Usuario</span>
+        <span>Estado</span>
+        <span>Rol</span>
+        <span>Puntos</span>
+        <span>Acciones</span>
+      </div>
+      <article v-for="user in users" :key="user.id" class="na-user-row">
+        <div class="na-user-id">
+          <a class="na-user-name" :href="voteProfileHref(user.id)">{{ userLabel(user) }}</a>
+          <small>#{{ user.id }} · {{ user.email || 'Sin email' }}</small>
+          <small v-if="accountStatus(user) === 'blocked'" class="na-block-note">{{ formatBlockExpiry(user) }}</small>
         </div>
-        <p v-if="accountStatus(user) === 'blocked'" class="na-block-note">{{ formatBlockExpiry(user) }}</p>
 
-        <div class="na-user-controls">
-          <label>
-            <span>Estado</span>
-            <select
-              :value="accountStatus(user)"
-              :disabled="normalizeRole(user.role) === 'owner' || busyStatusId === user.id"
-              @change="onStatusChange(user, ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="active">Activo</option>
-              <option value="blocked">Bloqueado</option>
-            </select>
-          </label>
-          <label>
-            <span>Rol</span>
-            <select
-              :value="normalizeRole(user.role)"
-              :disabled="busyRoleId === user.id"
-              @change="updateRole(user, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
-            </select>
-          </label>
-          <form class="na-points" @submit.prevent="adjustPoints(user)">
-            <span>{{ Number(user.points || 0).toLocaleString('es') }} pts</span>
-            <input v-model="pointAdjustments[user.id]" type="number" step="1" placeholder="+/-" />
-            <button type="submit" class="na-btn solid" :disabled="busyPointsId === user.id">
-              {{ busyPointsId === user.id ? '…' : 'Aplicar' }}
-            </button>
-          </form>
-        </div>
+        <label class="na-user-field">
+          <span class="na-mobile-label">Estado</span>
+          <select
+            :value="accountStatus(user)"
+            :disabled="normalizeRole(user.role) === 'owner' || busyStatusId === user.id"
+            @change="onStatusChange(user, ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="active">Activo</option>
+            <option value="blocked">Bloqueado</option>
+          </select>
+        </label>
+
+        <label class="na-user-field">
+          <span class="na-mobile-label">Rol</span>
+          <select
+            :value="normalizeRole(user.role)"
+            :disabled="busyRoleId === user.id"
+            @change="updateRole(user, ($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
+          </select>
+        </label>
+
+        <form class="na-points" @submit.prevent="adjustPoints(user)">
+          <span class="na-pts">{{ Number(user.points || 0).toLocaleString('es') }}</span>
+          <input v-model="pointAdjustments[user.id]" type="number" step="1" placeholder="+/-" aria-label="Ajuste de puntos" />
+          <button type="submit" class="na-btn solid na-btn-sm" :disabled="busyPointsId === user.id">
+            {{ busyPointsId === user.id ? '…' : 'OK' }}
+          </button>
+        </form>
 
         <div class="na-user-actions">
-          <a class="na-btn" :href="voteProfileHref(user.id)">Ver perfil</a>
+          <a class="na-btn na-btn-sm" :href="voteProfileHref(user.id)">Perfil</a>
           <button
             type="button"
-            class="na-btn danger"
+            class="na-btn danger na-btn-sm"
             :disabled="normalizeRole(user.role) === 'owner'"
-            @click="deleteTarget = user"
+            @click="openDelete(user)"
           >
             Eliminar
           </button>
@@ -379,14 +399,35 @@ onMounted(() => loadUsers())
       </div>
     </div>
 
-    <div v-if="deleteTarget" class="na-modal" @click.self="!deleting && (deleteTarget = null)">
-      <div class="na-modal-card">
-        <h3>Eliminar usuario</h3>
-        <p>¿Seguro que quieres eliminar a <b>{{ userLabel(deleteTarget) }}</b>? Esta acción no se puede deshacer.</p>
+    <div v-if="deleteTarget" class="na-modal" @click.self="closeDelete">
+      <div class="na-modal-card" role="dialog" aria-modal="true" aria-labelledby="na-delete-title">
+        <h3 id="na-delete-title">Eliminar usuario</h3>
+        <p>
+          Vas a borrar permanentemente a <b>{{ userLabel(deleteTarget) }}</b>
+          <template v-if="deleteTarget.email"> ({{ deleteTarget.email }})</template>.
+          Esta acción no se puede deshacer.
+        </p>
+        <label class="na-field">
+          <span>Escribe <b>{{ DELETE_CONFIRM_WORD }}</b> para confirmar</span>
+          <input
+            v-model="deleteConfirmText"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="DELETE_CONFIRM_WORD"
+            :disabled="deleting"
+            @keydown.enter.prevent="confirmDelete"
+          />
+        </label>
         <div class="na-modal-actions">
-          <button type="button" class="na-btn" :disabled="deleting" @click="deleteTarget = null">Cancelar</button>
-          <button type="button" class="na-btn danger" :disabled="deleting" @click="confirmDelete">
-            {{ deleting ? 'Eliminando…' : 'Eliminar' }}
+          <button type="button" class="na-btn" :disabled="deleting" @click="closeDelete">Cancelar</button>
+          <button
+            type="button"
+            class="na-btn danger"
+            :disabled="deleting || !canConfirmDelete"
+            @click="confirmDelete"
+          >
+            {{ deleting ? 'Eliminando…' : 'Eliminar definitivamente' }}
           </button>
         </div>
       </div>
@@ -424,15 +465,14 @@ onMounted(() => loadUsers())
 <style scoped>
 .na-users {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .na-users-toolbar,
-.na-user-main,
 .na-pager,
 .na-modal-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
 }
@@ -444,8 +484,8 @@ onMounted(() => loadUsers())
   text-transform: uppercase;
 }
 .na-users-toolbar h2 {
-  margin: 6px 0 4px;
-  font: 800 24px/1.1 Manrope, sans-serif;
+  margin: 4px 0 2px;
+  font: 800 22px/1.1 Manrope, sans-serif;
 }
 .na-help {
   margin: 0;
@@ -454,32 +494,34 @@ onMounted(() => loadUsers())
 }
 .na-users-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
 }
 .na-users-filters input,
 .na-users-filters select,
-.na-user-controls select,
+.na-user-field select,
 .na-points input,
+.na-field input,
 .na-field textarea,
 .na-field select {
-  min-height: 40px;
+  min-height: 34px;
   width: 100%;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--card);
   color: var(--ink);
+  font-size: 13px;
 }
 .na-field textarea {
   padding: 10px 12px;
   resize: vertical;
 }
 .na-btn {
-  min-height: 40px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--card);
   color: var(--ink);
   font: 800 12px/1 Manrope, sans-serif;
@@ -488,6 +530,12 @@ onMounted(() => loadUsers())
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+}
+.na-btn-sm {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
 }
 .na-btn.solid {
   border-color: var(--blue);
@@ -499,12 +547,16 @@ onMounted(() => loadUsers())
   background: color-mix(in srgb, #ef4444 12%, transparent);
   color: #ef4444;
 }
+.na-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .na-error,
 .na-ok,
 .na-empty {
   margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
   font: 700 13px/1.4 Manrope, sans-serif;
 }
 .na-error {
@@ -521,32 +573,63 @@ onMounted(() => loadUsers())
 }
 .na-users-list {
   display: grid;
-  gap: 12px;
-}
-.na-user-card {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 0;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
+  overflow: hidden;
   background: var(--card);
 }
+.na-users-head,
+.na-user-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.6fr) 110px 120px minmax(150px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+}
+.na-users-head {
+  background: color-mix(in srgb, var(--ink) 4%, var(--card));
+  color: var(--sub);
+  font: 800 10px/1 Manrope, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+.na-user-row {
+  border-top: 1px solid var(--line);
+}
+.na-user-row:first-of-type {
+  border-top: 0;
+}
+.na-user-id {
+  min-width: 0;
+}
 .na-user-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ink);
-  font: 800 15px/1.2 Manrope, sans-serif;
+  font: 800 13px/1.2 Manrope, sans-serif;
   text-decoration: none;
 }
-.na-user-main small,
+.na-user-id small,
 .na-block-note {
   display: block;
-  margin-top: 4px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--sub);
-  font-size: 12px;
+  font-size: 11px;
+}
+.na-block-note {
+  color: #ef4444;
 }
 .na-pill {
-  padding: 5px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
-  font: 800 11px/1 Manrope, sans-serif;
+  font: 800 10px/1 Manrope, sans-serif;
   text-transform: uppercase;
 }
 .na-pill[data-tone='active'] {
@@ -557,43 +640,49 @@ onMounted(() => loadUsers())
   background: color-mix(in srgb, #ef4444 14%, transparent);
   color: #ef4444;
 }
-.na-user-controls {
+.na-user-field {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
+  gap: 0;
 }
-.na-user-controls label,
+.na-mobile-label {
+  display: none;
+}
 .na-field {
   display: grid;
   gap: 6px;
 }
-.na-user-controls span,
 .na-field span {
   color: var(--sub);
   font: 800 10px/1 Manrope, sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.na-field span b {
+  color: var(--ink);
+  letter-spacing: 0.04em;
+}
 .na-points {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px;
-  align-items: end;
+  grid-template-columns: auto minmax(56px, 1fr) auto;
+  gap: 6px;
+  align-items: center;
 }
-.na-points span {
-  min-height: 40px;
+.na-pts {
+  min-height: 30px;
   display: inline-flex;
   align-items: center;
-  padding: 0 10px;
-  border-radius: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
   background: color-mix(in srgb, #f59e0b 12%, transparent);
   color: #d97706;
-  font: 800 12px/1 Manrope, sans-serif;
+  font: 800 11px/1 Manrope, sans-serif;
 }
 .na-user-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
 }
 .na-modal {
   position: fixed;
@@ -622,5 +711,31 @@ onMounted(() => loadUsers())
   margin: 0;
   color: var(--sub);
   font-size: 14px;
+}
+@media (max-width: 900px) {
+  .na-users-head {
+    display: none;
+  }
+  .na-user-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px;
+  }
+  .na-user-id,
+  .na-user-actions {
+    grid-column: 1 / -1;
+  }
+  .na-user-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .na-mobile-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--sub);
+    font: 800 10px/1 Manrope, sans-serif;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 }
 </style>

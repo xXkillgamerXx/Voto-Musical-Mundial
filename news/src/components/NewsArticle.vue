@@ -42,7 +42,21 @@ const crumbHref = computed(() => categoryHref(loc.value, crumbCategory.value.slu
 const bodyHtml = computed(() => expandNewsEmbeds(post.value?.content || ''))
 const copiedShare = ref('')
 const shareUrl = () => window.location.href
-const share = async (network: 'facebook' | 'twitter' | 'instagram' | 'tiktok') => {
+const markCopied = (network: string) => {
+  copiedShare.value = network
+  window.setTimeout(() => {
+    if (copiedShare.value === network) copiedShare.value = ''
+  }, 2200)
+}
+const copyShareLink = async (network = 'copy') => {
+  try {
+    await navigator.clipboard.writeText(shareUrl())
+    markCopied(network)
+  } catch {
+    copiedShare.value = ''
+  }
+}
+const share = async (network: 'facebook' | 'twitter' | 'whatsapp' | 'instagram' | 'tiktok' | 'copy') => {
   const url = shareUrl()
   const title = post.value?.title || ''
   if (network === 'facebook') {
@@ -57,15 +71,19 @@ const share = async (network: 'facebook' | 'twitter' | 'instagram' | 'tiktok') =
     )
     return
   }
-  try {
-    await navigator.clipboard.writeText(url)
-    copiedShare.value = network
-    window.setTimeout(() => {
-      copiedShare.value = ''
-    }, 2200)
-  } catch {
-    copiedShare.value = ''
+  if (network === 'whatsapp') {
+    window.open(
+      `https://api.whatsapp.com/send?text=${encodeURIComponent(`${title} ${url}`)}`,
+      '_blank',
+      'noopener',
+    )
+    return
   }
+  if (network === 'copy') {
+    await copyShareLink('copy')
+    return
+  }
+  await copyShareLink(network)
   window.open(network === 'instagram' ? 'https://www.instagram.com/' : 'https://www.tiktok.com/', '_blank', 'noopener')
 }
 const isVideo = (item: { url: string; type?: string; name?: string }) =>
@@ -194,25 +212,46 @@ watch(bodyHtml, async () => {
           <img :src="coverOf(post, '/images/jungkook-hero.jpg', 'hero')" :alt="post.coverAlt || post.title" width="1600" height="900" fetchpriority="high" decoding="async" @error="coverErrorFallback" />
           <figcaption v-if="post.coverCaption">{{ post.coverCaption }}</figcaption>
         </figure>
-        <p class="article-meta">
-          <span class="article-by">
-            <span class="article-author-avatar" aria-hidden="true">
-              <img v-if="post.authorPhotoUrl" :src="post.authorPhotoUrl" :alt="''" />
-              <span v-else class="ph">{{ (post.authorName || t(loc, 'staff') || 'A').slice(0, 1) }}</span>
+        <div class="article-meta-row">
+          <p class="article-meta">
+            <span class="article-by">
+              <span class="article-author-avatar" aria-hidden="true">
+                <img v-if="post.authorPhotoUrl" :src="post.authorPhotoUrl" :alt="''" />
+                <span v-else class="ph">{{ (post.authorName || t(loc, 'staff') || 'A').slice(0, 1) }}</span>
+              </span>
+              {{ t(loc, 'byAuthor') }}
+              <NewsAuthorHover
+                :locale="loc"
+                :name="post.authorName || t(loc, 'staff')"
+                :href="post.authorHref || (post.authorUsername ? withLocale(`/user/${post.authorUsername}`, loc) : '')"
+                :photo-url="post.authorPhotoUrl"
+                :bio="post.authorBio"
+                :post-count="post.authorPostCount"
+              />
             </span>
-            {{ t(loc, 'byAuthor') }}
-            <NewsAuthorHover
-              :locale="loc"
-              :name="post.authorName || t(loc, 'staff')"
-              :href="post.authorHref || (post.authorUsername ? withLocale(`/user/${post.authorUsername}`, loc) : '')"
-              :photo-url="post.authorPhotoUrl"
-              :bio="post.authorBio"
-              :post-count="post.authorPostCount"
-            />
-          </span>
-          <span v-if="post.publishedAt" class="article-meta-sep" aria-hidden="true"></span>
-          <time v-if="post.publishedAt" :datetime="post.publishedAt">{{ formatNewsDate(post.publishedAt, loc) }}</time>
-        </p>
+            <span v-if="post.publishedAt" class="article-meta-sep" aria-hidden="true"></span>
+            <time v-if="post.publishedAt" :datetime="post.publishedAt">{{ formatNewsDate(post.publishedAt, loc) }}</time>
+          </p>
+          <div class="article-share-inline" role="group" :aria-label="t(loc, 'shareOn')">
+            <button type="button" class="share-facebook" :title="t(loc, 'shareFacebook')" @click="share('facebook')">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v3H6v4h3v8h4v-8h3l1-4h-4V9c0-.6.4-1 1-1z"/></svg>
+              <span class="sr-only">{{ t(loc, 'shareFacebook') }}</span>
+            </button>
+            <button type="button" class="share-twitter" :title="t(loc, 'shareTwitter')" @click="share('twitter')">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.2 3H21l-6.6 7.5L22 21h-5.5l-4.3-5.6L7 21H4.2l7.1-8.1L2 3h5.6l3.9 5.2L18.2 3zm-1 16.2h1.5L7 4.7H5.4L17.2 19.2z"/></svg>
+              <span class="sr-only">{{ t(loc, 'shareTwitter') }}</span>
+            </button>
+            <button type="button" class="share-whatsapp" :title="t(loc, 'shareWhatsApp')" @click="share('whatsapp')">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.7-1.2A9 9 0 1 0 12 3zm0 1.7a7.3 7.3 0 0 1 6.2 11 7.2 7.2 0 0 1-5.7 2.8 7.3 7.3 0 0 1-3.5-.9l-.3-.2-2.8.7.7-2.7-.2-.3A7.3 7.3 0 0 1 12 4.7zm-2.9 3.2c-.2 0-.5.1-.7.4-.2.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.8 2.9 4.5 3.9 2.2.8 2.7.7 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.7-.4-.3-.2-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.2-.2.3-.7.8-.8.9-.2.1-.3.2-.6.1s-1.2-.4-2.2-1.4c-.8-.7-1.4-1.6-1.5-1.9-.2-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.1-.6-1.5-.8-2-.2-.5-.4-.4-.6-.4h-.5z"/></svg>
+              <span class="sr-only">{{ t(loc, 'shareWhatsApp') }}</span>
+            </button>
+            <button type="button" class="share-copy" :title="t(loc, 'shareCopy')" @click="share('copy')">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H10V7h9v14z"/></svg>
+              <span class="sr-only">{{ t(loc, 'shareCopy') }}</span>
+            </button>
+            <span v-if="copiedShare" class="article-share-inline-copied" role="status">{{ t(loc, 'shareCopied') }}</span>
+          </div>
+        </div>
         <aside v-if="loc === 'en'" class="google-news-cta">
           <div class="google-news-cta-icon" aria-hidden="true">
             <svg viewBox="0 0 48 48" role="img">

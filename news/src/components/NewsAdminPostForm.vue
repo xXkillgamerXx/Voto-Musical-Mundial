@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   createAdminNewsPost,
   deleteAdminNewsComment,
@@ -98,6 +98,99 @@ let coverObjectUrl = ''
 let pendingCoverFile: File | null = null
 let tagTimer: ReturnType<typeof setTimeout> | null = null
 const draftKey = () => `nmm-news-new-draft-${props.newsLocale === 'en' ? 'en' : 'es'}`
+
+const isDirty = ref(false)
+const leaveOpen = ref(false)
+const pendingLeaveHref = ref('')
+let baselineJson = ''
+let allowLeaveOnce = false
+
+const formFingerprint = () =>
+  JSON.stringify({
+    title: form.value.title,
+    excerpt: form.value.excerpt,
+    content: form.value.content,
+    slug: form.value.slug,
+    esSlug: form.value.esSlug,
+    enSlug: form.value.enSlug,
+    coverUrl: form.value.coverUrl,
+    coverCaption: form.value.coverCaption,
+    coverAlt: form.value.coverAlt,
+    status: form.value.status,
+    featured: form.value.featured,
+    publishedAt: form.value.publishedAt,
+    categoryIds: form.value.categoryIds,
+    tags: form.value.tags,
+    attachments: form.value.attachments,
+    wpAuthorId: form.value.wpAuthorId,
+  })
+
+const markClean = () => {
+  baselineJson = formFingerprint()
+  isDirty.value = false
+}
+
+const refreshDirty = () => {
+  if (loading.value || allowLeaveOnce) {
+    isDirty.value = false
+    return
+  }
+  isDirty.value = formFingerprint() !== baselineJson
+}
+
+const closeLeaveModal = () => {
+  leaveOpen.value = false
+  pendingLeaveHref.value = ''
+}
+
+const navigateTo = (href: string) => {
+  allowLeaveOnce = true
+  isDirty.value = false
+  closeLeaveModal()
+  const url = new URL(href, window.location.origin)
+  const path = `${url.pathname}${url.search}${url.hash}`
+  window.history.pushState({}, '', path)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+const requestLeave = (href: string) => {
+  if (allowLeaveOnce || !isDirty.value) {
+    navigateTo(href)
+    return
+  }
+  pendingLeaveHref.value = href
+  leaveOpen.value = true
+}
+
+const confirmLeave = () => {
+  const href = pendingLeaveHref.value || '/es/admin/noticias'
+  navigateTo(href)
+}
+
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!isDirty.value || allowLeaveOnce) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+const onCaptureNavClick = (event: MouseEvent) => {
+  if (!isDirty.value || allowLeaveOnce || leaveOpen.value) return
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    return
+  }
+  const link = (event.target as HTMLElement | null)?.closest?.('a')
+  if (!link) return
+  const href = link.getAttribute('href') || ''
+  if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+  if (href.startsWith('http') && !href.startsWith(window.location.origin)) return
+  const url = new URL(href, window.location.origin)
+  if (url.origin !== window.location.origin) return
+  if (url.pathname === window.location.pathname && url.search === window.location.search) return
+  // Stay inside the same post editor (e.g. hash-only) is fine; leaving admin form needs confirm.
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  requestLeave(`${url.pathname}${url.search}${url.hash}`)
+}
 const canChangeAuthor = computed(() => ['admin', 'superadmin', 'owner'].includes(String(me.value?.role || '').toLowerCase()))
 const selectedAuthor = computed(
   () => wpAuthors.value.find((item) => String(item.id) === String(form.value.wpAuthorId)) || null,
@@ -217,6 +310,9 @@ const hydrateAuthor = async () => {
 
 const load = async () => {
   loading.value = true
+  isDirty.value = false
+  allowLeaveOnce = false
+  closeLeaveModal()
   errorMessage.value = ''
   try {
     if (props.postId) {
@@ -243,6 +339,8 @@ const load = async () => {
         attachments: Array.isArray(post.attachments) ? post.attachments : [],
       }
       loading.value = false
+      await nextTick()
+      markClean()
       void hydrateAuthor()
       void Promise.all([loadLookups(form.value.locale), loadComments()])
     } else {
@@ -267,12 +365,15 @@ const load = async () => {
         if (!form.value.publishedAt) form.value.publishedAt = nowLocalInput()
       }
       loading.value = false
-      void hydrateAuthor()
-      void loadLookups(form.value.locale)
+      await Promise.all([hydrateAuthor(), loadLookups(form.value.locale)])
+      await nextTick()
+      markClean()
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'No se pudo cargar el formulario.'
     loading.value = false
+    await nextTick()
+    markClean()
   }
 }
 
@@ -509,6 +610,7 @@ const save = async () => {
     if (isEditing.value && props.postId) {
       await updateAdminNewsPost(props.postId, body)
       successMessage.value = 'Noticia actualizada.'
+      markClean()
       window.dispatchEvent(new Event('nmm:news-home-stale'))
     } else {
       const created = await createAdminNewsPost(body)
@@ -518,6 +620,8 @@ const save = async () => {
       } catch {
         /* ignore */
       }
+      markClean()
+      allowLeaveOnce = true
       window.dispatchEvent(new Event('nmm:news-home-stale'))
       const db = form.value.locale === 'en' ? 'en/' : ''
       window.history.pushState({}, '', `/es/admin/noticias/${db}${created.id}`)
@@ -534,6 +638,7 @@ watch(() => [props.postId, props.newsLocale] as const, load, { immediate: true }
 watch(
   form,
   (value) => {
+    refreshDirty()
     if (isEditing.value || loading.value) return
     try {
       sessionStorage.setItem(draftKey(), JSON.stringify(value))
@@ -543,9 +648,15 @@ watch(
   },
   { deep: true },
 )
+onMounted(() => {
+  window.addEventListener('beforeunload', onBeforeUnload)
+  document.addEventListener('click', onCaptureNavClick, true)
+})
 onUnmounted(() => {
   if (tagTimer) clearTimeout(tagTimer)
   clearCoverPreview()
+  window.removeEventListener('beforeunload', onBeforeUnload)
+  document.removeEventListener('click', onCaptureNavClick, true)
 })
 </script>
 
@@ -775,9 +886,23 @@ onUnmounted(() => {
           <button class="na-btn solid" type="button" :disabled="saving" @click="save">
             {{ saving ? 'Guardando…' : isEditing ? 'Guardar cambios' : 'Crear noticia' }}
           </button>
-          <a class="na-btn" href="/es/admin/noticias">Volver</a>
+          <button type="button" class="na-btn" @click="requestLeave('/es/admin/noticias')">Volver</button>
         </div>
       </aside>
     </form>
+
+    <div v-if="leaveOpen" class="na-modal" @click.self="closeLeaveModal">
+      <div class="na-modal-card" role="dialog" aria-modal="true" aria-labelledby="na-leave-title">
+        <h3 id="na-leave-title">¿Salir sin guardar?</h3>
+        <p>
+          Hay cambios sin guardar (incluye el texto del artículo). Si sales ahora,
+          <b>se puede perder lo que escribiste</b>.
+        </p>
+        <div class="na-form-actions" style="margin-top: 8px">
+          <button type="button" class="na-btn solid" @click="closeLeaveModal">Seguir editando</button>
+          <button type="button" class="na-btn danger" @click="confirmLeave">Salir sin guardar</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>

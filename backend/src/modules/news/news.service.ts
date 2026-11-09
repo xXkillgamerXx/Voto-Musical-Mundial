@@ -203,12 +203,14 @@ export class NewsService {
     const feed = { page: 1, skipCount: true as const };
     const [latest, kpop, pop, viral, series, social, interviews, categoryList] = await Promise.all([
       this.loadPosts(locale, { ...feed, limit: 24 }),
-      this.loadPosts(locale, { ...feed, limit: 8, slugs: ['kpop', 'k-pop'] }),
-      this.loadPosts(locale, { ...feed, limit: 8, slugs: ['pop'] }),
+      // Pull extra K-POP rows so the home block still fills after hero/card dedupe
+      // (EN homepage is often almost all kpop, which used to leave this section empty).
+      this.loadPosts(locale, { ...feed, limit: 24, slugs: ['kpop', 'k-pop'] }),
+      this.loadPosts(locale, { ...feed, limit: 16, slugs: ['pop'] }),
       this.loadPosts(locale, { ...feed, limit: 16, slugs: ['viral'] }),
-      this.loadPosts(locale, { ...feed, limit: 8, slugs: ['series', 'cine', 'peliculas', 'k-drama'] }),
-      this.loadPosts(locale, { ...feed, limit: 6, slugs: ['redes-sociales'] }),
-      this.loadPosts(locale, { ...feed, limit: 6, slugs: ['entrevista', 'entrevistas'] }),
+      this.loadPosts(locale, { ...feed, limit: 16, slugs: ['series', 'cine', 'peliculas', 'k-drama'] }),
+      this.loadPosts(locale, { ...feed, limit: 12, slugs: ['redes-sociales'] }),
+      this.loadPosts(locale, { ...feed, limit: 12, slugs: ['entrevista', 'entrevistas'] }),
       this.categories(localeValue),
     ]);
     const take = (items: typeof latest.items, count: number, bag: Set<string>) => {
@@ -220,6 +222,12 @@ export class NewsService {
         if (picked.length >= count) break;
       }
       return picked;
+    };
+    /** Prefer unique posts; if dedupe wipes the section, still show category stories. */
+    const takeSection = (items: typeof latest.items, count: number, preferUnique: Set<string>) => {
+      const unique = take(items, count, new Set(preferUnique));
+      if (unique.length) return unique;
+      return take(items, count, new Set());
     };
     const pool = latest.items;
     const fallback = [...pool, ...viral.items, ...kpop.items];
@@ -233,12 +241,17 @@ export class NewsService {
       above,
     );
     const avoidHero = () => new Set([...spotlight, ...cards].map((item) => item.id));
-    const kpopBlock = take(kpop.items.length ? kpop.items : fallback, 6, avoidHero());
-    const seriesBlock = take(series.items.length ? series.items : fallback, 5, avoidHero());
-    const popBlock = take(pop.items.length ? pop.items : fallback, 6, avoidHero());
-    const more = take(pool.length ? pool : fallback, 8, avoidHero());
-    const socialBlock = take(social.items.length ? social.items : fallback, 4, avoidHero());
-    const interviewBlock = take(interviews.items.length ? interviews.items : fallback, 4, avoidHero());
+    const kpopSource = kpop.items.length ? kpop.items : fallback;
+    const seriesSource = series.items.length ? series.items : fallback;
+    const popSource = pop.items.length ? pop.items : fallback;
+    const socialSource = social.items.length ? social.items : fallback;
+    const interviewSource = interviews.items.length ? interviews.items : fallback;
+    const kpopBlock = takeSection(kpopSource, 6, avoidHero());
+    const seriesBlock = takeSection(seriesSource, 5, avoidHero());
+    const popBlock = takeSection(popSource, 6, avoidHero());
+    const more = takeSection(pool.length ? pool : fallback, 8, avoidHero());
+    const socialBlock = takeSection(socialSource, 4, avoidHero());
+    const interviewBlock = takeSection(interviewSource, 4, avoidHero());
     const covers = new Map<string, string>();
     for (const item of [...latest.items, ...kpop.items, ...pop.items, ...viral.items, ...series.items, ...social.items, ...interviews.items]) {
       if (!item.coverUrl) continue;

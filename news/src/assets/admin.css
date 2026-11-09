@@ -1054,6 +1054,29 @@ button.na-card .value,
   color: #fff;
 }
 
+.na-btn.danger {
+  border-color: color-mix(in srgb, #ef4444 45%, var(--line));
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #ef4444;
+}
+
+.na-btn.danger:hover {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+}
+
+.na-modal-card > h3 {
+  margin: 0 0 8px;
+  font: 800 20px/1.2 Manrope, sans-serif;
+  color: var(--ink);
+}
+
+.na-modal-card > p {
+  margin: 0;
+  color: var(--sub);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .na-btn.solid:hover {
   border-color: color-mix(in srgb, var(--blue) 70%, #fff);
   background: color-mix(in srgb, var(--blue) 82%, #fff);

@@ -4982,12 +4982,12 @@ html[data-theme="dark"] .notice-row:hover time {
 }
 
 .article-dek {
-  margin: 10px 0 14px;
+  margin: 8px 0 12px;
   color: var(--sub);
-  font-size: 22px;
-  font-weight: 650;
-  line-height: 1.4;
-  letter-spacing: -0.02em;
+  font-size: 16px;
+  font-weight: 550;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
 }
 
 .article-cover {
@@ -4998,8 +4998,82 @@ html[data-theme="dark"] .notice-row:hover time {
   background: #0a0b10;
 }
 
-.article-cover + .article-meta {
+.article-cover + .article-meta-row {
   margin: 0 0 22px;
+}
+
+.article-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin: 0 0 22px;
+}
+
+.article-meta-row .article-meta {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.article-share-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.article-share-inline button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.article-share-inline button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.article-share-inline .share-facebook { border: 1.5px solid #1877f2; color: #1877f2; }
+.article-share-inline .share-twitter { border: 1.5px solid var(--ink); color: var(--ink); }
+.article-share-inline .share-whatsapp { border: 1.5px solid #25d366; color: #25d366; }
+.article-share-inline .share-copy { border: 1.5px solid var(--line); color: var(--sub); }
+
+.article-share-inline button:hover {
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.article-share-inline .share-facebook:hover { background: #1877f2; border-color: #1877f2; }
+.article-share-inline .share-twitter:hover { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.article-share-inline .share-whatsapp:hover { background: #25d366; border-color: #25d366; }
+.article-share-inline .share-copy:hover { background: var(--ink); border-color: var(--ink); color: var(--card); }
+
+.article-share-inline-copied {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .google-news-cta {
