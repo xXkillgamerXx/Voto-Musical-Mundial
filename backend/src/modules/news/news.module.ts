@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { NewsAdminController } from './news-admin.controller';
 import { NewsController } from './news.controller';
+import { NewsApiKeyGuard } from './news-api-key.guard';
 import { NewsShareController } from './news-share.controller';
 import { NewsSitemapController } from './news-sitemap.controller';
 import { NewsFeedController } from './news-feed.controller';
@@ -10,7 +11,7 @@ import { NewsSitemapService } from './news-sitemap.service';
 
 @Module({
   controllers: [NewsController, NewsShareController, NewsSitemapController, NewsFeedController, NewsAdminController],
-  providers: [NewsMysqlService, NewsService, NewsSitemapService],
+  providers: [NewsMysqlService, NewsService, NewsSitemapService, NewsApiKeyGuard],
   exports: [NewsService, NewsSitemapService],
 })
 export class NewsModule {}

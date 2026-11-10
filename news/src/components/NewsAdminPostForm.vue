@@ -12,7 +12,7 @@ import {
   uploadAdminImage,
 } from '../../../src/services/api/adminApi'
 import { getMe } from '../../../src/services/api/authApi'
-import { compressImageFile } from '../lib/compressImage'
+import { compressImageFile, slugifyImageBase } from '../lib/compressImage'
 import { articleHref } from '../lib/locale'
 import NewsRichEditor from './NewsRichEditor.vue'
 
@@ -452,13 +452,21 @@ const uploadCoverWithRetry = async (file: File) => {
   throw lastError instanceof Error ? lastError : new Error('No se pudo subir la portada.')
 }
 
+const coverNameFromTitle = () =>
+  slugifyImageBase(form.value.title || primarySlug.value || form.value.slug, 'portada-noticia')
+
 const applyCoverFile = async (file?: File | null) => {
   if (!file || !file.type.startsWith('image/')) return
   uploading.value = true
   errorMessage.value = ''
   const bodyBefore = form.value.content
   try {
-    const optimized = await compressImageFile(file, { maxEdge: 1600, targetBytes: 170_000 })
+    const titleName = coverNameFromTitle()
+    const optimized = await compressImageFile(file, {
+      maxEdge: 1600,
+      targetBytes: 220_000,
+      fileNameBase: titleName,
+    })
     // Keep previous remote cover until the new one succeeds; only swap local preview.
     if (coverObjectUrl) {
       URL.revokeObjectURL(coverObjectUrl)
@@ -467,8 +475,11 @@ const applyCoverFile = async (file?: File | null) => {
     pendingCoverFile = optimized
     coverObjectUrl = URL.createObjectURL(optimized)
     coverPreview.value = coverObjectUrl
-    if (!form.value.coverAlt.trim() && form.value.title.trim()) {
+    // Portada SEO: el alt toma el título de la noticia.
+    if (form.value.title.trim()) {
       form.value.coverAlt = form.value.title.trim()
+    } else if (!form.value.coverAlt.trim()) {
+      form.value.coverAlt = titleName
     }
     const uploaded = await uploadCoverWithRetry(optimized)
     const remote = uploaded.path || uploaded.url || ''
@@ -525,11 +536,19 @@ const uploadAttachment = async (event: Event) => {
   const bodyBefore = form.value.content
   try {
     for (const file of files) {
+      const prepared =
+        file.type.startsWith('image/') && !file.type.includes('gif')
+          ? await compressImageFile(file, {
+              maxEdge: 1600,
+              targetBytes: 220_000,
+              fileNameBase: `${coverNameFromTitle()}-${form.value.attachments.length + 1}`,
+            })
+          : file
       let uploaded: { path?: string; url?: string } | null = null
       let lastError: unknown
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          uploaded = await withTimeout(uploadAdminImage('news-file', file), 45000)
+          uploaded = await withTimeout(uploadAdminImage('news-file', prepared), 45000)
           break
         } catch (error) {
           lastError = error
@@ -541,7 +560,11 @@ const uploadAttachment = async (event: Event) => {
       if (!url) continue
       form.value.attachments = [
         ...form.value.attachments,
-        { url, name: file.name, type: fileKind({ type: file.type, name: file.name, url }) },
+        {
+          url,
+          name: prepared.name || file.name,
+          type: fileKind({ type: prepared.type || file.type, name: prepared.name || file.name, url }),
+        },
       ]
     }
   } catch {
@@ -574,7 +597,11 @@ const save = async () => {
   successMessage.value = ''
   if (pendingCoverFile && !form.value.coverUrl) {
     try {
-      const optimized = await compressImageFile(pendingCoverFile, { maxEdge: 1600, targetBytes: 170_000 })
+      const optimized = await compressImageFile(pendingCoverFile, {
+        maxEdge: 1600,
+        targetBytes: 220_000,
+        fileNameBase: coverNameFromTitle(),
+      })
       const uploaded = await uploadAdminImage('news-cover', optimized)
       const remote = uploaded.path || uploaded.url || ''
       if (remote) {
@@ -759,7 +786,9 @@ onUnmounted(() => {
             <div v-if="coverSrc" class="na-cover-box">
               <img class="na-cover-preview" :src="coverSrc" :alt="form.coverAlt || form.title || ''" />
             </div>
-            <p v-else class="na-help">JPG, PNG o WebP. Se comprime a ~170 KB al subir.</p>
+            <p v-else class="na-help">
+              Sube la foto original (JPG, PNG o WebP). Se reduce sola a peso web (~220 KB) y toma el nombre del título.
+            </p>
           </div>
           <p v-if="coverPreview && !form.coverUrl" class="na-help">Vista previa local · se sube al servidor al guardar.</p>
           <label class="na-cover-seo">

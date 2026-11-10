@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { uploadAdminImage } from '../../../src/services/api/adminApi'
-import { compressImageFile } from '../lib/compressImage'
+import { compressImageFile, slugifyImageBase } from '../lib/compressImage'
 import {
   collapseNewsEmbeds,
   editorEmbedHtml,
@@ -224,9 +224,10 @@ const insertUploadedMedia = async (file: File, opts?: { askSeo?: boolean }) => {
   const saved = captureSelection()
   const before = editorSnapshot()
   try {
+    const titleBase = slugifyImageBase(props.defaultAlt || '', 'imagen-noticia')
     const prepared =
       file.type.startsWith('image/') && !file.type.includes('gif')
-        ? await compressImageFile(file)
+        ? await compressImageFile(file, { maxEdge: 1600, targetBytes: 220_000, fileNameBase: titleBase })
         : file
     const uploaded = await uploadWithRetry(prepared)
     const url = uploaded.path || uploaded.url
@@ -243,7 +244,7 @@ const insertUploadedMedia = async (file: File, opts?: { askSeo?: boolean }) => {
       run('insertHTML', `<p><video src="${url}" controls playsinline></video></p>`)
       return
     }
-    const suggested = String(props.defaultAlt || '').trim() || file.name.replace(/\.[^.]+$/, '') || 'Imagen'
+    const suggested = String(props.defaultAlt || '').trim() || titleBase || 'Imagen'
     let alt = suggested
     let caption = ''
     if (opts?.askSeo !== false) {

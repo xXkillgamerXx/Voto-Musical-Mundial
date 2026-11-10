@@ -4113,8 +4113,8 @@ html[data-theme="dark"] .notice-row:hover time {
     grid-template-columns: 1fr;
     grid-template-areas:
       "spot"
-      "rail"
       "cards"
+      "rail"
       "ent";
   }
 
@@ -4210,6 +4210,11 @@ html[data-theme="dark"] .notice-row:hover time {
 
   .home-rail {
     grid-template-columns: 1fr;
+  }
+
+  /* Mobile: keep Tendencias short so it doesn't dominate the feed */
+  .trend-card > .trend-row:nth-child(n + 5) {
+    display: none;
   }
 
   .spotify-band iframe {

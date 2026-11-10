@@ -153,7 +153,7 @@ export type NewsPage =
   | {
       name: 'admin'
       locale: 'es' | 'en'
-      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'users' | 'post-form'
+      section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'users' | 'api-keys' | 'post-form'
       postId?: string
       newsLocale?: 'es' | 'en'
     }
@@ -249,6 +249,7 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   if (path === '/admin/paginas') return { name: 'admin', locale, section: 'pages' }
   if (path === '/admin/reportes') return { name: 'admin', locale, section: 'reports' }
   if (path === '/admin/usuarios') return { name: 'admin', locale, section: 'users' }
+  if (path === '/admin/api-keys' || path === '/admin/claves') return { name: 'admin', locale, section: 'api-keys' }
   if (path.startsWith('/admin/')) return { name: 'admin', locale, section: 'dashboard' }
   if (path === '/perfil/editar' || path === '/profile/edit') return { name: 'profile', locale, edit: true }
   if (path === '/perfil' || path === '/profile') return { name: 'profile', locale }

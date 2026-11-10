@@ -168,6 +168,19 @@ def main() -> None:
     sftp.put(str(tar_path), "/tmp/new_musicmundial.tgz")
     sftp.close()
 
+    crm_key = os.environ.get("NEWS_CRM_API_KEY", "").strip()
+    if crm_key and any(ch in crm_key for ch in " \n\r\t'\"\\$`"):
+        raise SystemExit("NEWS_CRM_API_KEY contains unsafe characters")
+    crm_key_block = ""
+    if crm_key:
+        crm_key_block = f"""
+if grep -q '^NEWS_CRM_API_KEY=' {REMOTE}/.env; then
+  sed -i 's|^NEWS_CRM_API_KEY=.*|NEWS_CRM_API_KEY={crm_key}|' {REMOTE}/.env
+else
+  echo 'NEWS_CRM_API_KEY={crm_key}' >> {REMOTE}/.env
+fi
+"""
+
     remote = f"""
 set -euo pipefail
 mkdir -p {REMOTE}
@@ -198,6 +211,7 @@ if grep -q '^PUBLIC_NEWS_ORIGIN=' {REMOTE}/.env; then
 else
   echo 'PUBLIC_NEWS_ORIGIN=https://www.musicmundial.com' >> {REMOTE}/.env
 fi
+{crm_key_block}
 find {REMOTE}/html -type d -exec chmod 755 {{}} +
 find {REMOTE}/html -type f -exec chmod 644 {{}} +
 if command -v firewall-cmd >/dev/null 2>&1; then

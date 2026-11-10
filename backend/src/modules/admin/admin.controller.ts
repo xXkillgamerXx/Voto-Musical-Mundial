@@ -245,7 +245,17 @@ export class AdminController {
         },
         filename: (_request, file, callback) => {
           const extension = extname(file.originalname || '').toLowerCase() || '.jpg';
-          callback(null, `${Date.now()}-${randomUUID()}${extension}`);
+          const rawBase = String(file.originalname || '')
+            .replace(extname(file.originalname || ''), '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 80);
+          const base = rawBase || 'upload';
+          // Keep a readable title-based name when the client sends one (news covers/files).
+          callback(null, `${base}-${Date.now()}-${randomUUID().slice(0, 8)}${extension}`);
         },
       }),
       limits: { fileSize: 40 * 1024 * 1024 },

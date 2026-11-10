@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -6,6 +6,7 @@ import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { MailService } from '../mail/mail.service';
 import { CreateNewsCommentDto } from './dto/upsert-news-post.dto';
 import { ListNewsDto } from './dto/list-news.dto';
+import { NewsApiKeyGuard, type NewsApiKeyAuth } from './news-api-key.guard';
 import { NewsService } from './news.service';
 
 @Controller('news')
@@ -32,6 +33,28 @@ export class NewsController {
     @Query('limit') limit?: string,
   ) {
     return this.news.popular(locale, exclude, Number(limit || 5));
+  }
+
+  /**
+   * Integration tags list for CRM/article tools.
+   * Requires X-API-Key (created in admin). Example: /api/news/tags?locale=es
+   */
+  @Get('tags')
+  @UseGuards(NewsApiKeyGuard)
+  listTags(
+    @Res({ passthrough: true }) res: Response,
+    @Query('locale') locale?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Req() req?: { newsApiKey?: NewsApiKeyAuth },
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Vary', 'Authorization, X-API-Key');
+    return this.news.integrationTags(locale, q, Number(page || 1), Number(limit || 100), {
+      special: Boolean(req?.newsApiKey?.special),
+    });
   }
 
   @Get('tags/:slug')

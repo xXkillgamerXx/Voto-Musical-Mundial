@@ -327,6 +327,13 @@ export const saveAdminNewsCommentReportOptions = (items, locale = 'es') =>
     body: { items },
   })
 
+export const getAdminNewsApiKeys = () => adminRequest('/news/api-keys')
+export const createAdminNewsApiKey = (body) => adminRequest('/news/api-keys', { method: 'POST', body })
+export const updateAdminNewsApiKey = (id, body) =>
+  adminRequest(`/news/api-keys/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+export const deleteAdminNewsApiKey = (id) =>
+  adminRequest(`/news/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
 export const getAdminForumCategories = () => adminRequest('/forum/categories')
 export const createAdminForumCategory = (body) => adminRequest('/forum/categories', { method: 'POST', body })
 export const updateAdminForumCategory = (slug, body) =>

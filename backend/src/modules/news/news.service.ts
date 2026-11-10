@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BLOCKED_LANGUAGE_MESSAGE, isCommentLanguageBlocked } from '../../common/comment-profanity';
 import { normalizeSlug } from '../../common/poll-lookup';
@@ -762,6 +762,155 @@ export class NewsService {
         href: publicHref(locale, `tag/${row.slug}`),
       })),
     );
+  }
+
+  /** Paginated tags list for external CRM integrations (API-key protected). */
+  async integrationTags(
+    localeValue?: string,
+    q?: string,
+    pageValue = 1,
+    limitValue = 100,
+    opts?: { special?: boolean },
+  ) {
+    const locale = this.mysql.locale(localeValue);
+    const query = String(q || '').trim();
+    const like = `%${query}%`;
+    const page = Math.max(1, Number(pageValue) || 1);
+    const maxLimit = opts?.special ? 500 : 100;
+    const limit = Math.min(maxLimit, Math.max(1, Number(limitValue) || 100));
+    const offset = (page - 1) * limit;
+    const where = query ? 'WHERE t.name LIKE ? OR t.slug LIKE ?' : '';
+    const params = query ? [like, like] : [];
+    const countRows = await this.mysql.query<{ total: number }>(
+      locale,
+      `SELECT COUNT(*) AS total
+       FROM wpgn_terms t
+       JOIN wpgn_term_taxonomy tt ON tt.term_id = t.term_id AND tt.taxonomy = 'post_tag'
+       ${where}`,
+      params,
+    );
+    const rows = await this.mysql.query<{ term_id: number; slug: string; name: string; count: number }>(
+      locale,
+      `SELECT t.term_id, t.slug, t.name, tt.count
+       FROM wpgn_terms t
+       JOIN wpgn_term_taxonomy tt ON tt.term_id = t.term_id AND tt.taxonomy = 'post_tag'
+       ${where}
+       ORDER BY tt.count DESC, t.name ASC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
+    const total = Number(countRows[0]?.total || 0);
+    return serialize({
+      locale,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      items: rows.map((row) => ({
+        id: String(row.term_id),
+        slug: row.slug,
+        name: String(row.name || '').replace(/&amp;/g, '&'),
+        postCount: Number(row.count || 0),
+        href: publicHref(locale, `tag/${row.slug}`),
+      })),
+    });
+  }
+
+  async listIntegrationApiKeys() {
+    const rows = await this.prisma.newsIntegrationApiKey.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return serialize(
+      rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        keyPrefix: row.keyPrefix,
+        active: row.active,
+        special: row.special,
+        expiresAt: row.expiresAt?.toISOString() || null,
+        lastUsedAt: row.lastUsedAt?.toISOString() || null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    );
+  }
+
+  async createIntegrationApiKey(input: {
+    name?: string;
+    special?: boolean;
+    expiresAt?: string | null;
+    createdBy?: string | number | bigint | null;
+  }) {
+    const name = String(input.name || '').trim() || 'CRM';
+    const rawKey = `nmm_${randomBytes(24).toString('base64url')}`;
+    const { hashNewsApiKey } = await import('./news-api-key.guard');
+    const keyHash = hashNewsApiKey(rawKey);
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+      throw new BadRequestException('Fecha de expiración inválida.');
+    }
+    const createdBy = input.createdBy ? BigInt(input.createdBy) : null;
+    const row = await this.prisma.newsIntegrationApiKey.create({
+      data: {
+        name,
+        keyPrefix: rawKey.slice(0, 12),
+        keyHash,
+        special: Boolean(input.special),
+        expiresAt,
+        createdBy,
+      },
+    });
+    return serialize({
+      id: row.id,
+      name: row.name,
+      keyPrefix: row.keyPrefix,
+      active: row.active,
+      special: row.special,
+      expiresAt: row.expiresAt?.toISOString() || null,
+      createdAt: row.createdAt.toISOString(),
+      // Shown only once at creation.
+      apiKey: rawKey,
+    });
+  }
+
+  async updateIntegrationApiKey(
+    id: string,
+    input: { name?: string; active?: boolean; special?: boolean; expiresAt?: string | null },
+  ) {
+    const existing = await this.prisma.newsIntegrationApiKey.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('No encontramos esa API key.');
+    let expiresAt = existing.expiresAt;
+    if (input.expiresAt === null) expiresAt = null;
+    else if (typeof input.expiresAt === 'string' && input.expiresAt.trim()) {
+      const next = new Date(input.expiresAt);
+      if (Number.isNaN(next.getTime())) throw new BadRequestException('Fecha de expiración inválida.');
+      expiresAt = next;
+    }
+    const row = await this.prisma.newsIntegrationApiKey.update({
+      where: { id },
+      data: {
+        name: input.name !== undefined ? String(input.name || '').trim() || existing.name : undefined,
+        active: input.active !== undefined ? Boolean(input.active) : undefined,
+        special: input.special !== undefined ? Boolean(input.special) : undefined,
+        expiresAt,
+      },
+    });
+    return serialize({
+      id: row.id,
+      name: row.name,
+      keyPrefix: row.keyPrefix,
+      active: row.active,
+      special: row.special,
+      expiresAt: row.expiresAt?.toISOString() || null,
+      lastUsedAt: row.lastUsedAt?.toISOString() || null,
+      createdAt: row.createdAt.toISOString(),
+    });
+  }
+
+  async deleteIntegrationApiKey(id: string) {
+    const existing = await this.prisma.newsIntegrationApiKey.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('No encontramos esa API key.');
+    await this.prisma.newsIntegrationApiKey.delete({ where: { id } });
+    return serialize({ ok: true, id });
   }
 
   async adminTag(id: string, localeValue?: string) {

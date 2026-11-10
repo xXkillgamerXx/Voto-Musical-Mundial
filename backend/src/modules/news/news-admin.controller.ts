@@ -198,4 +198,35 @@ export class NewsAdminController {
   ) {
     return this.news.updateSitePage(key, body);
   }
+
+  @Get('api-keys')
+  listApiKeys() {
+    return this.news.listIntegrationApiKeys();
+  }
+
+  @Post('api-keys')
+  createApiKey(
+    @CurrentUser() user: { id?: string | number | bigint } | null,
+    @Body() body: { name?: string; special?: boolean; expiresAt?: string | null },
+  ) {
+    return this.news.createIntegrationApiKey({
+      name: body?.name,
+      special: body?.special,
+      expiresAt: body?.expiresAt,
+      createdBy: user?.id ?? null,
+    });
+  }
+
+  @Patch('api-keys/:id')
+  updateApiKey(
+    @Param('id') id: string,
+    @Body() body: { name?: string; active?: boolean; special?: boolean; expiresAt?: string | null },
+  ) {
+    return this.news.updateIntegrationApiKey(id, body || {});
+  }
+
+  @Delete('api-keys/:id')
+  deleteApiKey(@Param('id') id: string) {
+    return this.news.deleteIntegrationApiKey(id);
+  }
 }
