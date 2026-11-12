@@ -70,24 +70,86 @@ const missionCreationTypes = [
     helper: "Se valida por accion/clic al abrir la red social configurada.",
   },
   {
-    key: "visit_page",
-    title: "Visitar paginas web",
+    key: "visit_mm_article",
+    title: "Leer una nota en Music Mundial",
+    titleEn: "Read a Music Mundial article",
     description:
-      "El usuario visita paginas distintas del sitio (ej: 10 paginas en vote.musicmundial.com). Se detecta automaticamente.",
+      "Abre el enlace de la nota en Music Mundial. Al entrar con el link de la mision, se validan los puntos automaticamente.",
+    descriptionEn:
+      "Open the Music Mundial article link. Visiting through the mission button awards points automatically.",
     category: "social",
     type: "visit_page",
     icon: "fa-solid fa-newspaper",
-    target: 10,
+    target: 1,
     rewardPoints: 15,
     inviteeRewardPoints: 0,
-    actionUrl: "https://vote.musicmundial.com/",
+    actionUrl: "https://www.musicmundial.com/",
+    visitMode: "exact",
+    visitUrls: ["https://www.musicmundial.com/"],
+    helper:
+      "Pega la URL exacta de la nota (ES o EN). Meta 1 + modo exacto = leer esa pagina. El script ya esta en Music Mundial.",
+  },
+  {
+    key: "visit_mm_site",
+    title: "Navegar Music Mundial",
+    titleEn: "Browse Music Mundial",
+    description:
+      "Visita varias paginas distintas de Music Mundial (home, notas, tags). Cada pagina unica suma progreso.",
+    descriptionEn:
+      "Visit several distinct Music Mundial pages. Each unique page advances the mission.",
+    category: "social",
+    type: "visit_page",
+    icon: "fa-solid fa-globe",
+    target: 5,
+    rewardPoints: 25,
+    inviteeRewardPoints: 0,
+    actionUrl: "https://www.musicmundial.com/",
     visitMode: "host",
-    visitUrls: ["https://vote.musicmundial.com/"],
-    helper: "Modo sitio: cualquier pagina del dominio cuenta. Modo exacto: solo las URLs listadas.",
+    visitUrls: ["https://www.musicmundial.com/", "https://www.musicmundial.com/es/"],
+    helper:
+      "Modo sitio: cualquier path de musicmundial.com cuenta. Meta 5 = 5 paginas distintas.",
+  },
+  {
+    key: "visit_page",
+    title: "Visitar paginas web",
+    description:
+      "El usuario visita paginas distintas del sitio (Music Mundial o Vote). Se detecta automaticamente.",
+    category: "social",
+    type: "visit_page",
+    icon: "fa-solid fa-link",
+    target: 1,
+    rewardPoints: 15,
+    inviteeRewardPoints: 0,
+    actionUrl: "https://www.musicmundial.com/",
+    visitMode: "exact",
+    visitUrls: ["https://www.musicmundial.com/"],
+    helper: "Modo sitio: cualquier pagina del dominio. Modo exacto: solo las URLs listadas.",
   },
 ];
 
 const missionTemplates = [
+  {
+    category: "social",
+    title: "Leer una nota en Music Mundial",
+    description: "Abre y lee la nota enlazada en Music Mundial.",
+    type: "visit_page",
+    target: 1,
+    rewardPoints: 15,
+    icon: "fa-solid fa-newspaper",
+    actionUrl: "https://www.musicmundial.com/",
+    visitMode: "exact",
+  },
+  {
+    category: "social",
+    title: "Navegar 5 paginas de Music Mundial",
+    description: "Visita 5 paginas distintas de musicmundial.com.",
+    type: "visit_page",
+    target: 5,
+    rewardPoints: 25,
+    icon: "fa-solid fa-globe",
+    actionUrl: "https://www.musicmundial.com/",
+    visitMode: "host",
+  },
   {
     category: "social",
     title: "Compartir la app en WhatsApp",
@@ -297,7 +359,7 @@ const isShareMission = computed(() => String(form.value.type || "").startsWith("
 const isFollowSocialMission = computed(() => form.value.type === "follow_social");
 const isVisitPageMission = computed(() => form.value.type === "visit_page");
 const missionVisitScriptSnippet =
-  '<' + 'script src="https://vote.musicmundial.com/mission-visit.js" async><' + '/' + 'script>';
+  '<' + 'script src="https://www.musicmundial.com/mission-visit.js" async><' + '/' + 'script>';
 const shouldShowAdvancedFields = computed(
   () => !selectedCreationType.value || selectedCreationType.value.key === "manual",
 );
@@ -485,28 +547,49 @@ const missionPayload = () => {
   };
 };
 
-const templatePayload = (template, index) => ({
-  title: template.title,
-  description: template.description,
-  category: template.category,
-  type: template.type,
-  actionUrl: template.actionUrl || "",
-  target: template.target,
-  rewardPoints: template.rewardPoints,
-  icon: template.icon,
-  order: missions.value.length + index + 1,
-  active: true,
-  featured: false,
-});
+const templatePayload = (template, index) => {
+  const actionUrl = String(template.actionUrl || "").trim();
+  const visitUrls =
+    Array.isArray(template.visitUrls) && template.visitUrls.length
+      ? template.visitUrls
+      : actionUrl
+        ? [actionUrl]
+        : [];
+  return {
+    title: template.title,
+    description: template.description,
+    category: template.category,
+    type: template.type,
+    actionUrl,
+    visitMode: template.type === "visit_page" ? template.visitMode || "exact" : undefined,
+    visitUrls: template.type === "visit_page" ? visitUrls : undefined,
+    target: template.target,
+    rewardPoints: template.rewardPoints,
+    icon: template.icon,
+    order: missions.value.length + index + 1,
+    active: true,
+    featured: false,
+  };
+};
 
 const useTemplate = (template) => {
   editingMissionId.value = "";
   activeLocale.value = "es";
+  const actionUrl = String(template.actionUrl || "").trim();
+  const visitUrls =
+    Array.isArray(template.visitUrls) && template.visitUrls.length
+      ? [...template.visitUrls]
+      : actionUrl
+        ? [actionUrl]
+        : [""];
   form.value = {
     ...emptyForm,
     ...template,
     titleEn: template.titleEn || "",
     descriptionEn: template.descriptionEn || "",
+    actionUrl,
+    visitMode: template.visitMode || emptyForm.visitMode,
+    visitUrls,
     order: missions.value.length + 1,
     active: true,
     featured: false,
@@ -984,8 +1067,8 @@ onMounted(async () => {
               Script en musicmundial.com
             </p>
             <p class="mt-2 text-sm leading-6 text-slate-300">
-              Si usas paginas de musicmundial.com, instala este script una sola vez en header/footer.
-              En vote.musicmundial.com la visita se detecta automaticamente sin script.
+              Music Mundial ya reporta visitas desde la web (SPA). Este script queda como respaldo
+              si sirves HTML estatico aparte. En vote.musicmundial.com la visita se detecta sola.
             </p>
             <code class="mt-3 block overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-xs font-bold text-cyan-100">
               {{ missionVisitScriptSnippet }}

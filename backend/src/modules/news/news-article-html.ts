@@ -309,6 +309,13 @@ export const paintArticleIndex = (html: string, head: ArticleHead, body?: Articl
         '    <style id="news-ssr-hide">#app:not(:empty) ~ #news-ssr{display:none}</style>\n  </head>',
       );
     }
+    // Vote missions: report ?vmm= visits even before the SPA boots on SSR article HTML.
+    if (!out.includes('mission-visit.js')) {
+      out = out.replace(
+        '</head>',
+        '    <script src="/mission-visit.js" async></script>\n  </head>',
+      );
+    }
     out = out.replace(/<div id="app"><\/div>/i, `<div id="app"></div>\n    ${shell}`);
   }
   return out;

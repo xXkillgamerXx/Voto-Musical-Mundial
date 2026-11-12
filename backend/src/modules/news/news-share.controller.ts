@@ -124,7 +124,14 @@ export class NewsShareController {
       article = null;
     }
 
-    const titleRaw = clip(stripHtml(article?.title || SITE_NAME), TITLE_MAX);
+    // Share cards: title only (no "— Music Mundial"). Brand sits in og:site_name; excerpt is description.
+    const titleRaw = clip(
+      stripHtml(article?.title || SITE_NAME)
+        .replace(/\s*[—\-|:]\s*Music Mundial\s*$/i, '')
+        .replace(/\s+Music Mundial\s*$/i, '')
+        .trim() || SITE_NAME,
+      TITLE_MAX,
+    );
     const descriptionRaw = clip(
       stripHtml(
         article?.excerpt ||
@@ -189,7 +196,7 @@ export class NewsShareController {
     ).replace(/</g, '\\u003c');
 
     const indexHtml = loadNewsIndexHtml();
-    const pageTitle = titleRaw.includes(SITE_NAME) ? escapeHtml(titleRaw) : escapeHtml(`${titleRaw} — ${SITE_NAME}`);
+    const pageTitle = escapeHtml(titleRaw);
     const html = indexHtml
       ? paintArticleIndex(
           indexHtml,

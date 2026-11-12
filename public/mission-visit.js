@@ -27,7 +27,13 @@
       return;
     }
 
-    var apiBase = (window.VMM_MISSION_API || 'https://vote.musicmundial.com/api').replace(/\/$/, '');
+    // Prefer same-origin /api on musicmundial.com; vote host keeps working via override.
+    var apiBase = (
+      window.VMM_MISSION_API ||
+      (/\bmusicmundial\.com$/i.test(window.location.hostname.replace(/^www\./, ''))
+        ? window.location.origin + '/api'
+        : 'https://vote.musicmundial.com/api')
+    ).replace(/\/$/, '');
     var pageUrl = window.location.href.split('#')[0];
 
     var img = new Image();

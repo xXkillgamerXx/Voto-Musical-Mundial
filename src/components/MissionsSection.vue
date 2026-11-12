@@ -393,14 +393,25 @@ const performMissionAction = async (mission) => {
       missionActionInProgress.value = true
       actionMessage.value = translate('home.missions.visitOpening')
 
-      let isSameOrigin = false
+      // Same origin (www.musicmundial.com) is NOT the same app: Vote lives under /vote/,
+      // news under /. Never pushState into news paths from Vote — that skips the visit token.
+      let isSameSpa = false
       try {
-        isSameOrigin = Boolean(firstUrl) && new URL(firstUrl).origin === window.location.origin
+        if (firstUrl) {
+          const targetUrl = new URL(firstUrl)
+          const sameOrigin = targetUrl.origin === window.location.origin
+          const voteBase = String(import.meta.env.BASE_URL || '/vote/').replace(/\/$/, '') || '/vote'
+          const pathIsVote = (pathname) => {
+            const path = String(pathname || '/')
+            return path === voteBase || path.startsWith(`${voteBase}/`)
+          }
+          isSameSpa = sameOrigin && pathIsVote(targetUrl.pathname) && pathIsVote(window.location.pathname)
+        }
       } catch {
-        isSameOrigin = false
+        isSameSpa = false
       }
 
-      if (isSameOrigin) {
+      if (isSameSpa) {
         const targetUrl = new URL(firstUrl)
         const nextPath = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`
         const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -419,7 +430,8 @@ const performMissionAction = async (mission) => {
         const visit = await createMissionVisitToken(mission.id)
         window.open(visit.url || firstUrl, '_blank', 'noopener,noreferrer')
 
-        // External pages are credited when the visit token is created.
+        // External pages (Instagram, etc.) are credited when the visit token is created.
+        // Music Mundial credits when mission-visit reports from the news tab.
         if (
           visit?.awarded
           || Number(visit?.progress || 0) >= target
@@ -451,7 +463,7 @@ const performMissionAction = async (mission) => {
           window.setTimeout(resolve, 1500)
         })
 
-        if (isSameOrigin) {
+        if (isSameSpa) {
           await reportMissionVisitProgress(window.location.href.split('#')[0]).catch(() => {})
         }
 
@@ -854,19 +866,17 @@ onUnmounted(() => {
 
     <div
       v-if="selectedMission"
-      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
+      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 px-4 py-6 backdrop-blur-sm"
       @click.self="closeMissionModal"
     >
-      <article class="relative w-full max-w-lg overflow-hidden rounded-2xl border border-amber-200/25 bg-[#120f0a] p-0 shadow-2xl shadow-black/50">
-        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(251,191,36,0.16),transparent_36%),radial-gradient(circle_at_90%_100%,rgba(34,211,238,0.1),transparent_40%),linear-gradient(180deg,rgba(28,22,14,0.95),rgba(12,14,26,0.98))]"></div>
-        <div class="absolute inset-y-0 left-0 w-1.5 bg-linear-to-b from-amber-200 via-amber-400 to-cyan-400" aria-hidden="true"></div>
+      <article class="mission-detail-sheet relative w-full max-w-lg overflow-hidden rounded-2xl border p-0 shadow-2xl">
+        <div class="mission-detail-sheet__glow pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div class="mission-detail-sheet__accent absolute inset-y-0 left-0 w-1.5" aria-hidden="true"></div>
 
         <div class="relative p-5 pl-6 sm:p-6 sm:pl-7">
           <div class="flex items-start justify-between gap-4">
             <div class="flex min-w-0 items-start gap-3">
-              <span
-                class="grid size-12 shrink-0 place-items-center rounded-xl border border-amber-200/25 bg-amber-300/10 text-xl font-black text-amber-100"
-              >
+              <span class="mission-detail-sheet__icon grid size-12 shrink-0 place-items-center rounded-xl text-xl font-black">
                 <i
                   v-if="isFontAwesomeIcon(selectedMission.icon)"
                   :class="selectedMission.icon"
@@ -875,17 +885,17 @@ onUnmounted(() => {
                 <span v-else>{{ selectedMission.icon }}</span>
               </span>
               <div class="min-w-0">
-                <p class="text-[10px] font-black uppercase tracking-[0.28em] text-amber-200/90">
+                <p class="mission-detail-sheet__eyebrow text-[10px] font-black uppercase tracking-[0.28em]">
                   {{ $t('home.missions.detailEyebrow') }}
                 </p>
-                <h3 class="mt-1 text-xl font-black uppercase leading-tight text-white sm:text-2xl">
+                <h3 class="mission-detail-sheet__title mt-1 text-xl font-black uppercase leading-tight sm:text-2xl">
                   {{ selectedMission.title || $t(selectedMission.titleKey) }}
                 </h3>
               </div>
             </div>
             <button
               type="button"
-              class="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+              class="mission-detail-sheet__ghost grid size-10 shrink-0 place-items-center rounded-xl transition"
               aria-label="Cerrar"
               @click="closeMissionModal"
             >
@@ -893,40 +903,40 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div class="mt-4 rounded-xl border border-white/10 bg-black/25 p-4">
-            <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">
+          <div class="mission-detail-sheet__panel mt-4 rounded-xl p-4">
+            <p class="mission-detail-sheet__label text-[10px] font-black uppercase tracking-[0.22em]">
               {{ $t('home.missions.objective') }}
             </p>
-            <p class="mt-2 whitespace-pre-line text-sm leading-6 text-slate-300">
+            <p class="mission-detail-sheet__body mt-2 whitespace-pre-line text-sm leading-6">
               {{ selectedMission.text || $t(selectedMission.textKey) }}
             </p>
           </div>
 
-          <p class="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-xs font-bold leading-5 text-cyan-100">
+          <p class="mission-detail-sheet__hint mt-3 rounded-xl px-4 py-3 text-xs font-bold leading-5">
             {{ missionValidationText(selectedMission) }}
           </p>
           <p
             v-if="isReferralMission(selectedMission) && referralCode"
-            class="mt-3 break-all rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold leading-5 text-slate-300"
+            class="mission-detail-sheet__panel mt-3 break-all rounded-xl px-4 py-3 text-xs font-bold leading-5"
           >
             {{ referralUrl() }}
           </p>
           <p
             v-if="actionMessage"
-            class="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-xs font-bold leading-5 text-emerald-100"
+            class="mission-detail-sheet__success mt-3 rounded-xl px-4 py-3 text-xs font-bold leading-5"
           >
             {{ actionMessage }}
           </p>
 
-          <div class="mt-4 rounded-xl border border-amber-200/15 bg-amber-300/5 p-4">
+          <div class="mission-detail-sheet__panel mt-4 rounded-xl p-4">
             <div class="flex items-end justify-between gap-3">
               <div>
-                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">{{ $t('common.labels.progress') }}</p>
-                <p class="mt-1 text-sm font-black text-white">{{ selectedMission.progress }}</p>
+                <p class="mission-detail-sheet__label text-xs font-bold uppercase tracking-widest">{{ $t('common.labels.progress') }}</p>
+                <p class="mission-detail-sheet__title mt-1 text-sm font-black">{{ selectedMission.progress }}</p>
               </div>
-              <p class="text-2xl font-black text-amber-100">{{ selectedMission.reward }}</p>
+              <p class="mission-detail-sheet__reward text-2xl font-black">{{ selectedMission.reward }}</p>
             </div>
-            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+            <div class="mission-detail-sheet__track mt-4 h-2 overflow-hidden rounded-full">
               <div
                 class="h-full rounded-full bg-linear-to-r from-amber-300 via-cyan-400 to-fuchsia-500"
                 :style="{ width: `${selectedMission.percent}%` }"
@@ -953,14 +963,14 @@ onUnmounted(() => {
               <button
                 v-if="isReferralMission(selectedMission) && referralCode"
                 type="button"
-                class="min-h-12 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-5 text-sm font-black uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/20"
+                class="mission-detail-sheet__hint min-h-12 rounded-xl px-5 text-sm font-black uppercase tracking-wide transition"
                 @click="copyReferralUrl"
               >
                 Copiar link
               </button>
               <button
                 type="button"
-                class="min-h-12 rounded-xl border border-white/10 bg-white/5 px-5 text-sm font-black uppercase tracking-wide text-slate-200 transition hover:bg-white/10"
+                class="mission-detail-sheet__ghost min-h-12 rounded-xl px-5 text-sm font-black uppercase tracking-wide transition"
                 @click="closeMissionModal"
               >
                 Cerrar

@@ -161,8 +161,15 @@ export const applyNewsSeo = (input: NewsSeoInput) => {
   const enHref = input.hreflangEn || (type === 'article' && locale !== 'en' ? '' : withLocale(stripped, 'en'))
   const esHref = input.hreflangEs || (type === 'article' && locale !== 'es' ? '' : withLocale(stripped, 'es'))
 
-  const fullTitle = title.includes('Music Mundial') ? title : `${title} — ${SITE_NAME}`
-  document.title = fullTitle
+  const cleanTitle =
+    title
+      .replace(/\s*[—\-|:]\s*Music Mundial\s*$/i, '')
+      .replace(/\s+Music Mundial\s*$/i, '')
+      .trim() || title
+  // Browser tab keeps brand; share cards use article title only (description already carries the dek).
+  const tabTitle = cleanTitle.includes('Music Mundial') ? cleanTitle : `${cleanTitle} — ${SITE_NAME}`
+  const shareTitle = type === 'article' ? cleanTitle : tabTitle
+  document.title = tabTitle
   document.documentElement.lang = locale
   setCanonical(url)
   setHreflang({
@@ -183,7 +190,7 @@ export const applyNewsSeo = (input: NewsSeoInput) => {
   setAttr('property', 'og:type', type === 'profile' ? 'profile' : type)
   setAttr('property', 'og:locale', locale === 'es' ? 'es_ES' : 'en_US')
   setListAttr('property', 'og:locale:alternate', locale === 'es' ? ['en_US'] : ['es_ES'])
-  setAttr('property', 'og:title', fullTitle)
+  setAttr('property', 'og:title', shareTitle)
   setAttr('property', 'og:description', description)
   setAttr('property', 'og:url', url)
   setAttr('property', 'og:image', image)
@@ -200,7 +207,7 @@ export const applyNewsSeo = (input: NewsSeoInput) => {
   setAttr('property', 'article:section', type === 'article' ? input.categoryName || input.sections?.[0] || '' : '')
   setListAttr('property', 'article:tag', type === 'article' ? input.keywords || [] : [])
   setAttr('name', 'twitter:card', 'summary_large_image')
-  setAttr('name', 'twitter:title', fullTitle)
+  setAttr('name', 'twitter:title', shareTitle)
   setAttr('name', 'twitter:description', description)
   setAttr('name', 'twitter:site', TWITTER_SITE)
   setAttr('name', 'twitter:image', image)

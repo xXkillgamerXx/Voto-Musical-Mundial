@@ -30,6 +30,7 @@ import {
 } from './lib/news'
 import { ensureLocalePath, localeFromPath, swapLocalePath, withLocale, withPageCacheBuster, type SiteLocale } from './lib/locale'
 import { trackCurrentPage } from './lib/analytics'
+import { reportMissionPageVisit } from './lib/missionVisit'
 import { applyHomeSeo, applyPrivateSeo } from './lib/seo'
 import { newsRouteState } from './lib/route-state'
 import { getTheme, toggleTheme as flipTheme, type SiteTheme } from './lib/theme'
@@ -299,6 +300,10 @@ function syncNewsPage(opts?: { keepScroll?: boolean }) {
   if (newsPage.value.name === 'home') loadHomeFeed(true)
   applySearchFromUrl()
   queueAnalyticsHit()
+  // Vote missions: report Music Mundial page views (token from ?vmm= or logged-in Vote session).
+  if (newsPage.value.name !== 'admin') {
+    reportMissionPageVisit()
+  }
 }
 
 const slides = ref<Array<{
