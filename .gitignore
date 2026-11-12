@@ -9,17 +9,52 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-news
 dist-ssr
 .env
 *.local
 backend/uploads/
 backend/tmp/
+backend/scripts/test-*.mjs
 backend/firebase-service-account*.json
 firebase-service-account*.json
 vmm-*-deploy.tar.gz
 vmm_server
 vmm_server.pub
 vite.config.js.timestamp-*.mjs
+
+# Windows junk / local scratch
+NUL
+.tmp-pdf/
+emails/
+
+# Contabo secrets, dumps, and one-off ops scratch (keep tracked deploy_*.py / upload_html / tunnel)
+deploy/new_musicmundial/.env.contabo
+deploy/new_musicmundial/dumps/
+deploy/new_musicmundial/apache-musicmundial-proxy.conf
+deploy/new_musicmundial/scripts/apply_*.py
+deploy/new_musicmundial/scripts/check_*.py
+deploy/new_musicmundial/scripts/compare_*.py
+deploy/new_musicmundial/scripts/copy_*.py
+deploy/new_musicmundial/scripts/fix_*.py
+deploy/new_musicmundial/scripts/inspect_*.py
+deploy/new_musicmundial/scripts/probe_*.py
+deploy/new_musicmundial/scripts/purge_*.py
+deploy/new_musicmundial/scripts/recreate_*.py
+deploy/new_musicmundial/scripts/import-news.sh
+deploy/new_musicmundial/scripts/news_error.py
+deploy/new_musicmundial/scripts/nmm_to_vote_db.py
+deploy/new_musicmundial/scripts/patch_sitemaps_nginx.py
+deploy/new_musicmundial/scripts/point_vote_to_host_pgsql.py
+deploy/new_musicmundial/scripts/pull_vote_uploads.py
+deploy/new_musicmundial/scripts/register_vote_db_panel.py
+deploy/new_musicmundial/scripts/restart_nginx.py
+deploy/new_musicmundial/scripts/resume_contabo.py
+deploy/new_musicmundial/scripts/ssh_new_host.py
+deploy/new_musicmundial/scripts/start_pgsql_restore.py
+deploy/new_musicmundial/scripts/upload.py
+deploy/new_musicmundial/scripts/upload_store_badges.py
+deploy/new_musicmundial/scripts/xfer_vote_uploads.py
 
 # Editor directories and files
 .vscode/*
