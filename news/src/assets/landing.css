@@ -3929,6 +3929,12 @@ html[data-theme="dark"] .notice-row:hover time {
   overflow: hidden;
 }
 
+.trend-row-clean h3 {
+  -webkit-line-clamp: 3;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
 .trend-row time {
   display: flex;
   align-items: center;
@@ -4312,6 +4318,11 @@ html[data-theme="dark"] .notice-row:hover time {
 
   .trend-row > div {
     min-height: 64px;
+  }
+
+  .trend-row-clean h3 {
+    font-size: 14.5px;
+    -webkit-line-clamp: 3;
   }
 }
 

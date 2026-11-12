@@ -3,7 +3,17 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getNewsPopular, getNewsPosts } from '../../../src/services/api/newsApi'
 import { withLocale } from '../lib/locale'
 import { t } from '../lib/copy'
-import { categoryHero, categoryHref, categoryTitle, coverErrorFallback, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
+import {
+  canonicalCategorySlug,
+  categoryHero,
+  categoryHref,
+  categorySlugForLocale,
+  categoryTitle,
+  coverErrorFallback,
+  coverOf,
+  formatNewsDate,
+  type NewsCard,
+} from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 
 const props = defineProps<{ slug: string; locale?: string }>()
@@ -15,14 +25,17 @@ const page = ref(1)
 const loading = ref(true)
 const error = ref('')
 const loc = computed(() => (props.locale === 'es' ? 'es' : 'en'))
+const apiSlug = computed(() => categorySlugForLocale(props.slug, loc.value))
+const canonSlug = computed(() => canonicalCategorySlug(props.slug))
 const homeHref = computed(() => withLocale('/', loc.value))
 const fromPosts = computed(() => {
-  const match = items.value.find((item) => item.categorySlug === props.slug)
-    || items.value.find((item) => item.categories?.some((cat) => cat.slug === props.slug))
-  return match?.categories?.find((cat) => cat.slug === props.slug)?.name || match?.category || ''
+  const slug = apiSlug.value
+  const match = items.value.find((item) => item.categorySlug === slug)
+    || items.value.find((item) => item.categories?.some((cat) => cat.slug === slug))
+  return match?.categories?.find((cat) => cat.slug === slug)?.name || match?.category || ''
 })
-const title = computed(() => categoryTitle(props.slug, loc.value, fromPosts.value))
-const hero = computed(() => categoryHero(props.slug, loc.value))
+const title = computed(() => categoryTitle(canonSlug.value, loc.value, fromPosts.value))
+const hero = computed(() => categoryHero(canonSlug.value, loc.value))
 const countLabel = computed(() => {
   const count = total.value.toLocaleString(loc.value === 'en' ? 'en' : 'es')
   return `${count} ${t(loc.value, 'storiesCount')}`
@@ -46,7 +59,7 @@ async function load(reset = true) {
     ? getNewsPopular({ limit: 5, locale: loc.value }).catch(() => ({ items: [] }))
     : Promise.resolve(null)
   try {
-    const payload = await getNewsPosts({ page: page.value, limit: 18, category: props.slug, locale: loc.value })
+    const payload = await getNewsPosts({ page: page.value, limit: 18, category: apiSlug.value, locale: loc.value })
     total.value = payload.total || 0
     items.value = reset ? payload.items : [...items.value, ...(payload.items || [])]
     if (reset) {
@@ -58,11 +71,11 @@ async function load(reset = true) {
           loc.value === 'es'
             ? `${countLabel.value} de ${title.value} en Music Mundial.`
             : `${countLabel.value} in ${title.value} on Music Mundial.`,
-        path: categoryHref(loc.value, props.slug),
+        path: categoryHref(loc.value, canonSlug.value),
         image: coverOf(items.value[0], '/images/jungkook-hero.jpg', 'full'),
         imageAlt: title.value,
-        hreflangEn: categoryHref('en', props.slug),
-        hreflangEs: categoryHref('es', props.slug),
+        hreflangEn: categoryHref('en', canonSlug.value),
+        hreflangEs: categoryHref('es', canonSlug.value),
       })
     }
   } catch {

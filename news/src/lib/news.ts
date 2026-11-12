@@ -33,13 +33,49 @@ export const CATEGORY_PATHS: Record<string, string> = {
   kpop: 'kpop',
   'k-pop': 'kpop',
   noticias: 'noticias',
+  news: 'noticias',
   viral: 'viral',
+  entertainment: 'viral',
   pop: 'pop',
   series: 'series',
   celebridades: 'celebridades',
+  celebrities: 'celebridades',
   entretenimiento: 'viral',
   peliculas: 'peliculas',
+  movies: 'peliculas',
   'k-drama': 'k-drama',
+  'redes-sociales': 'redes-sociales',
+  'social-network': 'redes-sociales',
+}
+
+/** WP category slugs differ by locale; ES key is canonical for UI/hero. */
+export const CATEGORY_LOCALE_SLUG: Record<string, { es: string; en: string }> = {
+  celebridades: { es: 'celebridades', en: 'celebrities' },
+  celebrities: { es: 'celebridades', en: 'celebrities' },
+  peliculas: { es: 'peliculas', en: 'movies' },
+  movies: { es: 'peliculas', en: 'movies' },
+  noticias: { es: 'noticias', en: 'news' },
+  news: { es: 'noticias', en: 'news' },
+  viral: { es: 'viral', en: 'entertainment' },
+  entertainment: { es: 'viral', en: 'entertainment' },
+  entretenimiento: { es: 'viral', en: 'entertainment' },
+  'redes-sociales': { es: 'redes-sociales', en: 'social-network' },
+  'social-network': { es: 'redes-sociales', en: 'social-network' },
+  realeza: { es: 'realeza', en: 'royal-family' },
+  'royal-family': { es: 'realeza', en: 'royal-family' },
+  mundo: { es: 'mundo', en: 'world' },
+  world: { es: 'mundo', en: 'world' },
+}
+
+export const canonicalCategorySlug = (slug: string) =>
+  CATEGORY_PATHS[slug] || CATEGORY_LOCALE_SLUG[slug]?.es || slug
+
+export const categorySlugForLocale = (slug: string, locale: 'es' | 'en') => {
+  const mapped = CATEGORY_LOCALE_SLUG[slug]
+  if (mapped) return mapped[locale]
+  const canonical = CATEGORY_PATHS[slug]
+  if (canonical && CATEGORY_LOCALE_SLUG[canonical]) return CATEGORY_LOCALE_SLUG[canonical][locale]
+  return slug
 }
 
 export const CATEGORY_TITLES: Record<string, { es: string; en: string }> = {
@@ -74,15 +110,16 @@ const CATEGORY_HERO_COPY: Record<string, { lead: CopyKey; accent: CopyKey; blurb
 }
 
 export const categoryHero = (slug: string, locale: 'es' | 'en' = 'es') => {
-  const keys = CATEGORY_HERO_COPY[slug]
+  const key = canonicalCategorySlug(slug)
+  const keys = CATEGORY_HERO_COPY[key]
   if (!keys) {
-    return { lead: '', accent: categoryTitle(slug, locale), blurb: '', dark: false as const }
+    return { lead: '', accent: categoryTitle(key, locale), blurb: '', dark: false as const }
   }
   return {
     lead: t(locale, keys.lead),
     accent: t(locale, keys.accent),
     blurb: t(locale, keys.blurb),
-    dark: CATEGORY_HERO_DARK[slug] || false,
+    dark: CATEGORY_HERO_DARK[key] || false,
   }
 }
 
@@ -90,7 +127,10 @@ export const categoryTitle = (
   slug: string,
   locale: 'es' | 'en' = 'es',
   fallback?: string,
-) => CATEGORY_TITLES[slug]?.[locale] || fallback || slug.replace(/-/g, ' ')
+) => {
+  const key = canonicalCategorySlug(slug)
+  return CATEGORY_TITLES[key]?.[locale] || fallback || key.replace(/-/g, ' ')
+}
 
 export const formatNewsDate = (value?: string | Date | null, locale: 'es' | 'en' = 'es') => {
   if (!value) return ''
@@ -142,8 +182,10 @@ export const coverErrorFallback = (event: Event) => {
   img.src = full
 }
 
-export const categoryHref = (locale: 'es' | 'en', slug: string) =>
-  locale === 'es' ? `/es/categoria/${slug}` : `/category/${slug}`
+export const categoryHref = (locale: 'es' | 'en', slug: string) => {
+  const resolved = categorySlugForLocale(slug, locale)
+  return locale === 'es' ? `/es/categoria/${resolved}` : `/category/${resolved}`
+}
 
 export const tagHref = (locale: 'es' | 'en', slug: string) =>
   locale === 'es' ? `/es/tag/${encodeURIComponent(slug)}` : `/tag/${encodeURIComponent(slug)}`
@@ -164,6 +206,7 @@ export type NewsPage =
   | { name: 'author'; locale: 'es' | 'en'; slug: string }
   | { name: 'forum'; locale: 'es' | 'en'; board?: string; post?: string }
   | { name: 'static'; locale: 'es' | 'en'; slug: string }
+  | { name: 'charts'; locale: 'es' | 'en' }
   | { name: 'article'; locale: 'es' | 'en'; slug: string }
 
 export const SITE_PAGE_SLUGS = new Set([
@@ -190,17 +233,23 @@ export type CategoryCard = {
 
 export const CATEGORY_CARD_META: Record<string, { icon: string; tone: string; fallback: string }> = {
   noticias: { icon: 'news', tone: '1', fallback: '/images/stray-kids-grammy.jpg' },
+  news: { icon: 'news', tone: '1', fallback: '/images/stray-kids-grammy.jpg' },
   kpop: { icon: 'music', tone: '2', fallback: '/images/jungkook-hero.jpg' },
   peliculas: { icon: 'film', tone: '3', fallback: '/images/teach-you.jpg' },
+  movies: { icon: 'film', tone: '3', fallback: '/images/teach-you.jpg' },
   series: { icon: 'series', tone: '4', fallback: '/images/screen-euphoria.jpg' },
   celebridades: { icon: 'artist', tone: '2', fallback: '/images/jennie-tame.webp' },
+  celebrities: { icon: 'artist', tone: '2', fallback: '/images/jennie-tame.webp' },
   pop: { icon: 'note', tone: '1', fallback: '/images/jimin-tiktok.webp' },
   concierto: { icon: 'live', tone: '4', fallback: '/images/jungkook-peru.jpg' },
   viral: { icon: 'pop', tone: '3', fallback: '/images/katseye.jpg' },
+  entertainment: { icon: 'pop', tone: '3', fallback: '/images/katseye.jpg' },
   entrevista: { icon: 'mic', tone: '1', fallback: '/images/rm-museo.webp' },
   'redes-sociales': { icon: 'social', tone: '2', fallback: '/images/jimin-tiktok.webp' },
+  'social-network': { icon: 'social', tone: '2', fallback: '/images/jimin-tiktok.webp' },
   latin: { icon: 'note', tone: '3', fallback: '/images/taylor-swift.jpg' },
   realeza: { icon: 'artist', tone: '4', fallback: '/images/jennie-tame.webp' },
+  'royal-family': { icon: 'artist', tone: '4', fallback: '/images/jennie-tame.webp' },
 }
 
 export const toCategoryCard = (
@@ -264,14 +313,16 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   const forumBoard = path.match(/^\/(?:forum|foro)\/([a-z0-9-]+)$/)
   if (forumBoard) return { name: 'forum', locale, board: forumBoard[1] }
   if (path === '/categorias' || path === '/categories') return { name: 'categories', locale }
+  if (path === '/charts') return { name: 'charts', locale }
   if (path.startsWith('/categoria/') || path.startsWith('/category/')) {
     const slug = path.split('/').filter(Boolean)[1] || ''
-    return { name: 'category', locale, slug }
+    return { name: 'category', locale, slug: categorySlugForLocale(slug, locale) }
   }
   const tag = path.match(/^\/tag\/([^/]+)$/)
   if (tag) return { name: 'tag', locale, slug: tag[1].toLowerCase() }
-  const shortcut = CATEGORY_PATHS[path.replace(/^\//, '').toLowerCase()]
-  if (shortcut) return { name: 'category', locale, slug: shortcut }
+  const shortcutKey = path.replace(/^\//, '').toLowerCase()
+  const shortcut = CATEGORY_PATHS[shortcutKey]
+  if (shortcut) return { name: 'category', locale, slug: categorySlugForLocale(shortcut, locale) }
   const staticSlug = path.replace(/^\//, '').toLowerCase()
   if (SITE_PAGE_SLUGS.has(staticSlug)) return { name: 'static', locale, slug: staticSlug }
   return { name: 'article', locale, slug: path.replace(/^\//, '') }

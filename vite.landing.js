@@ -67,6 +67,7 @@ const RESERVED_SLUGS = new Set([
   'entretenimiento',
   'peliculas',
   'k-drama',
+  'charts',
   'es',
   'en',
   'feed',

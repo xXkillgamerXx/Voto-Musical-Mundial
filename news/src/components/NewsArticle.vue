@@ -33,7 +33,20 @@ let stopAuthWatch: (() => void) | null = null
 const homeHref = computed(() => withLocale('/', loc.value))
 const crumbCategory = computed(() => {
   const cats = post.value?.categories || []
-  const preferred = ['kpop', 'pop', 'viral', 'series', 'peliculas', 'celebridades', 'entrevista', 'redes-sociales']
+  const preferred = [
+    'kpop',
+    'pop',
+    'viral',
+    'entertainment',
+    'series',
+    'peliculas',
+    'movies',
+    'celebridades',
+    'celebrities',
+    'entrevista',
+    'redes-sociales',
+    'social-network',
+  ]
   return cats.find((item) => preferred.includes(item.slug))
     || cats[0]
     || { slug: post.value?.categorySlug || 'noticias', name: post.value?.category || (loc.value === 'en' ? 'News' : 'Noticias') }

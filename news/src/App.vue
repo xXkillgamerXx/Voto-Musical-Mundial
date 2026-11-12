@@ -8,6 +8,7 @@ import NewsArticle from './components/NewsArticle.vue'
 import NewsAuthorPage from './components/NewsAuthorPage.vue'
 import NewsCategoriesPage from './components/NewsCategoriesPage.vue'
 import NewsCategoryPage from './components/NewsCategoryPage.vue'
+import NewsChartsPage from './components/NewsChartsPage.vue'
 import NewsTagPage from './components/NewsTagPage.vue'
 import NewsForumPage from './components/NewsForumPage.vue'
 import { FORUM_BOARDS, forumCover } from './lib/forum'
@@ -707,8 +708,8 @@ onUnmounted(() => {
         <div class="nav-toolbar">
           <div class="nav-toolbar-row">
             <div class="lang-switch" role="group" :aria-label="txt('lang')">
-              <a :class="{ on: siteLocale === 'en' }" href="/" @click.prevent="setLocale('en')">EN</a>
-              <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
+              <a :class="{ on: siteLocale === 'en' }" :href="swapLocalePath('en')" @click.prevent="setLocale('en')">EN</a>
+              <a :class="{ on: siteLocale === 'es' }" :href="swapLocalePath('es')" @click.prevent="setLocale('es')">ES</a>
             </div>
             <button
               class="round theme-toggle"
@@ -755,9 +756,10 @@ onUnmounted(() => {
           </a>
         </div>
         <a :class="{ active: newsPage.name === 'home' }" :href="loc('/')" @click="closeMenu">{{ txt('navHome') }}</a>
+        <a :class="{ active: newsPage.name === 'charts' }" :href="loc('/charts/')" @click="closeMenu">{{ txt('navCharts') }}</a>
         <a :class="{ active: newsPage.name === 'category' && newsPage.slug === 'kpop' }" :href="loc('/kpop')" @click="closeMenu">KPOP</a>
         <a :href="categoryHref(siteLocale, 'viral')" @click="closeMenu">{{ txt('navEntertainment') }}</a>
-        <a :href="loc('/celebridades')" @click="closeMenu">{{ txt('navPopular') }}</a>
+        <a :href="categoryHref(siteLocale, 'celebridades')" @click="closeMenu">{{ txt('navPopular') }}</a>
         <a :href="loc('/series')" @click="closeMenu">{{ txt('navSeries') }}</a>
         <a href="/vote/" @click="closeMenu">{{ txt('navVote') }}</a>
         <a v-if="FORUM_ENABLED" :class="{ active: newsPage.name === 'forum' }" :href="loc('/forum')" @click="closeMenu">{{ txt('navForum') }}</a>
@@ -774,8 +776,8 @@ onUnmounted(() => {
       </nav>
       <div class="actions">
         <div class="lang-switch" role="group" :aria-label="txt('lang')">
-          <a :class="{ on: siteLocale === 'en' }" href="/" @click.prevent="setLocale('en')">EN</a>
-          <a :class="{ on: siteLocale === 'es' }" href="/es" @click.prevent="setLocale('es')">ES</a>
+          <a :class="{ on: siteLocale === 'en' }" :href="swapLocalePath('en')" @click.prevent="setLocale('en')">EN</a>
+          <a :class="{ on: siteLocale === 'es' }" :href="swapLocalePath('es')" @click.prevent="setLocale('es')">ES</a>
         </div>
         <button
           class="round theme-toggle"
@@ -921,6 +923,7 @@ onUnmounted(() => {
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsTagPage v-else-if="newsPage.name === 'tag'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsStaticPage v-else-if="newsPage.name === 'static'" :slug="newsPage.slug" :locale="newsPage.locale" />
+  <NewsChartsPage v-else-if="newsPage.name === 'charts'" :locale="newsPage.locale" />
   <NewsProfilePage
     v-else-if="newsPage.name === 'profile'"
     :locale="newsPage.locale"
@@ -1079,11 +1082,10 @@ onUnmounted(() => {
             </h2>
             <a :href="loc('/viral')">{{ txt('seeAllArrow') }}</a>
           </div>
-          <a v-for="(item, index) in trends" :key="item.title" class="trend-row" :href="postHref(item)">
+          <a v-for="(item, index) in trends" :key="item.title" class="trend-row trend-row-clean" :href="postHref(item)">
             <span>{{ index + 1 }}</span>
             <img :src="item.image" :alt="item.alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
             <div>
-              <small :class="item.tag.toLowerCase()">{{ item.tag }}</small>
               <h3>{{ item.title }}</h3>
               <time>{{ item.date }}</time>
             </div>
@@ -1380,9 +1382,10 @@ onUnmounted(() => {
       <nav class="foot-col" :aria-label="txt('navHome')">
         <strong>{{ txt('explore') }}</strong>
         <a :href="loc('/')">{{ txt('navHome') }}</a>
+        <a :href="loc('/charts/')">{{ txt('navCharts') }}</a>
         <a :href="loc('/kpop')">K-POP</a>
         <a :href="loc('/k-drama')">K-Dramas</a>
-        <a :href="loc('/celebridades')">{{ txt('celebrities') }}</a>
+        <a :href="categoryHref(siteLocale, 'celebridades')">{{ txt('celebrities') }}</a>
         <a href="/vote/">{{ txt('navVote') }}</a>
         <a v-if="FORUM_ENABLED" :href="loc('/forum')">{{ txt('navForum') }}</a>
       </nav>
