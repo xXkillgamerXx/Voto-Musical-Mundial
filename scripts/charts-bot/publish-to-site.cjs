@@ -1,25 +1,28 @@
 #!/usr/bin/env node
 /**
- * Publish MusicMundial scraper output into the site charts JSON.
+ * Publish scraper output into site charts JSON.
  *
- *   node scripts/charts-bot/publish-to-site.cjs
- *   MUSICMUNDIAL_PACK="C:\\...\\MusicMundial" node scripts/charts-bot/publish-to-site.cjs
- *
- * Reads kworb/*.json (+ optional hybrid radio / allaccess.json),
- * writes news/public/charts/data.json and news/public/charts/spotify/*-daily.json
+ *   node publish-to-site.cjs
+ *   CHARTS_DATA_DIR=./data CHARTS_OUT=/www/.../html/charts node publish-to-site.cjs
  */
 const fs = require('fs')
 const path = require('path')
 
-const REPO = path.resolve(__dirname, '..', '..')
+const HERE = __dirname
+const REPO = path.resolve(HERE, '..', '..')
 const DEFAULT_PACK = path.join(
   process.env.USERPROFILE || process.env.HOME || '',
   'OneDrive',
   'Escritorio',
   'MusicMundial',
 )
-const PACK = process.env.MUSICMUNDIAL_PACK || DEFAULT_PACK
-const OUT = path.join(REPO, 'news', 'public', 'charts')
+const PACK =
+  process.env.CHARTS_DATA_DIR ||
+  process.env.MUSICMUNDIAL_PACK ||
+  DEFAULT_PACK
+const OUT =
+  process.env.CHARTS_OUT ||
+  path.join(REPO, 'news', 'public', 'charts')
 const SPOT_OUT = path.join(OUT, 'spotify')
 const TOP = Number(process.env.CHARTS_TOP || 40)
 
@@ -29,7 +32,9 @@ function readJson(file) {
 
 function writeJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify(data) + '\n')
+  const tmp = file + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify(data))
+  fs.renameSync(tmp, file)
 }
 
 function takeTracks(pack, n = TOP) {
@@ -68,7 +73,9 @@ function withCovers(tracks, covers) {
     const hit =
       (track.trackId && covers.get(`t:${track.trackId}`)) ||
       (track.artistId && covers.get(`a:${track.artistId}`)) ||
-      covers.get(`k:${String(track.artist || '').toLowerCase()}|${String(track.title || '').toLowerCase()}`)
+      covers.get(
+        `k:${String(track.artist || '').toLowerCase()}|${String(track.title || '').toLowerCase()}`,
+      )
     return hit ? { ...track, coverUrl: hit } : track
   })
 }
@@ -98,25 +105,55 @@ function buildRadio(covers) {
       tracks: withCovers((hybrid.tracks || []).slice(0, TOP), covers),
     }
   }
-  const aa = loadPack('allaccess.json')
+
+  const aaPath = path.join(PACK, 'allaccess.json')
+  if (fs.existsSync(aaPath)) {
+    const aa = readJson(aaPath)
+    return {
+      source: 'allaccess',
+      chart: 'Radio Airplay',
+      date: String(aa.scrapedAt || '').slice(0, 10) || null,
+      week: aa.lastWeek && aa.thisWeek ? `${aa.lastWeek} - ${aa.thisWeek}` : null,
+      count: aa.count || (aa.tracks || []).length,
+      tracks: withCovers(
+        (aa.tracks || []).slice(0, TOP).map((t) => ({
+          position: t.position,
+          change: t.change,
+          artist: t.artist,
+          title: t.title,
+          spins: t.spins,
+          spinsLastWeek: t.spinsLastWeek,
+          spinsChange: t.spinsChange,
+          audience: t.audience,
+          panelAudience: t.audience,
+          sources: ['allaccess'],
+        })),
+        covers,
+      ),
+    }
+  }
+
+  // Fallback: kworb radio audience estimates (no spins panel).
+  const songs = loadPack('kworb/radio/songs.json')
   return {
-    source: 'allaccess',
+    source: 'kworb',
     chart: 'Radio Airplay',
-    date: String(aa.scrapedAt || '').slice(0, 10) || null,
-    week: aa.lastWeek && aa.thisWeek ? `${aa.lastWeek} - ${aa.thisWeek}` : null,
-    count: aa.count || (aa.tracks || []).length,
+    date: songs.date || null,
+    week: null,
+    count: songs.count || (songs.tracks || []).length,
+    note: 'Kworb radio audience estimates (All Access spins not configured)',
     tracks: withCovers(
-      (aa.tracks || []).slice(0, TOP).map((t) => ({
+      (songs.tracks || []).slice(0, TOP).map((t) => ({
         position: t.position,
         change: t.change,
         artist: t.artist,
         title: t.title,
-        spins: t.spins,
-        spinsLastWeek: t.spinsLastWeek,
-        spinsChange: t.spinsChange,
         audience: t.audience,
-        panelAudience: t.audience,
-        sources: ['allaccess'],
+        audienceChange: t.audienceChange,
+        formats: t.formats,
+        days: t.days,
+        peak: t.peak,
+        sources: ['kworb'],
       })),
       covers,
     ),
@@ -124,8 +161,8 @@ function buildRadio(covers) {
 }
 
 function main() {
-  if (!fs.existsSync(PACK)) {
-    throw new Error(`MusicMundial pack not found: ${PACK}`)
+  if (!fs.existsSync(path.join(PACK, 'kworb'))) {
+    throw new Error(`Charts data not found under ${PACK}`)
   }
   const covers = coverMapFromExisting()
   const daily = takeTracks(loadPack('kworb/spotify/global-daily.json'))
@@ -177,7 +214,7 @@ function main() {
     daily: data.daily.tracks.length,
     radio: data.radio.tracks.length,
     countries: packed.length,
-    radioWeek: data.radio.week,
+    radioSource: data.radio.source,
     dailyDate: data.daily.date,
   })
 }
