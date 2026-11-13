@@ -530,7 +530,8 @@ const loadCountry = async (code: string) => {
   countryLoading.value = true
   try {
     const res = await fetch(`/charts/spotify/${code}-daily.json`, { cache: 'no-store' })
-    if (!res.ok) throw new Error('missing')
+    const ctype = res.headers.get('content-type') || ''
+    if (!res.ok || !ctype.includes('json')) throw new Error('missing')
     const pack = (await res.json()) as ChartPack
     if (!pack.tracks?.length) throw new Error('empty')
     countryCache.set(code, pack)
@@ -579,17 +580,24 @@ onMounted(async () => {
   loading.value = true
   error.value = ''
   try {
-    const [chartsRes, countriesRes] = await Promise.all([
-      fetch('/charts/data.json', { cache: 'no-store' }),
-      fetch('/charts/spotify/countries.json', { cache: 'no-store' }).catch(() => null),
-    ])
+    const chartsRes = await fetch('/charts/data.json', { cache: 'no-store' })
     if (!chartsRes.ok) throw new Error('missing')
-    data.value = await chartsRes.json()
-    if (countriesRes?.ok) {
-      const meta = await countriesRes.json()
-      availableCountries.value = meta.available || []
-      packedCountries.value = meta.packed || []
+    const chartsJson = await chartsRes.json()
+    if (!chartsJson?.daily?.tracks) throw new Error('invalid')
+    data.value = chartsJson
+
+    try {
+      const countriesRes = await fetch('/charts/spotify/countries.json', { cache: 'no-store' })
+      const ctype = countriesRes.headers.get('content-type') || ''
+      if (countriesRes.ok && ctype.includes('json')) {
+        const meta = await countriesRes.json()
+        availableCountries.value = meta.available || []
+        packedCountries.value = meta.packed || []
+      }
+    } catch {
+      // Country packs are optional; keep the main charts usable.
     }
+
     readUrlState()
     await loadCountry(countryCode.value)
     syncUrl()
