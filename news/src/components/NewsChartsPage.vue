@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { t } from '../lib/copy'
+import { CHART_BOARD_FROM_SLUG, CHART_BOARD_IDS, chartBoardSlug } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
 import { withLocale } from '../lib/locale'
 
@@ -51,13 +52,15 @@ type Board = {
   positionOf?: (track: ChartTrack, index: number) => number
 }
 
-const props = defineProps<{ locale?: string }>()
+const props = defineProps<{ locale?: string; board?: string }>()
 const loc = computed(() => (props.locale === 'es' ? 'es' : 'en'))
 const loading = ref(true)
 const countryLoading = ref(false)
 const error = ref('')
 const data = ref<ChartsData | null>(null)
-const activeBoard = ref('radio')
+const normalizeBoard = (value?: string | null) =>
+  value && CHART_BOARD_IDS.has(value) ? value : 'radio'
+const activeBoard = ref(normalizeBoard(props.board))
 const countryCode = ref('global')
 const countryPack = ref<ChartPack | null>(null)
 const countryError = ref('')
@@ -494,25 +497,40 @@ const colLabel = (col: BoardColumn) => {
   return map[col]
 }
 
-const syncUrl = () => {
+const chartsPath = (boardId: string) =>
+  withLocale(`/charts/${chartBoardSlug(boardId)}/`, loc.value).replace(/\?.*$/, '')
+
+const syncUrl = (mode: 'replace' | 'push' = 'replace') => {
   const url = new URL(window.location.href)
-  url.hash = activeBoard.value
+  const slug = chartBoardSlug(activeBoard.value)
+  url.pathname = chartsPath(activeBoard.value).replace(/\/+$/, '') || `/charts/${slug}`
+  // Prefer clean trailing-slash style: /charts/radio/
+  if (!url.pathname.endsWith('/')) url.pathname += '/'
+  url.hash = ''
   if (activeBoard.value === 'spotify' && countryCode.value !== 'global') {
     url.searchParams.set('country', countryCode.value.toUpperCase())
   } else {
     url.searchParams.delete('country')
   }
-  const next = `${url.pathname}${url.search}${url.hash}`
-  if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
-    history.replaceState(null, '', next)
-  }
+  const next = `${url.pathname}${url.search}`
+  const current = `${window.location.pathname}${window.location.search}`
+  if (next === current) return
+  if (mode === 'push') history.pushState(null, '', next)
+  else history.replaceState(null, '', next)
 }
 
 const readUrlState = () => {
   const url = new URL(window.location.href)
+  // Legacy support: /charts#radio → /charts/radio/
   const hash = url.hash.replace(/^#/, '')
-  if (hash && boards.value.some((b) => b.id === hash)) activeBoard.value = hash
-  else activeBoard.value = 'radio'
+  const pathSlug = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .filter((p) => p !== 'es' && p !== 'en' && p !== 'charts')
+    .pop()
+  if (hash && CHART_BOARD_IDS.has(hash)) activeBoard.value = hash
+  else if (pathSlug && CHART_BOARD_FROM_SLUG[pathSlug]) activeBoard.value = CHART_BOARD_FROM_SLUG[pathSlug]
+  else activeBoard.value = normalizeBoard(props.board)
   const country = (url.searchParams.get('country') || 'global').toLowerCase()
   countryCode.value = country === 'global' || country === '' ? 'global' : country
 }
@@ -551,10 +569,10 @@ const loadCountry = async (code: string) => {
 }
 
 const selectBoard = (id: string) => {
-  activeBoard.value = id
+  activeBoard.value = normalizeBoard(id)
   countryOpen.value = false
   resetVisible()
-  syncUrl()
+  syncUrl('push')
 }
 
 const selectCountry = async (code: string) => {
@@ -600,17 +618,17 @@ onMounted(async () => {
 
     readUrlState()
     await loadCountry(countryCode.value)
-    syncUrl()
+    syncUrl('replace')
     applyNewsSeo({
       type: 'website',
       locale: loc.value,
       title: `${t(loc.value, 'navCharts')} — Music Mundial`,
       description: t(loc.value, 'chartsBlurb'),
-      path: withLocale('/charts/', loc.value),
+      path: chartsPath(activeBoard.value),
       image: coverOf(data.value?.daily?.tracks?.[0]) || '/images/portada-1600x900.jpg',
       imageAlt: 'Music Mundial Charts',
-      hreflangEn: '/charts/',
-      hreflangEs: '/es/charts/',
+      hreflangEn: `/charts/${chartBoardSlug(activeBoard.value)}/`,
+      hreflangEs: `/es/charts/${chartBoardSlug(activeBoard.value)}/`,
     })
   } catch {
     error.value = t(loc.value, 'chartsMissing')
@@ -619,24 +637,32 @@ onMounted(async () => {
   }
   onHashChange = () => {
     readUrlState()
+    syncUrl('replace')
     void loadCountry(countryCode.value)
   }
   window.addEventListener('hashchange', onHashChange)
+  window.addEventListener('popstate', onHashChange)
   document.addEventListener('click', onDocClick)
 })
 
 onUnmounted(() => {
-  if (onHashChange) window.removeEventListener('hashchange', onHashChange)
+  if (onHashChange) {
+    window.removeEventListener('hashchange', onHashChange)
+    window.removeEventListener('popstate', onHashChange)
+  }
   document.removeEventListener('click', onDocClick)
 })
 
-watch(activeBoard, async () => {
-  if (activeBoard.value !== 'spotify' && countryCode.value !== 'global') {
-    // keep country in memory but hide selector; restore when returning
-  }
-  await nextTick()
-  syncUrl()
-})
+watch(
+  () => props.board,
+  (board) => {
+    const next = normalizeBoard(board)
+    if (next !== activeBoard.value) {
+      activeBoard.value = next
+      resetVisible()
+    }
+  },
+)
 </script>
 
 <template>

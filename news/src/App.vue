@@ -756,7 +756,7 @@ onUnmounted(() => {
           </a>
         </div>
         <a :class="{ active: newsPage.name === 'home' }" :href="loc('/')" @click="closeMenu">{{ txt('navHome') }}</a>
-        <a :class="{ active: newsPage.name === 'charts' }" :href="loc('/charts/')" @click="closeMenu">{{ txt('navCharts') }}</a>
+        <a :class="{ active: newsPage.name === 'charts' }" :href="loc('/charts/radio/')" @click="closeMenu">{{ txt('navCharts') }}</a>
         <a :class="{ active: newsPage.name === 'category' && newsPage.slug === 'kpop' }" :href="loc('/kpop')" @click="closeMenu">KPOP</a>
         <a :href="categoryHref(siteLocale, 'viral')" @click="closeMenu">{{ txt('navEntertainment') }}</a>
         <a :href="categoryHref(siteLocale, 'celebridades')" @click="closeMenu">{{ txt('navPopular') }}</a>
@@ -923,7 +923,11 @@ onUnmounted(() => {
   <NewsCategoryPage v-else-if="newsPage.name === 'category'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsTagPage v-else-if="newsPage.name === 'tag'" :slug="newsPage.slug" :locale="newsPage.locale" />
   <NewsStaticPage v-else-if="newsPage.name === 'static'" :slug="newsPage.slug" :locale="newsPage.locale" />
-  <NewsChartsPage v-else-if="newsPage.name === 'charts'" :locale="newsPage.locale" />
+  <NewsChartsPage
+    v-else-if="newsPage.name === 'charts'"
+    :locale="newsPage.locale"
+    :board="newsPage.board || 'radio'"
+  />
   <NewsProfilePage
     v-else-if="newsPage.name === 'profile'"
     :locale="newsPage.locale"
@@ -1382,7 +1386,7 @@ onUnmounted(() => {
       <nav class="foot-col" :aria-label="txt('navHome')">
         <strong>{{ txt('explore') }}</strong>
         <a :href="loc('/')">{{ txt('navHome') }}</a>
-        <a :href="loc('/charts/')">{{ txt('navCharts') }}</a>
+        <a :href="loc('/charts/radio/')">{{ txt('navCharts') }}</a>
         <a :href="loc('/kpop')">K-POP</a>
         <a :href="loc('/k-drama')">K-Dramas</a>
         <a :href="categoryHref(siteLocale, 'celebridades')">{{ txt('celebrities') }}</a>

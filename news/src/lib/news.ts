@@ -206,8 +206,30 @@ export type NewsPage =
   | { name: 'author'; locale: 'es' | 'en'; slug: string }
   | { name: 'forum'; locale: 'es' | 'en'; board?: string; post?: string }
   | { name: 'static'; locale: 'es' | 'en'; slug: string }
-  | { name: 'charts'; locale: 'es' | 'en' }
+  | { name: 'charts'; locale: 'es' | 'en'; board?: string }
   | { name: 'article'; locale: 'es' | 'en'; slug: string }
+
+export const CHART_BOARD_IDS = new Set([
+  'radio',
+  'spotify',
+  'listeners',
+  'youtube',
+  'trending',
+  'countries',
+])
+
+/** URL slug → board id (spotify page cannot use /charts/spotify/ — reserved for JSON). */
+export const CHART_BOARD_FROM_SLUG: Record<string, string> = {
+  radio: 'radio',
+  spotify: 'spotify',
+  'spotify-daily': 'spotify',
+  listeners: 'listeners',
+  youtube: 'youtube',
+  trending: 'trending',
+  countries: 'countries',
+}
+
+export const chartBoardSlug = (boardId: string) => (boardId === 'spotify' ? 'spotify-daily' : boardId)
 
 export const SITE_PAGE_SLUGS = new Set([
   'sobre-nosotros',
@@ -313,7 +335,17 @@ export const parseNewsPage = (pathname = window.location.pathname): NewsPage => 
   const forumBoard = path.match(/^\/(?:forum|foro)\/([a-z0-9-]+)$/)
   if (forumBoard) return { name: 'forum', locale, board: forumBoard[1] }
   if (path === '/categorias' || path === '/categories') return { name: 'categories', locale }
-  if (path === '/charts') return { name: 'charts', locale }
+  if (path === '/charts') return { name: 'charts', locale, board: 'radio' }
+  const chartsBoard = path.match(/^\/charts\/([a-z0-9-]+)$/)
+  if (chartsBoard) {
+    const slug = chartsBoard[1]
+    const board = CHART_BOARD_FROM_SLUG[slug]
+    return {
+      name: 'charts',
+      locale,
+      board: board && CHART_BOARD_IDS.has(board) ? board : 'radio',
+    }
+  }
   if (path.startsWith('/categoria/') || path.startsWith('/category/')) {
     const slug = path.split('/').filter(Boolean)[1] || ''
     return { name: 'category', locale, slug: categorySlugForLocale(slug, locale) }
