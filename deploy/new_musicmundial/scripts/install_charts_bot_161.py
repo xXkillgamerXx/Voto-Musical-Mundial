@@ -68,8 +68,19 @@ def main() -> None:
     sftp.close()
 
     every = os.environ.get("CHARTS_CRON_EVERY", "30")
+    node_ver = os.environ.get("NMM_NODE_VER", "v20.18.1")
+    node_url = f"https://nodejs.org/dist/{node_ver}/node-{node_ver}-linux-x64.tar.xz"
     cmd = rf"""
 set -e
+# Node 18+ required (fetch). AlmaLinux: official tarball into /usr/local
+if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0])<18)'; then
+  curl -fsSL "{node_url}" -o /tmp/node-nmm.tar.xz
+  tar -xJf /tmp/node-nmm.tar.xz -C /usr/local --strip-components=1
+  rm -f /tmp/node-nmm.tar.xz
+fi
+NODE_BIN="$(command -v node || echo /usr/local/bin/node)"
+test -x "$NODE_BIN"
+
 mkdir -p {REMOTE_BOT}/data {REMOTE_HTML_CHARTS}/spotify
 tar -xzf /tmp/nmm-charts-bot.tgz -C {REMOTE_ROOT}
 rm -f /tmp/nmm-charts-bot.tgz
@@ -77,15 +88,16 @@ chmod 755 {REMOTE_BOT}
 chmod 644 {REMOTE_BOT}/*.cjs
 
 # Wrapper for cron
-cat > {REMOTE_BOT}/run.sh <<'EOF'
+cat > {REMOTE_BOT}/run.sh <<EOF
 #!/bin/bash
 set -euo pipefail
+export PATH=/usr/local/bin:$PATH
 export CHARTS_DATA_DIR={REMOTE_BOT}/data
 export CHARTS_OUT={REMOTE_HTML_CHARTS}
 export CHARTS_TOP=40
 export KW_DELAY=200
 cd {REMOTE_BOT}
-/usr/bin/node update-once.cjs >> {REMOTE_BOT}/bot.log 2>&1
+exec "$NODE_BIN" update-once.cjs >> {REMOTE_BOT}/bot.log 2>&1
 EOF
 chmod 755 {REMOTE_BOT}/run.sh
 
