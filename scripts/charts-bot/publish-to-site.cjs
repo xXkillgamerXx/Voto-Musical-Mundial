@@ -25,6 +25,7 @@ const OUT =
   path.join(REPO, 'news', 'public', 'charts')
 const SPOT_OUT = path.join(OUT, 'spotify')
 const TOP = Number(process.env.CHARTS_TOP || 40)
+const PUBLISHED_AT = new Date().toISOString()
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -37,9 +38,17 @@ function writeJson(file, data) {
   fs.renameSync(tmp, file)
 }
 
+function stamp(pack) {
+  return {
+    ...pack,
+    scrapedAt: pack.scrapedAt || PUBLISHED_AT,
+    publishedAt: PUBLISHED_AT,
+  }
+}
+
 function takeTracks(pack, n = TOP) {
   const tracks = (pack.tracks || []).slice(0, n)
-  return { ...pack, tracks, count: pack.count || tracks.length }
+  return stamp({ ...pack, tracks, count: pack.count || tracks.length })
 }
 
 function coverMapFromExisting() {
@@ -92,28 +101,30 @@ function buildRadio(covers) {
     const hybrid = readJson(hybridPath)
     const week = hybrid.allAccess?.week || null
     const date = hybrid.kworb?.date || null
-    return {
+    return stamp({
       source: 'hybrid',
       chart: 'Radio Airplay',
       date,
       week,
+      scrapedAt: hybrid.scrapedAt || hybrid.kworb?.scrapedAt || PUBLISHED_AT,
       count: hybrid.count || (hybrid.tracks || []).length,
       matched: hybrid.matched,
       note: week
         ? `All Access spins for ${week}, joined to audience estimates from ${date || 'kworb'}`
         : undefined,
       tracks: withCovers((hybrid.tracks || []).slice(0, TOP), covers),
-    }
+    })
   }
 
   const aaPath = path.join(PACK, 'allaccess.json')
   if (fs.existsSync(aaPath)) {
     const aa = readJson(aaPath)
-    return {
+    return stamp({
       source: 'allaccess',
       chart: 'Radio Airplay',
       date: String(aa.scrapedAt || '').slice(0, 10) || null,
       week: aa.lastWeek && aa.thisWeek ? `${aa.lastWeek} - ${aa.thisWeek}` : null,
+      scrapedAt: aa.scrapedAt || PUBLISHED_AT,
       count: aa.count || (aa.tracks || []).length,
       tracks: withCovers(
         (aa.tracks || []).slice(0, TOP).map((t) => ({
@@ -130,16 +141,17 @@ function buildRadio(covers) {
         })),
         covers,
       ),
-    }
+    })
   }
 
   // Fallback: kworb radio audience estimates (no spins panel).
   const songs = loadPack('kworb/radio/songs.json')
-  return {
+  return stamp({
     source: 'kworb',
     chart: 'Radio Airplay',
     date: songs.date || null,
     week: null,
+    scrapedAt: songs.scrapedAt || PUBLISHED_AT,
     count: songs.count || (songs.tracks || []).length,
     note: 'Kworb radio audience estimates (All Access spins not configured)',
     tracks: withCovers(
@@ -157,7 +169,7 @@ function buildRadio(covers) {
       })),
       covers,
     ),
-  }
+  })
 }
 
 function main() {

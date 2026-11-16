@@ -5012,6 +5012,7 @@ html[data-theme="dark"] .notice-row:hover time {
   overflow: hidden;
   border-radius: 22px;
   background: #0a0b10;
+  aspect-ratio: 16 / 9;
 }
 
 .article-cover + .article-meta-row {
@@ -5172,6 +5173,20 @@ html[data-theme="dark"] .google-news-cta-icon {
   width: 100%;
   height: auto;
   object-fit: contain;
+}
+
+.article-body figure.wp-block-image,
+.article-body figure:has(> img) {
+  margin: 1.2em 0;
+}
+
+/* AdSense auto-ads: contain inserts so late banners don't shove the article. */
+.google-auto-placed,
+.adsbygoogle-noablate,
+ins.adsbygoogle[data-ad-status] {
+  contain: layout style;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .article-cover figcaption {
@@ -5454,6 +5469,7 @@ html[data-theme="dark"] .article-cover figcaption {
 .article-body .twitter-tweet,
 .article-body twitter-widget {
   margin: 1.4em auto !important;
+  min-height: 240px;
 }
 
 .article-body .yt-embed {

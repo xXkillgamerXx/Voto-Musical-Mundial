@@ -9,6 +9,7 @@ import NewsAdminReports from './NewsAdminReports.vue'
 import NewsAdminTags from './NewsAdminTags.vue'
 import NewsAdminUsers from './NewsAdminUsers.vue'
 import NewsAdminApiKeys from './NewsAdminApiKeys.vue'
+import NewsAdminCharts from './NewsAdminCharts.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
 import { getAdminNewsOverview } from '../../../src/services/api/adminApi'
@@ -69,7 +70,7 @@ type Overview = {
 }
 
 const props = defineProps<{
-  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'users' | 'api-keys' | 'post-form'
+  section?: 'dashboard' | 'posts' | 'categories' | 'authors' | 'tags' | 'forum' | 'pages' | 'reports' | 'users' | 'api-keys' | 'charts' | 'post-form'
   postId?: string
   newsLocale?: 'es' | 'en'
 }>()
@@ -95,6 +96,7 @@ const pageTitle = computed(() => {
   if (section.value === 'reports') return 'Reportes'
   if (section.value === 'users') return 'Usuarios'
   if (section.value === 'api-keys') return 'API keys'
+  if (section.value === 'charts') return 'Charts'
   return 'Dashboard'
 })
 const pageLead = computed(() => {
@@ -113,6 +115,9 @@ const pageLead = computed(() => {
   if (section.value === 'users') return 'Cuentas de Vote Music Mundial: bloquear, roles, puntos y eliminar.'
   if (section.value === 'api-keys') {
     return 'Crea keys para CRM/herramientas. Endpoint: GET /api/news/tags?locale=es con header X-API-Key.'
+  }
+  if (section.value === 'charts') {
+    return 'Tiempo de actualización de cada tablero Charts (bot automático cada 30 min).'
   }
   return 'Resumen de musicmundial_es y musicmundial_en'
 })
@@ -340,6 +345,10 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14a5 5 0 1 1 4.9-6H21v3h-2v2h-2v2h-3.1A5 5 0 0 1 7 14zm0-2a3 3 0 1 0-3-3 3 3 0 0 0 3 3z" /></svg>
           API keys
         </a>
+        <a :class="{ on: section === 'charts' }" href="/es/admin/charts" @click="closeNav">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5h2v14H4zm5 0V9h2v10H9zm5 0v-6h2v6h-2zm5 0V7h2v12h-2z" /></svg>
+          Charts
+        </a>
         <a :class="{ on: section === 'forum' }" href="/es/admin/foro" @click="closeNav">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
           Foro
@@ -419,6 +428,7 @@ onUnmounted(() => {
         <NewsAdminReports v-else-if="section === 'reports'" />
         <NewsAdminUsers v-else-if="section === 'users'" />
         <NewsAdminApiKeys v-else-if="section === 'api-keys'" />
+        <NewsAdminCharts v-else-if="section === 'charts'" />
         <template v-else>
         <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
         <p v-else-if="loading && !overview" class="na-empty">Cargando dashboard…</p>

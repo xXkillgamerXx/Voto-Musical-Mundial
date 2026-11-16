@@ -83,6 +83,10 @@ def stage() -> Path:
     public = REPO / "news" / "public"
     if public.exists():
         shutil.copytree(public, html, dirs_exist_ok=True)
+    # Live charts JSON is owned by charts-bot on the server — never ship stale repo copies.
+    charts = html / "charts"
+    if charts.exists():
+        shutil.rmtree(charts)
     shutil.copytree(vote_src, html / "vote")
 
     backend = DEPLOY / "backend"
@@ -190,6 +194,10 @@ fi
 if [ -d {REMOTE}/uploads ]; then
   mv {REMOTE}/uploads /tmp/nmm.uploads.bak
 fi
+if [ -d {REMOTE}/html/charts ]; then
+  rm -rf /tmp/nmm-charts.bak
+  cp -a {REMOTE}/html/charts /tmp/nmm-charts.bak
+fi
 tar -xzf /tmp/new_musicmundial.tgz -C {REMOTE}
 rm -f /tmp/new_musicmundial.tgz
 if [ -f /tmp/nmm.env.bak ]; then
@@ -198,6 +206,10 @@ fi
 if [ -d /tmp/nmm.uploads.bak ]; then
   rm -rf {REMOTE}/uploads
   mv /tmp/nmm.uploads.bak {REMOTE}/uploads
+fi
+if [ -d /tmp/nmm-charts.bak ]; then
+  rm -rf {REMOTE}/html/charts
+  mv /tmp/nmm-charts.bak {REMOTE}/html/charts
 fi
 if [ ! -f {REMOTE}/.env ]; then
   echo 'Falta {REMOTE}/.env' >&2

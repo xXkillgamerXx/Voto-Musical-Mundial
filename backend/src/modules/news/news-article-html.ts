@@ -110,6 +110,9 @@ const rankMathBlock = (head: ArticleHead) => {
     `    <meta property="article:publisher" content="https://www.facebook.com/MusicMundialEn/">`,
     tags,
     head.section ? `    <meta property="article:section" content="${head.section}">` : '',
+    head.image
+      ? `    <link rel="preload" as="image" href="${head.image}" fetchpriority="high">`
+      : '',
     `    <meta property="og:image" content="${head.image}">`,
     `    <meta property="og:image:secure_url" content="${head.image}">`,
     `    <meta property="og:image:width" content="1600">`,
@@ -200,7 +203,18 @@ export const renderArticleBody = (body: ArticleBody) => {
     </script>`
     : '';
 
-  return `<main id="news-ssr" class="article-page">
+  // Keep a real header in SSR so the SPA swap does not shove the article down (CLS).
+  const home = body.homeHref || (body.locale === 'es' ? '/es' : '/');
+  return `<div id="news-ssr">
+  <header class="site-header news-ssr-header">
+    <div class="container head-inner">
+      <a href="${home}" class="brand">
+        <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" width="809" height="121" decoding="async">
+        <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" width="809" height="121" decoding="async">
+      </a>
+    </div>
+  </header>
+  <main class="article-page">
     <div class="container article-layout">
       <div class="article-wrap">
         <article class="article">
@@ -233,7 +247,8 @@ export const renderArticleBody = (body: ArticleBody) => {
       </div>
     </div>
     ${editScript}
-  </main>`;
+  </main>
+  </div>`;
 };
 
 export type AuthorBody = {
@@ -259,7 +274,16 @@ export const renderAuthorBody = (body: AuthorBody) => {
         </a>`,
     )
     .join('\n        ');
-  return `<main id="news-ssr" class="category-page author-page">
+  return `<div id="news-ssr">
+  <header class="site-header news-ssr-header">
+    <div class="container head-inner">
+      <a href="${homeHref}" class="brand">
+        <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" width="809" height="121" decoding="async">
+        <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" width="809" height="121" decoding="async">
+      </a>
+    </div>
+  </header>
+  <main class="category-page author-page">
     <section class="category-hero category-hero-light">
       <div class="container">
         <nav class="crumbs" aria-label="breadcrumb">
@@ -270,7 +294,7 @@ export const renderAuthorBody = (body: AuthorBody) => {
         <div class="author-hero">
           ${
             body.photo
-              ? `<img class="author-hero-photo" src="${body.photo}" alt="${body.name}">`
+              ? `<img class="author-hero-photo" src="${body.photo}" alt="${body.name}" width="160" height="160">`
               : `<span class="author-hero-photo ph">${body.name.slice(0, 1)}</span>`
           }
           <div>
@@ -289,7 +313,8 @@ export const renderAuthorBody = (body: AuthorBody) => {
         </div>
       </div>
     </div>
-  </main>`;
+  </main>
+  </div>`;
 };
 
 export const paintArticleIndex = (html: string, head: ArticleHead, body?: ArticleBody, author?: AuthorBody) => {
@@ -306,7 +331,7 @@ export const paintArticleIndex = (html: string, head: ArticleHead, body?: Articl
     if (!out.includes('news-ssr-hide')) {
       out = out.replace(
         '</head>',
-        '    <style id="news-ssr-hide">#app:not(:empty) ~ #news-ssr{display:none}</style>\n  </head>',
+        '    <style id="news-ssr-hide">html:not(.news-spa-ready) #app{display:none}html.news-spa-ready #news-ssr{display:none}</style>\n  </head>',
       );
     }
     // Vote missions: report ?vmm= visits even before the SPA boots on SSR article HTML.

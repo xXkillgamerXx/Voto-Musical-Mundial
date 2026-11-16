@@ -9,6 +9,7 @@ import { withLocale } from '../lib/locale'
 import { categoryHref, coverErrorFallback, coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
 import { newsRouteState } from '../lib/route-state'
 import { applyHomeSeo, applyNewsSeo } from '../lib/seo'
+import { handoffWhenImageReady, markNewsSpaReady } from '../lib/ssrHandoff'
 import NewsComments from './NewsComments.vue'
 import NewsAuthorHover from './NewsAuthorHover.vue'
 
@@ -143,12 +144,15 @@ async function load() {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
   } catch {
     error.value = t(loc.value, 'storyMissing')
+    markNewsSpaReady()
     applyHomeSeo(loc.value)
     window.history.replaceState({}, '', loc.value === 'es' ? '/es' : '/')
     window.dispatchEvent(new PopStateEvent('popstate'))
   } finally {
     loading.value = false
   }
+  await nextTick()
+  void handoffWhenImageReady('.article-cover img')
   const feed = await popularPromise
   popular.value = feed.items || []
   popularLoading.value = false

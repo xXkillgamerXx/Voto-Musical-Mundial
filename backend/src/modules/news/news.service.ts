@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ListNewsDto } from './dto/list-news.dto';
 import { UpsertNewsPostDto } from './dto/upsert-news-post.dto';
 import { NewsLocale, NewsMysqlService } from './news-mysql';
-import { ensureImageAlts, expandNewsEmbeds, firstYoutubeEmbed, plainExcerpt, rssBodyHtml, sanitizeNewsHtml, youtubeVideoIds } from './news-html';
+import { ensureImageAlts, ensureImageLayout, expandNewsEmbeds, firstYoutubeEmbed, plainExcerpt, rssBodyHtml, sanitizeNewsHtml, youtubeVideoIds } from './news-html';
 import { NewsSitemapService } from './news-sitemap.service';
 import {
   SITE_PAGE_META_KEY,
@@ -1836,7 +1836,10 @@ export class NewsService {
       authorBio: author?.bio || '',
       authorPhotoUrl: card.authorPhotoUrl || author?.photoUrl || '',
       authorPostCount: author?.postCount || 0,
-      content: expandNewsEmbeds(sanitizeNewsHtml(post.post_content)),
+      content: ensureImageAlts(
+        ensureImageLayout(expandNewsEmbeds(sanitizeNewsHtml(post.post_content))),
+        String(post.post_title || card.title || ''),
+      ),
       tags: (tags.get(post.ID) || []).map((item) => ({ slug: item.slug, name: item.name })),
       attachments,
       commentCount,
@@ -2423,7 +2426,7 @@ export class NewsService {
       ...new Set(
         tags
           .map((item) => String(item || '').replace(/&amp;/g, '&').trim())
-          .filter((item) => item.length >= 2)
+          .filter((item) => item.length >= 1)
           .slice(0, 24),
       ),
     ];

@@ -35,11 +35,14 @@ const setCanonical = (url: string) => {
   el.href = url
 }
 
-const clip = (value: string, max: number) => {
-  const text = String(value || '')
+const cleanText = (value: string) =>
+  String(value || '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
+const clip = (value: string, max: number) => {
+  const text = cleanText(value)
   if (text.length <= max) return text
   return `${text.slice(0, max - 1).trimEnd()}…`
 }
@@ -144,7 +147,7 @@ export type NewsSeoInput = {
 export const applyNewsSeo = (input: NewsSeoInput) => {
   const type = input.type || 'website'
   const locale = input.locale === 'es' ? 'es' : 'en'
-  const title = clip(input.title, TITLE_MAX)
+  const title = type === 'article' ? cleanText(input.title) : clip(input.title, TITLE_MAX)
   const description = clip(
     input.description ||
       (locale === 'es'
@@ -220,7 +223,7 @@ export const applyNewsSeo = (input: NewsSeoInput) => {
           locale,
           origin: window.location.origin,
           url,
-          title: clip(input.title, 200),
+          title,
           description: clip(input.description || description, SCHEMA_DESC_MAX),
           image,
           published,

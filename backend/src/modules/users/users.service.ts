@@ -109,7 +109,7 @@ export class UsersService {
       Object.prototype.hasOwnProperty.call(body || {}, 'banner') ||
       Object.prototype.hasOwnProperty.call(body || {}, 'bannerUrl')
     ) {
-      metadata.banner = String(body?.banner || body?.bannerUrl || '').trim();
+      metadata.banner = this.publicMediaUrl(body?.banner || body?.bannerUrl || '');
     }
     if (Object.prototype.hasOwnProperty.call(body || {}, 'emailCampaigns')) {
       metadata.emailCampaigns = Boolean(body.emailCampaigns);
@@ -136,7 +136,7 @@ export class UsersService {
 
     if (Object.prototype.hasOwnProperty.call(body || {}, 'photoUrl') ||
         Object.prototype.hasOwnProperty.call(body || {}, 'photoURL')) {
-      data.photoUrl = String(body?.photoUrl || body?.photoURL || '').trim() || null;
+      data.photoUrl = this.publicMediaUrl(body?.photoUrl || body?.photoURL || '') || null;
     }
 
     const updated = await this.prisma.user.update({
@@ -330,13 +330,58 @@ export class UsersService {
     });
   }
 
+  private publicOrigin() {
+    const raw = String(
+      this.config.get('PUBLIC_WEB_ORIGIN') ||
+        this.config.get('APP_PUBLIC_ORIGIN') ||
+        this.config.get('APP_ORIGIN') ||
+        'https://www.musicmundial.com',
+    )
+      .split(',')[0]
+      .trim()
+      .replace(/\/$/, '');
+    return raw || 'https://www.musicmundial.com';
+  }
+
+  /** Rewrite dead vote.musicmundial.com / http upload hosts to the live public origin. */
+  private publicMediaUrl(raw: unknown) {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    const origin = this.publicOrigin();
+    if (value.startsWith('/')) {
+      const path = value.replace(/^\/vote(?=\/)/, '');
+      return `${origin}${path}`;
+    }
+    try {
+      const url = new URL(value);
+      const host = url.hostname.toLowerCase();
+      const ours =
+        host === 'vote.musicmundial.com' ||
+        host === 'www.musicmundial.com' ||
+        host === 'musicmundial.com' ||
+        host === '161.97.154.152' ||
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        /^\d+\.\d+\.\d+\.\d+$/.test(host);
+      if (!ours) return value;
+      const path = `${url.pathname || ''}${url.search || ''}`.replace(/^\/vote(?=\/)/, '');
+      return `${origin}${path}`;
+    } catch {
+      return value;
+    }
+  }
+
   private async profilePayload(user: any, includeEmail = true, accountBlock: any = null) {
     const metadata = (user.metadata as Record<string, unknown>) || {};
+    const photoUrl = this.publicMediaUrl(user.photoUrl);
+    const banner = this.publicMediaUrl(metadata.banner || '');
     const followedArtists = (user.followingArtists || [])
       .map((follow: any) => {
         const artist = follow.artist;
         const artistMetadata = (artist?.metadata as Record<string, unknown>) || {};
-        const image = artist?.photoUrl || artistMetadata.image || artistMetadata.imageUrl || artistMetadata.photoUrl || artistMetadata.banner || '';
+        const image = this.publicMediaUrl(
+          artist?.photoUrl || artistMetadata.image || artistMetadata.imageUrl || artistMetadata.photoUrl || artistMetadata.banner || '',
+        );
 
         return artist ? {
           id: follow.id,
@@ -357,10 +402,10 @@ export class UsersService {
       email: includeEmail ? user.email : null,
       displayName: user.displayName,
       name: metadata.name || user.displayName,
-      photoUrl: user.photoUrl,
-      photoURL: user.photoUrl,
-      banner: metadata.banner || '',
-      bannerUrl: metadata.banner || '',
+      photoUrl,
+      photoURL: photoUrl,
+      banner,
+      bannerUrl: banner,
       country: metadata.country || '',
       bio: metadata.bio || '',
       role: user.role,

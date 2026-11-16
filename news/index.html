@@ -150,11 +150,40 @@
         }
         function loadAdsense() {
           if (document.querySelector('script[src*="pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"]')) return
-          var script = document.createElement('script')
-          script.async = true
-          script.crossOrigin = 'anonymous'
-          script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1078939545517246'
-          document.head.appendChild(script)
+          if (window.__mmAdsScheduled) return
+          window.__mmAdsScheduled = true
+          // Delay AdSense until after first paint / LCP window so auto-ads don't inflate CLS.
+          var start = function () {
+            if (document.querySelector('script[src*="pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"]')) return
+            var script = document.createElement('script')
+            script.async = true
+            script.crossOrigin = 'anonymous'
+            script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1078939545517246'
+            document.head.appendChild(script)
+          }
+          var armed = false
+          var arm = function () {
+            if (armed) return
+            armed = true
+            if ('requestIdleCallback' in window) {
+              window.requestIdleCallback(start, { timeout: 2500 })
+            } else {
+              window.setTimeout(start, 1800)
+            }
+          }
+          // Wait for first paint + scroll, or 6s. Keeps ads working without shoving LCP/CLS.
+          var onScroll = function () {
+            if (window.scrollY > 240) arm()
+          }
+          if (document.readyState === 'complete') {
+            window.setTimeout(arm, 6000)
+          } else {
+            window.addEventListener('load', function () { window.setTimeout(arm, 6000) }, { once: true })
+          }
+          window.addEventListener('scroll', onScroll, { passive: true })
+          ;['pointerdown', 'keydown', 'touchstart'].forEach(function (eventName) {
+            window.addEventListener(eventName, arm, { once: true, passive: true })
+          })
         }
         function loadGtag() {
           if (document.getElementById('mm-news-gtag')) return

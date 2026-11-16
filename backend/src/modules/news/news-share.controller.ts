@@ -2,7 +2,7 @@ import { Controller, Get, Header, Param, Query, Req, Res } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { loadNewsIndexHtml, paintArticleIndex } from './news-article-html';
-import { rssBodyHtml, youtubeVideoIds } from './news-html';
+import { ensureImageAlts, rssBodyHtml, youtubeVideoIds } from './news-html';
 import { buildAuthorProfileGraph, buildNewsArticleGraph } from './news-schema';
 import { newsPublicOrigin } from './news-origin';
 import { NewsService } from './news.service';
@@ -11,7 +11,6 @@ const SITE_NAME = 'Music Mundial';
 const DEFAULT_IMAGE_PATH = 'https://www.musicmundial.com/images/portada-1600x900.jpg';
 const LOGO_IMAGE_RE =
   /logo-cuadrado|cropped-logo-music-mundial|logo-music-mundial|\/images\/logo(?:-dark)?\.(?:png|webp|jpe?g|svg)/i;
-const TITLE_MAX = 110;
 const DESC_MAX = 160;
 
 const escapeHtml = (value: unknown) =>
@@ -108,7 +107,7 @@ export class NewsShareController {
 
   @Get('share/:slug')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  @Header('Cache-Control', 'public, max-age=300')
+  @Header('Cache-Control', 'public, max-age=600, stale-while-revalidate=86400')
   async articleShareCard(
     @Param('slug') slug: string,
     @Query('locale') localeValue: string | undefined,
@@ -124,14 +123,12 @@ export class NewsShareController {
       article = null;
     }
 
-    // Share cards: title only (no "— Music Mundial"). Brand sits in og:site_name; excerpt is description.
-    const titleRaw = clip(
+    // Full headline for Discover. Brand sits in og:site_name; excerpt is the description.
+    const titleRaw =
       stripHtml(article?.title || SITE_NAME)
         .replace(/\s*[—\-|:]\s*Music Mundial\s*$/i, '')
         .replace(/\s+Music Mundial\s*$/i, '')
-        .trim() || SITE_NAME,
-      TITLE_MAX,
-    );
+        .trim() || SITE_NAME;
     const descriptionRaw = clip(
       stripHtml(
         article?.excerpt ||
@@ -237,7 +234,7 @@ export class NewsShareController {
               ? escapeHtml(`${locale === 'es' ? `/es/categoria/${category.slug}` : `/category/${category.slug}`}`)
               : '',
             homeHref: locale === 'es' ? '/es' : '/',
-            bodyHtml: rssBodyHtml(String(article?.content || '')),
+            bodyHtml: ensureImageAlts(rssBodyHtml(String(article?.content || '')), titleRaw),
             videos,
             editId: String(article?.id || '').replace(/\D/g, ''),
           },

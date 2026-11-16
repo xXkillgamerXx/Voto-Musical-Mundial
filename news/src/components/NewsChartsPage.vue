@@ -30,7 +30,20 @@ type ChartsData = {
 
 type CountryMeta = { code: string; country: string; date?: string | null; count?: number }
 
-type BoardColumn = 'move' | 'streams' | 'spins' | 'audience' | 'listeners' | 'views' | 'likes' | 'countries' | 'market' | 'last'
+type BoardColumn =
+  | 'move'
+  | 'days'
+  | 'peak'
+  | 'streams'
+  | 'streamsPlus'
+  | 'spins'
+  | 'audience'
+  | 'listeners'
+  | 'views'
+  | 'likes'
+  | 'countries'
+  | 'market'
+  | 'last'
 
 type Board = {
   id: string
@@ -160,7 +173,7 @@ const lastWeekPos = (position: number, change?: string | null) => {
 const moveDisplay = (change?: string | null) => {
   const move = parseMove(change)
   if (move.kind === 'none') return { label: '—', tone: '', icon: 'flat' as const }
-  if (move.kind === 'hold') return { label: '—', tone: '', icon: 'flat' as const }
+  if (move.kind === 'hold') return { label: '=', tone: '', icon: 'flat' as const }
   if (move.kind === 'new') return { label: t(loc.value, 'chartsNew'), tone: 'up', icon: 'new' as const }
   if (move.kind === 're') return { label: t(loc.value, 'chartsReEntry'), tone: 'up', icon: 'new' as const }
   const label = move.value > 0 ? `+${move.value}` : String(move.value).replace('-', '−')
@@ -205,9 +218,13 @@ const activeDailyPack = computed<ChartPack>(() => {
   return countryPack.value || { tracks: [], code: countryCode.value }
 })
 
+const radioHasSpins = (pack?: ChartPack | null) =>
+  Boolean((pack?.tracks || []).some((track) => track.spins != null && track.spins !== ''))
+
 const boards = computed<Board[]>(() => {
   const pack = data.value
   if (!pack) return []
+  const radioSpins = radioHasSpins(pack.radio)
   return [
     {
       id: 'radio',
@@ -217,9 +234,13 @@ const boards = computed<Board[]>(() => {
       banner: t(loc.value, 'chartsBannerRadio'),
       family: 'radio',
       hasWeek: true,
-      columns: ['move', 'spins', 'audience', 'last'],
+      // Show real fields: spins when All Access is present, otherwise kworb days/peak
+      columns: radioSpins
+        ? ['spins', 'audience', 'last']
+        : ['days', 'peak', 'audience', 'last'],
       pack: pack.radio,
-      metric: (track) => Number(track.spins || 0),
+      metric: (track) =>
+        radioSpins ? Number(track.spins || 0) : Number(track.audience || 0),
       artist: (track) => track.artist,
       titleOf: (track) => track.title,
       sub: () => '',
@@ -232,7 +253,7 @@ const boards = computed<Board[]>(() => {
       banner: t(loc.value, 'chartsBannerSpotify'),
       family: 'spotify',
       hasCountry: true,
-      columns: ['move', 'streams', 'last'],
+      columns: ['days', 'peak', 'streams', 'streamsPlus'],
       pack: activeDailyPack.value,
       metric: (track) => Number(track.streams || 0),
       artist: (track) => track.artist,
@@ -411,10 +432,14 @@ const listenersDelta = (track: ChartTrack) => {
 }
 
 const spinsDelta = (track: ChartTrack) => {
+  if (track.spins == null || track.spins === '') return { text: '', tone: '' }
   const change = Number(track.spinsChange || 0)
   const prev = Number(track.spinsLastWeek != null ? track.spinsLastWeek : Number(track.spins || 0) - change)
   return metricDelta(change, prev)
 }
+
+const spinsValue = (track: ChartTrack) =>
+  track.spins == null || track.spins === '' ? '—' : fmt.value.format(Number(track.spins) || 0)
 
 const audienceDelta = (track: ChartTrack) => {
   if (track.audience == null) return { text: '—', tone: '' }
@@ -435,12 +460,21 @@ const heroStats = (board: Board, track: ChartTrack) => {
   const lastLabel = last == null ? (parseMove(track.change).kind === 'new' ? t(loc.value, 'chartsNew') : '—') : `#${String(last).padStart(2, '0')}`
 
   if (board.id === 'radio') {
-    const spins = spinsDelta(track)
     const aud = audienceDelta(track)
+    const hasSpins = track.spins != null && track.spins !== ''
+    if (hasSpins) {
+      const spins = spinsDelta(track)
+      return [
+        { label: t(loc.value, 'chartsSpins'), value: spinsValue(track), delta: spins.text, tone: spins.tone },
+        { label: t(loc.value, 'chartsAudience'), value: audienceValue(track), delta: aud.text, tone: aud.tone },
+        { label: t(loc.value, 'chartsLastWeek'), value: lastLabel, delta: '', tone: '' },
+        { label: t(loc.value, 'chartsMove'), value: move.label, delta: '', tone: move.tone, icon: move.icon },
+      ]
+    }
     return [
-      { label: t(loc.value, 'chartsSpins'), value: fmt.value.format(track.spins || 0), delta: spins.text, tone: spins.tone },
+      { label: t(loc.value, 'chartsDays'), value: track.days != null ? fmt.value.format(track.days) : '—', delta: '', tone: '' },
+      { label: t(loc.value, 'chartsPk'), value: peakLabel(track), delta: '', tone: '' },
       { label: t(loc.value, 'chartsAudience'), value: audienceValue(track), delta: aud.text, tone: aud.tone },
-      { label: t(loc.value, 'chartsLastWeek'), value: lastLabel, delta: '', tone: '' },
       { label: t(loc.value, 'chartsMove'), value: move.label, delta: '', tone: move.tone, icon: move.icon },
     ]
   }
@@ -484,7 +518,10 @@ const heroStats = (board: Board, track: ChartTrack) => {
 const colLabel = (col: BoardColumn) => {
   const map: Record<BoardColumn, string> = {
     move: t(loc.value, 'chartsMove'),
+    days: t(loc.value, 'chartsDays'),
+    peak: t(loc.value, 'chartsPk'),
     streams: t(loc.value, 'chartsStreams'),
+    streamsPlus: t(loc.value, 'chartsStreamsPlus'),
     spins: t(loc.value, 'chartsSpins'),
     audience: t(loc.value, 'chartsAudience'),
     listeners: t(loc.value, 'chartsListeners'),
@@ -495,6 +532,21 @@ const colLabel = (col: BoardColumn) => {
     last: t(loc.value, 'chartsLastWeek'),
   }
   return map[col]
+}
+
+const peakLabel = (track: ChartTrack) => {
+  const peak = track.peak
+  if (peak == null || peak === '') return '—'
+  const times = Number(track.timesAtPeak || 0)
+  if (times > 0) return `${peak} (x${times})`
+  return String(peak)
+}
+
+const streamsPlusText = (track: ChartTrack) => {
+  const n = Number(track.streamsChange || 0)
+  if (!Number.isFinite(n) || n === 0) return '—'
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${fmt.value.format(n)}`
 }
 
 const chartsPath = (boardId: string) =>
@@ -872,8 +924,11 @@ watch(
                 <div class="row-scroll">
                   <span class="c-rank" role="cell">
                     <b :class="rankClass(positionOf(currentBoard, track, index + 1))">
-                      {{ String(positionOf(currentBoard, track, index + 1)).padStart(2, '0') }}
+                      {{ positionOf(currentBoard, track, index + 1) }}
                     </b>
+                    <span class="rank-move" :class="moveDisplay(track.change).tone">
+                      {{ moveDisplay(track.change).label || '=' }}
+                    </span>
                   </span>
                   <span class="c-song" role="cell">
                     <span
@@ -892,14 +947,19 @@ watch(
                       <span v-else class="row-thumb-fallback">{{ positionOf(currentBoard, track, index + 1) }}</span>
                     </span>
                     <span class="row-copy">
-                      <p v-if="currentBoard.artist(track) && currentBoard.id !== 'listeners'" class="artist">{{ currentBoard.artist(track) }}</p>
                       <p class="title">{{ currentBoard.titleOf(track) }}</p>
+                      <p v-if="currentBoard.artist(track) && currentBoard.id !== 'listeners'" class="artist">{{ currentBoard.artist(track) }}</p>
                       <p v-if="currentBoard.sub(track)" class="sub">{{ currentBoard.sub(track) }}</p>
                     </span>
                   </span>
 
                   <template v-for="col in currentBoard.columns" :key="`${index}-${col}`">
-                    <span v-if="col === 'move'" class="c-metric c-move" role="cell">
+                    <span
+                      v-if="col === 'move'"
+                      class="c-metric c-move"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <span class="move" :class="moveDisplay(track.change).tone">
                         <i v-if="moveDisplay(track.change).icon === 'up'" class="tri up" />
                         <i v-else-if="moveDisplay(track.change).icon === 'down'" class="tri down" />
@@ -907,35 +967,103 @@ watch(
                         <b v-if="moveDisplay(track.change).icon !== 'flat'">{{ moveDisplay(track.change).label }}</b>
                       </span>
                     </span>
-                    <span v-else-if="col === 'streams'" class="c-metric c-streams" role="cell">
-                      <strong>{{ fmt.format(track.streams || 0) }}</strong>
-                      <em :class="streamsDelta(track).tone">{{ streamsDelta(track).text }}</em>
+                    <span
+                      v-else-if="col === 'days'"
+                      class="c-metric c-days"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
+                      <strong>{{ track.days != null ? fmt.format(track.days) : '—' }}</strong>
                     </span>
-                    <span v-else-if="col === 'listeners'" class="c-metric c-listeners" role="cell">
+                    <span
+                      v-else-if="col === 'peak'"
+                      class="c-metric c-peak"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
+                      <strong>{{ peakLabel(track) }}</strong>
+                    </span>
+                    <span
+                      v-else-if="col === 'streams'"
+                      class="c-metric c-streams"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
+                      <strong>{{ fmt.format(track.streams || 0) }}</strong>
+                    </span>
+                    <span
+                      v-else-if="col === 'streamsPlus'"
+                      class="c-metric c-streamsPlus"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
+                      <strong :class="streamsDelta(track).tone">{{ streamsPlusText(track) }}</strong>
+                    </span>
+                    <span
+                      v-else-if="col === 'listeners'"
+                      class="c-metric c-listeners"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>{{ fmt.format(track.listeners || 0) }}</strong>
                       <em :class="listenersDelta(track).tone">{{ listenersDelta(track).text }}</em>
                     </span>
-                    <span v-else-if="col === 'spins'" class="c-metric c-spins" role="cell">
-                      <strong>{{ fmt.format(track.spins || 0) }}</strong>
-                      <em :class="spinsDelta(track).tone">{{ spinsDelta(track).text }}</em>
+                    <span
+                      v-else-if="col === 'spins'"
+                      class="c-metric c-spins"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
+                      <strong>{{ spinsValue(track) }}</strong>
+                      <em v-if="spinsDelta(track).text" :class="spinsDelta(track).tone">{{ spinsDelta(track).text }}</em>
                     </span>
-                    <span v-else-if="col === 'audience'" class="c-metric c-audience" role="cell">
+                    <span
+                      v-else-if="col === 'audience'"
+                      class="c-metric c-audience"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>{{ audienceValue(track) }}</strong>
                       <em :class="audienceDelta(track).tone">{{ audienceDelta(track).text }}</em>
                     </span>
-                    <span v-else-if="col === 'views'" class="c-metric c-views" role="cell">
+                    <span
+                      v-else-if="col === 'views'"
+                      class="c-metric c-views"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>{{ fmt.format(track.views || 0) }}</strong>
                     </span>
-                    <span v-else-if="col === 'likes'" class="c-metric c-likes" role="cell">
+                    <span
+                      v-else-if="col === 'likes'"
+                      class="c-metric c-likes"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>{{ fmt.format(track.likes || 0) }}</strong>
                     </span>
-                    <span v-else-if="col === 'countries'" class="c-metric c-countries" role="cell">
+                    <span
+                      v-else-if="col === 'countries'"
+                      class="c-metric c-countries"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>{{ track.charts || '—' }}</strong>
                     </span>
-                    <span v-else-if="col === 'market'" class="c-metric c-market" role="cell">
+                    <span
+                      v-else-if="col === 'market'"
+                      class="c-metric c-market"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>{{ track.marketSize != null ? `${track.marketSize}%` : '—' }}</strong>
                     </span>
-                    <span v-else-if="col === 'last'" class="c-metric c-last" role="cell">
+                    <span
+                      v-else-if="col === 'last'"
+                      class="c-metric c-last"
+                      role="cell"
+                      :data-label="colLabel(col)"
+                    >
                       <strong>
                         <template v-if="lastWeekPos(positionOf(currentBoard, track, index + 1), track.change) != null">
                           #{{ String(lastWeekPos(positionOf(currentBoard, track, index + 1), track.change)).padStart(2, '0') }}
@@ -1383,52 +1511,87 @@ html[data-theme='dark'] .c-metric em.down { color: #ff7b7b; }
 .chart-table {
   --cols: 3;
   margin-top: 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--card);
-}
-.chart-head,
-.chart-row .row-scroll {
   display: grid;
-  grid-template-columns: 52px minmax(220px, 1.4fr) repeat(var(--cols, 3), minmax(88px, 1fr));
-  gap: 8px;
-  align-items: center;
-  min-width: 720px;
-  padding: 12px 14px;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  overflow: visible;
 }
 .chart-head {
-  background: var(--off);
-  border-bottom: 1px solid var(--line);
-  color: var(--sub);
-  font: 800 11px/1 'Manrope', sans-serif;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  overflow-x: auto;
+  display: none;
 }
 .chart-row {
   display: block;
   color: inherit;
   text-decoration: none;
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  overflow: hidden;
 }
-.chart-row:last-child { border-bottom: 0; }
 .chart-row:hover { background: color-mix(in srgb, var(--blue) 5%, var(--card)); }
+/* Mobile-first: rank + song on top, metrics in a 2-col strip below */
 .chart-row .row-scroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 8px;
+  min-width: 0;
+  padding: 12px;
+  overflow: visible;
+}
+.chart-row .c-rank {
+  flex: 0 0 44px;
+}
+.chart-row .c-song {
+  flex: 1 1 calc(100% - 56px);
+  min-width: 0;
+}
+.chart-row .row-scroll > .c-metric {
+  flex: 1 1 calc(50% - 8px);
+  min-width: calc(50% - 8px);
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--off);
+}
+.c-rank {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
 }
 .c-rank b {
   display: inline-grid;
   place-items: center;
-  width: 36px;
+  min-width: 36px;
   height: 36px;
+  padding: 0 6px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--off);
-  font: 800 13px/1 'Manrope', sans-serif;
-  color: var(--sub);
+  font: 800 15px/1 'Manrope', sans-serif;
+  color: var(--ink);
+}
+.rank-move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #eef1f6;
+  color: #64748b;
+  font: 800 11px/1 'Manrope', sans-serif;
+}
+.rank-move.up {
+  background: #e8f8ef;
+  color: #14804a;
+}
+.rank-move.down {
+  background: #fdecee;
+  color: #c6283a;
 }
 .c-rank b.top2 {
   color: #4b5563;
@@ -1497,30 +1660,40 @@ html[data-theme='dark'] .chart-row.top3 {
 }
 .row-thumb.round { border-radius: 999px; }
 .row-copy { min-width: 0; }
-.row-copy .artist,
+.row-copy .artist {
+  margin: 3px 0 0;
+  color: var(--blue);
+  font: 750 13px/1.25 'Manrope', sans-serif;
+}
 .row-copy .sub {
-  margin: 0;
+  margin: 2px 0 0;
   color: var(--sub);
   font-size: 12px;
 }
 .row-copy .title {
-  margin: 2px 0 0;
-  font: 800 14.5px/1.3 'Manrope', sans-serif;
+  margin: 0;
+  font: 800 15px/1.25 'Manrope', sans-serif;
   letter-spacing: -0.2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.row-copy .sub { margin-top: 2px; }
 .c-metric {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
+.c-metric::before {
+  content: attr(data-label);
+  color: var(--blue);
+  font: 800 10px/1 'Manrope', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .c-metric strong {
-  font: 800 14px/1.15 'Manrope', sans-serif;
+  font: 800 13px/1.15 'Manrope', sans-serif;
   letter-spacing: -0.2px;
 }
 .c-metric em {
@@ -1528,6 +1701,8 @@ html[data-theme='dark'] .chart-row.top3 {
   font-style: normal;
   color: var(--sub);
 }
+.c-metric strong.up { color: #14804a; }
+.c-metric strong.down { color: #c6283a; }
 .move {
   display: inline-flex;
   align-items: center;
@@ -1572,8 +1747,21 @@ html[data-theme='dark'] .chart-row.top3 {
     padding: 22px 0 26px;
   }
   .charts-hero h1 { font-size: 34px; }
-  .board-toolbar { align-items: start; }
-  .board-controls { justify-content: flex-start; }
+  .board-toolbar {
+    align-items: start;
+    flex-direction: column;
+  }
+  .board-controls {
+    justify-content: flex-start;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .board-controls .control-btn,
+  .board-controls .date-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .updated { width: 100%; }
   .hero-card,
   .hero-card.wide {
     grid-template-columns: 1fr;
@@ -1590,10 +1778,31 @@ html[data-theme='dark'] .chart-row.top3 {
   .hero-body h3 { font-size: 24px; }
   .stats.cols-3,
   .stats.cols-4 { grid-template-columns: 1fr 1fr; }
-  .chart-head,
+}
+
+/* Desktop / wide: single horizontal row */
+@media (min-width: 901px) {
   .chart-row .row-scroll {
-    min-width: 680px;
-    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1.5fr) repeat(var(--cols, 4), minmax(72px, 0.7fr));
+    gap: 10px 12px;
+    align-items: center;
+    padding: 12px 14px;
   }
+  .chart-row .c-rank,
+  .chart-row .c-song {
+    flex: none;
+  }
+  .chart-row .row-scroll > .c-metric {
+    flex: none;
+    min-width: 0;
+    margin: 0;
+    padding: 0 0 0 10px;
+    border: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+  }
+  .c-metric strong { font-size: 14px; }
 }
 </style>

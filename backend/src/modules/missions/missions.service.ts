@@ -20,7 +20,13 @@ type VisitMode = 'exact' | 'host';
 type VisitConfig = {
   urls: string[];
   mode: VisitMode;
+  /** Seconds the fan must stay on an owned page before the visit counts. */
+  dwellSeconds: number;
 };
+
+const DEFAULT_VISIT_DWELL_SECONDS = 20;
+const MIN_VISIT_DWELL_SECONDS = 0;
+const MAX_VISIT_DWELL_SECONDS = 120;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -43,6 +49,7 @@ const withMissionLocales = <T extends { title: string; description: string | nul
     descriptionEn,
     visitMode: visitConfig.mode,
     visitUrls: visitConfig.urls,
+    dwellSeconds: visitConfig.dwellSeconds,
   };
 };
 
@@ -93,8 +100,12 @@ const buildVisitConfig = (actionUrl: string | null | undefined, metadata: Record
 
   const unique = [...new Set(urls)].slice(0, MAX_VISIT_URLS);
   const mode = String(metadata.visitMode || 'exact').toLowerCase() === 'host' ? 'host' : 'exact';
+  const rawDwell = Number(metadata.dwellSeconds ?? metadata.dwell_seconds ?? DEFAULT_VISIT_DWELL_SECONDS);
+  const dwellSeconds = Number.isFinite(rawDwell)
+    ? Math.min(MAX_VISIT_DWELL_SECONDS, Math.max(MIN_VISIT_DWELL_SECONDS, Math.round(rawDwell)))
+    : DEFAULT_VISIT_DWELL_SECONDS;
 
-  return { urls: unique, mode };
+  return { urls: unique, mode, dwellSeconds };
 };
 
 @Injectable()
@@ -195,9 +206,10 @@ export class MissionsService {
     const startUrl = visitConfig.urls[0];
     const url = this.appendVisitToken(startUrl, token);
 
+    const startedAt = Date.now();
     await this.redis.client.set(
       `mission:visit:session:${nonce}`,
-      userId.toString(),
+      JSON.stringify({ u: userId.toString(), t: startedAt }),
       'EX',
       VISIT_SESSION_TTL_SECONDS,
     );
@@ -226,6 +238,7 @@ export class MissionsService {
       actionUrl: startUrl,
       visitMode: visitConfig.mode,
       visitUrls: visitConfig.urls,
+      dwellSeconds: visitConfig.dwellSeconds,
       target: mission.target,
       progress: Number(visitResult?.progress ?? existing?.progress ?? 0),
       awarded: Boolean(visitResult?.awarded),
@@ -249,8 +262,23 @@ export class MissionsService {
       throw new UnauthorizedException('La sesion de visita expiro. Vuelve a abrir la mision.');
     }
 
-    if (reserved !== parsed.userId) {
+    const session = this.parseVisitSession(reserved);
+    if (!session || session.userId !== parsed.userId) {
       throw new UnauthorizedException('Token de visita invalido.');
+    }
+
+    const visitConfig = this.getVisitConfig(mission);
+    const dwellSeconds = this.isAppOwnedUrl(pageUrl) ? visitConfig.dwellSeconds : 0;
+    if (dwellSeconds > 0) {
+      const elapsedMs = Date.now() - session.startedAt;
+      // Allow a small clock skew so the client timer and server stay aligned.
+      const requiredMs = Math.max(0, dwellSeconds * 1000 - 1500);
+      if (elapsedMs < requiredMs) {
+        const remaining = Math.max(1, Math.ceil((requiredMs - elapsedMs) / 1000));
+        throw new BadRequestException(
+          `Debes quedarte leyendo la nota ${dwellSeconds} segundos. Faltan ~${remaining}s.`,
+        );
+      }
     }
 
     return this.recordPageVisit(mission, BigInt(parsed.userId), pageUrl);
@@ -269,6 +297,8 @@ export class MissionsService {
 
     const updates: Array<{
       missionId: string;
+      title: string;
+      rewardPoints: number;
       progress: number;
       target: number;
       awarded: boolean;
@@ -289,6 +319,8 @@ export class MissionsService {
         const result = await this.recordPageVisit(mission, userId, pageUrl);
         updates.push({
           missionId: mission.id.toString(),
+          title: mission.title,
+          rewardPoints: Number(mission.rewardPoints || 0),
           progress: Number(result.progress || 0),
           target: mission.target,
           awarded: Boolean(result.awarded),
@@ -387,6 +419,29 @@ export class MissionsService {
     return `mission:visit:pages:${missionId.toString()}:${userId.toString()}`;
   }
 
+  private parseVisitSession(raw: string): { userId: string; startedAt: number } | null {
+    const value = String(raw || '').trim();
+    if (!value) return null;
+
+    // Legacy sessions stored the bare user id.
+    if (/^\d+$/.test(value)) {
+      return { userId: value, startedAt: 0 };
+    }
+
+    try {
+      const parsed = JSON.parse(value) as { u?: string; t?: number };
+      const userId = String(parsed?.u || '').trim();
+      const startedAt = Number(parsed?.t || 0);
+      if (!userId) return null;
+      return {
+        userId,
+        startedAt: Number.isFinite(startedAt) && startedAt > 0 ? startedAt : 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private async recordPageVisit(
     mission: { id: bigint; title: string; rewardPoints: number; target: number; actionUrl?: string | null; metadata?: unknown; type?: string },
     userId: bigint,
@@ -417,6 +472,8 @@ export class MissionsService {
       awarded: result.awarded,
       pointsAfter: result.pointsAfter,
       missionId: mission.id.toString(),
+      title: mission.title,
+      rewardPoints: Number(mission.rewardPoints || 0),
       progress: uniqueCount,
       target: mission.target,
       isNewPage: added === 1,

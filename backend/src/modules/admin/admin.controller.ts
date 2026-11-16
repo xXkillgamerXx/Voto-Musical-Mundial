@@ -278,14 +278,22 @@ export class AdminController {
       },
     }),
   )
-  uploadImage(@Param('type') typeValue: string, @UploadedFile() file: any) {
+  async uploadImage(@Param('type') typeValue: string, @UploadedFile() file: any) {
     const type = uploadTypeFor(typeValue);
 
     if (!file) {
       throw new BadRequestException('No se recibio ninguna imagen.');
     }
 
-    const path = `/uploads/admin/${type}/${file.filename}`;
+    const absolutePath = join(adminUploadsPath, type, file.filename);
+    const { optimizeNewsUpload, publicAdminUploadPath } = await import('../../common/optimize-upload');
+    const optimized = await optimizeNewsUpload({
+      type,
+      absolutePath,
+      filename: file.filename,
+      mimetype: file.mimetype,
+    });
+    const path = publicAdminUploadPath(type, optimized.filename);
 
     return {
       url: path,

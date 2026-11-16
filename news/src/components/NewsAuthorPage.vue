@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { getNewsAuthor, getNewsPopular } from '../../../src/services/api/newsApi'
 import { t } from '../lib/copy'
 import { withLocale } from '../lib/locale'
 import { coverErrorFallback, coverOf, formatNewsDate, type NewsCard } from '../lib/news'
 import { applyNewsSeo } from '../lib/seo'
+import { markNewsSpaReady } from '../lib/ssrHandoff'
 
 const props = defineProps<{ slug: string; locale?: string }>()
 const loc = computed(() => (props.locale === 'es' ? 'es' : 'en'))
@@ -80,6 +81,10 @@ async function load(reset = true) {
     error.value = t(loc.value, 'authorMissing')
   } finally {
     loading.value = false
+  }
+  if (reset) {
+    await nextTick()
+    markNewsSpaReady()
   }
   const feed = await popularPromise
   if (feed) {

@@ -27,6 +27,10 @@ def stage_html() -> Path:
     public = REPO / "news" / "public"
     if public.exists():
         shutil.copytree(public, html, dirs_exist_ok=True)
+    # Live charts JSON is owned by charts-bot on the server — never ship stale repo copies.
+    charts = html / "charts"
+    if charts.exists():
+        shutil.rmtree(charts)
     shutil.copytree(vote_src, html / "vote")
     tar_path = DEPLOY / "nmm-html.tgz"
     if tar_path.exists():
@@ -55,8 +59,16 @@ def main() -> None:
     sftp.close()
     cmd = f"""
 set -e
+if [ -d {REMOTE}/html/charts ]; then
+  rm -rf /tmp/nmm-charts.bak
+  cp -a {REMOTE}/html/charts /tmp/nmm-charts.bak
+fi
 tar -xzf /tmp/nmm-html.tgz -C {REMOTE}
 rm -f /tmp/nmm-html.tgz
+if [ -d /tmp/nmm-charts.bak ]; then
+  rm -rf {REMOTE}/html/charts
+  mv /tmp/nmm-charts.bak {REMOTE}/html/charts
+fi
 find {REMOTE}/html -type d -exec chmod 755 {{}} +
 find {REMOTE}/html -type f -exec chmod 644 {{}} +
 curl -sS -o /dev/null -w 'vote:%{{http_code}}\\n' https://www.musicmundial.com/vote/

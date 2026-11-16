@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import AuthDialog from './components/AuthDialog.vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CookieConsentBanner from '../../src/components/CookieConsentBanner.vue'
 import CatsCard from './components/CatsCard.vue'
-import NewsAdminPage from './components/NewsAdminPage.vue'
 import NewsArticle from './components/NewsArticle.vue'
-import NewsAuthorPage from './components/NewsAuthorPage.vue'
-import NewsCategoriesPage from './components/NewsCategoriesPage.vue'
-import NewsCategoryPage from './components/NewsCategoryPage.vue'
-import NewsChartsPage from './components/NewsChartsPage.vue'
-import NewsTagPage from './components/NewsTagPage.vue'
-import NewsForumPage from './components/NewsForumPage.vue'
 import { FORUM_BOARDS, forumCover } from './lib/forum'
-import NewsProfilePage from './components/NewsProfilePage.vue'
-import NewsStaticPage from './components/NewsStaticPage.vue'
+import { markNewsSpaReady, startSsrHandoff } from './lib/ssrHandoff'
+
+const AuthDialog = defineAsyncComponent(() => import('./components/AuthDialog.vue'))
+const NewsAdminPage = defineAsyncComponent(() => import('./components/NewsAdminPage.vue'))
+const NewsAuthorPage = defineAsyncComponent(() => import('./components/NewsAuthorPage.vue'))
+const NewsCategoriesPage = defineAsyncComponent(() => import('./components/NewsCategoriesPage.vue'))
+const NewsCategoryPage = defineAsyncComponent(() => import('./components/NewsCategoryPage.vue'))
+const NewsChartsPage = defineAsyncComponent(() => import('./components/NewsChartsPage.vue'))
+const NewsTagPage = defineAsyncComponent(() => import('./components/NewsTagPage.vue'))
+const NewsForumPage = defineAsyncComponent(() => import('./components/NewsForumPage.vue'))
+const NewsProfilePage = defineAsyncComponent(() => import('./components/NewsProfilePage.vue'))
+const NewsStaticPage = defineAsyncComponent(() => import('./components/NewsStaticPage.vue'))
 import { getNewsHome, getNewsPosts } from '../../src/services/api/newsApi'
 import { t, type CopyKey } from './lib/copy'
 import {
@@ -395,6 +397,7 @@ function bindRise() {
 }
 
 function onPopState() {
+  markNewsSpaReady()
   syncNewsPage({ keepScroll: true })
 }
 
@@ -408,6 +411,8 @@ function onGtagReady() {
 }
 
 onMounted(() => {
+  if (newsPage.value.name === 'article' || newsPage.value.name === 'author') startSsrHandoff()
+  else markNewsSpaReady()
   startSlides()
   syncCatSize()
   startCats()
@@ -701,8 +706,8 @@ onUnmounted(() => {
         ☰
       </button>
       <a :href="loc('/')" class="brand" @click="closeMenu">
-        <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
-        <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
+        <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" width="809" height="121" decoding="async" />
+        <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" width="809" height="121" decoding="async" />
       </a>
       <nav id="nav" class="nav" :class="{ open: menuOpen }">
         <div class="nav-toolbar">
@@ -1375,8 +1380,8 @@ onUnmounted(() => {
     <div class="container foot-inner">
       <div class="foot-brand">
         <a :href="loc('/')" class="brand">
-          <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" />
-          <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" />
+          <img class="brand-logo-light" src="/images/logo.webp" alt="Music Mundial" width="809" height="121" decoding="async" />
+          <img class="brand-logo-dark" src="/images/logo-dark.webp" alt="Music Mundial" width="809" height="121" decoding="async" />
         </a>
         <p>
           {{ txt('footerBlurb') }}

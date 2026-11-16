@@ -406,7 +406,7 @@ watch(
 
 const addTag = (name?: string) => {
   const value = String(name || tagDraft.value).trim()
-  if (value.length < 2) return
+  if (!value) return
   if (!form.value.tags.some((item) => item.toLowerCase() === value.toLowerCase())) {
     form.value.tags = [...form.value.tags, value]
   }
@@ -420,7 +420,7 @@ const removeTag = (name: string) => {
 
 const searchTags = async (query: string) => {
   const q = query.trim()
-  if (q.length < 2) {
+  if (!q) {
     tagHits.value = []
     return
   }

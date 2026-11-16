@@ -101,7 +101,7 @@ export const rssBodyHtml = (html: string) => {
       )
       .join('\n')
   }
-  return out.trim()
+  return ensureImageLayout(out.trim())
 }
 
 export const sanitizeNewsHtml = (html: string) =>
@@ -127,6 +127,42 @@ export const ensureImageAlts = (html: string, title: string) => {
       .replace(/\s+/g, ' ')
       .trim()
     return `<img${cleaned ? ` ${cleaned}` : ''} alt="${alt}">`
+  })
+}
+
+const sizeFromSrc = (src: string) => {
+  const match = String(src || '').match(/-(\d{2,5})x(\d{2,5})(?=\.(?:jpe?g|png|webp|gif)(?:\?|#|$))/i)
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!width || !height) return null
+  return { width, height }
+}
+
+const hasAttr = (attrs: string, name: string) =>
+  new RegExp(`\\s${name}\\s*=`, 'i').test(attrs)
+
+/** Reserve layout for body images (CLS) and lazy-load below the fold. */
+export const ensureImageLayout = (html: string) => {
+  let index = 0
+  return String(html || '').replace(/<img\b([^>]*)>/gi, (_tag, rawAttrs = '') => {
+    index += 1
+    let attrs = String(rawAttrs)
+    const src =
+      attrs.match(/\ssrc\s*=\s*(["'])(.*?)\1/i)?.[2] ||
+      attrs.match(/\ssrc\s*=\s*([^\s>]+)/i)?.[1] ||
+      ''
+    const sized = sizeFromSrc(src)
+    if (!hasAttr(attrs, 'width') || !hasAttr(attrs, 'height')) {
+      const width = sized?.width || 1600
+      const height = sized?.height || 900
+      if (!hasAttr(attrs, 'width')) attrs += ` width="${width}"`
+      if (!hasAttr(attrs, 'height')) attrs += ` height="${height}"`
+    }
+    if (!hasAttr(attrs, 'decoding')) attrs += ' decoding="async"'
+    if (index > 1 && !hasAttr(attrs, 'loading')) attrs += ' loading="lazy"'
+    if (index === 1 && !hasAttr(attrs, 'fetchpriority')) attrs += ' fetchpriority="high"'
+    return `<img${attrs.replace(/\s+/g, ' ').trim() ? ` ${attrs.replace(/\s+/g, ' ').trim()}` : ''}>`
   })
 }
 

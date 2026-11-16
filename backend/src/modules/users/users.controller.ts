@@ -62,10 +62,29 @@ export class UsersController {
   uploadProfileImage(@UploadedFile() file: any, @Req() request: any) {
     if (!file) throw new BadRequestException('No se recibio ninguna imagen.');
 
-    const origin = `${request.protocol}://${request.get('host')}`;
+    const configured = String(
+      process.env.PUBLIC_WEB_ORIGIN ||
+        process.env.APP_PUBLIC_ORIGIN ||
+        process.env.APP_ORIGIN ||
+        '',
+    )
+      .split(',')[0]
+      .trim()
+      .replace(/\/$/, '');
+    const host = String(request.get('host') || '').toLowerCase();
+    const badHost =
+      !configured &&
+      (host.includes('vote.musicmundial.com') ||
+        host.startsWith('localhost') ||
+        host.startsWith('127.0.0.1') ||
+        /^\d+\.\d+\.\d+\.\d+/.test(host));
+    const origin =
+      configured ||
+      (badHost ? 'https://www.musicmundial.com' : `${request.protocol}://${request.get('host')}`);
+    const path = `/uploads/profile/${file.filename}`;
     return {
-      url: `${origin}/uploads/profile/${file.filename}`,
-      path: `/uploads/profile/${file.filename}`,
+      url: `${origin}${path}`,
+      path,
     };
   }
 

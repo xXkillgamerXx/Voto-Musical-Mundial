@@ -10,6 +10,7 @@ import { locationPath } from '../utils/appBase'
 import { routePath } from '../utils/localizedRoutes'
 import { loadFanMe } from '../utils/fanPerks'
 import { getFanMembership, getMySupportedArtists, hydrateMembership, isMegaFanIdentity, membershipTone, membershipAccent, membershipShell } from '../utils/fanMembership'
+import { publicMediaUrl } from '../utils/publicMediaUrl'
 
 const { locale } = useI18n()
 const pathParts = locationPath().split('/').filter(Boolean)
@@ -69,9 +70,18 @@ const displayName = computed(() =>
 )
 
 const profilePhoto = computed(() =>
-  userProfile.value?.photoURL || userProfile.value?.photoUrl || (!isPublicProfile.value || isOwnProfile.value ? currentUser.value?.photoUrl || currentUser.value?.photoURL : '') || '',
+  publicMediaUrl(
+    userProfile.value?.photoURL ||
+      userProfile.value?.photoUrl ||
+      (!isPublicProfile.value || isOwnProfile.value
+        ? currentUser.value?.photoUrl || currentUser.value?.photoURL
+        : '') ||
+      '',
+  ),
 )
-const profileBanner = computed(() => userProfile.value?.banner || userProfile.value?.bannerUrl || '')
+const profileBanner = computed(() =>
+  publicMediaUrl(userProfile.value?.banner || userProfile.value?.bannerUrl || ''),
+)
 const userInitial = computed(() => displayName.value.trim().charAt(0).toUpperCase())
 const profileStats = computed(() => [
   {
