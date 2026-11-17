@@ -75,6 +75,7 @@ export default {
     subscriptions: 'Vote+',
     rankingPopularity: 'Ranking',
     hallOfFame: 'Winners',
+    missions: 'Missions',
     news: 'News',
     userAccount: 'User account',
     fanAccount: 'Fan account',
@@ -275,7 +276,19 @@ export default {
       stats: {
         totalPoints: 'Total points earned',
         completed: 'Completed',
+        balance: 'Your balance',
+        pending: 'Pending',
+        available: 'Still available',
+        progress: 'Overall progress',
       },
+      page: {
+        eyebrow: 'Rewards hub',
+        title: 'All missions',
+        subtitle: 'Track your progress, points, and every mission you can complete.',
+        loginHint: 'Sign in to save progress and claim points.',
+      },
+      viewAll: 'View all missions',
+      viewMore: 'See more',
       filters: {
         all: 'All',
         social: 'Social',

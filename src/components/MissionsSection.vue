@@ -12,6 +12,17 @@ import {
   reportMissionShareAction,
   reportMissionVisitProgress,
 } from '../services/api/missionsApi'
+import { routePath } from '../utils/localizedRoutes'
+
+const props = defineProps({
+  variant: {
+    type: String,
+    default: 'section',
+    validator: (value) => ['section', 'page'].includes(value),
+  },
+})
+
+const isPage = computed(() => props.variant === 'page')
 
 const MISSION_VISIT_TYPES = new Set([
   'visit_page',
@@ -183,17 +194,40 @@ const missions = computed(() => {
 const missionStats = computed(() => {
   const total = missions.value.length
   const completed = missions.value.filter((mission) => mission.done).length
+  const pending = Math.max(0, total - completed)
   const totalPoints = missions.value
     .filter((mission) => mission.done)
     .reduce((sum, mission) => sum + Number(mission.rewardPoints || 0), 0)
+  const availablePoints = missions.value
+    .filter((mission) => !mission.done)
+    .reduce((sum, mission) => sum + Number(mission.rewardPoints || 0), 0)
+  const auth = getStoredAuth()
+  const balance = Number(
+    userProfile.value?.points
+    ?? auth?.user?.points
+    ?? 0,
+  )
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0
 
   return {
     total,
     completed,
+    pending,
     totalPoints,
+    availablePoints,
+    balance: Number.isFinite(balance) ? balance : 0,
+    percent,
     completedLabel: `${completed}/${total}`,
   }
 })
+
+const missionsPageHref = computed(() => routePath('missions', locale.value))
+const showLoginHint = computed(() => {
+  const auth = getStoredAuth()
+  return !auth?.accessToken || !auth?.user || Boolean(auth.user.isAnonymous)
+})
+
+const HOME_MISSION_LIMIT = 4
 
 const filteredMissions = computed(() => {
   const filter = missionFilter.value
@@ -211,6 +245,29 @@ const filteredMissions = computed(() => {
   }
 
   return missions.value
+})
+
+/** Home preview: up to 4 incomplete missions; completed ones leave and the next pending fills in. */
+const displayedMissions = computed(() => {
+  if (isPage.value) {
+    return filteredMissions.value
+  }
+
+  const pending = missions.value.filter((mission) => !mission.done)
+  if (pending.length) {
+    return pending.slice(0, HOME_MISSION_LIMIT)
+  }
+
+  return missions.value.slice(0, HOME_MISSION_LIMIT)
+})
+
+const hasMoreMissions = computed(() => {
+  if (isPage.value) {
+    return false
+  }
+
+  const pending = missions.value.filter((mission) => !mission.done).length
+  return missions.value.length > HOME_MISSION_LIMIT || pending > HOME_MISSION_LIMIT
 })
 
 const missionFilters = computed(() => ([
@@ -909,8 +966,89 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section id="misiones" class="missions-surface mx-auto max-w-352 scroll-mt-28 px-4 py-6 sm:px-6 lg:py-8">
-    <div class="mb-5 flex flex-col gap-4 lg:mb-6 lg:flex-row lg:items-end lg:justify-between">
+  <section
+    id="misiones"
+    class="missions-surface mx-auto max-w-352 scroll-mt-28 px-4 py-6 sm:px-6"
+    :class="isPage ? 'lg:py-10' : 'lg:py-8'"
+  >
+    <div
+      v-if="isPage"
+      class="mission-page-hero relative mb-6 overflow-hidden rounded-4xl border border-violet-300/20 p-5 shadow-2xl shadow-fuchsia-950/30 sm:p-7"
+    >
+      <div class="pointer-events-none absolute inset-0 bg-linear-to-br from-fuchsia-950/50 via-[#0a0d1a] to-cyan-950/40"></div>
+      <div class="pointer-events-none absolute -left-16 -top-20 size-72 rounded-full bg-amber-300/15 blur-3xl"></div>
+      <div class="pointer-events-none absolute -bottom-24 right-0 size-80 rounded-full bg-fuchsia-500/20 blur-3xl"></div>
+
+      <div class="relative grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-end">
+        <div>
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+            {{ $t('home.missions.page.eyebrow') }}
+          </p>
+          <h1 class="mt-2 text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
+            {{ $t('home.missions.page.title') }}
+          </h1>
+          <p class="mt-3 max-w-xl text-sm font-semibold leading-6 text-slate-300 sm:text-base">
+            {{ $t('home.missions.page.subtitle') }}
+          </p>
+          <p
+            v-if="showLoginHint"
+            class="mt-3 text-xs font-bold text-amber-200/90"
+          >
+            {{ $t('home.missions.page.loginHint') }}
+          </p>
+        </div>
+
+        <div class="rounded-3xl border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+                {{ $t('home.missions.stats.progress') }}
+              </p>
+              <p class="mt-1 text-3xl font-black tabular-nums text-white">{{ missionStats.percent }}%</p>
+            </div>
+            <div
+              class="mission-ring grid size-20 place-items-center rounded-full"
+              :style="{ '--mission-progress': `${missionStats.percent}%` }"
+              aria-hidden="true"
+            >
+              <span class="grid size-14 place-items-center rounded-full bg-[#0b0f1d] text-sm font-black text-fuchsia-100">
+                {{ missionStats.completedLabel }}
+              </span>
+            </div>
+          </div>
+          <div class="mt-4 h-3.5 overflow-hidden rounded-full border border-white/10 bg-white/10">
+            <div
+              class="h-full rounded-full bg-linear-to-r from-amber-300 via-fuchsia-400 to-violet-500 transition-[width] duration-500"
+              :style="{ width: `${missionStats.percent}%` }"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="relative mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3">
+          <p class="text-[10px] font-black uppercase tracking-wide text-amber-100/70">{{ $t('home.missions.stats.balance') }}</p>
+          <p class="mt-1 text-2xl font-black tabular-nums text-amber-100">{{ missionStats.balance }} pts</p>
+        </div>
+        <div class="rounded-2xl border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-3">
+          <p class="text-[10px] font-black uppercase tracking-wide text-fuchsia-100/70">{{ $t('home.missions.stats.totalPoints') }}</p>
+          <p class="mt-1 text-2xl font-black tabular-nums text-fuchsia-100">{{ missionStats.totalPoints }} pts</p>
+        </div>
+        <div class="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3">
+          <p class="text-[10px] font-black uppercase tracking-wide text-emerald-100/70">{{ $t('home.missions.stats.completed') }}</p>
+          <p class="mt-1 text-2xl font-black tabular-nums text-emerald-100">{{ missionStats.completed }}</p>
+        </div>
+        <div class="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3">
+          <p class="text-[10px] font-black uppercase tracking-wide text-cyan-100/70">{{ $t('home.missions.stats.available') }}</p>
+          <p class="mt-1 text-2xl font-black tabular-nums text-cyan-100">+{{ missionStats.availablePoints }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-else
+      class="mb-5 flex flex-col gap-4 lg:mb-6 lg:flex-row lg:items-end lg:justify-between"
+    >
       <div class="min-w-0 max-w-2xl">
         <p class="missions-eyebrow text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
           {{ $t('home.missions.eyebrow') }}
@@ -959,7 +1097,7 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="missions.length"
+      v-if="isPage && missions.length"
       class="mb-5 flex flex-wrap gap-2"
       role="tablist"
       aria-label="Filtros de misiones"
@@ -981,11 +1119,12 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="filteredMissions.length"
+      v-if="displayedMissions.length"
       class="grid items-stretch gap-4 sm:grid-cols-2"
+      :class="isPage && 'xl:grid-cols-3'"
     >
       <article
-        v-for="(mission, index) in filteredMissions"
+        v-for="(mission, index) in displayedMissions"
         :key="mission.id || mission.titleKey"
         class="mission-card group relative flex h-full flex-col overflow-hidden rounded-4xl border p-5 shadow-2xl transition duration-300 hover:-translate-y-1"
         :class="[
@@ -1070,7 +1209,20 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-else-if="missions.length"
+      v-if="!isPage && displayedMissions.length"
+      class="mt-4 flex justify-center"
+    >
+      <a
+        :href="missionsPageHref"
+        class="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-fuchsia-300/30 bg-fuchsia-400/10 px-6 text-sm font-black uppercase tracking-wide text-fuchsia-100 transition hover:border-fuchsia-300/50 hover:bg-fuchsia-400/20 hover:text-white"
+      >
+        {{ hasMoreMissions ? $t('home.missions.viewMore') : $t('home.missions.viewAll') }}
+        <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
+      </a>
+    </div>
+
+    <div
+      v-if="isPage && missions.length && !displayedMissions.length"
       class="rounded-4xl border border-white/10 bg-[#12141f]/80 px-5 py-8 text-center"
     >
       <p class="text-sm font-bold text-slate-400">
@@ -1079,7 +1231,7 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-else
+      v-if="!missions.length"
       class="relative overflow-hidden rounded-4xl border border-cyan-300/15 bg-[#090b19]/90 p-8 text-center shadow-2xl shadow-cyan-950/15"
     >
       <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_70%,rgba(217,70,239,0.14),transparent_30%)]"></div>
@@ -1321,6 +1473,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.mission-page-hero {
+  animation: mission-fade-up 0.5s ease both;
+}
+
+.mission-ring {
+  background:
+    radial-gradient(closest-side, #0b0f1d 78%, transparent 80% 100%),
+    conic-gradient(from 180deg, #fbbf24, #e879f9, #8b5cf6 var(--mission-progress, 0%), rgba(255, 255, 255, 0.08) 0);
+}
+
 .missions-eyebrow {
   animation: mission-fade-up 0.45s ease both;
 }

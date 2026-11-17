@@ -419,12 +419,6 @@ onUnmounted(() => {
               {{ $t("nav.accountSettings") }}
             </a>
             <a
-              href="/#misiones"
-              class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
-            >
-              Misiones
-            </a>
-            <a
               :href="notificationsHref"
               class="block rounded-2xl px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10"
             >
@@ -577,14 +571,6 @@ onUnmounted(() => {
             @click="isMenuOpen = false"
           >
             {{ $t("nav.accountSettings") }}
-          </a>
-          <a
-            v-if="isSignedInUser"
-            href="/#misiones"
-            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-black text-slate-100"
-            @click="isMenuOpen = false"
-          >
-            Misiones
           </a>
           <a
             v-if="isSignedInUser"

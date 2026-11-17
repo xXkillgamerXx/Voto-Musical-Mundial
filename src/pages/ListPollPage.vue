@@ -1495,7 +1495,7 @@ const scheduleMissionsPromptAfterFreeVote = (contestant) => {
 
 const goToMissionsFromPrompt = () => {
   closeMissionsPrompt();
-  const nextUrl = `${withAppBase("/")}#misiones`;
+  const nextUrl = withAppBase("/misiones");
   if (
     locationPath() === "/" &&
     window.location.hash === "#misiones"

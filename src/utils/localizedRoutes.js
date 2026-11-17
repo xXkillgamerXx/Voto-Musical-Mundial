@@ -8,6 +8,7 @@ export const STATIC_ROUTES = {
   artists: { es: '/artistas', en: '/artists' },
   hallOfFame: { es: '/salon-de-la-fama', en: '/hall-of-fame' },
   rankingPopularity: { es: '/ranking-popularity', en: '/ranking-popularity' },
+  missions: { es: '/misiones', en: '/missions' },
   news: { es: '/noticias', en: '/news' },
   notifications: { es: '/notificaciones', en: '/notifications' },
   profile: { es: '/perfil', en: '/profile' },

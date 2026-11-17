@@ -20,6 +20,7 @@ const footerLinks = computed(() => [
     : []),
   { titleKey: 'nav.rankingPopularity', href: routePath('rankingPopularity', locale.value) },
   { titleKey: 'nav.hallOfFame', href: routePath('hallOfFame', locale.value) },
+  { titleKey: 'nav.missions', href: routePath('missions', locale.value) },
   { titleKey: 'nav.news', href: routePath('news', locale.value) },
 ])
 

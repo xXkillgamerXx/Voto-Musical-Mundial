@@ -30,6 +30,7 @@ const GiftNotificationModal = defineAsyncComponent(() => import('./components/Gi
 const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
 const LiveActivity = defineAsyncComponent(() => import('./components/LiveActivity.vue'))
 const MissionsSection = defineAsyncComponent(() => import('./components/MissionsSection.vue'))
+const MissionsPage = defineAsyncComponent(() => import('./pages/MissionsPage.vue'))
 const ArtistsPage = defineAsyncComponent(() => import('./pages/ArtistsPage.vue'))
 const ArtistProfilePage = defineAsyncComponent(() => import('./pages/ArtistProfilePage.vue'))
 const HallOfFamePage = defineAsyncComponent(() => import('./pages/HallOfFamePage.vue'))
@@ -71,6 +72,7 @@ const isPollsPage = computed(() => matchStaticRoute(currentPath.value, 'polls'))
 const isHallOfFamePage = computed(() => matchStaticRoute(currentPath.value, 'hallOfFame'))
 const isArtistsPage = computed(() => matchStaticRoute(currentPath.value, 'artists'))
 const isRankingPopularityPage = computed(() => matchStaticRoute(currentPath.value, 'rankingPopularity'))
+const isMissionsPage = computed(() => matchStaticRoute(currentPath.value, 'missions'))
 const isNewsPage = computed(() => matchStaticRoute(currentPath.value, 'news'))
 const isNotificationsPage = computed(() => matchStaticRoute(currentPath.value, 'notifications'))
 const isProfileSettingsPage = computed(() => matchStaticRoute(currentPath.value, 'profileSettings'))
@@ -350,6 +352,7 @@ onUnmounted(() => {
       <HallOfFamePage v-else-if="isHallOfFamePage" />
       <ArtistsPage v-else-if="isArtistsPage" />
       <RankingPopularityPage v-else-if="isRankingPopularityPage" />
+      <MissionsPage v-else-if="isMissionsPage" />
       <NewsPage v-else-if="isNewsPage" />
       <NotificationsPage v-else-if="isNotificationsPage" />
       <AccountSettingsPage v-else-if="isProfileSettingsPage" />

@@ -75,6 +75,7 @@ export default {
     subscriptions: 'Votos+',
     rankingPopularity: 'Popularidad',
     hallOfFame: 'Ganadores',
+    missions: 'Misiones',
     news: 'Noticias',
     userAccount: 'Cuenta de usuario',
     fanAccount: 'Cuenta fan',
@@ -275,7 +276,19 @@ export default {
       stats: {
         totalPoints: 'Puntos ganados',
         completed: 'Completadas',
+        balance: 'Tu saldo',
+        pending: 'Pendientes',
+        available: 'Por ganar',
+        progress: 'Progreso total',
       },
+      page: {
+        eyebrow: 'Centro de recompensas',
+        title: 'Todas las misiones',
+        subtitle: 'Revisa tu progreso, puntos y cada misión disponible para completar.',
+        loginHint: 'Inicia sesión para guardar tu progreso y reclamar puntos.',
+      },
+      viewAll: 'Ver todas las misiones',
+      viewMore: 'Ver más',
       filters: {
         all: 'Todas',
         social: 'Social',
