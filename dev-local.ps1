@@ -86,7 +86,7 @@ Ensure-SshPassword
 Write-Host "=== Entorno local (DB produccion via tunel SSH @ ${sshHost}) ===" -ForegroundColor Cyan
 
 if (-not (Test-PortListening -Port 5432) -or -not (Test-PortListening -Port 6379)) {
-  Write-Host "1/4  Abriendo tunel SSH (PostgreSQL 5432 -> 5433 + Redis nmm-redis)..." -ForegroundColor Cyan
+  Write-Host "1/4  Abriendo tunel SSH (PostgreSQL 5432 -> vote_db:5434 + Redis nmm-redis)..." -ForegroundColor Cyan
   $pw = $env:NMM_SSH_PASSWORD.Replace("'", "''")
   Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
@@ -171,6 +171,6 @@ Write-Host "  Landing: http://localhost:${frontendPort}/" -ForegroundColor Green
 Write-Host "  Votar:   http://localhost:${frontendPort}/vote/" -ForegroundColor Green
 Write-Host "  API:     http://localhost:${apiPort}/api/health" -ForegroundColor Green
 Write-Host "  Worker:  bots + vote-sync" -ForegroundColor Green
-Write-Host "  DB:      produccion 161 via tunel SSH (5432->nmm-postgres, 6379->nmm-redis)" -ForegroundColor Yellow
+Write-Host "  DB:      produccion 161 via tunel SSH (5432->vote_db:5434, 6379->nmm-redis)" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "No cierres las ventanas del tunel SSH, la API, el worker ni el frontend." -ForegroundColor DarkGray

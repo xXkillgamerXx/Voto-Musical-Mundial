@@ -184,6 +184,24 @@ else
   echo 'NEWS_CRM_API_KEY={crm_key}' >> {REMOTE}/.env
 fi
 """
+    # Ensure charts ingest secret exists so the bot can persist into Postgres.
+    charts_secret = os.environ.get("CHARTS_INGEST_SECRET", "").strip()
+    if charts_secret and any(ch in charts_secret for ch in " \n\r\t'\"\\$`"):
+        raise SystemExit("CHARTS_INGEST_SECRET contains unsafe characters")
+    if charts_secret:
+        charts_secret_block = f"""
+if grep -q '^CHARTS_INGEST_SECRET=' {REMOTE}/.env; then
+  sed -i 's|^CHARTS_INGEST_SECRET=.*|CHARTS_INGEST_SECRET={charts_secret}|' {REMOTE}/.env
+else
+  echo 'CHARTS_INGEST_SECRET={charts_secret}' >> {REMOTE}/.env
+fi
+"""
+    else:
+        charts_secret_block = f"""
+if ! grep -q '^CHARTS_INGEST_SECRET=' {REMOTE}/.env; then
+  echo "CHARTS_INGEST_SECRET=$(openssl rand -hex 24)" >> {REMOTE}/.env
+fi
+"""
 
     remote = f"""
 set -euo pipefail
@@ -224,6 +242,7 @@ else
   echo 'PUBLIC_NEWS_ORIGIN=https://www.musicmundial.com' >> {REMOTE}/.env
 fi
 {crm_key_block}
+{charts_secret_block}
 find {REMOTE}/html -type d -exec chmod 755 {{}} +
 find {REMOTE}/html -type f -exec chmod 644 {{}} +
 if command -v firewall-cmd >/dev/null 2>&1; then

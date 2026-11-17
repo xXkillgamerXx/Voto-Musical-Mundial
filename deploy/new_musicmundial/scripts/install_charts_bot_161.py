@@ -37,6 +37,7 @@ def stage_tar() -> Path:
         "publish-to-site.cjs",
         "update-once.cjs",
         "allaccess.cjs",
+        "seed-db-from-json.cjs",
     ]
     for name in needed:
         if not (BOT_SRC / name).exists():
@@ -73,7 +74,16 @@ def main() -> None:
     cmd = rf"""
 set -e
 # Node 18+ required (fetch). AlmaLinux: official tarball into /usr/local
-if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0])<18)'; then
+NEED_NODE=0
+if ! command -v node >/dev/null 2>&1; then
+  NEED_NODE=1
+else
+  MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+  if [ "${{MAJOR:-0}}" -lt 18 ]; then
+    NEED_NODE=1
+  fi
+fi
+if [ "$NEED_NODE" = "1" ]; then
   curl -fsSL "{node_url}" -o /tmp/node-nmm.tar.xz
   tar -xJf /tmp/node-nmm.tar.xz -C /usr/local --strip-components=1
   rm -f /tmp/node-nmm.tar.xz
@@ -96,6 +106,20 @@ export CHARTS_DATA_DIR={REMOTE_BOT}/data
 export CHARTS_OUT={REMOTE_HTML_CHARTS}
 export CHARTS_TOP=40
 export KW_DELAY=200
+export CHARTS_API_URL=http://127.0.0.1:8088/api
+# Pull only the ingest secret (full .env can contain values that break `source`).
+if [ -f {REMOTE_ROOT}/.env ]; then
+  SECRET="$(python3 - <<'PY'
+from pathlib import Path
+for line in Path("{REMOTE_ROOT}/.env").read_text(encoding="utf-8", errors="replace").splitlines():
+    if line.startswith("CHARTS_INGEST_SECRET="):
+        print(line.split("=", 1)[1].strip().strip("'").strip('"'))
+PY
+)"
+  if [ -n "$SECRET" ]; then
+    export CHARTS_INGEST_SECRET="$SECRET"
+  fi
+fi
 cd {REMOTE_BOT}
 exec "$NODE_BIN" update-once.cjs >> {REMOTE_BOT}/bot.log 2>&1
 EOF
@@ -118,10 +142,27 @@ crontab -l | grep '{CRON_MARKER}' || true
 
 echo "--- first run ---"
 {REMOTE_BOT}/run.sh
+echo "--- seed DB from current JSON if API is up ---"
+export CHARTS_OUT={REMOTE_HTML_CHARTS}
+export CHARTS_API_URL=http://127.0.0.1:8088/api
+SECRET="$(python3 - <<'PY'
+from pathlib import Path
+for line in Path("{REMOTE_ROOT}/.env").read_text(encoding="utf-8", errors="replace").splitlines():
+    if line.startswith("CHARTS_INGEST_SECRET="):
+        print(line.split("=", 1)[1].strip().strip("'").strip('"'))
+PY
+)"
+if [ -n "$SECRET" ]; then
+  export CHARTS_INGEST_SECRET="$SECRET"
+  "$NODE_BIN" {REMOTE_BOT}/seed-db-from-json.cjs || true
+else
+  echo "CHARTS_INGEST_SECRET missing; skip DB seed"
+fi
 echo "--- tail log ---"
 tail -n 40 {REMOTE_BOT}/bot.log || true
 echo "--- verify ---"
 curl -sS -o /dev/null -w 'data:%{{http_code}}\n' http://127.0.0.1:8088/charts/data.json
+curl -sS -o /dev/null -w 'api:%{{http_code}}\n' http://127.0.0.1:8088/api/charts/data
 curl -sS -o /dev/null -w 'radio:%{{http_code}}\n' http://127.0.0.1:8088/charts/radio/
 python3 - <<'PY'
 import json

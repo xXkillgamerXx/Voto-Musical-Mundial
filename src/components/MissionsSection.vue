@@ -34,9 +34,28 @@ const PASSIVE_MISSION_TYPES = new Set([
   'complete_profile',
 ])
 
-const { locale } = useI18n()
+const SOCIAL_MISSION_TYPES = new Set([
+  'follow_social',
+  'like_social_post',
+  'comment_social_post',
+  'share_poll',
+  'share_whatsapp',
+  'share_facebook',
+  'share_twitter',
+  'share_instagram_story',
+  'referral_signup',
+  'referral_signup_milestone',
+  'referral_first_vote',
+])
+
+const READING_MISSION_TYPES = new Set([
+  'visit_page',
+])
+
+const { locale, t } = useI18n()
 const dbMissions = ref([])
 const selectedMission = ref(null)
+const missionFilter = ref('all')
 const referralCode = ref('')
 const userProfile = ref(null)
 const actionMessage = ref('')
@@ -48,6 +67,45 @@ let unsubscribeAuth = null
 let missionActionTimer = null
 
 const isFontAwesomeIcon = (icon) => String(icon || '').startsWith('fa-')
+
+const resolveMissionVisual = (mission) => {
+  const type = String(mission?.type || '')
+  const title = String(mission?.title || '').toLowerCase()
+  const url = String(mission?.actionUrl || mission?.url || '').toLowerCase()
+  const haystack = `${title} ${url}`
+
+  if (haystack.includes('facebook')) {
+    return { icon: 'fa-brands fa-facebook-f', tone: 'facebook' }
+  }
+  if (haystack.includes('instagram')) {
+    return { icon: 'fa-brands fa-instagram', tone: 'instagram' }
+  }
+  if (haystack.includes('tiktok')) {
+    return { icon: 'fa-brands fa-tiktok', tone: 'tiktok' }
+  }
+  if (haystack.includes('whatsapp')) {
+    return { icon: 'fa-brands fa-whatsapp', tone: 'whatsapp' }
+  }
+  if (haystack.includes('twitter') || haystack.includes('x.com') || /\bx\b/.test(title)) {
+    return { icon: 'fa-brands fa-x-twitter', tone: 'twitter' }
+  }
+  if (haystack.includes('google') || haystack.includes('news.google')) {
+    return { icon: 'fa-brands fa-google', tone: 'google' }
+  }
+  if (type === 'visit_page' || haystack.includes('leer') || haystack.includes('nota') || haystack.includes('article')) {
+    return { icon: 'fa-solid fa-newspaper', tone: 'reading' }
+  }
+  if (type.includes('vote') || type === 'daily_poll' || type === 'favorite_poll' || haystack.includes('vot')) {
+    return { icon: 'fa-solid fa-check-to-slot', tone: 'vote' }
+  }
+  if (type.startsWith('referral') || type.startsWith('share')) {
+    return { icon: 'fa-solid fa-share-nodes', tone: 'share' }
+  }
+  if (isFontAwesomeIcon(mission?.icon)) {
+    return { icon: mission.icon, tone: 'default' }
+  }
+  return { icon: 'fa-solid fa-bolt', tone: 'default' }
+}
 
 const stripHtml = (value) =>
   String(value || '')
@@ -77,7 +135,6 @@ const loadMissions = () => {
 const missions = computed(() => {
   return dbMissions.value
     .filter((mission) => mission.active !== false)
-    .slice(0, 8)
     .map((mission) => {
       const target = Math.max(1, Number(mission.target || 1))
       const savedProgress = Number(mission.progress || 0)
@@ -85,14 +142,25 @@ const missions = computed(() => {
         ? Math.max(savedProgress, Math.min(target, Number(userProfile.value?.dailyRewardStreak || 0)))
         : Math.min(target, savedProgress)
       const done = Boolean(mission.completedAt || mission.rewardedAt || currentProgress >= target)
+      const type = mission.type || 'manual'
+      const title = stripHtml(mission.title || 'Mision')
+      const actionUrl = mission.actionUrl || mission.url || ''
+      const visual = resolveMissionVisual({
+        type,
+        title,
+        actionUrl,
+        url: actionUrl,
+        icon: mission.icon,
+      })
 
       return {
         id: mission.id,
-        icon: mission.icon || 'fa-solid fa-check',
-        title: stripHtml(mission.title || 'Mision'),
+        icon: visual.icon,
+        tone: visual.tone,
+        title,
         text: stripHtml(mission.description || ''),
-        type: mission.type || 'manual',
-        actionUrl: mission.actionUrl || mission.url || '',
+        type,
+        actionUrl,
         visitMode: mission.visitMode === 'host' ? 'host' : 'exact',
         visitUrls: Array.isArray(mission.visitUrls) ? mission.visitUrls : [],
         reward: `+${Number(mission.rewardPoints || 0)} pts`,
@@ -103,13 +171,70 @@ const missions = computed(() => {
         statusKey: done ? 'common.status.completed' : 'common.status.pending',
         featured: Boolean(mission.featured),
         done,
+        category: SOCIAL_MISSION_TYPES.has(type)
+          ? 'social'
+          : READING_MISSION_TYPES.has(type)
+            ? 'reading'
+            : 'other',
       }
     })
 })
 
+const missionStats = computed(() => {
+  const total = missions.value.length
+  const completed = missions.value.filter((mission) => mission.done).length
+  const totalPoints = missions.value
+    .filter((mission) => mission.done)
+    .reduce((sum, mission) => sum + Number(mission.rewardPoints || 0), 0)
+
+  return {
+    total,
+    completed,
+    totalPoints,
+    completedLabel: `${completed}/${total}`,
+  }
+})
+
+const filteredMissions = computed(() => {
+  const filter = missionFilter.value
+
+  if (filter === 'completed') {
+    return missions.value.filter((mission) => mission.done)
+  }
+
+  if (filter === 'social') {
+    return missions.value.filter((mission) => mission.category === 'social')
+  }
+
+  if (filter === 'reading') {
+    return missions.value.filter((mission) => mission.category === 'reading')
+  }
+
+  return missions.value
+})
+
+const missionFilters = computed(() => ([
+  { id: 'all', label: t('home.missions.filters.all') },
+  { id: 'social', label: t('home.missions.filters.social') },
+  { id: 'reading', label: t('home.missions.filters.reading') },
+  { id: 'completed', label: t('home.missions.filters.completed') },
+]))
+
 const missionTitle = (mission) => mission?.title || (mission?.titleKey ? '' : 'Mision')
 const missionText = (mission) => mission?.text || ''
+const isLoggedIn = () => {
+  const auth = getStoredAuth()
+  return Boolean(auth?.accessToken && auth?.user && !auth.user.isAnonymous)
+}
+const requestLoginForMissions = () => {
+  window.dispatchEvent(new CustomEvent('vmm:open-auth', { detail: { reason: 'missions' } }))
+}
 const openMissionModal = (mission) => {
+  if (!isLoggedIn()) {
+    requestLoginForMissions()
+    return
+  }
+
   actionMessage.value = ''
   missionActionInProgress.value = false
   missionActionCountdown.value = 0
@@ -172,28 +297,66 @@ const missionHasAction = (mission) => {
 
   return Boolean(mission.actionUrl)
 }
+const missionCardCtaLabel = (mission) => {
+  if (mission?.done) {
+    return t('home.missions.cta.done')
+  }
+
+  const tone = mission?.tone || resolveMissionVisual(mission).tone
+  if (
+    mission?.type === 'follow_social'
+    || mission?.type === 'like_social_post'
+    || ['facebook', 'instagram', 'tiktok', 'google', 'twitter', 'whatsapp'].includes(tone)
+  ) {
+    return t('home.missions.cta.follow')
+  }
+
+  if (mission?.type === 'visit_page' || tone === 'reading') {
+    return t('home.missions.cta.read')
+  }
+
+  if (
+    mission?.type === 'vote_count'
+    || mission?.type === 'daily_poll'
+    || mission?.type === 'favorite_poll'
+    || tone === 'vote'
+  ) {
+    return t('home.missions.cta.vote')
+  }
+
+  if (isShareMission(mission) || isReferralMission(mission) || tone === 'share') {
+    return t('home.missions.cta.share')
+  }
+
+  if (mission?.actionUrl) {
+    return t('home.missions.cta.open')
+  }
+
+  return t('home.missions.doMission')
+}
+
 const missionActionLabel = (mission) => {
   if (isPassiveMission(mission)) {
     return 'Se valida automaticamente'
   }
 
   if (isReferralMission(mission)) {
-    return 'Compartir invitacion'
+    return t('home.missions.cta.share')
   }
 
   if (mission?.type === 'follow_social') {
-    return 'Ir a la red social'
+    return t('home.missions.cta.follow')
   }
 
   if (mission?.type === 'visit_page') {
-    return translate('home.missions.openPage')
+    return t('home.missions.cta.read')
   }
 
   if (mission?.type?.startsWith('share_')) {
-    return 'Compartir'
+    return t('home.missions.cta.share')
   }
 
-  return 'Hacer mision'
+  return t('home.missions.doMission')
 }
 const copyReferralUrl = async () => {
   if (!referralCode.value) {
@@ -746,43 +909,103 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section id="misiones" class="mx-auto max-w-352 scroll-mt-28 px-4 py-6 sm:px-6 lg:py-8">
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <div>
-        <p class="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+  <section id="misiones" class="missions-surface mx-auto max-w-352 scroll-mt-28 px-4 py-6 sm:px-6 lg:py-8">
+    <div class="mb-5 flex flex-col gap-4 lg:mb-6 lg:flex-row lg:items-end lg:justify-between">
+      <div class="min-w-0 max-w-2xl">
+        <p class="missions-eyebrow text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
           {{ $t('home.missions.eyebrow') }}
         </p>
-        <h2 class="mt-2 text-2xl font-black uppercase tracking-tight sm:text-3xl">
+        <h2 class="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
           {{ $t('home.missions.title') }}
         </h2>
+        <p class="mt-2 text-sm font-semibold leading-6 text-slate-400 sm:text-base">
+          {{ $t('home.missions.subtitle') }}
+        </p>
+      </div>
+
+      <div
+        v-if="missions.length"
+        class="mission-stats grid shrink-0 grid-cols-2 gap-3 sm:min-w-80"
+      >
+        <div class="mission-stat mission-stat--points relative overflow-hidden rounded-2xl border border-amber-300/25 bg-[#15110a]/95 px-3.5 py-3 shadow-lg shadow-amber-950/20">
+          <div class="pointer-events-none absolute -right-6 -top-6 size-20 rounded-full bg-amber-300/20 blur-2xl"></div>
+          <div class="relative flex items-center gap-2.5">
+            <span class="grid size-9 place-items-center rounded-xl border border-amber-200/30 bg-amber-300/15 text-amber-200">
+              <i class="fa-solid fa-coins" aria-hidden="true"></i>
+            </span>
+            <div>
+              <p class="text-lg font-black tabular-nums text-amber-100">{{ missionStats.totalPoints }} pts</p>
+              <p class="text-[10px] font-bold uppercase tracking-wide text-amber-100/65">
+                {{ $t('home.missions.stats.totalPoints') }}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="mission-stat mission-stat--done relative overflow-hidden rounded-2xl border border-fuchsia-300/20 bg-[#120b1a]/95 px-3.5 py-3 shadow-lg shadow-fuchsia-950/20">
+          <div class="pointer-events-none absolute -right-6 -top-6 size-20 rounded-full bg-fuchsia-400/20 blur-2xl"></div>
+          <div class="relative flex items-center gap-2.5">
+            <span class="grid size-9 place-items-center rounded-xl border border-fuchsia-200/30 bg-fuchsia-400/15 text-fuchsia-100">
+              <i class="fa-solid fa-trophy" aria-hidden="true"></i>
+            </span>
+            <div>
+              <p class="text-lg font-black tabular-nums text-fuchsia-100">{{ missionStats.completedLabel }}</p>
+              <p class="text-[10px] font-bold uppercase tracking-wide text-fuchsia-100/65">
+                {{ $t('home.missions.stats.completed') }}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div
       v-if="missions.length"
-      class="flex flex-col gap-3"
+      class="mb-5 flex flex-wrap gap-2"
+      role="tablist"
+      aria-label="Filtros de misiones"
     >
       <button
-        v-for="mission in missions"
-        :key="mission.id || mission.titleKey"
+        v-for="filter in missionFilters"
+        :key="filter.id"
         type="button"
-        class="mission-mini group rounded-2xl border-2 p-3.5 text-left shadow-[0_10px_28px_rgba(0,0,0,0.35)] transition hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
-        :class="[
-          mission.featured && !mission.done && 'border-amber-300/45 bg-[#1a150c] shadow-amber-950/30 hover:border-amber-200/65',
-          mission.done && 'border-emerald-300/45 bg-[#0b2a22] shadow-emerald-950/30 hover:border-emerald-200/65',
-          !mission.featured && !mission.done && 'border-cyan-300/35 bg-[#12141f] shadow-cyan-950/25 hover:border-cyan-200/55',
-          selectedMission?.id === mission.id && 'ring-2 ring-cyan-300/50',
-        ]"
-        @click="openMissionModal(mission)"
+        role="tab"
+        class="mission-filter rounded-full border px-3.5 py-1.5 text-xs font-black uppercase tracking-wide transition"
+        :class="missionFilter === filter.id
+          ? 'mission-filter--on border-fuchsia-300/45 bg-linear-to-r from-amber-400/20 via-fuchsia-500/20 to-violet-500/20 text-white shadow-[0_0_24px_rgba(217,70,239,0.18)]'
+          : 'border-white/10 bg-white/5 text-slate-400 hover:border-fuchsia-300/25 hover:text-white'"
+        :aria-selected="missionFilter === filter.id"
+        @click="missionFilter = filter.id"
       >
-        <div class="flex items-start gap-3">
+        {{ filter.label }}
+      </button>
+    </div>
+
+    <div
+      v-if="filteredMissions.length"
+      class="grid items-stretch gap-4 sm:grid-cols-2"
+    >
+      <article
+        v-for="(mission, index) in filteredMissions"
+        :key="mission.id || mission.titleKey"
+        class="mission-card group relative flex h-full flex-col overflow-hidden rounded-4xl border p-5 shadow-2xl transition duration-300 hover:-translate-y-1"
+        :class="[
+          mission.done && 'mission-card--done border-emerald-300/30',
+          mission.featured && !mission.done && 'mission-card--featured border-amber-300/35',
+          !mission.featured && !mission.done && 'border-violet-300/15',
+          selectedMission?.id === mission.id && 'ring-2 ring-fuchsia-300/45',
+        ]"
+        :style="{ animationDelay: `${Math.min(index, 6) * 70}ms` }"
+      >
+        <div class="pointer-events-none absolute inset-0 opacity-90" :class="`mission-card__wash mission-card__wash--${mission.tone}`"></div>
+        <div class="pointer-events-none absolute -right-16 -top-16 size-44 rounded-full bg-fuchsia-400/15 blur-3xl transition duration-500 group-hover:bg-fuchsia-400/25"></div>
+        <div class="pointer-events-none absolute -bottom-20 left-8 size-48 rounded-full bg-cyan-400/10 blur-3xl transition duration-500 group-hover:bg-amber-300/15"></div>
+
+        <div class="relative flex items-start justify-between gap-3">
           <span
-            class="grid size-12 shrink-0 place-items-center rounded-2xl border text-lg"
+            class="mission-card__icon grid size-14 shrink-0 place-items-center rounded-3xl border text-xl shadow-xl shadow-black/25 backdrop-blur transition duration-300 group-hover:scale-105"
             :class="mission.done
               ? 'border-emerald-300/35 bg-emerald-400/15 text-emerald-200'
-              : mission.featured
-                ? 'border-amber-200/35 bg-amber-300/10 text-amber-100'
-                : 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100'"
+              : `mission-card__icon--${mission.tone}`"
           >
             <i
               v-if="mission.done"
@@ -790,62 +1013,69 @@ onUnmounted(() => {
               aria-hidden="true"
             ></i>
             <i
-              v-else-if="isFontAwesomeIcon(mission.icon)"
+              v-else
               :class="mission.icon"
               aria-hidden="true"
             ></i>
-            <span v-else class="text-xs font-black">{{ mission.icon }}</span>
           </span>
 
-          <div class="min-w-0 flex-1">
-            <div class="flex items-start gap-2">
-              <h3 class="min-w-0 flex-1 text-[15px] font-extrabold leading-snug text-white">
-                {{ mission.title || $t(mission.titleKey) }}
-              </h3>
-              <span
-                class="shrink-0 rounded-lg border px-2 py-1 text-xs font-black tabular-nums"
-                :class="mission.done
-                  ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-200'
-                  : mission.featured
-                    ? 'border-amber-200/30 bg-amber-300/15 text-amber-100'
-                    : 'border-cyan-300/30 bg-cyan-400/15 text-cyan-100'"
-              >
-                {{ mission.reward }}
-              </span>
-            </div>
-            <p
-              v-if="mission.text || mission.textKey"
-              class="mt-1 truncate text-xs font-semibold text-slate-400"
-            >
-              {{ mission.text || $t(mission.textKey) }}
-            </p>
-          </div>
-        </div>
-
-        <div class="mt-3 flex items-center gap-2.5">
-          <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10">
-            <div
-              class="h-full rounded-full"
-              :class="mission.done
-                ? 'bg-emerald-400'
-                : mission.featured
-                  ? 'bg-amber-300'
-                  : 'bg-cyan-400'"
-              :style="{ width: `${mission.percent}%` }"
-            ></div>
-          </div>
-          <span class="shrink-0 text-xs font-extrabold tabular-nums text-slate-300">
-            {{ mission.progress }}
-          </span>
-          <i
-            class="text-sm"
+          <span
+            class="mission-card__reward shrink-0 rounded-full border px-3 py-1 text-xs font-black tabular-nums shadow-lg"
             :class="mission.done
-              ? 'fa-solid fa-circle-check text-emerald-400'
-              : 'fa-solid fa-chevron-right text-white/40'"
-            aria-hidden="true"
-          ></i>
+              ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-200'
+              : 'border-amber-200/35 bg-amber-300/15 text-amber-100'"
+          >
+            {{ mission.reward }}
+          </span>
         </div>
-      </button>
+
+        <h3 class="relative mt-4 min-h-12 text-[15px] font-black leading-snug text-white sm:text-base">
+          {{ mission.title || $t(mission.titleKey) }}
+        </h3>
+
+        <div class="relative mt-auto pt-5">
+          <div class="mb-3.5 flex items-center gap-2.5">
+            <div class="mission-card__track h-3.5 min-w-0 flex-1 overflow-hidden rounded-full border border-white/10 bg-white/10">
+              <div
+                class="mission-card__bar h-full rounded-full"
+                :class="mission.done
+                  ? 'bg-emerald-400'
+                  : 'bg-linear-to-r from-amber-300 via-fuchsia-400 to-violet-500'"
+                :style="{ width: `${Math.max(mission.percent, mission.percent > 0 ? 8 : 0)}%` }"
+              ></div>
+            </div>
+            <span class="shrink-0 text-xs font-extrabold tabular-nums text-slate-300">
+              {{ mission.progress }}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            class="mission-card__cta flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-sm font-black uppercase tracking-wide transition duration-300"
+            :class="mission.done
+              ? 'cursor-default border border-emerald-300/30 bg-emerald-400/10 text-emerald-200'
+              : 'bg-linear-to-r from-amber-300 via-fuchsia-400 to-violet-500 text-slate-950 shadow-lg shadow-fuchsia-950/30 hover:scale-[1.02] hover:brightness-110'"
+            :disabled="mission.done"
+            @click="openMissionModal(mission)"
+          >
+            <span>{{ missionCardCtaLabel(mission) }}</span>
+            <i
+              v-if="!mission.done"
+              class="fa-solid fa-arrow-right text-xs transition group-hover:translate-x-0.5"
+              aria-hidden="true"
+            ></i>
+          </button>
+        </div>
+      </article>
+    </div>
+
+    <div
+      v-else-if="missions.length"
+      class="rounded-4xl border border-white/10 bg-[#12141f]/80 px-5 py-8 text-center"
+    >
+      <p class="text-sm font-bold text-slate-400">
+        {{ $t('home.missions.filters.empty') }}
+      </p>
     </div>
 
     <div
@@ -865,121 +1095,171 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="selectedMission"
-      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 px-4 py-6 backdrop-blur-sm"
-      @click.self="closeMissionModal"
+      v-if="missions.length"
+      class="mission-howto relative mt-5 overflow-hidden rounded-4xl border border-violet-300/15 bg-[#080a18]/90 px-4 py-5 shadow-2xl shadow-violet-950/20 sm:px-5"
     >
-      <article class="mission-detail-sheet relative w-full max-w-lg overflow-hidden rounded-2xl border p-0 shadow-2xl">
-        <div class="mission-detail-sheet__glow pointer-events-none absolute inset-0" aria-hidden="true"></div>
-        <div class="mission-detail-sheet__accent absolute inset-y-0 left-0 w-1.5" aria-hidden="true"></div>
-
-        <div class="relative p-5 pl-6 sm:p-6 sm:pl-7">
-          <div class="flex items-start justify-between gap-4">
-            <div class="flex min-w-0 items-start gap-3">
-              <span class="mission-detail-sheet__icon grid size-12 shrink-0 place-items-center rounded-xl text-xl font-black">
-                <i
-                  v-if="isFontAwesomeIcon(selectedMission.icon)"
-                  :class="selectedMission.icon"
-                  aria-hidden="true"
-                ></i>
-                <span v-else>{{ selectedMission.icon }}</span>
-              </span>
-              <div class="min-w-0">
-                <p class="mission-detail-sheet__eyebrow text-[10px] font-black uppercase tracking-[0.28em]">
-                  {{ $t('home.missions.detailEyebrow') }}
-                </p>
-                <h3 class="mission-detail-sheet__title mt-1 text-xl font-black uppercase leading-tight sm:text-2xl">
-                  {{ selectedMission.title || $t(selectedMission.titleKey) }}
-                </h3>
-              </div>
-            </div>
-            <button
-              type="button"
-              class="mission-detail-sheet__ghost grid size-10 shrink-0 place-items-center rounded-xl transition"
-              aria-label="Cerrar"
-              @click="closeMissionModal"
-            >
-              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            </button>
-          </div>
-
-          <div class="mission-detail-sheet__panel mt-4 rounded-xl p-4">
-            <p class="mission-detail-sheet__label text-[10px] font-black uppercase tracking-[0.22em]">
-              {{ $t('home.missions.objective') }}
-            </p>
-            <p class="mission-detail-sheet__body mt-2 whitespace-pre-line text-sm leading-6">
-              {{ selectedMission.text || $t(selectedMission.textKey) }}
-            </p>
-          </div>
-
-          <p class="mission-detail-sheet__hint mt-3 rounded-xl px-4 py-3 text-xs font-bold leading-5">
-            {{ missionValidationText(selectedMission) }}
-          </p>
-          <p
-            v-if="isReferralMission(selectedMission) && referralCode"
-            class="mission-detail-sheet__panel mt-3 break-all rounded-xl px-4 py-3 text-xs font-bold leading-5"
-          >
-            {{ referralUrl() }}
-          </p>
-          <p
-            v-if="actionMessage"
-            class="mission-detail-sheet__success mt-3 rounded-xl px-4 py-3 text-xs font-bold leading-5"
-          >
-            {{ actionMessage }}
-          </p>
-
-          <div class="mission-detail-sheet__panel mt-4 rounded-xl p-4">
-            <div class="flex items-end justify-between gap-3">
-              <div>
-                <p class="mission-detail-sheet__label text-xs font-bold uppercase tracking-widest">{{ $t('common.labels.progress') }}</p>
-                <p class="mission-detail-sheet__title mt-1 text-sm font-black">{{ selectedMission.progress }}</p>
-              </div>
-              <p class="mission-detail-sheet__reward text-2xl font-black">{{ selectedMission.reward }}</p>
-            </div>
-            <div class="mission-detail-sheet__track mt-4 h-2 overflow-hidden rounded-full">
-              <div
-                class="h-full rounded-full bg-linear-to-r from-amber-300 via-cyan-400 to-fuchsia-500"
-                :style="{ width: `${selectedMission.percent}%` }"
-              ></div>
-            </div>
-          </div>
-
-          <div class="mt-5 grid gap-3">
-            <button
-              type="button"
-              class="min-h-12 w-full rounded-xl bg-linear-to-r from-amber-400 via-fuchsia-500 to-violet-500 px-5 text-sm font-black uppercase tracking-wide text-slate-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
-              :disabled="missionActionInProgress || selectedMission.done || !missionHasAction(selectedMission)"
-              @click="performMissionAction(selectedMission)"
-            >
-              {{
-                selectedMission.done
-                  ? $t('common.status.completed')
-                  : missionActionInProgress
-                    ? 'Validando...'
-                    : missionActionLabel(selectedMission)
-              }}
-            </button>
-            <div class="grid gap-3" :class="isReferralMission(selectedMission) && referralCode ? 'sm:grid-cols-2' : ''">
-              <button
-                v-if="isReferralMission(selectedMission) && referralCode"
-                type="button"
-                class="mission-detail-sheet__hint min-h-12 rounded-xl px-5 text-sm font-black uppercase tracking-wide transition"
-                @click="copyReferralUrl"
-              >
-                Copiar link
-              </button>
-              <button
-                type="button"
-                class="mission-detail-sheet__ghost min-h-12 rounded-xl px-5 text-sm font-black uppercase tracking-wide transition"
-                @click="closeMissionModal"
-              >
-                Cerrar
-              </button>
-            </div>
+      <div class="pointer-events-none absolute inset-0 bg-linear-to-r from-fuchsia-950/30 via-transparent to-cyan-950/20"></div>
+      <p class="relative mb-4 text-[10px] font-black uppercase tracking-[0.24em] text-fuchsia-200/80">
+        {{ $t('home.missions.howItWorks.title') }}
+      </p>
+      <div class="relative grid gap-4 sm:grid-cols-3 sm:gap-3">
+        <div class="mission-howto__step flex items-start gap-3 rounded-2xl border border-white/8 bg-black/20 p-3 transition hover:border-fuchsia-300/25 hover:bg-white/5">
+          <span class="grid size-11 shrink-0 place-items-center rounded-2xl border border-cyan-300/25 bg-cyan-400/10 text-cyan-200">
+            <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
+          </span>
+          <div class="min-w-0">
+            <p class="text-sm font-extrabold text-white">{{ $t('home.missions.howItWorks.step1Title') }}</p>
+            <p class="mt-0.5 text-xs font-semibold text-slate-400">{{ $t('home.missions.howItWorks.step1Text') }}</p>
           </div>
         </div>
-      </article>
+        <div class="mission-howto__step flex items-start gap-3 rounded-2xl border border-white/8 bg-black/20 p-3 transition hover:border-fuchsia-300/25 hover:bg-white/5">
+          <span class="grid size-11 shrink-0 place-items-center rounded-2xl border border-violet-300/25 bg-violet-400/10 text-violet-200">
+            <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+          </span>
+          <div class="min-w-0">
+            <p class="text-sm font-extrabold text-white">{{ $t('home.missions.howItWorks.step2Title') }}</p>
+            <p class="mt-0.5 text-xs font-semibold text-slate-400">{{ $t('home.missions.howItWorks.step2Text') }}</p>
+          </div>
+        </div>
+        <div class="mission-howto__step flex items-start gap-3 rounded-2xl border border-white/8 bg-black/20 p-3 transition hover:border-amber-300/25 hover:bg-white/5">
+          <span class="grid size-11 shrink-0 place-items-center rounded-2xl border border-amber-300/25 bg-amber-300/10 text-amber-100">
+            <i class="fa-solid fa-coins" aria-hidden="true"></i>
+          </span>
+          <div class="min-w-0">
+            <p class="text-sm font-extrabold text-white">{{ $t('home.missions.howItWorks.step3Title') }}</p>
+            <p class="mt-0.5 text-xs font-semibold text-slate-400">{{ $t('home.missions.howItWorks.step3Text') }}</p>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="selectedMission"
+        class="fixed inset-0 z-80 flex items-center justify-center bg-black/80 px-4 py-6 backdrop-blur-sm"
+        @click.self="closeMissionModal"
+      >
+        <article
+          class="mission-detail-sheet relative flex max-h-[min(92vh,40rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-cyan-300/25 shadow-2xl shadow-cyan-950/40"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="selectedMission.title || $t('home.missions.detailEyebrow')"
+        >
+          <div class="mission-detail-sheet__glow pointer-events-none absolute inset-0" aria-hidden="true"></div>
+          <div class="mission-detail-sheet__accent absolute inset-y-0 left-0 w-1.5" aria-hidden="true"></div>
+
+          <div class="relative flex min-h-0 flex-1 flex-col">
+            <div class="flex items-start justify-between gap-4 border-b border-white/8 px-5 pb-4 pt-5 pl-6 sm:px-6 sm:pl-7">
+              <div class="flex min-w-0 items-start gap-3">
+                <span class="mission-detail-sheet__icon grid size-12 shrink-0 place-items-center rounded-xl text-xl font-black">
+                  <i
+                    v-if="isFontAwesomeIcon(selectedMission.icon)"
+                    :class="selectedMission.icon"
+                    aria-hidden="true"
+                  ></i>
+                  <span v-else>{{ selectedMission.icon }}</span>
+                </span>
+                <div class="min-w-0">
+                  <p class="mission-detail-sheet__eyebrow text-[10px] font-black uppercase tracking-[0.28em]">
+                    {{ $t('home.missions.detailEyebrow') }}
+                  </p>
+                  <h3 class="mission-detail-sheet__title mt-1 text-xl font-black uppercase leading-tight sm:text-2xl">
+                    {{ selectedMission.title || $t(selectedMission.titleKey) }}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="mission-detail-sheet__ghost grid size-10 shrink-0 place-items-center rounded-xl transition"
+                aria-label="Cerrar"
+                @click="closeMissionModal"
+              >
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 pl-6 sm:px-6 sm:pl-7">
+              <div class="mission-detail-sheet__panel rounded-xl p-4">
+                <p class="mission-detail-sheet__label text-[10px] font-black uppercase tracking-[0.22em]">
+                  {{ $t('home.missions.objective') }}
+                </p>
+                <p class="mission-detail-sheet__body mt-2 whitespace-pre-line text-sm leading-6">
+                  {{ selectedMission.text || $t(selectedMission.textKey) }}
+                </p>
+              </div>
+
+              <p class="mission-detail-sheet__hint mt-3 rounded-xl px-4 py-3 text-xs font-bold leading-5">
+                {{ missionValidationText(selectedMission) }}
+              </p>
+              <p
+                v-if="isReferralMission(selectedMission) && referralCode"
+                class="mission-detail-sheet__panel mt-3 break-all rounded-xl px-4 py-3 text-xs font-bold leading-5"
+              >
+                {{ referralUrl() }}
+              </p>
+              <p
+                v-if="actionMessage"
+                class="mission-detail-sheet__success mt-3 rounded-xl px-4 py-3 text-xs font-bold leading-5"
+              >
+                {{ actionMessage }}
+              </p>
+
+              <div class="mission-detail-sheet__panel mt-4 rounded-xl p-4">
+                <div class="flex items-end justify-between gap-3">
+                  <div>
+                    <p class="mission-detail-sheet__label text-xs font-bold uppercase tracking-widest">{{ $t('common.labels.progress') }}</p>
+                    <p class="mission-detail-sheet__title mt-1 text-sm font-black">{{ selectedMission.progress }}</p>
+                  </div>
+                  <p class="mission-detail-sheet__reward text-2xl font-black">{{ selectedMission.reward }}</p>
+                </div>
+                <div class="mission-detail-sheet__track mt-4 h-3.5 overflow-hidden rounded-full border border-white/10">
+                  <div
+                    class="h-full rounded-full bg-linear-to-r from-amber-300 via-fuchsia-400 to-violet-500 shadow-[0_0_16px_rgba(232,121,249,0.45)]"
+                    :style="{ width: `${selectedMission.percent}%` }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="shrink-0 border-t border-white/8 px-5 py-4 pl-6 sm:px-6 sm:pl-7">
+              <div class="grid gap-3">
+                <button
+                  type="button"
+                  class="min-h-12 w-full rounded-xl bg-linear-to-r from-amber-400 via-fuchsia-500 to-violet-500 px-5 text-sm font-black uppercase tracking-wide text-slate-950 shadow-lg shadow-amber-950/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
+                  :disabled="missionActionInProgress || selectedMission.done || !missionHasAction(selectedMission)"
+                  @click="performMissionAction(selectedMission)"
+                >
+                  {{
+                    selectedMission.done
+                      ? $t('common.status.completed')
+                      : missionActionInProgress
+                        ? 'Validando...'
+                        : missionActionLabel(selectedMission)
+                  }}
+                </button>
+                <div class="grid gap-3" :class="isReferralMission(selectedMission) && referralCode ? 'sm:grid-cols-2' : ''">
+                  <button
+                    v-if="isReferralMission(selectedMission) && referralCode"
+                    type="button"
+                    class="mission-detail-sheet__hint min-h-12 rounded-xl px-5 text-sm font-black uppercase tracking-wide transition"
+                    @click="copyReferralUrl"
+                  >
+                    Copiar link
+                  </button>
+                  <button
+                    type="button"
+                    class="mission-detail-sheet__ghost min-h-12 rounded-xl px-5 text-sm font-black uppercase tracking-wide transition"
+                    @click="closeMissionModal"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1041,15 +1321,239 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mission-mini {
-  background-image:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 40%),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 11px,
-      rgba(255, 255, 255, 0.015) 11px,
-      rgba(255, 255, 255, 0.015) 12px
-    );
+.missions-eyebrow {
+  animation: mission-fade-up 0.45s ease both;
+}
+
+.mission-stat {
+  animation: mission-fade-up 0.5s ease both;
+}
+
+.mission-stat--points {
+  animation-delay: 60ms;
+}
+
+.mission-stat--done {
+  animation-delay: 120ms;
+}
+
+.mission-card {
+  background: linear-gradient(160deg, rgba(8, 10, 24, 0.96), rgba(18, 12, 32, 0.94));
+  animation: mission-fade-up 0.55s ease both;
+}
+
+.mission-card__wash {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 42%),
+    radial-gradient(circle at 0% 0%, rgba(168, 85, 247, 0.14), transparent 42%);
+}
+
+.mission-card__wash--facebook {
+  background:
+    linear-gradient(135deg, rgba(59, 89, 152, 0.22), transparent 48%),
+    linear-gradient(160deg, rgba(8, 10, 24, 0.2), transparent 60%);
+}
+
+.mission-card__wash--instagram {
+  background:
+    linear-gradient(135deg, rgba(225, 48, 108, 0.2), transparent 48%),
+    linear-gradient(160deg, rgba(131, 58, 180, 0.16), transparent 60%);
+}
+
+.mission-card__wash--google,
+.mission-card__wash--reading {
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.16), transparent 48%),
+    linear-gradient(160deg, rgba(99, 102, 241, 0.12), transparent 60%);
+}
+
+.mission-card__wash--vote {
+  background:
+    linear-gradient(135deg, rgba(251, 191, 36, 0.16), transparent 48%),
+    linear-gradient(160deg, rgba(217, 70, 239, 0.12), transparent 60%);
+}
+
+.mission-card__wash--tiktok,
+.mission-card__wash--twitter,
+.mission-card__wash--whatsapp,
+.mission-card__wash--share,
+.mission-card__wash--default {
+  background:
+    linear-gradient(135deg, rgba(168, 85, 247, 0.16), transparent 48%),
+    linear-gradient(160deg, rgba(34, 211, 238, 0.1), transparent 60%);
+}
+
+.mission-card--featured {
+  box-shadow: 0 18px 40px rgba(120, 53, 15, 0.28);
+}
+
+.mission-card--done {
+  box-shadow: 0 18px 40px rgba(6, 78, 59, 0.22);
+}
+
+.mission-card__icon--facebook {
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+}
+
+.mission-card__icon--instagram {
+  border-color: rgba(244, 114, 182, 0.35);
+  background: linear-gradient(135deg, rgba(225, 48, 108, 0.28), rgba(131, 58, 180, 0.28));
+  color: #fbcfe8;
+}
+
+.mission-card__icon--google {
+  border-color: rgba(252, 165, 165, 0.35);
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+}
+
+.mission-card__icon--reading {
+  border-color: rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.14);
+  color: #a5f3fc;
+}
+
+.mission-card__icon--vote {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+}
+
+.mission-card__icon--tiktok,
+.mission-card__icon--twitter,
+.mission-card__icon--whatsapp,
+.mission-card__icon--share,
+.mission-card__icon--default {
+  border-color: rgba(196, 181, 253, 0.35);
+  background: rgba(139, 92, 246, 0.16);
+  color: #ddd6fe;
+}
+
+.mission-card__track {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.mission-card__bar {
+  min-height: 100%;
+  transition: width 0.55s ease;
+  box-shadow: 0 0 18px rgba(232, 121, 249, 0.55);
+}
+
+.mission-card__reward {
+  transition: transform 0.25s ease;
+}
+
+.mission-card:hover .mission-card__reward {
+  transform: translateY(-1px);
+}
+
+.mission-howto__step:hover span {
+  transform: scale(1.06);
+}
+
+.mission-howto__step span {
+  transition: transform 0.25s ease;
+}
+
+@keyframes mission-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .missions-eyebrow,
+  .mission-stat,
+  .mission-card {
+    animation: none;
+  }
+
+  .mission-card,
+  .mission-card__cta,
+  .mission-card__icon,
+  .mission-howto__step span {
+    transition: none;
+  }
+}
+
+.mission-detail-sheet {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.16), transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.14), transparent 36%),
+    linear-gradient(160deg, #0b0f1d 0%, #101528 55%, #0a0d18 100%);
+  color: #e2e8f0;
+}
+
+.mission-detail-sheet__glow {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 42%);
+}
+
+.mission-detail-sheet__accent {
+  background: linear-gradient(180deg, #22d3ee, #a855f7 55%, #f59e0b);
+}
+
+.mission-detail-sheet__icon {
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.12);
+  color: #a5f3fc;
+}
+
+.mission-detail-sheet__eyebrow {
+  color: #67e8f9;
+}
+
+.mission-detail-sheet__title {
+  color: #fff;
+}
+
+.mission-detail-sheet__label {
+  color: #94a3b8;
+}
+
+.mission-detail-sheet__body {
+  color: #cbd5e1;
+}
+
+.mission-detail-sheet__panel {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.mission-detail-sheet__hint {
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(34, 211, 238, 0.1);
+  color: #a5f3fc;
+}
+
+.mission-detail-sheet__success {
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  background: rgba(16, 185, 129, 0.12);
+  color: #a7f3d0;
+}
+
+.mission-detail-sheet__reward {
+  color: #fcd34d;
+}
+
+.mission-detail-sheet__track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mission-detail-sheet__ghost {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+}
+
+.mission-detail-sheet__ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 </style>

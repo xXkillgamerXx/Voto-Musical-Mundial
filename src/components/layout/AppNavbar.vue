@@ -116,6 +116,10 @@ const openAuthModal = () => {
   isSettingsMenuOpen.value = false;
 };
 
+const onOpenAuthEvent = () => {
+  openAuthModal();
+};
+
 const handleLogout = async () => {
   logout();
   currentUser.value = null;
@@ -237,11 +241,14 @@ onMounted(() => {
   if (peekLoginNotice()) {
     isAuthModalOpen.value = true;
   }
+
+  window.addEventListener("vmm:open-auth", onOpenAuthEvent);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", handleDocumentClick);
   document.removeEventListener("keydown", handleEscape);
+  window.removeEventListener("vmm:open-auth", onOpenAuthEvent);
   unsubscribeAuth?.();
   stopFanStore?.();
   if (pointsAnimationFrame) {

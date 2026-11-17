@@ -87,6 +87,9 @@ const selectedWeek = ref('')
 const INITIAL_SIZE = 12
 const PAGE_SIZE = 8
 const visibleCount = ref(INITIAL_SIZE)
+/** Filled covers for tracks that arrived without coverUrl (Radio / gaps). */
+const coverOverrides = ref<Record<string, string>>({})
+const coverLookupDone = new Set<string>()
 let onHashChange: (() => void) | null = null
 
 const eqBars = Array.from({ length: 48 }, (_, i) => ({
@@ -184,10 +187,28 @@ const moveDisplay = (change?: string | null) => {
   }
 }
 
+const coverKeyOf = (track?: ChartTrack | null) => {
+  if (!track) return ''
+  if (track.trackId) return `t:${track.trackId}`
+  if (track.videoId) return `v:${track.videoId}`
+  if (track.artistId) return `a:${track.artistId}`
+  const artist = String(track.artist || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+  const title = String(track.title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+  return artist || title ? `k:${artist}|${title}` : ''
+}
+
 const coverOf = (track?: ChartTrack | null, large = false) => {
   if (!track) return ''
+  const key = coverKeyOf(track)
   let url = ''
   if (track.coverUrl) url = String(track.coverUrl)
+  else if (key && coverOverrides.value[key]) url = coverOverrides.value[key]
   else if (track.videoId) url = `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`
   if (!url) return ''
   if (large) {
@@ -197,6 +218,92 @@ const coverOf = (track?: ChartTrack | null, large = false) => {
       .replace('/hqdefault.jpg', '/maxresdefault.jpg')
   }
   return url
+}
+
+const rememberCover = (key: string, url: string) => {
+  if (!key || !url || coverOverrides.value[key]) return
+  coverOverrides.value = { ...coverOverrides.value, [key]: url }
+}
+
+const seedCoversFromPacks = () => {
+  const pack = data.value
+  if (!pack) return
+  const map = new Map<string, string>()
+  const remember = (track: ChartTrack) => {
+    const url = String(track.coverUrl || '')
+    if (!url) return
+    const key = coverKeyOf(track)
+    if (key) map.set(key, url)
+    const artist = String(track.artist || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+    if (artist) map.set(`artist:${artist}`, url)
+    const title = String(track.title || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+    if (title) map.set(`title:${title}`, url)
+  }
+  for (const section of [pack.daily, pack.listeners, pack.latest, pack.trending, pack.insights, pack.radio, countryPack.value]) {
+    for (const track of section?.tracks || []) remember(track)
+  }
+  for (const section of [pack.radio, pack.daily, pack.listeners, pack.latest, pack.trending, pack.insights, countryPack.value]) {
+    for (const track of section?.tracks || []) {
+      if (track.coverUrl || track.videoId) continue
+      const key = coverKeyOf(track)
+      if (!key || coverOverrides.value[key]) continue
+      const artist = String(track.artist || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+      const title = String(track.title || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+      const hit =
+        map.get(key) ||
+        (title ? map.get(`title:${title}`) : '') ||
+        (artist ? map.get(`artist:${artist}`) : '')
+      if (hit) rememberCover(key, hit)
+    }
+  }
+}
+
+const lookupItunesCover = async (track: ChartTrack) => {
+  const key = coverKeyOf(track)
+  if (!key || coverLookupDone.has(key) || coverOf(track)) return
+  coverLookupDone.add(key)
+  const term = `${track.artist || ''} ${track.title || ''}`.trim()
+  if (!term) return
+  try {
+    const res = await fetch(
+      `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=1`,
+    )
+    if (!res.ok) return
+    const json = await res.json()
+    const art = String(json?.results?.[0]?.artworkUrl100 || '')
+    if (!art) return
+    rememberCover(key, art.replace('100x100bb', '300x300bb'))
+  } catch {
+    /* best-effort */
+  }
+}
+
+const enrichMissingCovers = async () => {
+  seedCoversFromPacks()
+  const missing: ChartTrack[] = []
+  const pack = data.value
+  if (!pack) return
+  for (const section of [pack.radio, pack.daily, pack.listeners, pack.latest, pack.trending, pack.insights, countryPack.value]) {
+    for (const track of section?.tracks || []) {
+      if (!coverOf(track)) missing.push(track)
+    }
+  }
+  // Limit live lookups so Charts stays snappy.
+  for (const track of missing.slice(0, 30)) {
+    await lookupItunesCover(track)
+  }
 }
 
 const linkOf = (track?: ChartTrack | null) => {
@@ -595,14 +702,27 @@ const loadCountry = async (code: string) => {
   }
   if (countryCache.has(code)) {
     countryPack.value = countryCache.get(code) || null
+    void enrichMissingCovers()
     return
   }
   countryLoading.value = true
   try {
-    const res = await fetch(`/charts/spotify/${code}-daily.json`, { cache: 'no-store' })
-    const ctype = res.headers.get('content-type') || ''
-    if (!res.ok || !ctype.includes('json')) throw new Error('missing')
-    const pack = (await res.json()) as ChartPack
+    let pack: ChartPack | null = null
+    try {
+      const apiRes = await fetch(`/api/charts/spotify/${code}`, { cache: 'no-store' })
+      if (apiRes.ok) {
+        const json = (await apiRes.json()) as ChartPack
+        if (json?.tracks?.length) pack = json
+      }
+    } catch {
+      /* static fallback */
+    }
+    if (!pack) {
+      const res = await fetch(`/charts/spotify/${code}-daily.json`, { cache: 'no-store' })
+      const ctype = res.headers.get('content-type') || ''
+      if (!res.ok || !ctype.includes('json')) throw new Error('missing')
+      pack = (await res.json()) as ChartPack
+    }
     if (!pack.tracks?.length) throw new Error('empty')
     countryCache.set(code, pack)
     countryPack.value = pack
@@ -612,6 +732,7 @@ const loadCountry = async (code: string) => {
         { code, country: pack.country || code.toUpperCase(), date: pack.date, count: pack.count },
       ]
     }
+    void enrichMissingCovers()
   } catch {
     countryPack.value = null
     countryError.value = t(loc.value, 'chartsNoCountryData')
@@ -650,17 +771,39 @@ onMounted(async () => {
   loading.value = true
   error.value = ''
   try {
-    const chartsRes = await fetch('/charts/data.json', { cache: 'no-store' })
-    if (!chartsRes.ok) throw new Error('missing')
-    const chartsJson = await chartsRes.json()
+    // Prefer DB-backed API; fall back to static JSON if API is empty/unavailable.
+    let chartsJson: any = null
+    try {
+      const apiRes = await fetch('/api/charts/data', { cache: 'no-store' })
+      if (apiRes.ok) {
+        const json = await apiRes.json()
+        if (json?.daily?.tracks?.length) chartsJson = json
+      }
+    } catch {
+      /* fall back below */
+    }
+    if (!chartsJson) {
+      const chartsRes = await fetch('/charts/data.json', { cache: 'no-store' })
+      if (!chartsRes.ok) throw new Error('missing')
+      chartsJson = await chartsRes.json()
+    }
     if (!chartsJson?.daily?.tracks) throw new Error('invalid')
     data.value = chartsJson
 
     try {
-      const countriesRes = await fetch('/charts/spotify/countries.json', { cache: 'no-store' })
-      const ctype = countriesRes.headers.get('content-type') || ''
-      if (countriesRes.ok && ctype.includes('json')) {
-        const meta = await countriesRes.json()
+      let meta: any = null
+      try {
+        const apiCountries = await fetch('/api/charts/spotify/countries', { cache: 'no-store' })
+        if (apiCountries.ok) meta = await apiCountries.json()
+      } catch {
+        /* static fallback */
+      }
+      if (!meta) {
+        const countriesRes = await fetch('/charts/spotify/countries.json', { cache: 'no-store' })
+        const ctype = countriesRes.headers.get('content-type') || ''
+        if (countriesRes.ok && ctype.includes('json')) meta = await countriesRes.json()
+      }
+      if (meta) {
         availableCountries.value = meta.available || []
         packedCountries.value = meta.packed || []
       }
@@ -671,6 +814,7 @@ onMounted(async () => {
     readUrlState()
     await loadCountry(countryCode.value)
     syncUrl('replace')
+    void enrichMissingCovers()
     applyNewsSeo({
       type: 'website',
       locale: loc.value,
@@ -868,6 +1012,8 @@ watch(
                   :src="coverOf(heroTrack, true)"
                   :alt="currentBoard.titleOf(heroTrack)"
                   loading="lazy"
+                  decoding="async"
+                  referrerpolicy="no-referrer"
                 >
                 <div class="hero-cover-fallback" v-else aria-hidden="true">01</div>
                 <div class="hero-badge">
@@ -943,6 +1089,8 @@ watch(
                         :src="coverOf(track)"
                         :alt="currentBoard.titleOf(track)"
                         loading="lazy"
+                        decoding="async"
+                        referrerpolicy="no-referrer"
                       >
                       <span v-else class="row-thumb-fallback">{{ positionOf(currentBoard, track, index + 1) }}</span>
                     </span>

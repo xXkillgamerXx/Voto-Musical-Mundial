@@ -1,6 +1,7 @@
 /**
  * Vote mission visit tracker for Music Mundial (news SPA).
  * With ?vmm= token: show a 20s reading panel, then report the visit.
+ * Token session is independent of the news/Vote account logged in this browser.
  */
 
 const STORAGE_KEY = 'vmm_mission_visit_token'
@@ -20,6 +21,16 @@ type VisitUpdate = {
 type DwellController = {
   key: string
   stop: () => void
+}
+
+type ThemeColors = {
+  ink: string
+  sub: string
+  line: string
+  blue: string
+  card: string
+  bg: string
+  dark: boolean
 }
 
 declare global {
@@ -78,6 +89,25 @@ const storedToken = () => {
 const isSpanish = () =>
   window.location.pathname === '/es' || window.location.pathname.startsWith('/es/')
 
+const themeColors = (): ThemeColors => {
+  const root = document.documentElement
+  const styles = window.getComputedStyle(root)
+  const pick = (name: string, fallback: string) => {
+    const value = String(styles.getPropertyValue(name) || '').trim()
+    return value || fallback
+  }
+  const dark = root.getAttribute('data-theme') === 'dark'
+  return {
+    ink: pick('--ink', dark ? '#e8eef8' : '#121b2c'),
+    sub: pick('--sub', dark ? '#9aa8bd' : '#657083'),
+    line: pick('--line', dark ? '#2a3548' : '#e7ebf1'),
+    blue: pick('--blue', dark ? '#5b8cff' : '#225df5'),
+    card: pick('--card', dark ? '#182233' : '#ffffff'),
+    bg: pick('--bg', dark ? '#0c121d' : '#ffffff'),
+    dark,
+  }
+}
+
 const noticeCopy = (update: VisitUpdate) => {
   const spanish = isSpanish()
   const progress = Math.max(0, Number(update.progress || 0))
@@ -100,7 +130,7 @@ const noticeCopy = (update: VisitUpdate) => {
     : { title: 'Mission progress', text: `${progress} of ${target} pages so far.` }
 }
 
-/** One loud card per page. The early script and the SPA share this lock. */
+/** One card per page. The early script and the SPA share this lock. */
 export const showMissionNotice = (update: VisitUpdate) => {
   const progress = Number(update.progress || 0)
   const target = Math.max(1, Number(update.target || 1))
@@ -117,25 +147,46 @@ export const showMissionNotice = (update: VisitUpdate) => {
 
   const copy = noticeCopy(update)
   const done = Boolean(update.awarded) || progress >= target
+  const theme = themeColors()
+  const accent = done ? '#16a34a' : theme.blue
+  const accentSoft = done
+    ? theme.dark
+      ? 'rgba(22,163,74,.18)'
+      : 'rgba(22,163,74,.12)'
+    : theme.dark
+      ? 'rgba(91,140,255,.2)'
+      : 'rgba(34,93,245,.12)'
+
+  // Sit above the dwell panel / cookie bar so colors and layers don't collide.
+  const dwell = document.getElementById(PANEL_ID)
+  const cookie = document.querySelector(
+    '.cookie-consent, [data-cookie-banner], #vmm-cookie-consent, .cookie-banner',
+  ) as HTMLElement | null
+  const lift =
+    24 +
+    (dwell ? Math.ceil(dwell.getBoundingClientRect().height) + 12 : 0) +
+    (cookie && cookie.offsetParent !== null ? Math.min(120, Math.ceil(cookie.getBoundingClientRect().height) + 10) : 0)
+
   const root = document.createElement('div')
   root.id = 'vmm-mission-notice'
   root.setAttribute('role', 'status')
   root.style.cssText = [
     'position:fixed',
     'left:50%',
-    'bottom:28px',
+    `bottom:max(${lift}px, env(safe-area-inset-bottom))`,
     'transform:translateX(-50%)',
     'z-index:100000',
     'width:min(560px,calc(100% - 28px))',
     'display:flex',
     'gap:14px',
     'align-items:flex-start',
-    'padding:18px 18px 18px 16px',
-    'border-radius:22px',
-    'color:#fff',
-    'background:' + (done ? '#064e3b' : '#7c2d12'),
-    'border:3px solid ' + (done ? '#34d399' : '#fdba74'),
-    'box-shadow:0 22px 50px rgba(0,0,0,.38)',
+    'padding:16px 16px 16px 14px',
+    'border-radius:20px',
+    `color:${theme.ink}`,
+    `background:${theme.card}`,
+    `border:1px solid ${theme.line}`,
+    `border-left:4px solid ${accent}`,
+    `box-shadow:0 18px 40px ${theme.dark ? 'rgba(0,0,0,.45)' : 'rgba(22,39,68,.14)'}`,
     'font-family:DM Sans,Manrope,sans-serif',
   ].join(';')
 
@@ -149,18 +200,20 @@ export const showMissionNotice = (update: VisitUpdate) => {
     'display:grid',
     'place-items:center',
     'font-weight:800',
-    'font-size:22px',
-    'background:rgba(255,255,255,.14)',
+    'font-size:20px',
+    `color:${accent}`,
+    `background:${accentSoft}`,
+    `border:1px solid ${accent}`,
   ].join(';')
 
   const body = document.createElement('div')
   body.style.cssText = 'min-width:0;flex:1'
   const heading = document.createElement('p')
   heading.textContent = copy.title
-  heading.style.cssText = 'margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em'
+  heading.style.cssText = `margin:0;font-size:18px;font-weight:800;letter-spacing:-.02em;color:${theme.ink}`
   const detail = document.createElement('p')
   detail.textContent = copy.text
-  detail.style.cssText = 'margin:4px 0 0;font-size:15px;font-weight:600;line-height:1.35;color:rgba(255,255,255,.88)'
+  detail.style.cssText = `margin:4px 0 0;font-size:14px;font-weight:600;line-height:1.35;color:${theme.sub}`
   body.append(heading, detail)
 
   const close = document.createElement('button')
@@ -170,8 +223,8 @@ export const showMissionNotice = (update: VisitUpdate) => {
   close.style.cssText = [
     'border:0',
     'background:transparent',
-    'color:#fff',
-    'font-size:28px',
+    `color:${theme.sub}`,
+    'font-size:26px',
     'line-height:1',
     'cursor:pointer',
     'padding:0 2px',
@@ -237,6 +290,7 @@ const removeDwellPanel = () => {
 const ensureDwellPanel = (totalSeconds: number) => {
   removeDwellPanel()
   const spanish = isSpanish()
+  const theme = themeColors()
   const root = document.createElement('div')
   root.id = PANEL_ID
   root.setAttribute('role', 'status')
@@ -248,43 +302,39 @@ const ensureDwellPanel = (totalSeconds: number) => {
     'transform:translateX(-50%) translateY(110%)',
     'z-index:99999',
     'width:min(560px,calc(100% - 20px))',
-    'margin:0 0 16px',
+    'margin:0 0 max(16px, env(safe-area-inset-bottom))',
     'padding:16px 18px 14px',
-    'border-radius:22px 22px 18px 18px',
-    'color:#fff',
-    'background:linear-gradient(165deg,#111827 0%,#1e3a5f 55%,#0f766e 140%)',
-    'border:2px solid rgba(125,211,252,.45)',
-    'box-shadow:0 18px 48px rgba(0,0,0,.42)',
+    'border-radius:20px',
+    `color:${theme.ink}`,
+    `background:${theme.card}`,
+    `border:1px solid ${theme.line}`,
+    `box-shadow:0 18px 40px ${theme.dark ? 'rgba(0,0,0,.45)' : 'rgba(22,39,68,.14)'}`,
     'font-family:DM Sans,Manrope,sans-serif',
     'transition:transform .45s cubic-bezier(.22,1,.36,1)',
   ].join(';')
 
   const title = document.createElement('p')
   title.textContent = spanish ? 'Misión: lee la nota' : 'Mission: read the article'
-  title.style.cssText = 'margin:0;font-size:17px;font-weight:800;letter-spacing:-.02em'
+  title.style.cssText = `margin:0;font-size:17px;font-weight:800;letter-spacing:-.02em;color:${theme.ink}`
 
   const detail = document.createElement('p')
   detail.dataset.role = 'detail'
   detail.textContent = spanish
     ? `Quédate en esta página ${totalSeconds} segundos para que cuente.`
     : `Stay on this page for ${totalSeconds} seconds so it counts.`
-  detail.style.cssText =
-    'margin:6px 0 12px;font-size:14px;font-weight:600;line-height:1.35;color:rgba(255,255,255,.86)'
+  detail.style.cssText = `margin:6px 0 12px;font-size:14px;font-weight:600;line-height:1.35;color:${theme.sub}`
 
   const track = document.createElement('div')
-  track.style.cssText =
-    'height:10px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden'
+  track.style.cssText = `height:10px;border-radius:999px;background:${theme.dark ? 'rgba(255,255,255,.1)' : 'rgba(18,27,44,.08)'};overflow:hidden`
 
   const fill = document.createElement('div')
   fill.dataset.role = 'fill'
-  fill.style.cssText =
-    'height:100%;width:0%;border-radius:inherit;background:linear-gradient(90deg,#67e8f9,#34d399);transition:width .2s linear'
+  fill.style.cssText = `height:100%;width:0%;border-radius:inherit;background:${theme.blue};transition:width .2s linear`
 
   const clock = document.createElement('p')
   clock.dataset.role = 'clock'
   clock.textContent = `${totalSeconds}s`
-  clock.style.cssText =
-    'margin:10px 0 0;font-size:13px;font-weight:800;letter-spacing:.04em;color:#a5f3fc;text-align:right'
+  clock.style.cssText = `margin:10px 0 0;font-size:13px;font-weight:800;letter-spacing:.04em;color:${theme.blue};text-align:right`
 
   track.appendChild(fill)
   root.append(title, detail, track, clock)
@@ -395,8 +445,10 @@ export const reportMissionPageVisit = () => {
   const pageUrl = currentPageUrl()
 
   // Token path: require ~20s of visible reading before crediting the page.
+  // Keep this session independent of whatever account is logged into news/Vote here.
   if (token) {
     startTokenDwell(token, pageUrl, DEFAULT_DWELL_SECONDS)
+    return
   }
 
   // Host / logged-in browsing still counts page views without the curtain.

@@ -611,7 +611,25 @@ html[data-theme="dark"] .brand .brand-logo-dark {
 }
 
 .nav-toolbar {
+  display: contents;
+}
+
+.nav-toolbar-row {
+  display: contents;
+}
+
+.nav-toolbar .lang-switch,
+.nav-toolbar .search-box,
+.nav-toolbar .search-status,
+.nav-toolbar .search-hit {
   display: none;
+}
+
+.nav-toolbar .theme-toggle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
 }
 
 .mobile-toggle {
@@ -2760,11 +2778,37 @@ footer[id] {
     border-bottom: 1px solid var(--line);
   }
 
+  .nav-toolbar .lang-switch {
+    display: inline-flex;
+  }
+
+  .nav-toolbar .search-box {
+    display: flex;
+  }
+
+  .nav-toolbar .search-status {
+    display: block;
+  }
+
+  .nav-toolbar .search-hit {
+    display: grid;
+  }
+
   .actions .lang-switch,
-  .actions .auth-links,
-  .actions .theme-toggle,
-  .nav-toolbar .theme-toggle {
+  .actions .auth-links {
     display: none;
+  }
+
+  /* Light/dark lives inside the menu, not the header actions. */
+  .actions .theme-toggle {
+    display: none;
+  }
+
+  .nav-toolbar .theme-toggle {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    margin-left: auto;
   }
 
   .actions .auth-avatar {
@@ -2774,7 +2818,9 @@ footer[id] {
   .nav-toolbar-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
+    width: 100%;
   }
 
   .mobile-toggle {

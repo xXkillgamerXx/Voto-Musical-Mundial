@@ -784,21 +784,6 @@ onUnmounted(() => {
           <a :class="{ on: siteLocale === 'en' }" :href="swapLocalePath('en')" @click.prevent="setLocale('en')">EN</a>
           <a :class="{ on: siteLocale === 'es' }" :href="swapLocalePath('es')" @click.prevent="setLocale('es')">ES</a>
         </div>
-        <button
-          class="round theme-toggle"
-          type="button"
-          :title="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
-          :aria-label="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
-          @click="setSiteTheme"
-        >
-          <svg v-if="theme === 'dark'" class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
-          </svg>
-          <svg v-else class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M16.2 13.2A6.2 6.2 0 0 1 11 5.2 6.4 6.4 0 1 0 18.8 15a6.2 6.2 0 0 1-2.6-1.8z" />
-          </svg>
-        </button>
         <div class="icon-pop search-slot">
           <button
             class="round"

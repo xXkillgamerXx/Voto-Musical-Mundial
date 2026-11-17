@@ -213,9 +213,11 @@ export class MissionsService {
       'EX',
       VISIT_SESSION_TTL_SECONDS,
     );
+    // Accept ≠ progress. Progress only happens when the fan actually visits a page.
+    await this.markVisitAccepted(mission.id, userId);
 
     // External destinations (Google News, Instagram, etc.) cannot load our visit script.
-    // Count the open itself as the visit so the fan receives the reward after "Hacer mision".
+    // Opening the destination is the visit for those targets only.
     let visitResult: {
       awarded?: boolean;
       progress?: number;
@@ -224,7 +226,9 @@ export class MissionsService {
 
     if (!this.isAppOwnedUrl(startUrl)) {
       try {
-        visitResult = await this.recordPageVisit(mission, userId, startUrl);
+        visitResult = await this.recordPageVisit(mission, userId, startUrl, {
+          requireAccepted: false,
+        });
       } catch {
         visitResult = null;
       }
@@ -419,6 +423,23 @@ export class MissionsService {
     return `mission:visit:pages:${missionId.toString()}:${userId.toString()}`;
   }
 
+  private visitAcceptedKey(missionId: bigint, userId: bigint) {
+    return `mission:visit:accepted:${missionId.toString()}:${userId.toString()}`;
+  }
+
+  private async markVisitAccepted(missionId: bigint, userId: bigint) {
+    await this.redis.client.set(
+      this.visitAcceptedKey(missionId, userId),
+      '1',
+      'EX',
+      VISIT_SESSION_TTL_SECONDS,
+    );
+  }
+
+  private async hasVisitAccepted(missionId: bigint, userId: bigint) {
+    return Boolean(await this.redis.client.get(this.visitAcceptedKey(missionId, userId)));
+  }
+
   private parseVisitSession(raw: string): { userId: string; startedAt: number } | null {
     const value = String(raw || '').trim();
     if (!value) return null;
@@ -446,11 +467,19 @@ export class MissionsService {
     mission: { id: bigint; title: string; rewardPoints: number; target: number; actionUrl?: string | null; metadata?: unknown; type?: string },
     userId: bigint,
     pageUrl: string,
+    options: { requireAccepted?: boolean } = {},
   ) {
     const config = this.getVisitConfig(mission);
 
     if (!this.pageMatchesVisitConfig(config, pageUrl)) {
       throw new BadRequestException('La pagina visitada no coincide con la mision.');
+    }
+
+    const requireAccepted = options.requireAccepted !== false;
+    if (requireAccepted && !(await this.hasVisitAccepted(mission.id, userId))) {
+      throw new BadRequestException(
+        'Primero acepta la mision con "Hacer mision". Sin visita real no se activa el progreso.',
+      );
     }
 
     const key = this.pageKey(pageUrl);

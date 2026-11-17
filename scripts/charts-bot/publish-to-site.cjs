@@ -57,8 +57,11 @@ function coverMapFromExisting() {
     if (!track?.coverUrl) return
     if (track.trackId) map.set(`t:${track.trackId}`, track.coverUrl)
     if (track.artistId) map.set(`a:${track.artistId}`, track.coverUrl)
-    const key = `${String(track.artist || '').toLowerCase()}|${String(track.title || '').toLowerCase()}`
-    if (track.artist || track.title) map.set(`k:${key}`, track.coverUrl)
+    const artist = normText(track.artist)
+    const title = normText(track.title)
+    if (artist || title) map.set(`k:${artist}|${title}`, track.coverUrl)
+    if (title) map.set(`title:${title}`, track.coverUrl)
+    if (artist) map.set(`artist:${artist}`, track.coverUrl)
   }
   try {
     const current = readJson(path.join(OUT, 'data.json'))
@@ -76,15 +79,26 @@ function coverMapFromExisting() {
   return map
 }
 
+function normText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
 function withCovers(tracks, covers) {
   return tracks.map((track) => {
     if (track.coverUrl) return track
+    const artist = normText(track.artist)
+    const title = normText(track.title)
     const hit =
       (track.trackId && covers.get(`t:${track.trackId}`)) ||
       (track.artistId && covers.get(`a:${track.artistId}`)) ||
-      covers.get(
-        `k:${String(track.artist || '').toLowerCase()}|${String(track.title || '').toLowerCase()}`,
-      )
+      covers.get(`k:${artist}|${title}`) ||
+      (title && covers.get(`title:${title}`)) ||
+      (artist && covers.get(`artist:${artist}`))
     return hit ? { ...track, coverUrl: hit } : track
   })
 }
@@ -220,6 +234,11 @@ function main() {
     packed,
   })
 
+  // Also persist into Postgres via API when configured.
+  ingestToDatabase(data, packed).catch((error) => {
+    console.warn('[charts-bot] DB ingest skipped/failed:', error.message || error)
+  })
+
   console.log('published', {
     pack: PACK,
     out: OUT,
@@ -229,6 +248,74 @@ function main() {
     radioSource: data.radio.source,
     dailyDate: data.daily.date,
   })
+}
+
+async function ingestToDatabase(data, countries) {
+  const secret = String(process.env.CHARTS_INGEST_SECRET || '').trim()
+  const apiBase = String(
+    process.env.CHARTS_API_URL || process.env.PUBLIC_API_URL || 'http://127.0.0.1:4000/api',
+  )
+    .trim()
+    .replace(/\/$/, '')
+  if (!secret) {
+    console.log('[charts-bot] CHARTS_INGEST_SECRET not set; JSON only')
+    return
+  }
+
+  const packs = []
+  for (const [boardKey, pack] of Object.entries(data)) {
+    packs.push({
+      boardKey,
+      code: pack.code || 'global',
+      chart: pack.chart || null,
+      date: pack.date || null,
+      week: pack.week || null,
+      source: pack.source || null,
+      note: pack.note || null,
+      country: pack.country || null,
+      section: pack.section || null,
+      period: pack.period || null,
+      scrapedAt: pack.scrapedAt || null,
+      publishedAt: pack.publishedAt || null,
+      tracks: pack.tracks || [],
+    })
+  }
+
+  for (const row of countries || []) {
+    const code = String(row.code || '').toLowerCase()
+    if (!code || code === 'global') continue
+    try {
+      const pack = readJson(path.join(SPOT_OUT, `${code}-daily.json`))
+      packs.push({
+        boardKey: 'daily',
+        code,
+        chart: pack.chart || null,
+        date: pack.date || null,
+        source: pack.source || null,
+        country: pack.country || row.country || code.toUpperCase(),
+        section: pack.section || 'spotify',
+        period: pack.period || 'daily',
+        scrapedAt: pack.scrapedAt || null,
+        publishedAt: pack.publishedAt || null,
+        tracks: pack.tracks || [],
+      })
+    } catch {}
+  }
+
+  const response = await fetch(`${apiBase}/charts/ingest`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-charts-ingest-secret': secret,
+    },
+    body: JSON.stringify({ packs, countries }),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`${response.status} ${text.slice(0, 200)}`)
+  }
+  const json = await response.json()
+  console.log('[charts-bot] DB ingest ok', json.ingested)
 }
 
 main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SSH tunnel: local 5432/6379 -> production nmm-postgres / nmm-redis on host 161."""
+"""SSH tunnel: local 5432/6379 -> production vote_db (5434) / nmm-redis on host 161."""
 from __future__ import annotations
 
 import os
@@ -16,7 +16,8 @@ HOST = "161.97.154.152"
 PORT = 2981
 USER = "root"
 LOCAL_PG = 5432
-REMOTE_PG = ("127.0.0.1", 5433)  # nmm-postgres published on host
+# Prod nmm-api uses host Postgres vote_db on 5434 (not empty nmm-postgres:5433).
+REMOTE_PG = ("127.0.0.1", 5434)
 LOCAL_REDIS = 6379
 
 

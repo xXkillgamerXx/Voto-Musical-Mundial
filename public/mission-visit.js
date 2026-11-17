@@ -1,6 +1,7 @@
 /**
  * Vote mission visit detector for Music Mundial.
  * With ?vmm=: lower a reading panel for 20s, then report the visit.
+ * Token session is independent of any account logged in this browser.
  */
 (function () {
   try {
@@ -54,7 +55,25 @@
       } catch (e) {}
     }
 
-    var spanish = (window.location.pathname === '/es' || window.location.pathname.indexOf('/es/') === 0);
+    var spanish = window.location.pathname === '/es' || window.location.pathname.indexOf('/es/') === 0;
+
+    function themeColors() {
+      var root = document.documentElement;
+      var styles = window.getComputedStyle(root);
+      var dark = root.getAttribute('data-theme') === 'dark';
+      function pick(name, fallback) {
+        var value = String(styles.getPropertyValue(name) || '').trim();
+        return value || fallback;
+      }
+      return {
+        ink: pick('--ink', dark ? '#e8eef8' : '#121b2c'),
+        sub: pick('--sub', dark ? '#9aa8bd' : '#657083'),
+        line: pick('--line', dark ? '#2a3548' : '#e7ebf1'),
+        blue: pick('--blue', dark ? '#5b8cff' : '#225df5'),
+        card: pick('--card', dark ? '#182233' : '#ffffff'),
+        dark: dark,
+      };
+    }
 
     function showNotice(update) {
       if (!update || (!update.awarded && !update.isNewPage)) return;
@@ -90,30 +109,57 @@
           ? 'Llevas ' + progress + ' de ' + target + ' páginas.'
           : progress + ' of ' + target + ' pages so far.';
 
+      var theme = themeColors();
+      var accent = done ? '#16a34a' : theme.blue;
+      var accentSoft = done
+        ? theme.dark
+          ? 'rgba(22,163,74,.18)'
+          : 'rgba(22,163,74,.12)'
+        : theme.dark
+          ? 'rgba(91,140,255,.2)'
+          : 'rgba(34,93,245,.12)';
+
+      var dwell = document.getElementById(PANEL_ID);
+      var cookie = document.querySelector('.cookie-consent, [data-cookie-banner], #vmm-cookie-consent, .cookie-banner');
+      var lift = 24;
+      if (dwell) lift += Math.ceil(dwell.getBoundingClientRect().height) + 12;
+      if (cookie && cookie.offsetParent !== null) lift += Math.min(120, Math.ceil(cookie.getBoundingClientRect().height) + 10);
       var root = document.createElement('div');
       root.id = 'vmm-mission-notice';
       root.setAttribute('role', 'status');
       root.style.cssText =
-        'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:100000;width:min(560px,calc(100% - 28px));display:flex;gap:14px;align-items:flex-start;padding:18px 18px 18px 16px;border-radius:22px;color:#fff;background:' +
-        (done ? '#064e3b' : '#7c2d12') +
-        ';border:3px solid ' +
-        (done ? '#34d399' : '#fdba74') +
-        ';box-shadow:0 22px 50px rgba(0,0,0,.38);font-family:DM Sans,Manrope,sans-serif';
+        'position:fixed;left:50%;bottom:max(' + lift + 'px, env(safe-area-inset-bottom));transform:translateX(-50%);z-index:100000;width:min(560px,calc(100% - 28px));display:flex;gap:14px;align-items:flex-start;padding:16px 16px 16px 14px;border-radius:20px;color:' +
+        theme.ink +
+        ';background:' +
+        theme.card +
+        ';border:1px solid ' +
+        theme.line +
+        ';border-left:4px solid ' +
+        accent +
+        ';box-shadow:0 18px 40px ' +
+        (theme.dark ? 'rgba(0,0,0,.45)' : 'rgba(22,39,68,.14)') +
+        ';font-family:DM Sans,Manrope,sans-serif';
 
       var mark = document.createElement('div');
       mark.textContent = done ? '✓' : String(progress);
       mark.style.cssText =
-        'flex:0 0 auto;width:46px;height:46px;border-radius:16px;display:grid;place-items:center;font-weight:800;font-size:22px;background:rgba(255,255,255,.14)';
+        'flex:0 0 auto;width:46px;height:46px;border-radius:16px;display:grid;place-items:center;font-weight:800;font-size:20px;color:' +
+        accent +
+        ';background:' +
+        accentSoft +
+        ';border:1px solid ' +
+        accent;
 
       var body = document.createElement('div');
       body.style.cssText = 'min-width:0;flex:1';
       var heading = document.createElement('p');
       heading.textContent = title;
-      heading.style.cssText = 'margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em';
+      heading.style.cssText =
+        'margin:0;font-size:18px;font-weight:800;letter-spacing:-.02em;color:' + theme.ink;
       var detail = document.createElement('p');
       detail.textContent = text;
       detail.style.cssText =
-        'margin:4px 0 0;font-size:15px;font-weight:600;line-height:1.35;color:rgba(255,255,255,.88)';
+        'margin:4px 0 0;font-size:14px;font-weight:600;line-height:1.35;color:' + theme.sub;
       body.appendChild(heading);
       body.appendChild(detail);
 
@@ -122,7 +168,9 @@
       close.textContent = '×';
       close.setAttribute('aria-label', 'Cerrar');
       close.style.cssText =
-        'border:0;background:transparent;color:#fff;font-size:28px;line-height:1;cursor:pointer;padding:0 2px';
+        'border:0;background:transparent;color:' +
+        theme.sub +
+        ';font-size:26px;line-height:1;cursor:pointer;padding:0 2px';
       close.addEventListener('click', function () {
         root.remove();
       });
@@ -143,16 +191,26 @@
 
     function mountPanel() {
       removePanel();
+      var theme = themeColors();
       var root = document.createElement('div');
       root.id = PANEL_ID;
       root.setAttribute('role', 'status');
       root.setAttribute('aria-live', 'polite');
       root.style.cssText =
-        'position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(110%);z-index:99999;width:min(560px,calc(100% - 20px));margin:0 0 16px;padding:16px 18px 14px;border-radius:22px 22px 18px 18px;color:#fff;background:linear-gradient(165deg,#111827 0%,#1e3a5f 55%,#0f766e 140%);border:2px solid rgba(125,211,252,.45);box-shadow:0 18px 48px rgba(0,0,0,.42);font-family:DM Sans,Manrope,sans-serif;transition:transform .45s cubic-bezier(.22,1,.36,1)';
+        'position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(110%);z-index:99999;width:min(560px,calc(100% - 20px));margin:0 0 max(16px, env(safe-area-inset-bottom));padding:16px 18px 14px;border-radius:20px;color:' +
+        theme.ink +
+        ';background:' +
+        theme.card +
+        ';border:1px solid ' +
+        theme.line +
+        ';box-shadow:0 18px 40px ' +
+        (theme.dark ? 'rgba(0,0,0,.45)' : 'rgba(22,39,68,.14)') +
+        ';font-family:DM Sans,Manrope,sans-serif;transition:transform .45s cubic-bezier(.22,1,.36,1)';
 
       var title = document.createElement('p');
       title.textContent = spanish ? 'Misión: lee la nota' : 'Mission: read the article';
-      title.style.cssText = 'margin:0;font-size:17px;font-weight:800;letter-spacing:-.02em';
+      title.style.cssText =
+        'margin:0;font-size:17px;font-weight:800;letter-spacing:-.02em;color:' + theme.ink;
 
       var detail = document.createElement('p');
       detail.setAttribute('data-role', 'detail');
@@ -160,22 +218,28 @@
         ? 'Quédate en esta página ' + DWELL_SECONDS + ' segundos para que cuente.'
         : 'Stay on this page for ' + DWELL_SECONDS + ' seconds so it counts.';
       detail.style.cssText =
-        'margin:6px 0 12px;font-size:14px;font-weight:600;line-height:1.35;color:rgba(255,255,255,.86)';
+        'margin:6px 0 12px;font-size:14px;font-weight:600;line-height:1.35;color:' + theme.sub;
 
       var track = document.createElement('div');
       track.style.cssText =
-        'height:10px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden';
+        'height:10px;border-radius:999px;background:' +
+        (theme.dark ? 'rgba(255,255,255,.1)' : 'rgba(18,27,44,.08)') +
+        ';overflow:hidden';
       var fill = document.createElement('div');
       fill.setAttribute('data-role', 'fill');
       fill.style.cssText =
-        'height:100%;width:0%;border-radius:inherit;background:linear-gradient(90deg,#67e8f9,#34d399);transition:width .2s linear';
+        'height:100%;width:0%;border-radius:inherit;background:' +
+        theme.blue +
+        ';transition:width .2s linear';
       track.appendChild(fill);
 
       var clock = document.createElement('p');
       clock.setAttribute('data-role', 'clock');
       clock.textContent = DWELL_SECONDS + 's';
       clock.style.cssText =
-        'margin:10px 0 0;font-size:13px;font-weight:800;letter-spacing:.04em;color:#a5f3fc;text-align:right';
+        'margin:10px 0 0;font-size:13px;font-weight:800;letter-spacing:.04em;color:' +
+        theme.blue +
+        ';text-align:right';
 
       root.appendChild(title);
       root.appendChild(detail);

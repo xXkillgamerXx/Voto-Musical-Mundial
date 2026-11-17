@@ -662,6 +662,57 @@ model ForumPost {
   @@map("forum_posts")
 }
 
+/// One chart board pack (Radio, Spotify daily, YouTube, country daily, …).
+model ChartBoard {
+  id          BigInt    @id @default(autoincrement())
+  boardKey    String    @map("board_key")
+  code        String    @default("global")
+  chartName   String?   @map("chart_name")
+  chartDate   String?   @map("chart_date")
+  week        String?
+  source      String?
+  note        String?
+  country     String?
+  section     String?
+  period      String?
+  scrapedAt   DateTime? @map("scraped_at")
+  publishedAt DateTime  @default(now()) @map("published_at")
+  meta        Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tracks      ChartTrack[]
+
+  @@unique([boardKey, code])
+  @@index([boardKey, publishedAt])
+  @@map("chart_boards")
+}
+
+/// One row inside a chart board.
+model ChartTrack {
+  id        BigInt  @id @default(autoincrement())
+  boardId   BigInt  @map("board_id")
+  position  Int
+  artist    String?
+  title     String?
+  coverUrl  String? @map("cover_url")
+  trackId   String? @map("track_id")
+  artistId  String? @map("artist_id")
+  videoId   String? @map("video_id")
+  change    Json?
+  metrics   Json    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  board     ChartBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, position])
+  @@index([boardId, position])
+  @@index([artist])
+  @@index([trackId])
+  @@map("chart_tracks")
+}
+
 /// API keys for external CRM / article tools (GET /api/news/tags).
 model NewsIntegrationApiKey {
   id         String    @id @default(cuid())
