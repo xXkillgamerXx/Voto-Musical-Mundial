@@ -6,6 +6,7 @@ import {
   createPollComment,
   deletePollComment,
   getPollComments,
+  reactPollComment,
 } from "../services/api/commentsApi";
 import { subscribePollRealtime } from "../services/api/realtimeApi";
 import ReportModal from "./ReportModal.vue";
@@ -19,13 +20,29 @@ const props = defineProps({
 
 const MAX_COMMENT_LENGTH = 500;
 const MIN_COMMENT_LENGTH = 3;
-const COMMENTS_PER_PAGE = 5;
+const COMMENTS_BATCH = 20;
 const COMMENT_COOLDOWN_SECONDS = 5 * 60;
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || "";
 const ADMIN_ROLES = new Set(["admin", "superadmin", "owner"]);
+const REACTIONS = [
+  { key: "like", emoji: "👍", labelKey: "widgets.comments.reactionLike", activeClass: "border-sky-300/50 bg-sky-500/20 text-sky-50 shadow-sky-950/30" },
+  { key: "heart", emoji: "❤️", labelKey: "widgets.comments.reactionHeart", activeClass: "border-rose-300/50 bg-rose-500/25 text-rose-50 shadow-rose-950/30" },
+  { key: "fire", emoji: "🔥", labelKey: "widgets.comments.reactionFire", activeClass: "border-amber-300/50 bg-amber-500/20 text-amber-50 shadow-amber-950/30" },
+  { key: "laugh", emoji: "😂", labelKey: "widgets.comments.reactionLaugh", activeClass: "border-yellow-300/45 bg-yellow-400/15 text-yellow-50 shadow-yellow-950/30" },
+  { key: "angry", emoji: "😠", labelKey: "widgets.comments.reactionAngry", activeClass: "border-orange-400/50 bg-orange-500/20 text-orange-50 shadow-orange-950/30" },
+];
+const SORT_OPTIONS = [
+  { key: "latest", labelKey: "widgets.comments.sortLatest" },
+  { key: "popular", labelKey: "widgets.comments.sortPopular" },
+  { key: "oldest", labelKey: "widgets.comments.sortOldest" },
+];
+
+const emptyReactions = () => ({ like: 0, heart: 0, fire: 0, laugh: 0, angry: 0 });
 
 const commentText = ref("");
 const comments = ref([]);
+const commentsTotal = ref(0);
+const commentsSort = ref("latest");
 const currentUser = ref(null);
 const currentUserProfile = ref(null);
 const isPublishing = ref(false);
@@ -36,11 +53,14 @@ const cooldownRemaining = ref(0);
 const gifSearchTerm = ref("");
 const gifResults = ref([]);
 const selectedGif = ref(null);
-const currentCommentsPage = ref(1);
 const commentsRoot = ref(null);
 const isCommentsVisible = ref(false);
 const isLoadingComments = ref(false);
 const hasLoadedComments = ref(false);
+const isLoadingMoreComments = ref(false);
+const commentsHasMore = ref(false);
+const reactingCommentId = ref("");
+const openCommentMenuId = ref('');
 const isReportModalOpen = ref(false);
 const reportTarget = ref(null);
 
@@ -80,14 +100,13 @@ const canPublish = computed(
     !isPublishing.value &&
     (isAdminUser.value || cooldownRemaining.value <= 0),
 );
-const totalCommentPages = computed(() =>
-  Math.max(1, Math.ceil(comments.value.length / COMMENTS_PER_PAGE)),
+const visibleComments = computed(() => comments.value);
+const hasMoreComments = computed(
+  () => commentsHasMore.value || comments.value.length < commentsTotal.value,
 );
-const paginatedComments = computed(() => {
-  const startIndex = (currentCommentsPage.value - 1) * COMMENTS_PER_PAGE;
-
-  return comments.value.slice(startIndex, startIndex + COMMENTS_PER_PAGE);
-});
+const displayCommentsTotal = computed(() =>
+  Math.max(commentsTotal.value, comments.value.length),
+);
 
 const getInitial = (name = "") =>
   (name || "U").trim().charAt(0).toUpperCase() || "U";
@@ -204,11 +223,99 @@ const clearSelectedGif = () => {
   selectedGif.value = null;
 };
 
-const goToCommentsPage = (page) => {
-  currentCommentsPage.value = Math.min(
-    totalCommentPages.value,
-    Math.max(1, page),
+const reactionCount = (comment, key) => Number(comment?.reactions?.[key] || 0);
+
+const reactionTotal = (comment) =>
+  Object.values(comment?.reactions || emptyReactions()).reduce(
+    (sum, n) => sum + Number(n || 0),
+    0,
   );
+
+const loadMoreComments = async () => {
+  if (!props.pollId || !hasMoreComments.value || isLoadingMoreComments.value) {
+    return;
+  }
+
+  isLoadingMoreComments.value = true;
+  errorMessage.value = "";
+
+  try {
+    const payload = await getPollComments(props.pollId, {
+      limit: COMMENTS_BATCH,
+      offset: comments.value.length,
+      sort: commentsSort.value,
+    });
+    const incoming = (payload.items || [])
+      .map(normalizeComment)
+      .filter((item) => !comments.value.some((existing) => String(existing.id) === String(item.id)));
+
+    comments.value = [...comments.value, ...incoming];
+    commentsTotal.value = Math.max(Number(payload.total) || 0, comments.value.length);
+    commentsHasMore.value = Boolean(payload.hasMore) && comments.value.length < commentsTotal.value;
+  } catch {
+    errorMessage.value = "No se pudieron cargar más comentarios.";
+  } finally {
+    isLoadingMoreComments.value = false;
+  }
+};
+
+const setCommentsSort = (sortKey) => {
+  const next = String(sortKey || "latest");
+  if (commentsSort.value === next || isLoadingComments.value) {
+    return;
+  }
+  commentsSort.value = next;
+  comments.value = [];
+  commentsTotal.value = 0;
+  commentsHasMore.value = false;
+  hasLoadedComments.value = false;
+  loadComments();
+};
+
+const reactToComment = async (comment, reactionKey) => {
+  if (!comment?.id || reactingCommentId.value) {
+    return;
+  }
+  if (!isSignedInUser.value) {
+    errorMessage.value = "Inicia sesión para reaccionar.";
+    return;
+  }
+
+  reactingCommentId.value = String(comment.id);
+  errorMessage.value = "";
+
+  try {
+    const result = await reactPollComment(props.pollId, comment.id, reactionKey);
+    comments.value = comments.value.map((item) =>
+      String(item.id) === String(comment.id)
+        ? {
+            ...item,
+            reactions: { ...emptyReactions(), ...(result.reactions || {}) },
+            myReaction: result.myReaction || null,
+            reactionsCount: Number(result.reactionsCount || reactionTotal({
+              reactions: result.reactions,
+            })),
+          }
+        : item,
+    );
+  } catch (error) {
+    if (error.status === 401) {
+      errorMessage.value = "Inicia sesión para reaccionar.";
+    } else {
+      errorMessage.value = error.message || "No se pudo guardar la reacción.";
+    }
+  } finally {
+    reactingCommentId.value = "";
+  }
+};
+
+const toggleCommentMenu = (commentId) => {
+  const id = String(commentId || '');
+  openCommentMenuId.value = openCommentMenuId.value === id ? '' : id;
+};
+
+const closeCommentMenus = () => {
+  openCommentMenuId.value = '';
 };
 
 const runCooldownTimer = () => {
@@ -240,6 +347,12 @@ const normalizeComment = (comment) => ({
   gif: comment.gif?.url ? comment.gif : null,
   createdAt: comment.createdAt || null,
   fanSku: comment.fanSku || '',
+  reactions: { ...emptyReactions(), ...(comment.reactions || {}) },
+  myReaction: comment.myReaction || null,
+  reactionsCount: Number(
+    comment.reactionsCount
+      ?? Object.values(comment.reactions || {}).reduce((sum, n) => sum + Number(n || 0), 0),
+  ),
 });
 
 const canDeleteComment = (comment) =>
@@ -287,12 +400,34 @@ const subscribeCommentsRealtime = (pollId) => {
           return;
         }
         comments.value = [incoming, ...comments.value];
+        commentsTotal.value = Math.max(commentsTotal.value + 1, comments.value.length);
         return;
       }
 
       if (event.action === "deleted" && event.commentId) {
         const removedId = String(event.commentId);
+        const before = comments.value.length;
         comments.value = comments.value.filter((item) => item.id !== removedId);
+        if (comments.value.length < before) {
+          commentsTotal.value = Math.max(0, commentsTotal.value - 1);
+        }
+        return;
+      }
+
+      if (event.action === "reaction" && event.commentId) {
+        const targetId = String(event.commentId);
+        comments.value = comments.value.map((item) =>
+          item.id === targetId
+            ? {
+                ...item,
+                reactions: { ...emptyReactions(), ...(event.reactions || item.reactions) },
+                reactionsCount: Number(
+                  event.reactionsCount
+                    ?? reactionTotal({ reactions: event.reactions || item.reactions }),
+                ),
+              }
+            : item,
+        );
       }
     },
   });
@@ -313,8 +448,14 @@ const loadComments = async () => {
   isLoadingComments.value = true;
 
   try {
-    const rows = await getPollComments(props.pollId, 100);
-    comments.value = (rows || []).map(normalizeComment);
+    const payload = await getPollComments(props.pollId, {
+      limit: COMMENTS_BATCH,
+      offset: 0,
+      sort: commentsSort.value,
+    });
+    comments.value = (payload.items || []).map(normalizeComment);
+    commentsTotal.value = Math.max(Number(payload.total) || 0, comments.value.length);
+    commentsHasMore.value = Boolean(payload.hasMore) && comments.value.length < commentsTotal.value;
     subscribeCommentsRealtime(props.pollId);
   } catch {
     errorMessage.value = "No se pudieron cargar los comentarios.";
@@ -328,12 +469,14 @@ const refreshComments = async () => {
   if (isLoadingComments.value || !props.pollId) {
     return;
   }
-  currentCommentsPage.value = 1;
   await loadComments();
 };
 
 const resetAndLoadComments = () => {
   comments.value = [];
+  commentsTotal.value = 0;
+  commentsHasMore.value = false;
+  commentsSort.value = "latest";
   hasLoadedComments.value = false;
   loadComments();
 };
@@ -374,9 +517,9 @@ const publishComment = async () => {
     });
 
     comments.value = [normalizeComment(created), ...comments.value];
+    commentsTotal.value = Math.max(commentsTotal.value + 1, comments.value.length);
     commentText.value = "";
     selectedGif.value = null;
-    currentCommentsPage.value = 1;
 
     if (!isAdminUser.value) {
       startCooldown();
@@ -417,6 +560,7 @@ const removeComment = async (comment) => {
   try {
     await deletePollComment(props.pollId, comment.id);
     comments.value = comments.value.filter((item) => item.id !== comment.id);
+    commentsTotal.value = Math.max(0, commentsTotal.value - 1);
   } catch {
     errorMessage.value = "No se pudo eliminar el comentario.";
   }
@@ -430,11 +574,6 @@ watch(
     resetAndLoadComments();
   },
 );
-watch(comments, () => {
-  if (currentCommentsPage.value > totalCommentPages.value) {
-    currentCommentsPage.value = totalCommentPages.value;
-  }
-});
 
 const listenCurrentUserProfile = (user) => {
   currentUserProfile.value = null;
@@ -488,11 +627,14 @@ onMounted(() => {
     isCommentsVisible.value = true;
     loadComments();
   }
+
+  document.addEventListener("click", closeCommentMenus);
 });
 
 onUnmounted(() => {
   unsubscribeAuth?.();
   commentsObserver?.disconnect();
+  document.removeEventListener("click", closeCommentMenus);
   stopCommentsRealtime();
   window.clearInterval(cooldownTimer);
 });
@@ -531,7 +673,7 @@ onUnmounted(() => {
           </span>
         </button>
         <span class="rounded-full border border-fuchsia-300/20 bg-fuchsia-500/10 px-3 py-1 text-sm font-black text-fuchsia-100">
-          {{ comments.length }}
+          {{ displayCommentsTotal }}
         </span>
       </div>
     </div>
@@ -636,15 +778,38 @@ onUnmounted(() => {
       </p>
     </div>
 
-    <p class="mt-6 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-      {{ $t('widgets.comments.count', { count: comments.length }) }}
-    </p>
+    <div class="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+      <p class="text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 sm:text-left">
+        {{ $t('widgets.comments.count', { count: displayCommentsTotal }) }}
+      </p>
+      <div
+        class="inline-flex flex-wrap items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/5 p-1"
+        role="tablist"
+        :aria-label="$t('widgets.comments.title')"
+      >
+        <button
+          v-for="option in SORT_OPTIONS"
+          :key="option.key"
+          type="button"
+          role="tab"
+          class="rounded-xl px-3 py-1.5 text-[11px] font-black uppercase tracking-wide transition"
+          :class="commentsSort === option.key
+            ? 'bg-linear-to-r from-fuchsia-500 to-violet-500 text-white shadow-md shadow-fuchsia-950/30'
+            : 'text-slate-400 hover:bg-white/5 hover:text-white'"
+          :aria-selected="commentsSort === option.key"
+          :disabled="isLoadingComments"
+          @click="setCommentsSort(option.key)"
+        >
+          {{ $t(option.labelKey) }}
+        </button>
+      </div>
+    </div>
 
-    <div class="mt-4 space-y-4">
+    <div class="mt-4 space-y-3">
       <article
-        v-for="comment in paginatedComments"
+        v-for="comment in visibleComments"
         :key="comment.id"
-        class="grid grid-cols-[3rem_1fr] gap-3"
+        class="comment-card grid grid-cols-[2.75rem_1fr] gap-3"
       >
         <div class="grid size-10 place-items-center overflow-hidden rounded-full border border-cyan-300/10 bg-linear-to-br from-slate-700 to-slate-900 text-sm font-black text-white shadow-lg shadow-black/20">
           <img
@@ -656,65 +821,126 @@ onUnmounted(() => {
           />
           <span v-else>{{ getInitial(comment.displayName) }}</span>
         </div>
-        <div class="rounded-2xl border border-white/8 bg-white/7 p-4 shadow-lg shadow-black/10">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-sm font-black text-white">
-              {{ comment.displayName || 'Fan' }}
-              <span
-                v-if="comment.fanSku"
-                class="ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black tracking-wide"
-                :class="comment.fanSku === 'MEGA'
-                  ? 'bg-linear-to-r from-amber-700 to-amber-300 text-amber-950'
-                  : comment.fanSku === 'SUPER'
-                    ? 'bg-linear-to-r from-violet-600 to-fuchsia-500 text-white'
-                    : 'bg-linear-to-r from-blue-600 to-sky-400 text-white'"
-              >
-                <i
-                  class="fa-solid"
-                  :class="comment.fanSku === 'MEGA' ? 'fa-crown' : comment.fanSku === 'SUPER' ? 'fa-bolt' : 'fa-star'"
-                  aria-hidden="true"
-                ></i>
-                {{ comment.fanSku === 'MEGA' ? 'MEGA FAN' : comment.fanSku === 'SUPER' ? 'SUPER FAN' : 'FAN' }}
-              </span>
-              <span class="ml-2 text-[10px] font-bold text-slate-500">
+        <div class="rounded-2xl border border-white/8 bg-white/7 p-3.5 shadow-lg shadow-black/10 sm:p-4">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-black text-white">
+                <span class="truncate">{{ comment.displayName || 'Fan' }}</span>
+                <span
+                  v-if="comment.fanSku"
+                  class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black tracking-wide"
+                  :class="comment.fanSku === 'MEGA'
+                    ? 'bg-linear-to-r from-amber-700 to-amber-300 text-amber-950'
+                    : comment.fanSku === 'SUPER'
+                      ? 'bg-linear-to-r from-violet-600 to-fuchsia-500 text-white'
+                      : 'bg-linear-to-r from-blue-600 to-sky-400 text-white'"
+                >
+                  <i
+                    class="fa-solid"
+                    :class="comment.fanSku === 'MEGA' ? 'fa-crown' : comment.fanSku === 'SUPER' ? 'fa-bolt' : 'fa-star'"
+                    aria-hidden="true"
+                  ></i>
+                  {{ comment.fanSku === 'MEGA' ? 'MEGA FAN' : comment.fanSku === 'SUPER' ? 'SUPER FAN' : 'FAN' }}
+                </span>
+              </p>
+              <p class="mt-0.5 text-[11px] font-bold text-slate-500">
                 {{ formatTime(comment.createdAt) }}
-              </span>
-            </p>
-            <div class="flex items-center gap-2">
+              </p>
+            </div>
+
+            <div
+              v-if="canReportComment(comment) || canDeleteComment(comment)"
+              class="relative shrink-0"
+              @click.stop
+            >
               <button
-                v-if="canReportComment(comment)"
-                class="rounded-full border border-red-300/20 bg-red-500/10 px-3 py-1 text-xs font-black text-red-200 transition hover:bg-red-500/20"
                 type="button"
-                @click="openReportComment(comment)"
+                class="grid size-8 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                :aria-label="$t('widgets.comments.moreActions')"
+                :aria-expanded="openCommentMenuId === String(comment.id)"
+                @click="toggleCommentMenu(comment.id)"
               >
-                <i class="fa-solid fa-flag mr-1" aria-hidden="true"></i>
-                {{ $t('report.button') }}
+                <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
               </button>
-              <button
-                v-if="canDeleteComment(comment)"
-                class="rounded-full bg-red-500/10 px-3 py-1 text-xs font-black text-red-200 transition hover:bg-red-500/20"
-                type="button"
-                @click="removeComment(comment)"
+              <div
+                v-if="openCommentMenuId === String(comment.id)"
+                class="absolute right-0 top-9 z-20 min-w-36 overflow-hidden rounded-xl border border-white/10 bg-[#0c1020] py-1 shadow-2xl shadow-black/50"
               >
-                × Eliminar
-              </button>
+                <button
+                  v-if="canReportComment(comment)"
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold text-red-200 transition hover:bg-red-500/10"
+                  @click="openReportComment(comment); closeCommentMenus()"
+                >
+                  <i class="fa-solid fa-flag" aria-hidden="true"></i>
+                  {{ $t('report.button') }}
+                </button>
+                <button
+                  v-if="canDeleteComment(comment)"
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold text-red-200 transition hover:bg-red-500/10"
+                  @click="removeComment(comment); closeCommentMenus()"
+                >
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                  {{ $t('widgets.comments.delete') }}
+                </button>
+              </div>
             </div>
           </div>
-          <p v-if="comment.text" class="mt-4 text-sm font-bold text-slate-200">
+          <p v-if="comment.text" class="mt-3 text-sm font-bold leading-6 text-slate-200">
             {{ comment.text }}
           </p>
           <div
             v-if="comment.gif?.url"
-            class="mt-4 max-w-sm overflow-hidden rounded-3xl border border-cyan-300/15 bg-slate-950/60"
+            class="mt-3 max-w-sm overflow-hidden rounded-3xl border border-cyan-300/15 bg-slate-950/60"
           >
             <img
               :src="comment.gif.url"
               :alt="comment.gif.title || 'GIF de GIPHY'"
               class="max-h-72 w-full object-cover"
+              loading="lazy"
             />
             <p class="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
               GIF por GIPHY
             </p>
+          </div>
+
+          <div
+            class="mt-3.5 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3"
+            role="group"
+            :aria-label="$t('widgets.comments.reactions')"
+          >
+            <span
+              v-if="reactionTotal(comment) > 0"
+              class="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-fuchsia-300/25 bg-linear-to-r from-fuchsia-500/20 to-violet-500/15 px-3 text-[11px] font-black tracking-wide text-fuchsia-100 shadow-md shadow-fuchsia-950/20"
+              :title="$t('widgets.comments.reactions')"
+            >
+              <i class="fa-solid fa-bolt text-[10px] text-amber-300" aria-hidden="true"></i>
+              {{ reactionTotal(comment) }}
+            </span>
+            <button
+              v-for="reaction in REACTIONS"
+              :key="reaction.key"
+              type="button"
+              class="inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-black tabular-nums shadow-sm transition hover:-translate-y-0.5 hover:brightness-110 disabled:opacity-60"
+              :class="comment.myReaction === reaction.key
+                ? `${reaction.activeClass} shadow-md ring-1 ring-white/15`
+                : reactionCount(comment, reaction.key) > 0
+                  ? 'border-white/15 bg-white/8 text-white hover:border-white/25'
+                  : 'border-white/10 bg-[#0b0e1c]/80 text-slate-400 hover:border-white/20 hover:bg-white/8 hover:text-white'"
+              :aria-label="$t(reaction.labelKey)"
+              :title="$t(reaction.labelKey)"
+              :disabled="reactingCommentId === String(comment.id)"
+              @click="reactToComment(comment, reaction.key)"
+            >
+              <span class="text-base leading-none">{{ reaction.emoji }}</span>
+              <span
+                class="min-w-[1ch] text-[11px]"
+                :class="reactionCount(comment, reaction.key) > 0 ? 'text-inherit' : 'text-slate-500'"
+              >
+                {{ reactionCount(comment, reaction.key) }}
+              </span>
+            </button>
           </div>
         </div>
       </article>
@@ -762,44 +988,32 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="comments.length > COMMENTS_PER_PAGE"
-      class="mt-5 flex flex-col items-center justify-between gap-3 rounded-3xl border border-white/8 bg-white/5 p-3 sm:flex-row"
+      v-if="comments.length"
+      class="mt-5 flex flex-col items-center gap-3"
     >
-      <p class="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
-        {{ $t('widgets.comments.pageOf', { page: currentCommentsPage, total: totalCommentPages }) }}
+      <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
+        {{ $t('widgets.comments.showingOf', { shown: visibleComments.length, total: displayCommentsTotal }) }}
       </p>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="rounded-full border border-white/10 bg-white/8 px-4 py-2 text-xs font-black uppercase text-slate-200 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="currentCommentsPage <= 1"
-          @click="goToCommentsPage(currentCommentsPage - 1)"
-        >
-          {{ $t('widgets.comments.previous') }}
-        </button>
-        <button
-          v-for="page in totalCommentPages"
-          :key="`comments-page-${page}`"
-          type="button"
-          class="grid size-9 place-items-center rounded-full text-xs font-black transition"
-          :class="
-            page === currentCommentsPage
-              ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/25'
-              : 'border border-white/10 bg-white/8 text-slate-300 hover:bg-white/12'
-          "
-          @click="goToCommentsPage(page)"
-        >
-          {{ page }}
-        </button>
-        <button
-          type="button"
-          class="rounded-full border border-white/10 bg-white/8 px-4 py-2 text-xs font-black uppercase text-slate-200 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="currentCommentsPage >= totalCommentPages"
-          @click="goToCommentsPage(currentCommentsPage + 1)"
-        >
-          {{ $t('widgets.comments.next') }}
-        </button>
-      </div>
+      <button
+        v-if="hasMoreComments"
+        type="button"
+        class="inline-flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-2xl border border-fuchsia-300/35 bg-linear-to-r from-amber-400/15 via-fuchsia-500/20 to-violet-500/15 px-5 text-sm font-black uppercase tracking-wide text-fuchsia-100 shadow-lg shadow-fuchsia-950/20 transition hover:brightness-110 disabled:opacity-60"
+        :disabled="isLoadingMoreComments"
+        @click="loadMoreComments"
+      >
+        <i
+          class="fa-solid"
+          :class="isLoadingMoreComments ? 'fa-spinner fa-spin' : 'fa-angles-down'"
+          aria-hidden="true"
+        ></i>
+        {{ $t('widgets.comments.loadMore') }}
+      </button>
+      <p
+        v-else-if="displayCommentsTotal > COMMENTS_BATCH"
+        class="text-xs font-bold text-slate-500"
+      >
+        {{ $t('widgets.comments.allLoaded') }}
+      </p>
     </div>
   </section>
 

@@ -70,6 +70,7 @@ model User {
   forumTopicsAuthored        ForumTopic[]     @relation("ForumTopicAuthor")
   forumTopicsLastPosted      ForumTopic[]     @relation("ForumTopicLastPoster")
   forumPosts                 ForumPost[]
+  commentReactions           CommentReaction[]
 
   @@map("users")
 }
@@ -358,24 +359,44 @@ model DailyReward {
 }
 
 model Comment {
-  id            BigInt   @id @default(autoincrement())
-  pollId        BigInt   @map("poll_id")
-  userId        BigInt?  @map("user_id")
-  displayName   String   @map("display_name")
-  photoUrl      String?  @map("photo_url")
-  text          String
-  gif           Json?
-  botCampaignId BigInt?  @map("bot_campaign_id")
-  createdAt     DateTime @default(now()) @map("created_at")
-  deletedAt     DateTime? @map("deleted_at")
+  id             BigInt   @id @default(autoincrement())
+  pollId         BigInt   @map("poll_id")
+  userId         BigInt?  @map("user_id")
+  displayName    String   @map("display_name")
+  photoUrl       String?  @map("photo_url")
+  text           String
+  gif            Json?
+  botCampaignId  BigInt?  @map("bot_campaign_id")
+  reactionsCount Int      @default(0) @map("reactions_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
 
-  poll          Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  poll           Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reactions      CommentReaction[]
 
   @@index([pollId, createdAt])
+  @@index([pollId, reactionsCount, createdAt])
   @@index([botCampaignId])
   @@index([userId, createdAt])
   @@map("comments")
+}
+
+model CommentReaction {
+  id        BigInt   @id @default(autoincrement())
+  commentId BigInt   @map("comment_id")
+  userId    BigInt   @map("user_id")
+  reaction  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId, reaction])
+  @@index([userId])
+  @@map("comment_reactions")
 }
 
 model CommentBotCampaign {
