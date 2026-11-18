@@ -9,6 +9,8 @@ import {
   expandNewsEmbedsForEditor,
   firstEmbeddableUrl,
   isEmbeddableUrl,
+  hydrateYoutubeEmbeds,
+  loadTwitterEmbeds,
 } from '../lib/embeds'
 import { formatHtmlForEdit, normalizeEditorHtml } from '../lib/formatHtml'
 
@@ -101,7 +103,7 @@ const onEditorDragEnd = () => {
 }
 
 const MEDIA_BLOCK_SEL =
-  '.na-media-block, .na-video-block, .na-image-block, .wp-block-video, .wp-block-image'
+  '.na-media-block, .na-video-block, .na-image-block, .na-embed, .wp-block-video, .wp-block-image'
 
 const isGapParagraph = (el: Element | null | undefined) => {
   if (!el || el.tagName !== 'P') return false
@@ -283,6 +285,9 @@ const fillEditor = async (html: string) => {
   }
   editor.value.innerHTML = expanded
   ensureMediaGaps()
+  await nextTick()
+  hydrateYoutubeEmbeds(editor.value)
+  loadTwitterEmbeds(editor.value)
   // Keep model in sync when we auto-split jammed label lines.
   if (cleaned !== (html || '')) {
     const end = beginModelWrite()
@@ -465,17 +470,25 @@ const addQuote = async () => {
 const insertEmbed = (raw: string) => {
   const text = raw.trim()
   if (!text) return
+  const insert = (html: string) => {
+    run('insertHTML', `${html}<p><br></p>`)
+    ensureMediaGaps()
+    void nextTick(() => {
+      hydrateYoutubeEmbeds(editor.value)
+      loadTwitterEmbeds(editor.value)
+    })
+  }
   if (isEmbeddableUrl(text)) {
-    run('insertHTML', editorEmbedHtml(text))
+    insert(editorEmbedHtml(text))
     return
   }
   const fromText = firstEmbeddableUrl(text)
   if (fromText) {
-    run('insertHTML', editorEmbedHtml(fromText))
+    insert(editorEmbedHtml(fromText))
     return
   }
   const expanded = expandNewsEmbedsForEditor(text)
-  if (expanded.includes('na-embed')) run('insertHTML', expanded)
+  if (expanded.includes('na-embed')) insert(expanded)
 }
 
 const addEmbed = async () => {

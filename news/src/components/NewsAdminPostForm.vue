@@ -704,7 +704,10 @@ onUnmounted(() => {
   <section class="na-form">
     <p v-if="successMessage" class="na-ok">{{ successMessage }}</p>
     <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
-    <p v-if="loading" class="na-empty">Cargando formulario…</p>
+    <div v-if="loading" class="na-form-loading" role="status" aria-live="polite">
+      <span class="na-load-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="na-form-loading-copy">Cargando formulario…</span>
+    </div>
     <form v-show="!loading" class="na-form-grid" @submit.prevent>
       <article class="na-card na-form-main">
         <label class="na-title-field">

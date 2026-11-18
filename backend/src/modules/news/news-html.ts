@@ -23,7 +23,7 @@ const embedHtmlForUrl = (raw: string) => {
   }
   const video = url.match(YOUTUBE_RE)?.[1]
   if (video) {
-    return `<div class="yt-embed"><iframe src="https://www.youtube.com/embed/${escapeAttr(video)}?feature=oembed" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
+    return `<div class="yt-embed" data-youtube-id="${escapeAttr(video)}"><div class="yt-stage"><a class="yt-facade" href="https://www.youtube.com/watch?v=${escapeAttr(video)}" target="_blank" rel="noopener noreferrer"><img src="https://i.ytimg.com/vi/${escapeAttr(video)}/hqdefault.jpg" alt="YouTube" loading="lazy" decoding="async" /><span class="yt-play" aria-hidden="true"></span><span class="yt-facade-label">Ver en YouTube</span></a></div></div>`
   }
   return `<p class="embed-link"><a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeAttr(url)}</a></p>`
 }

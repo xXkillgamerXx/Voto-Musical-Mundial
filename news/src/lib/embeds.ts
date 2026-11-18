@@ -1,7 +1,7 @@
 const EMBED_RE = /\[embed(?:\s+[^\]]*)?\]\s*(https?:\/\/[^[\s<]+?)\s*\[\/embed\]/gi
 const TWEET_RE = /(?:twitter|x)\.com\/(?:[^/\s]+\/status|i\/web\/status)\/(\d+)/i
 const YOUTUBE_RE =
-  /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/i
+  /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/i
 
 const escapeAttr = (value: string) =>
   String(value || '')
@@ -14,13 +14,15 @@ const cleanUrl = (value: string) =>
   String(value || '')
     .trim()
     .replace(/&amp;/g, '&')
+    .replace(/[),.;!?]+$/g, '')
     .replace(/\/$/, '')
 
 const tweetId = (url: string) => url.match(TWEET_RE)?.[1] || ''
 const youtubeId = (url: string) => url.match(YOUTUBE_RE)?.[1] || ''
 
 export const youtubeVideoIds = (html: string) => {
-  const re = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/gi
+  const re =
+    /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/gi
   const ids: string[] = []
   const seen = new Set<string>()
   for (const match of String(html || '').matchAll(re)) {
@@ -33,12 +35,21 @@ export const youtubeVideoIds = (html: string) => {
 }
 
 const twitterHtml = (url: string) =>
-  `<blockquote class="twitter-tweet" data-dnt="true"><a href="${escapeAttr(url)}">${escapeAttr(url)}</a></blockquote>`
+  `<blockquote class="twitter-tweet" data-dnt="true" data-theme="dark"><a href="${escapeAttr(url)}">${escapeAttr(url)}</a></blockquote>`
 
-const youtubeSrc = (id: string) => `https://www.youtube.com/embed/${escapeAttr(id)}?feature=oembed`
+const youtubeSrc = (id: string) =>
+  `https://www.youtube.com/embed/${escapeAttr(id)}?rel=0&playsinline=1`
+
+const youtubeWatchUrl = (id: string) => `https://www.youtube.com/watch?v=${escapeAttr(id)}`
+
+const youtubeThumb = (id: string) => `https://i.ytimg.com/vi/${escapeAttr(id)}/hqdefault.jpg`
+
+/** Facade: thumbnail always visible. JS hydrates to iframe (YouTube blocks embeds from 127.0.0.1). */
+const youtubeFacade = (id: string) =>
+  `<div class="yt-stage"><a class="yt-facade" href="${youtubeWatchUrl(id)}" target="_blank" rel="noopener noreferrer"><img src="${youtubeThumb(id)}" alt="YouTube" loading="lazy" decoding="async" /><span class="yt-play" aria-hidden="true"></span><span class="yt-facade-label">Ver en YouTube</span></a></div>`
 
 const youtubeHtml = (id: string) =>
-  `<div class="yt-embed"><iframe src="${youtubeSrc(id)}" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
+  `<div class="yt-embed" data-youtube-id="${escapeAttr(id)}">${youtubeFacade(id)}</div>`
 
 const linkHtml = (url: string) =>
   `<p class="embed-link"><a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeAttr(url)}</a></p>`
@@ -75,21 +86,154 @@ export const embedUrlFromHtml = (html: string) => {
   return firstEmbeddableUrl(raw.replace(/<[^>]+>/g, ' '))
 }
 
+const embedToolbar = (label: string) =>
+  `<div class="na-media-toolbar" contenteditable="false"><button type="button" class="na-media-drag" draggable="true" title="Arrastrar para mover">⠿</button><span class="na-media-label">${label}</span><span class="na-media-actions"><button type="button" class="na-media-move-up" title="Subir">↑</button><button type="button" class="na-media-move-down" title="Bajar">↓</button><button type="button" class="na-media-remove" title="Quitar" aria-label="Quitar">×</button></span></div>`
+
 export const editorEmbedHtml = (raw: string) => {
   const href = cleanUrl(raw)
   const video = youtubeId(href)
   if (video) {
-    return `<div class="na-embed yt-embed" contenteditable="false" data-embed="${escapeAttr(href)}"><iframe src="${youtubeSrc(video)}" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
+    return `<div class="na-embed yt-embed na-media-block" contenteditable="false" data-embed="${escapeAttr(href)}" data-youtube-id="${escapeAttr(video)}">${embedToolbar('YouTube')}${youtubeFacade(video)}</div>`
   }
-  const label = tweetId(href) ? 'X' : /tiktok\.com/i.test(href) ? 'TikTok' : /spotify\.com/i.test(href) ? 'Spotify' : /instagram\.com/i.test(href) ? 'Instagram' : 'Embed'
-  return `<div class="na-embed" contenteditable="false" data-embed="${escapeAttr(href)}"><span><b>${label}</b><small>${escapeAttr(href)}</small></span></div>`
+  if (tweetId(href)) {
+    return `<div class="na-embed na-tweet-embed na-media-block" contenteditable="false" data-embed="${escapeAttr(href)}">${embedToolbar('Tweet')}${twitterHtml(href)}</div>`
+  }
+  const label = /tiktok\.com/i.test(href)
+    ? 'TikTok'
+    : /spotify\.com/i.test(href)
+      ? 'Spotify'
+      : /instagram\.com/i.test(href)
+        ? 'Instagram'
+        : 'Embed'
+  return `<div class="na-embed na-media-block" contenteditable="false" data-embed="${escapeAttr(href)}">${embedToolbar(label)}<span class="na-embed-fallback"><b>${label}</b><small>${escapeAttr(href)}</small></span></div>`
 }
 
-const expandBareMedia = (html: string, editor = false) =>
-  String(html || '').replace(/<p>\s*(https?:\/\/[^<\s]+)\s*<\/p>/gi, (match, url) => {
+const expandBareMedia = (html: string, editor = false) => {
+  let next = String(html || '')
+  // Naked URL paragraph.
+  next = next.replace(/<p>\s*(https?:\/\/[^<\s]+)\s*<\/p>/gi, (match, url) => {
     if (!isEmbeddableUrl(url)) return match
     return editor ? editorEmbedHtml(url) : embedHtmlForUrl(url)
   })
+  // Paragraph that only contains a link to an embeddable URL.
+  next = next.replace(
+    /<p>\s*<a\b[^>]*\bhref=["'](https?:\/\/[^"']+)["'][^>]*>[\s\S]*?<\/a>\s*<\/p>/gi,
+    (match, href) => {
+      if (!isEmbeddableUrl(href)) return match
+      return editor ? editorEmbedHtml(href) : embedHtmlForUrl(href)
+    },
+  )
+  return next
+}
+
+/** Replace outer <div class="…className…">…</div> blocks with nested-div-safe matching. */
+const replaceDivsByClass = (
+  html: string,
+  className: string,
+  replacer: (attrs: string, inner: string, full: string) => string,
+) => {
+  const source = String(html || '')
+  const lower = source.toLowerCase()
+  const needle = `\\b${className.toLowerCase()}\\b`
+  const classRe = new RegExp(needle, 'i')
+  let out = ''
+  let i = 0
+  while (i < source.length) {
+    const openIdx = lower.indexOf('<div', i)
+    if (openIdx === -1) {
+      out += source.slice(i)
+      break
+    }
+    out += source.slice(i, openIdx)
+    const tagEnd = source.indexOf('>', openIdx)
+    if (tagEnd === -1) {
+      out += source.slice(openIdx)
+      break
+    }
+    const openTag = source.slice(openIdx, tagEnd + 1)
+    if (!classRe.test(openTag)) {
+      out += openTag
+      i = tagEnd + 1
+      continue
+    }
+    let depth = 1
+    let pos = tagEnd + 1
+    let closed = false
+    while (pos < source.length && depth > 0) {
+      const nextOpen = lower.indexOf('<div', pos)
+      const nextClose = lower.indexOf('</div>', pos)
+      if (nextClose === -1) break
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth += 1
+        pos = nextOpen + 4
+        continue
+      }
+      depth -= 1
+      if (depth === 0) {
+        const inner = source.slice(tagEnd + 1, nextClose)
+        const full = source.slice(openIdx, nextClose + 6)
+        const attrs = openTag.replace(/^<div\b/i, '').replace(/>$/, '')
+        out += replacer(attrs, inner, full)
+        i = nextClose + 6
+        closed = true
+        break
+      }
+      pos = nextClose + 6
+    }
+    if (!closed) {
+      out += source.slice(openIdx)
+      break
+    }
+  }
+  return out
+}
+
+const youtubeIdFromEmbedParts = (attrs: string, inner: string) => {
+  const fromData = String(attrs.match(/\bdata-youtube-id=["']([^"']+)["']/i)?.[1] || '').trim()
+  const fromEmbed = String(attrs.match(/\bdata-embed=["']([^"']+)["']/i)?.[1] || '')
+    .replace(/&amp;/g, '&')
+    .trim()
+  const fromSrc = String(inner.match(/youtube\.com\/embed\/([\w-]{11})/i)?.[1] || '').trim()
+  const fromWatch = youtubeId(fromEmbed) || youtubeId(String(inner.match(/https?:\/\/[^\s<"']+/i)?.[0] || ''))
+  return fromData || fromSrc || fromWatch
+}
+
+/** Leftover editor placeholders → public embeds. */
+const expandEditorPlaceholders = (html: string) =>
+  replaceDivsByClass(html, 'na-embed', (attrs, inner, full) => {
+    const fromData = String(attrs.match(/\bdata-embed=["']([^"']+)["']/i)?.[1] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    const fromIframe = String(inner.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    const fromHref = String(inner.match(/https?:\/\/[^\s<"']+/i)?.[0] || '').trim()
+    const url = cleanUrl(fromData || fromIframe || fromHref)
+    if (!url || !isEmbeddableUrl(url)) return full
+    return embedHtmlForUrl(url)
+  })
+
+/** Old SSR/API iframes → facade (avoids YouTube Error 153 on 127.0.0.1). */
+const normalizeYoutubeIframes = (html: string) =>
+  replaceDivsByClass(html, 'yt-embed', (attrs, inner, full) => {
+    if (/\byt-facade\b/i.test(inner) && /\bdata-youtube-id=/i.test(attrs) && !/\bna-embed\b/i.test(attrs)) {
+      return full
+    }
+    const id = youtubeIdFromEmbedParts(attrs, inner)
+    return id ? youtubeHtml(id) : full
+  })
+
+/** Keep a single block per YouTube id (drops broken leftovers from older nested-div bugs). */
+const dedupeYoutubeEmbeds = (html: string) => {
+  const seen = new Set<string>()
+  return replaceDivsByClass(html, 'yt-embed', (attrs, inner, full) => {
+    const id = youtubeIdFromEmbedParts(attrs, inner)
+    if (!id) return full
+    if (seen.has(id)) return ''
+    seen.add(id)
+    return full
+  })
+}
 
 const expandIframesForEditor = (html: string) =>
   String(html || '').replace(/<iframe\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/iframe>/gi, (match, src) =>
@@ -139,45 +283,177 @@ export const preserveTextLineBreaks = (html: string) => {
 
 export const expandNewsEmbeds = (html: string) =>
   preserveTextLineBreaks(
-    expandBareMedia(expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url)))),
+    dedupeYoutubeEmbeds(
+      normalizeYoutubeIframes(
+        expandBareMedia(
+          expandEditorPlaceholders(
+            expandWpCaptions(String(html || '').replace(EMBED_RE, (_match, url) => embedHtmlForUrl(url))),
+          ),
+        ),
+      ),
+    ),
   )
 
 const holdEditorEmbeds = (html: string) => {
   const blocks: string[] = []
-  const tokenized = html.replace(/<div class="na-embed\b[^>]*>[\s\S]*?<\/div>/gi, (block) => {
-    blocks.push(block)
+  const tokenized = replaceDivsByClass(html, 'na-embed', (_attrs, _inner, full) => {
+    blocks.push(full)
     return `<!--vmm-embed-${blocks.length - 1}-->`
   })
   return { tokenized, blocks }
 }
 
-export const expandNewsEmbedsForEditor = (html: string) => {
-  const withShortcodes = expandWpCaptions(String(html || '')).replace(EMBED_RE, (_match, url) => editorEmbedHtml(url))
-  const held = holdEditorEmbeds(withShortcodes)
-  const expanded = expandBareMedia(expandIframesForEditor(held.tokenized), true)
-  return expanded.replace(/<!--vmm-embed-(\d+)-->/g, (_match, index) => held.blocks[Number(index)] || '')
+/** Rebuild editor chrome for na-embed + plain yt-embed so only one block with toolbar shows. */
+const refreshEditorEmbedChrome = (html: string) => {
+  let next = replaceDivsByClass(html, 'na-embed', (attrs, inner, full) => {
+    const fromData = String(attrs.match(/\bdata-embed=["']([^"']+)["']/i)?.[1] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    const id = youtubeIdFromEmbedParts(attrs, inner)
+    const fromHref = String(inner.match(/https?:\/\/[^\s<"']+/i)?.[0] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    const url = cleanUrl(fromData || (id ? youtubeWatchUrl(id) : fromHref))
+    return url && isEmbeddableUrl(url) ? editorEmbedHtml(url) : full
+  })
+  next = replaceDivsByClass(next, 'yt-embed', (attrs, inner, full) => {
+    if (/\bna-embed\b/i.test(attrs)) return full
+    const id = youtubeIdFromEmbedParts(attrs, inner)
+    return id ? editorEmbedHtml(youtubeWatchUrl(id)) : full
+  })
+  return dedupeYoutubeEmbeds(next)
 }
 
-export const collapseNewsEmbeds = (html: string) =>
-  String(html || '').replace(
-    /<div\b(?=[^>]*\bclass="[^"]*\bna-embed\b)[^>]*\bdata-embed="([^"]+)"[^>]*>[\s\S]*?<\/div>/gi,
-    (_match, url) => `[embed]${String(url).replace(/&amp;/g, '&')}[/embed]`,
+export const expandNewsEmbedsForEditor = (html: string) => {
+  const withShortcodes = expandWpCaptions(String(html || '')).replace(EMBED_RE, (_match, url) =>
+    editorEmbedHtml(url),
   )
+  const refreshed = refreshEditorEmbedChrome(withShortcodes)
+  const held = holdEditorEmbeds(refreshed)
+  const expanded = expandBareMedia(expandIframesForEditor(held.tokenized), true)
+  return dedupeYoutubeEmbeds(
+    expanded.replace(/<!--vmm-embed-(\d+)-->/g, (_match, index) => held.blocks[Number(index)] || ''),
+  )
+}
+
+export const collapseNewsEmbeds = (html: string) => {
+  let next = replaceDivsByClass(String(html || ''), 'na-embed', (attrs, inner) => {
+    const fromData = String(attrs.match(/\bdata-embed=["']([^"']+)["']/i)?.[1] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    const fromIframe = String(inner.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    const id = youtubeIdFromEmbedParts(attrs, inner)
+    const fromHref = String(
+      inner.match(/https?:\/\/(?:twitter|x|youtube|youtu\.be|tiktok|instagram|spotify)[^\s<"']+/i)?.[0] || '',
+    )
+      .replace(/&amp;/g, '&')
+      .trim()
+    const url = cleanUrl(fromData || fromIframe || (id ? youtubeWatchUrl(id) : fromHref))
+    return url ? `[embed]${url}[/embed]` : ''
+  })
+  next = replaceDivsByClass(next, 'yt-embed', (attrs, inner) => {
+    const id = youtubeIdFromEmbedParts(attrs, inner)
+    return id ? `[embed]${youtubeWatchUrl(id)}[/embed]` : ''
+  })
+  return next.replace(/<blockquote\b[^>]*\btwitter-tweet\b[^>]*>[\s\S]*?<\/blockquote>/gi, (block) => {
+    const href = String(block.match(/https?:\/\/(?:twitter|x)\.com\/[^\s<"']+/i)?.[0] || '')
+      .replace(/&amp;/g, '&')
+      .trim()
+    return href ? `[embed]${cleanUrl(href)}[/embed]` : ''
+  })
+}
+
+const canInlineYoutube = () => {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname
+  // YouTube returns Error 153 / UNPLAYABLE when Referer is 127.0.0.1
+  return host !== '127.0.0.1' && host !== '0.0.0.0'
+}
+
+/** Swap YouTube facades for real iframes when the host allows embedding. */
+export const hydrateYoutubeEmbeds = (root?: ParentNode | null) => {
+  if (typeof document === 'undefined') return
+  const scope = (root || document) as ParentNode
+  const nodes = scope.querySelectorAll?.('.yt-embed[data-youtube-id]')
+  if (!nodes?.length) return
+  const inline = canInlineYoutube()
+  nodes.forEach((node) => {
+    const el = node as HTMLElement
+    if (el.dataset.ytReady === '1') return
+    const id = String(el.dataset.youtubeId || '').trim()
+    if (!/^[\w-]{11}$/.test(id)) return
+    const facade = el.querySelector('.yt-facade') as HTMLAnchorElement | null
+    if (!facade) return
+    if (!inline) {
+      el.dataset.ytReady = '1'
+      return
+    }
+    facade.addEventListener(
+      'click',
+      (event) => {
+        event.preventDefault()
+        if (el.querySelector('iframe')) return
+        const stage = el.querySelector('.yt-stage') || el
+        const iframe = document.createElement('iframe')
+        iframe.src = `${youtubeSrc(id)}&autoplay=1`
+        iframe.title = 'YouTube'
+        iframe.allow =
+          'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+        iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin')
+        iframe.allowFullscreen = true
+        stage.replaceChildren(iframe)
+        el.dataset.ytReady = '1'
+      },
+      { once: true },
+    )
+  })
+}
 
 export const loadTwitterEmbeds = (root?: ParentNode | null) => {
   if (typeof document === 'undefined') return
-  const hasTweet = (root || document).querySelector?.('.twitter-tweet')
+  const scope = root || document
+  const hasTweet = (scope as ParentNode).querySelector?.('.twitter-tweet')
   if (!hasTweet) return
-  const w = window as Window & { twttr?: { widgets?: { load: (el?: ParentNode) => void } } }
+  const w = window as Window & {
+    twttr?: {
+      ready?: (cb: () => void) => void
+      widgets?: { load: (el?: ParentNode) => void }
+    }
+  }
+  const run = () => {
+    try {
+      w.twttr?.widgets?.load((root as ParentNode) || document.body)
+    } catch {
+      /* ignore */
+    }
+  }
   if (w.twttr?.widgets?.load) {
-    w.twttr.widgets.load(root || document.body)
+    if (typeof w.twttr.ready === 'function') w.twttr.ready(run)
+    else run()
     return
   }
-  if (document.querySelector('script[data-twitter-wjs]')) return
+  const existing = document.querySelector('script[data-twitter-wjs]') as HTMLScriptElement | null
+  if (existing) {
+    const wait = () => {
+      if (w.twttr?.widgets?.load) {
+        if (typeof w.twttr.ready === 'function') w.twttr.ready(run)
+        else run()
+        return
+      }
+      window.setTimeout(wait, 120)
+    }
+    wait()
+    return
+  }
   const script = document.createElement('script')
   script.src = 'https://platform.twitter.com/widgets.js'
   script.async = true
   script.dataset.twitterWjs = '1'
-  script.onload = () => w.twttr?.widgets?.load(root || document.body)
+  script.onload = () => {
+    if (typeof w.twttr?.ready === 'function') w.twttr.ready(run)
+    else run()
+  }
   document.body.appendChild(script)
 }

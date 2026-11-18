@@ -4,7 +4,7 @@ import { onStoredAuthChange } from '../../../src/services/api/client'
 import { getNewsPopular, getNewsPost } from '../../../src/services/api/newsApi'
 import { isStoredAdminUser } from '../../../src/utils/suppressPageAds'
 import { t } from '../lib/copy'
-import { expandNewsEmbeds, loadTwitterEmbeds, youtubeVideoIds } from '../lib/embeds'
+import { expandNewsEmbeds, hydrateYoutubeEmbeds, loadTwitterEmbeds, youtubeVideoIds } from '../lib/embeds'
 import { withLocale } from '../lib/locale'
 import { categoryHref, coverErrorFallback, coverOf, formatNewsDate, tagHref, type NewsCard } from '../lib/news'
 import { newsRouteState } from '../lib/route-state'
@@ -171,7 +171,10 @@ onUnmounted(() => {
 watch(() => [props.slug, props.locale], load)
 watch(bodyHtml, async () => {
   await nextTick()
-  document.querySelectorAll('.article-body').forEach((node) => loadTwitterEmbeds(node))
+  document.querySelectorAll('.article-body').forEach((node) => {
+    hydrateYoutubeEmbeds(node)
+    loadTwitterEmbeds(node)
+  })
 })
 </script>
 

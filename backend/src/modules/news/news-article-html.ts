@@ -140,7 +140,16 @@ const withYoutubeEmbeds = (body: ArticleBody) => {
   let html = String(body.bodyHtml || '').trim();
   for (const id of body.videos || []) {
     const key = String(id || '').trim();
-    if (!key || html.includes(`/embed/${key}`)) continue;
+    if (!key) continue;
+    // Already present as iframe, facade, shortcode, or watch URL — never append a second copy.
+    if (
+      html.includes(`/embed/${key}`) ||
+      html.includes(`watch?v=${key}`) ||
+      html.includes(`data-youtube-id="${key}"`) ||
+      html.includes(`youtu.be/${key}`)
+    ) {
+      continue;
+    }
     html += `\n${youtubeEmbed(key, body.title)}`;
   }
   return html;
