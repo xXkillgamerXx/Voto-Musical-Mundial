@@ -625,7 +625,12 @@ html[data-theme="dark"] .brand .brand-logo-dark {
   display: none;
 }
 
+/* Desktop: theme sits next to search in .actions; menu copy stays for mobile. */
 .nav-toolbar .theme-toggle {
+  display: none;
+}
+
+.actions .theme-toggle {
   display: grid;
   width: 34px;
   height: 34px;
@@ -2799,7 +2804,7 @@ footer[id] {
     display: none;
   }
 
-  /* Light/dark lives inside the menu, not the header actions. */
+  /* Mobile: light/dark stays inside the menu. */
   .actions .theme-toggle {
     display: none;
   }
@@ -4282,7 +4287,17 @@ html[data-theme="dark"] .news-home-ad-local {
   }
 
   .home-cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mini-card h2 {
+    margin: 10px 8px 4px;
+    font-size: 13px;
+  }
+
+  .mini-card time {
+    margin: 0 8px 10px;
   }
 
   .home-latest-head h2 {
@@ -4324,7 +4339,10 @@ html[data-theme="dark"] .news-home-ad-local {
   }
 
   .home-rail {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    gap: 14px;
   }
 
   /* Mobile: keep Tendencias short so it doesn't dominate the feed */
@@ -4332,9 +4350,15 @@ html[data-theme="dark"] .news-home-ad-local {
     display: none;
   }
 
+  .spotify-band {
+    display: flex;
+    flex: none;
+    min-height: 352px;
+  }
+
   .spotify-band iframe {
-    height: 380px;
-    min-height: 0;
+    height: 352px;
+    min-height: 352px;
   }
 
   .home {

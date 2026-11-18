@@ -230,7 +230,7 @@ export class NewsService {
     }
 
     const feed = { page: 1, skipCount: true as const };
-    const [latest, kpop, pop, viral, series, social, interviews, categoryList] = await Promise.all([
+    const [latest, kpop, pop, viral, series, social, interviews, trendingPool, categoryList] = await Promise.all([
       this.loadPosts(locale, { ...feed, limit: 24 }),
       // Pull extra K-POP rows so the home block still fills after hero/card dedupe
       // (EN homepage is often almost all kpop, which used to leave this section empty).
@@ -240,6 +240,8 @@ export class NewsService {
       this.loadPosts(locale, { ...feed, limit: 16, slugs: ['series', 'cine', 'peliculas', 'k-drama'] }),
       this.loadPosts(locale, { ...feed, limit: 12, slugs: ['redes-sociales'] }),
       this.loadPosts(locale, { ...feed, limit: 12, slugs: ['entrevista', 'entrevistas'] }),
+      // Trending = most viewed notes from the last 48 hours.
+      this.popularWindow(locale, 48, '', 12),
       this.categories(localeValue),
     ]);
     const take = (items: typeof latest.items, count: number, bag: Set<string>) => {
@@ -263,7 +265,8 @@ export class NewsService {
     const above = new Set<string>();
     const spotlight = take(pool, 2, above);
     const cards = take(pool, 8, above);
-    const trends = take(viral.items.length ? viral.items : fallback, 5, above);
+    const trendSource = trendingPool.length ? trendingPool : viral.items.length ? viral.items : fallback;
+    const trends = take(trendSource, 5, above);
     const entertainment = take(
       [...kpop.items, ...viral.items, ...fallback],
       4,
@@ -319,8 +322,8 @@ export class NewsService {
     const locale = this.mysql.locale(localeValue);
     const limit = Math.min(8, Math.max(1, Number(limitValue || 5)));
     const exclude = String(excludeSlug || '').trim();
-    const items = await this.popularWindow(locale, 90, exclude, limit);
-    return serialize({ locale, days: 90, items });
+    const items = await this.popularWindow(locale, 48, exclude, limit);
+    return serialize({ locale, hours: 48, items });
   }
 
   async findAuthor(slug: string, localeValue?: string, pageValue = 1, limitValue = 18) {
@@ -1558,9 +1561,15 @@ export class NewsService {
     };
   }
 
-  private async popularWindow(locale: NewsLocale, days: number, exclude: string, limit: number) {
-    const where = [`p.post_type = 'post'`, `p.post_status = 'publish'`, `p.post_date >= DATE_SUB(NOW(), INTERVAL ? DAY)`];
-    const params: unknown[] = [days];
+  /** Most-viewed published posts in a recent window (hours). */
+  private async popularWindow(locale: NewsLocale, hours: number, exclude: string, limit: number) {
+    const windowHours = Math.min(168, Math.max(1, Number(hours) || 48));
+    const where = [
+      `p.post_type = 'post'`,
+      `p.post_status = 'publish'`,
+      `p.post_date >= DATE_SUB(NOW(), INTERVAL ? HOUR)`,
+    ];
+    const params: unknown[] = [windowHours];
     if (exclude) {
       where.push('p.post_name <> ?');
       params.push(exclude);

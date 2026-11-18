@@ -784,6 +784,21 @@ onUnmounted(() => {
           <a :class="{ on: siteLocale === 'en' }" :href="swapLocalePath('en')" @click.prevent="setLocale('en')">EN</a>
           <a :class="{ on: siteLocale === 'es' }" :href="swapLocalePath('es')" @click.prevent="setLocale('es')">ES</a>
         </div>
+        <button
+          class="round theme-toggle"
+          type="button"
+          :title="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
+          :aria-label="theme === 'dark' ? txt('themeLight') : txt('themeDark')"
+          @click="setSiteTheme"
+        >
+          <svg v-if="theme === 'dark'" class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+          </svg>
+          <svg v-else class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M16.2 13.2A6.2 6.2 0 0 1 11 5.2 6.4 6.4 0 1 0 18.8 15a6.2 6.2 0 0 1-2.6-1.8z" />
+          </svg>
+        </button>
         <div class="icon-pop search-slot">
           <button
             class="round"
@@ -960,6 +975,23 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
+      <aside class="home-rail">
+        <section class="trend-card">
+          <div class="trend-head">
+            <span class="skel home-boot-head"></span>
+            <span class="skel skel-meta"></span>
+          </div>
+          <div v-for="n in 5" :key="'trend-skel-' + n" class="trend-row home-boot-trend">
+            <span class="skel"></span>
+            <span class="skel"></span>
+            <div>
+              <span class="skel skel-line"></span>
+              <span class="skel skel-meta"></span>
+            </div>
+          </div>
+        </section>
+        <section class="spotify-band home-boot-spotify skel"></section>
+      </aside>
       <section class="entertain home-boot-ent">
         <div class="entertain-head">
           <span class="skel skel-title two"></span>
@@ -978,23 +1010,6 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
-      <aside class="home-rail">
-        <section class="trend-card">
-          <div class="trend-head">
-            <span class="skel home-boot-head"></span>
-            <span class="skel skel-meta"></span>
-          </div>
-          <div v-for="n in 5" :key="'trend-skel-' + n" class="trend-row home-boot-trend">
-            <span class="skel"></span>
-            <span class="skel"></span>
-            <div>
-              <span class="skel skel-line"></span>
-              <span class="skel skel-meta"></span>
-            </div>
-          </div>
-        </section>
-        <section class="spotify-band home-boot-spotify skel"></section>
-      </aside>
     </div>
     <template v-else>
     <div class="container home-grid">
@@ -1033,38 +1048,6 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section class="entertain rise" id="dramas">
-          <div class="entertain-head cats-head">
-            <div>
-              <div class="cats-eyebrow">{{ txt('explore') }}</div>
-              <h2><span>{{ txt('entertainment') }}</span></h2>
-              <p>{{ txt('entertainmentBlurb') }}</p>
-            </div>
-            <a class="cats-link" :href="categoryHref(siteLocale, 'viral')">{{ txt('seeMoreArrow') }}</a>
-          </div>
-          <div v-if="entertainmentStories[0]" class="entertain-grid">
-            <a class="entertain-feature" :href="postHref(entertainmentStories[0])">
-              <img :src="entertainmentStories[0].image" :alt="entertainmentStories[0].alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
-              <span class="etag">{{ entertainmentStories[0].category }}</span>
-              <div>
-                <h3>{{ entertainmentStories[0].title }}</h3>
-                <p>{{ entertainmentStories[0].lead }}</p>
-                <time>{{ entertainmentStories[0].meta }}</time>
-              </div>
-            </a>
-            <div class="entertain-side">
-              <a v-for="story in entertainmentStories.slice(1, 4)" :key="story.title" :href="postHref(story)">
-                <img :src="story.image" :alt="story.alt" width="96" height="96" loading="lazy" decoding="async" @error="coverErrorFallback" />
-                <div>
-                  <span class="etag" :class="story.category.toLowerCase()">{{ story.category }}</span>
-                  <h3>{{ story.title }}</h3>
-                  <time>{{ story.meta }}</time>
-                </div>
-              </a>
-            </div>
-          </div>
-        </section>
-
       <aside class="home-rail rise">
         <section class="trend-card">
           <div class="trend-head">
@@ -1099,6 +1082,38 @@ onUnmounted(() => {
           ></iframe>
         </section>
       </aside>
+
+        <section class="entertain rise" id="dramas">
+          <div class="entertain-head cats-head">
+            <div>
+              <div class="cats-eyebrow">{{ txt('explore') }}</div>
+              <h2><span>{{ txt('entertainment') }}</span></h2>
+              <p>{{ txt('entertainmentBlurb') }}</p>
+            </div>
+            <a class="cats-link" :href="categoryHref(siteLocale, 'viral')">{{ txt('seeMoreArrow') }}</a>
+          </div>
+          <div v-if="entertainmentStories[0]" class="entertain-grid">
+            <a class="entertain-feature" :href="postHref(entertainmentStories[0])">
+              <img :src="entertainmentStories[0].image" :alt="entertainmentStories[0].alt" loading="lazy" decoding="async" @error="coverErrorFallback" />
+              <span class="etag">{{ entertainmentStories[0].category }}</span>
+              <div>
+                <h3>{{ entertainmentStories[0].title }}</h3>
+                <p>{{ entertainmentStories[0].lead }}</p>
+                <time>{{ entertainmentStories[0].meta }}</time>
+              </div>
+            </a>
+            <div class="entertain-side">
+              <a v-for="story in entertainmentStories.slice(1, 4)" :key="story.title" :href="postHref(story)">
+                <img :src="story.image" :alt="story.alt" width="96" height="96" loading="lazy" decoding="async" @error="coverErrorFallback" />
+                <div>
+                  <span class="etag" :class="story.category.toLowerCase()">{{ story.category }}</span>
+                  <h3>{{ story.title }}</h3>
+                  <time>{{ story.meta }}</time>
+                </div>
+              </a>
+            </div>
+          </div>
+        </section>
     </div>
 
     <section class="dark-section rise" id="kpop">

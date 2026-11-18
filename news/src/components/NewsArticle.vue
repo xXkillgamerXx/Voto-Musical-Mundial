@@ -327,7 +327,7 @@ watch(bodyHtml, async () => {
         </aside>
         <template v-if="showMidMostRead">
           <div class="article-body" v-html="bodyParts.before"></div>
-          <aside class="article-mid-read" aria-label="Most read">
+          <aside class="article-mid-read" :aria-label="t(loc, 'midMostRead')">
             <div class="article-mid-read-head">
               <div class="cats-eyebrow">{{ t(loc, 'midMostRead') }}</div>
               <p>{{ t(loc, 'midMostReadLead') }}</p>
