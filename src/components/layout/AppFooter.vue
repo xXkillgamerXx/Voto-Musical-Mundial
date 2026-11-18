@@ -1,35 +1,20 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { assetUrl } from '../../utils/appBase'
 import { routePath } from '../../utils/localizedRoutes'
-import { canSeeFanStoreNav, getFanStoreViewer, loadFanStore, onFanStoreChange } from '../../services/fanStore'
 
 const { locale } = useI18n()
-const showPlans = ref(false)
-const refreshPlans = () => {
-  showPlans.value = canSeeFanStoreNav(getFanStoreViewer())
-}
 
 const footerLinks = computed(() => [
   { titleKey: 'nav.home', href: routePath('home', locale.value) },
   { titleKey: 'nav.polls', href: routePath('polls', locale.value) },
   { titleKey: 'nav.artists', href: routePath('artists', locale.value) },
-  ...(showPlans.value
-    ? [{ titleKey: 'nav.subscriptions', href: routePath('plans', locale.value) }]
-    : []),
+  { titleKey: 'nav.missions', href: routePath('missions', locale.value) },
   { titleKey: 'nav.rankingPopularity', href: routePath('rankingPopularity', locale.value) },
   { titleKey: 'nav.hallOfFame', href: routePath('hallOfFame', locale.value) },
-  { titleKey: 'nav.missions', href: routePath('missions', locale.value) },
   { titleKey: 'nav.news', href: routePath('news', locale.value) },
 ])
-
-let stopFanStore = null
-onMounted(() => {
-  loadFanStore().then(refreshPlans)
-  stopFanStore = onFanStoreChange(refreshPlans)
-})
-onUnmounted(() => stopFanStore?.())
 
 const legalLinks = computed(() => [
   { titleKey: 'footer.terms', href: routePath('terms', locale.value) },

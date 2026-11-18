@@ -17,7 +17,11 @@ export class NewsController {
   ) {}
 
   @Get('home')
-  home(@Query('locale') locale?: string) {
+  async home(
+    @Query('locale') locale?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    res?.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     return this.news.home(locale);
   }
 

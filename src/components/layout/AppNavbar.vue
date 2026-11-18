@@ -9,17 +9,12 @@ import ThemeToggle from "../theme/ThemeToggle.vue";
 import UserNotificationsMenu from "../UserNotificationsMenu.vue";
 import { getMe, getCurrentApiAuth, logout, peekLoginNotice, updateMe } from "../../services/api/authApi";
 import { onStoredAuthChange } from "../../services/api/client";
-import { canSeeFanStoreNav, getFanStoreViewer, loadFanStore, onFanStoreChange } from "../../services/fanStore";
-
 const { locale } = useI18n();
-const showPlansNav = ref(false);
 const navItems = computed(() => [
   { labelKey: "nav.home", href: routePath("home", locale.value) },
   { labelKey: "nav.polls", href: routePath("polls", locale.value) },
   { labelKey: "nav.artists", href: routePath("artists", locale.value) },
-  ...(showPlansNav.value
-    ? [{ labelKey: "nav.subscriptions", href: routePath("plans", locale.value) }]
-    : []),
+  { labelKey: "nav.missions", href: routePath("missions", locale.value) },
   { labelKey: "nav.rankingPopularity", href: routePath("rankingPopularity", locale.value) },
   { labelKey: "nav.hallOfFame", href: routePath("hallOfFame", locale.value) },
   { labelKey: "nav.news", href: routePath("news", locale.value) },
@@ -39,7 +34,6 @@ const userPoints = ref(0);
 const displayPoints = ref(0);
 const pointsPulse = ref("");
 let unsubscribeAuth = null;
-let stopFanStore = null;
 let pointsAnimationFrame = null;
 let pointsPulseTimer = null;
 const adminRoles = new Set(["admin", "superadmin", "owner"]);
@@ -204,7 +198,6 @@ const listenUserProfile = (user) => {
       if (userData?.points !== undefined && userData?.points !== null) {
         userPoints.value = Number(userData.points || 0);
       }
-      refreshPlansNav();
     })
     .catch(() => {
       userRole.value = String(user.role || "").trim().toLowerCase();
@@ -212,12 +205,6 @@ const listenUserProfile = (user) => {
       userPoints.value = Number(user.points || 0);
     });
 };
-
-const refreshPlansNav = () => {
-  showPlansNav.value = canSeeFanStoreNav(getFanStoreViewer() || currentUser.value);
-};
-
-watch(currentUser, refreshPlansNav);
 
 onMounted(() => {
   document.addEventListener("click", handleDocumentClick);
@@ -230,13 +217,10 @@ onMounted(() => {
     isAccountMenuOpen.value = false;
     isSettingsMenuOpen.value = false;
     listenUserProfile(currentUser.value);
-    refreshPlansNav();
   };
 
   syncAuth();
   unsubscribeAuth = onStoredAuthChange(syncAuth);
-  loadFanStore().then(refreshPlansNav);
-  stopFanStore = onFanStoreChange(refreshPlansNav);
 
   if (peekLoginNotice()) {
     isAuthModalOpen.value = true;
@@ -250,7 +234,6 @@ onUnmounted(() => {
   document.removeEventListener("keydown", handleEscape);
   window.removeEventListener("vmm:open-auth", onOpenAuthEvent);
   unsubscribeAuth?.();
-  stopFanStore?.();
   if (pointsAnimationFrame) {
     window.cancelAnimationFrame(pointsAnimationFrame);
   }
@@ -305,7 +288,7 @@ onUnmounted(() => {
       <div class="flex items-center gap-2">
         <a
           v-if="isSignedInUser"
-          :href="showPlansNav ? routePath('plans', locale) : routePath('profile', locale)"
+          :href="routePath('missions', locale)"
           class="points-chip hidden items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 md:flex"
           :class="pointsPulse === 'up' ? 'points-chip-up' : pointsPulse === 'down' ? 'points-chip-down' : ''"
         >

@@ -4,6 +4,7 @@ import { BLOCKED_LANGUAGE_MESSAGE, isCommentLanguageBlocked } from '../../common
 import { normalizeSlug } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { ListNewsDto } from './dto/list-news.dto';
 import { UpsertNewsPostDto } from './dto/upsert-news-post.dto';
 import { NewsLocale, NewsMysqlService } from './news-mysql';
@@ -80,6 +81,9 @@ const NAV_SLUGS = new Set([
   'entrevista',
   'redes-sociales',
 ]);
+
+/** Home feed hits MySQL hard; short Redis TTL keeps Music Mundial snappy. */
+const NEWS_HOME_CACHE_SECONDS = 90;
 
 const publicHref = (locale: NewsLocale, suffix = '') => {
   const rest = String(suffix || '').replace(/^\/+/, '');
@@ -179,7 +183,24 @@ export class NewsService {
     private readonly mysql: NewsMysqlService,
     private readonly prisma: PrismaService,
     private readonly sitemaps: NewsSitemapService,
+    private readonly redis: RedisService,
   ) {}
+
+  private homeCacheKey(locale: NewsLocale) {
+    return `cache:news:home:${locale}`;
+  }
+
+  private async invalidateHomeCache(locale?: NewsLocale) {
+    try {
+      if (locale) {
+        await this.redis.client.del(this.homeCacheKey(locale));
+        return;
+      }
+      await this.redis.client.del(this.homeCacheKey('es'), this.homeCacheKey('en'));
+    } catch {
+      // Best-effort: stale home is OK until TTL expires.
+    }
+  }
 
   async listPublic(input: ListNewsDto & { locale?: string }) {
     const locale = this.mysql.locale(input.locale);
@@ -200,6 +221,14 @@ export class NewsService {
 
   async home(localeValue?: string) {
     const locale = this.mysql.locale(localeValue);
+    const cacheKey = this.homeCacheKey(locale);
+    try {
+      const cached = await this.redis.client.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch {
+      // Fall through to MySQL if Redis is down.
+    }
+
     const feed = { page: 1, skipCount: true as const };
     const [latest, kpop, pop, viral, series, social, interviews, categoryList] = await Promise.all([
       this.loadPosts(locale, { ...feed, limit: 24 }),
@@ -260,7 +289,7 @@ export class NewsService {
         if (cat.slug && !covers.has(cat.slug)) covers.set(cat.slug, item.coverUrl);
       }
     }
-    return serialize({
+    const payload = serialize({
       locale,
       spotlight,
       cards,
@@ -277,6 +306,13 @@ export class NewsService {
         coverUrl: covers.get(row.slug) || null,
       })),
     });
+
+    try {
+      await this.redis.client.set(cacheKey, JSON.stringify(payload), 'EX', NEWS_HOME_CACHE_SECONDS);
+    } catch {
+      // Serve without cache if Redis write fails.
+    }
+    return payload;
   }
 
   async popular(localeValue?: string, excludeSlug?: string, limitValue = 5) {
@@ -705,6 +741,7 @@ export class NewsService {
     const locale = this.mysql.locale(body.locale);
     const saved = await this.writePost(locale, body, actor?.id);
     this.refreshSitemaps(locale);
+    await this.invalidateHomeCache(locale);
     return this.adminGet(String(saved), locale);
   }
 
@@ -714,6 +751,7 @@ export class NewsService {
     const postId = await this.requirePostId(locale, id);
     await this.writePost(locale, body, actor?.id, postId);
     this.refreshSitemaps(locale);
+    await this.invalidateHomeCache(locale);
     return this.adminGet(String(postId), locale);
   }
 
@@ -725,6 +763,7 @@ export class NewsService {
       postId,
     ]);
     this.refreshSitemaps(locale);
+    await this.invalidateHomeCache(locale);
     return serialize({ ok: true, id: String(postId), locale });
   }
 
@@ -736,6 +775,7 @@ export class NewsService {
       `UPDATE wpgn_posts SET post_status = 'draft', post_modified = ? WHERE ID = ? AND post_status = 'trash'`,
       [this.wpStamp(new Date()), postId],
     );
+    await this.invalidateHomeCache(locale);
     return serialize({ ok: true, id: String(postId), locale, status: 'draft' });
   }
 
@@ -1815,14 +1855,53 @@ export class NewsService {
   private async presentArticle(locale: NewsLocale, post: PostRow) {
     const cats = await this.categoriesFor(locale, [post.ID]);
     const tags = await this.tagsFor(locale, [post.ID]);
-    const related = await this.loadPosts(locale, {
-      page: 1,
-      limit: 4,
-      slugs: (cats.get(post.ID) || []).slice(0, 1).map((item) => item.slug),
-      excludeId: post.ID,
-      skipCount: true,
-      light: true,
-    });
+    const postTags = tags.get(post.ID) || [];
+    const tagSlugs = postTags.map((item) => item.slug).filter(Boolean).slice(0, 4);
+    const categorySlugs = (cats.get(post.ID) || []).slice(0, 1).map((item) => item.slug);
+    const relatedByTags = tagSlugs.length
+      ? await Promise.all(
+          tagSlugs.map((tag) =>
+            this.loadPosts(locale, {
+              page: 1,
+              limit: 6,
+              tag,
+              excludeId: post.ID,
+              skipCount: true,
+              light: true,
+              order: 'comments',
+            }),
+          ),
+        )
+      : [];
+    const relatedPool: Array<(typeof relatedByTags)[number]['items'][number]> = [];
+    const seen = new Set<string>([String(post.ID), post.post_name]);
+    for (const batch of relatedByTags) {
+      for (const item of batch.items) {
+        if (seen.has(item.id) || seen.has(item.slug)) continue;
+        seen.add(item.id);
+        seen.add(item.slug);
+        relatedPool.push(item);
+        if (relatedPool.length >= 6) break;
+      }
+      if (relatedPool.length >= 6) break;
+    }
+    if (relatedPool.length < 4 && categorySlugs.length) {
+      const byCategory = await this.loadPosts(locale, {
+        page: 1,
+        limit: 6,
+        slugs: categorySlugs,
+        excludeId: post.ID,
+        skipCount: true,
+        light: true,
+      });
+      for (const item of byCategory.items) {
+        if (seen.has(item.id) || seen.has(item.slug)) continue;
+        seen.add(item.id);
+        seen.add(item.slug);
+        relatedPool.push(item);
+        if (relatedPool.length >= 6) break;
+      }
+    }
     const [card] = await this.withAuthors(locale, [toCard(post, cats.get(post.ID) || [], locale)]);
     const attachments = await this.attachmentsFor(locale, post.ID);
     const commentCount = await this.commentCount(locale, post.ID);
@@ -1840,11 +1919,11 @@ export class NewsService {
         ensureImageLayout(expandNewsEmbeds(sanitizeNewsHtml(post.post_content))),
         String(post.post_title || card.title || ''),
       ),
-      tags: (tags.get(post.ID) || []).map((item) => ({ slug: item.slug, name: item.name })),
+      tags: postTags.map((item) => ({ slug: item.slug, name: item.name })),
       attachments,
       commentCount,
       alternate,
-      related: related.items.filter((item) => item.slug !== post.post_name).slice(0, 4),
+      related: relatedPool.filter((item) => item.slug !== post.post_name).slice(0, 6),
     });
   }
 

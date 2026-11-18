@@ -3699,6 +3699,69 @@ html[data-theme="dark"] .notice-row:hover time {
   gap: 12px;
 }
 
+.news-home-ad {
+  margin: 0 0 14px;
+  min-width: 0;
+}
+
+.news-home-ad-label {
+  margin: 0 0 8px;
+  color: var(--muted, #64748b);
+  font: 800 10px/1 'Manrope', sans-serif;
+  letter-spacing: 0.22em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.news-home-ad-frame {
+  overflow: hidden;
+  min-height: 6.5rem;
+  border: 1px solid color-mix(in srgb, var(--line, #d7deea) 88%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, #fff 90%, #eef3fb);
+}
+
+.news-home-ad-frame.filled {
+  min-height: 0;
+}
+
+.news-home-ad-slot {
+  display: block;
+  width: 100%;
+  min-height: 6.5rem;
+  overflow: hidden;
+}
+
+.news-home-ad-local {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 6.5rem;
+  border: 1px dashed color-mix(in srgb, #7c3aed 45%, #d7deea);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(14, 165, 233, 0.08));
+  color: var(--muted, #64748b);
+  font: 700 12px/1.4 'Manrope', sans-serif;
+  text-align: center;
+}
+
+.news-home-ad-local strong {
+  color: var(--ink);
+  font: 800 11px/1 'Manrope', sans-serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+html[data-theme="dark"] .news-home-ad-frame {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 20, 36, 0.9);
+}
+
+html[data-theme="dark"] .news-home-ad-local {
+  border-color: rgba(167, 139, 250, 0.35);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(14, 165, 233, 0.12));
+}
+
 .entertain-head.cats-head {
   align-items: flex-start;
   margin-bottom: 18px;
@@ -5486,6 +5549,121 @@ html[data-theme="dark"] .article-cover figcaption {
   font-size: 18px;
   line-height: 1.65;
   color: var(--ink);
+}
+
+.article-mid-read {
+  margin: 1.75rem 0 2rem;
+  padding: 1.1rem 1rem 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--line, #d7deea) 88%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 88%, #eef3fb), color-mix(in srgb, #f7f9fd 92%, #e8eef8));
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.article-mid-read-head .cats-eyebrow {
+  margin-bottom: 6px;
+}
+
+.article-mid-read-head p {
+  margin: 0;
+  color: var(--muted, #64748b);
+  font: 650 14px/1.45 'Manrope', sans-serif;
+}
+
+.article-mid-read-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.article-mid-read-tags a {
+  color: #6d28d9;
+  font: 800 12px/1 'Manrope', sans-serif;
+  text-decoration: none;
+}
+
+.article-mid-read-tags a:hover {
+  text-decoration: underline;
+}
+
+.article-mid-read-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.article-mid-read-card {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  align-items: start;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+
+.article-mid-read-photo {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: #dfe5ed;
+}
+
+.article-mid-read-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.article-mid-read-card:hover img {
+  transform: scale(1.04);
+}
+
+.article-mid-read-num {
+  position: absolute;
+  left: 6px;
+  bottom: 2px;
+  color: rgba(255, 255, 255, 0.9);
+  font: 800 18px/1 'Manrope', sans-serif;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+}
+
+.article-mid-read-copy {
+  min-width: 0;
+}
+
+.article-mid-read-copy .chip {
+  display: inline-flex;
+  margin-bottom: 6px;
+  font-size: 10px;
+}
+
+.article-mid-read-copy h3 {
+  margin: 0;
+  color: var(--ink);
+  font: 800 14px/1.35 'Manrope', sans-serif;
+}
+
+@media (max-width: 720px) {
+  .article-mid-read-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+html[data-theme="dark"] .article-mid-read {
+  border-color: rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(180deg, rgba(20, 24, 40, 0.95), rgba(12, 16, 30, 0.98));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="dark"] .article-mid-read-tags a {
+  color: #c4b5fd;
 }
 
 .article-body p,

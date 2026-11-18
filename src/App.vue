@@ -27,7 +27,6 @@ const CookieConsentBanner = defineAsyncComponent(() => import('./components/Cook
 const DailyRewardModal = defineAsyncComponent(() => import('./components/DailyRewardModal.vue'))
 const DownloadAppModal = defineAsyncComponent(() => import('./components/DownloadAppModal.vue'))
 const GiftNotificationModal = defineAsyncComponent(() => import('./components/GiftNotificationModal.vue'))
-const LatestNews = defineAsyncComponent(() => import('./components/LatestNews.vue'))
 const LiveActivity = defineAsyncComponent(() => import('./components/LiveActivity.vue'))
 const MissionsSection = defineAsyncComponent(() => import('./components/MissionsSection.vue'))
 const MissionsPage = defineAsyncComponent(() => import('./pages/MissionsPage.vue'))
@@ -378,7 +377,6 @@ onUnmounted(() => {
         <MainCategories />
         <HomeAd />
         <LiveActivity />
-        <LatestNews />
         <MissionsSection />
         <CommunitySection />
       </template>
