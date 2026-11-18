@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta http-equiv="refresh" content="30" />
+    <title>Music Mundial — volvemos en un momento</title>
+    <style>
+      :root {
+        --bg: #071433;
+        --ink: #f4f7ff;
+        --muted: #9eb0d4;
+        --blue: #2f6bff;
+        --line: rgba(158, 176, 212, 0.22);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background:
+          radial-gradient(ellipse 80% 50% at 50% -10%, rgba(47, 107, 255, 0.28), transparent 55%),
+          linear-gradient(180deg, #0a1a3d 0%, var(--bg) 45%, #050d22 100%);
+        color: var(--ink);
+        font-family: Manrope, "Segoe UI", sans-serif;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 32px 20px;
+      }
+      main {
+        width: min(520px, 100%);
+        text-align: center;
+      }
+      .brand {
+        margin: 0 0 28px;
+        color: var(--ink);
+        font: 800 15px/1 Manrope, sans-serif;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .card {
+        padding: 36px 28px 32px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: rgba(10, 24, 56, 0.72);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+        backdrop-filter: blur(10px);
+      }
+      .pulse {
+        width: 12px;
+        height: 12px;
+        margin: 0 auto 18px;
+        border-radius: 50%;
+        background: var(--blue);
+        box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.55);
+        animation: pulse 1.6s ease-out infinite;
+      }
+      @keyframes pulse {
+        70% { box-shadow: 0 0 0 16px rgba(47, 107, 255, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(47, 107, 255, 0); }
+      }
+      h1 {
+        margin: 0 0 12px;
+        font: 800 28px/1.2 Manrope, sans-serif;
+      }
+      p {
+        margin: 0 auto;
+        max-width: 34ch;
+        color: var(--muted);
+        font: 500 16px/1.55 Manrope, sans-serif;
+      }
+      .en {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: #b7c5e0;
+        font-size: 14px;
+      }
+      .hint {
+        margin-top: 22px;
+        color: #7f91b5;
+        font: 600 12px/1.4 Manrope, sans-serif;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      a {
+        color: var(--blue);
+        text-decoration: none;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">Music Mundial</p>
+      <div class="card">
+        <div class="pulse" aria-hidden="true"></div>
+        <h1>Fuera de servicio un momento</h1>
+        <p>
+          Estamos actualizando el sitio. Espera unos minutos y vuelve a intentar;
+          enseguida estará disponible.
+        </p>
+        <p class="en">
+          We’re updating the site. Please wait a minute and try again — we’ll be
+          right back.
+        </p>
+        <p class="hint">Esta página se actualiza sola · <a href="/">Reintentar</a></p>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,5 +1,13 @@
 import { createHash, randomBytes } from 'crypto';
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { BLOCKED_LANGUAGE_MESSAGE, isCommentLanguageBlocked } from '../../common/comment-profanity';
 import { normalizeSlug } from '../../common/poll-lookup';
 import { serialize } from '../../common/serialize';
@@ -264,9 +272,22 @@ export class NewsService {
     const fallback = [...pool, ...viral.items, ...kpop.items];
     const above = new Set<string>();
     const spotlight = take(pool, 2, above);
+    // Fill Trending before Latest cards, and keep topping up to 5 so a
+    // short 48h/viral hit does not leave the rail almost empty.
+    const takeMore = (items: typeof latest.items, need: number, bag: Set<string>) => {
+      if (need <= 0) return [] as typeof latest.items;
+      return take(items, need, bag);
+    };
+    let trends = take(trendingPool, 5, above);
+    trends = [...trends, ...takeMore(viral.items, 5 - trends.length, above)];
+    trends = [...trends, ...takeMore(fallback, 5 - trends.length, above)];
+    if (trends.length < 5) {
+      const soft = new Set(spotlight.map((item) => item.id));
+      const extra = takeMore(fallback, 5 - trends.length, soft);
+      trends = [...trends, ...extra];
+      for (const item of extra) above.add(item.id);
+    }
     const cards = take(pool, 8, above);
-    const trendSource = trendingPool.length ? trendingPool : viral.items.length ? viral.items : fallback;
-    const trends = take(trendSource, 5, above);
     const entertainment = take(
       [...kpop.items, ...viral.items, ...fallback],
       4,
@@ -427,16 +448,19 @@ export class NewsService {
     );
   }
 
-  async adminList(input: {
-    page?: number;
-    limit?: number;
-    q?: string;
-    status?: string;
-    locale?: string;
-    author?: string;
-    from?: string;
-    to?: string;
-  }) {
+  async adminList(
+    input: {
+      page?: number;
+      limit?: number;
+      q?: string;
+      status?: string;
+      locale?: string;
+      author?: string;
+      from?: string;
+      to?: string;
+    },
+    actor?: NewsActor,
+  ) {
     const locale = this.mysql.locale(input.locale);
     const page = Math.max(1, Number(input.page || 1));
     const limit = Math.min(50, Math.max(1, Number(input.limit || 20)));
@@ -462,7 +486,14 @@ export class NewsService {
       where.push('(p.post_title LIKE ? OR p.post_name LIKE ?)');
       params.push(`%${q}%`, `%${q}%`);
     }
-    if (author) {
+    const scopedAuthorIds = await this.scopedWpAuthorIds(locale, actor);
+    if (scopedAuthorIds) {
+      if (!scopedAuthorIds.length) {
+        return serialize({ page, limit, total: 0, items: [], locale });
+      }
+      where.push(`p.post_author IN (${scopedAuthorIds.map(() => '?').join(',')})`);
+      params.push(...scopedAuthorIds);
+    } else if (author) {
       where.push('(u.display_name LIKE ? OR u.user_nicename LIKE ? OR u.user_login LIKE ?)');
       params.push(`%${author}%`, `%${author}%`, `%${author}%`);
     }
@@ -486,7 +517,8 @@ export class NewsService {
       locale,
       rows.map((row) => toCard(row, cats.get(row.ID) || [], locale)),
     );
-    const countFrom = author
+    const needsUserJoin = Boolean(author) && !scopedAuthorIds;
+    const countFrom = needsUserJoin
       ? 'FROM wpgn_posts p LEFT JOIN wpgn_users u ON u.ID = p.post_author'
       : 'FROM wpgn_posts p';
     const countRows = await this.mysql.query<{ total: number }>(
@@ -574,10 +606,13 @@ export class NewsService {
     });
   }
 
-  async adminAuthors(localeValue?: string, q?: string) {
+  async adminAuthors(localeValue?: string, q?: string, actor?: NewsActor) {
     const locale = this.mysql.locale(localeValue);
     try {
-      return serialize(await this.adminAuthorsLocale(locale, q));
+      const items = await this.adminAuthorsLocale(locale, q);
+      const scoped = await this.scopedWpAuthorIds(locale, actor);
+      if (!scoped) return serialize(items);
+      return serialize(items.filter((item) => scoped.includes(Number(item.id))));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`adminAuthors(${locale}) failed: ${message}`);
@@ -612,27 +647,35 @@ export class NewsService {
     }
     if (body.linkedUserId !== undefined) {
       const linked = String(body.linkedUserId || '').trim();
+      const previousMarker = String(user.user_url || '').startsWith('vmm:')
+        ? String(user.user_url).slice(4)
+        : '';
       if (linked) {
         const account = await this.prisma.user.findUnique({
           where: { id: BigInt(linked) },
-          select: { id: true, username: true, email: true, displayName: true },
+          select: { id: true, role: true },
         });
         if (!account) throw new BadRequestException('La cuenta de Vote Music Mundial no existe.');
         const previousUrl = String(user.user_url || '');
         if (previousUrl && !previousUrl.startsWith('vmm:')) {
           await this.setUserMeta(locale, userId, 'vmm_website', previousUrl.slice(0, 300));
         }
-        await this.mysql.exec(
-          locale,
-          `UPDATE wpgn_users SET user_url = ?, user_email = ?, user_nicename = ?, display_name = ? WHERE ID = ?`,
-          [
-            `vmm:${account.id}`,
-            String(account.email || user.user_nicename).slice(0, 100),
-            String(account.username || user.user_nicename).toLowerCase().slice(0, 50),
-            String(account.displayName || account.username || name || user.user_nicename).slice(0, 250),
-            userId,
-          ],
-        );
+        const marker = `vmm:${account.id}`;
+        // Keep editorial author name/slug; only store the VMM login link.
+        await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = '' WHERE user_url = ? AND ID <> ?`, [
+          marker,
+          userId,
+        ]);
+        await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = ? WHERE ID = ?`, [marker, userId]);
+        if (account.role === UserRole.user) {
+          await this.prisma.user.update({
+            where: { id: account.id },
+            data: { role: UserRole.author },
+          });
+        }
+        if (previousMarker && previousMarker !== String(account.id)) {
+          await this.maybeDemoteAuthorRole(previousMarker);
+        }
       } else if (String(user.user_url || '').startsWith('vmm:')) {
         const site = await this.mysql.query<{ meta_value: string }>(
           locale,
@@ -643,6 +686,7 @@ export class NewsService {
           String(site[0]?.meta_value || ''),
           userId,
         ]);
+        if (previousMarker) await this.maybeDemoteAuthorRole(previousMarker);
       }
     }
     const fresh = await this.mysql.query<{ user_url: string; user_nicename: string }>(
@@ -677,7 +721,7 @@ export class NewsService {
     });
   }
 
-  async adminGet(id: string, localeValue?: string) {
+  async adminGet(id: string, localeValue?: string, actor?: NewsActor) {
     const locale = this.mysql.locale(localeValue);
     const numeric = Number(id);
     const rows = await this.mysql.query<PostRow>(
@@ -687,6 +731,7 @@ export class NewsService {
     );
     const post = rows[0];
     if (!post) throw new NotFoundException('La noticia no existe.');
+    await this.assertCanManagePost(locale, post.ID, actor, Number(post.post_author || 0));
     const cats = await this.categoriesFor(locale, [post.ID]);
     const tags = await this.tagsFor(locale, [post.ID]);
     const [card] = await this.withAuthors(locale, [toCard(post, cats.get(post.ID) || [], locale)]);
@@ -740,27 +785,29 @@ export class NewsService {
   }
 
   async create(body: UpsertNewsPostDto, actor?: NewsActor) {
-    this.lockAuthor(body, actor, true);
+    await this.lockAuthor(body, actor, true);
     const locale = this.mysql.locale(body.locale);
     const saved = await this.writePost(locale, body, actor?.id);
     this.refreshSitemaps(locale);
     await this.invalidateHomeCache(locale);
-    return this.adminGet(String(saved), locale);
+    return this.adminGet(String(saved), locale, actor);
   }
 
   async update(id: string, body: UpsertNewsPostDto, actor?: NewsActor) {
-    this.lockAuthor(body, actor, false);
+    await this.lockAuthor(body, actor, false);
     const locale = this.mysql.locale(body.locale);
     const postId = await this.requirePostId(locale, id);
+    await this.assertCanManagePost(locale, postId, actor);
     await this.writePost(locale, body, actor?.id, postId);
     this.refreshSitemaps(locale);
     await this.invalidateHomeCache(locale);
-    return this.adminGet(String(postId), locale);
+    return this.adminGet(String(postId), locale, actor);
   }
 
-  async remove(id: string, localeValue?: string) {
+  async remove(id: string, localeValue?: string, actor?: NewsActor) {
     const locale = this.mysql.locale(localeValue);
     const postId = await this.requirePostId(locale, id);
+    await this.assertCanManagePost(locale, postId, actor);
     await this.mysql.exec(locale, `UPDATE wpgn_posts SET post_status = 'trash', post_modified = ? WHERE ID = ?`, [
       this.wpStamp(new Date()),
       postId,
@@ -770,9 +817,10 @@ export class NewsService {
     return serialize({ ok: true, id: String(postId), locale });
   }
 
-  async restore(id: string, localeValue?: string) {
+  async restore(id: string, localeValue?: string, actor?: NewsActor) {
     const locale = this.mysql.locale(localeValue);
     const postId = await this.requirePostId(locale, id);
+    await this.assertCanManagePost(locale, postId, actor);
     await this.mysql.exec(
       locale,
       `UPDATE wpgn_posts SET post_status = 'draft', post_modified = ? WHERE ID = ? AND post_status = 'trash'`,
@@ -2047,11 +2095,8 @@ export class NewsService {
     if (substituteId && substituteId > 0) {
       const current = await this.mysql.query<{ ID: number }>(locale, `SELECT ID FROM wpgn_users WHERE ID = ? LIMIT 1`, [substituteId]);
       if (current[0]) {
-        await this.mysql.exec(
-          locale,
-          `UPDATE wpgn_users SET display_name = ?, user_email = ?, user_nicename = ?, user_url = ? WHERE ID = ?`,
-          [name, email, nicename, marker, substituteId],
-        );
+        // Preserve editorial author name/slug; only attach the VMM login marker.
+        await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = ? WHERE ID = ?`, [marker, substituteId]);
         return substituteId;
       }
     }
@@ -2062,11 +2107,6 @@ export class NewsService {
       [marker, login],
     );
     if (mapped[0]) {
-      await this.mysql.exec(
-        locale,
-        `UPDATE wpgn_users SET display_name = ?, user_email = ?, user_nicename = ? WHERE ID = ?`,
-        [name, email, nicename, mapped[0].ID],
-      );
       return Number(mapped[0].ID);
     }
 
@@ -2077,11 +2117,7 @@ export class NewsService {
         [user.email],
       );
       if (byEmail[0]) {
-        await this.mysql.exec(
-          locale,
-          `UPDATE wpgn_users SET display_name = ?, user_nicename = ?, user_url = ? WHERE ID = ?`,
-          [name, nicename, marker, byEmail[0].ID],
-        );
+        await this.mysql.exec(locale, `UPDATE wpgn_users SET user_url = ? WHERE ID = ?`, [marker, byEmail[0].ID]);
         return Number(byEmail[0].ID);
       }
     }
@@ -2489,15 +2525,81 @@ export class NewsService {
     ]);
   }
 
-  private lockAuthor(body: UpsertNewsPostDto, actor: NewsActor | undefined, isCreate: boolean) {
+  private isFullNewsAdmin(actor?: NewsActor) {
     const role = String(actor?.role || '').toLowerCase();
-    const canAssign = role === 'admin' || role === 'superadmin' || role === 'owner';
-    if (!canAssign) {
-      body.authorUserId = actor?.id ? String(actor.id) : undefined;
-      body.wpAuthorId = undefined;
+    return role === 'admin' || role === 'superadmin' || role === 'owner';
+  }
+
+  /** null = full admin (no scope). Array = WP author IDs the actor may manage (may be empty). */
+  private async scopedWpAuthorIds(locale: NewsLocale, actor?: NewsActor) {
+    if (!actor?.id || this.isFullNewsAdmin(actor)) return null;
+    const rows = await this.mysql.query<{ ID: number }>(
+      locale,
+      `SELECT ID FROM wpgn_users WHERE user_url = ?`,
+      [`vmm:${actor.id}`],
+    );
+    return rows.map((row) => Number(row.ID)).filter((id) => id > 0);
+  }
+
+  private async assertCanManagePost(
+    locale: NewsLocale,
+    postId: number,
+    actor?: NewsActor,
+    postAuthorId?: number,
+  ) {
+    if (this.isFullNewsAdmin(actor)) return;
+    if (!actor?.id) throw new ForbiddenException('Inicia sesión para gestionar noticias.');
+    const scoped = await this.scopedWpAuthorIds(locale, actor);
+    if (!scoped?.length) {
+      throw new ForbiddenException('Tu cuenta no está vinculada a un autor de noticias.');
+    }
+    let authorId = Number(postAuthorId || 0);
+    if (!authorId) {
+      const rows = await this.mysql.query<{ post_author: number }>(
+        locale,
+        `SELECT post_author FROM wpgn_posts WHERE ID = ? LIMIT 1`,
+        [postId],
+      );
+      authorId = Number(rows[0]?.post_author || 0);
+    }
+    if (!scoped.includes(authorId)) {
+      throw new ForbiddenException('Solo puedes editar noticias de tu autor vinculado.');
+    }
+  }
+
+  private async maybeDemoteAuthorRole(userIdRaw: string) {
+    const userId = String(userIdRaw || '').trim();
+    if (!/^\d+$/.test(userId)) return;
+    const account = await this.prisma.user.findUnique({
+      where: { id: BigInt(userId) },
+      select: { id: true, role: true },
+    });
+    if (!account || account.role !== UserRole.author) return;
+    const marker = `vmm:${account.id}`;
+    const [es, en] = await Promise.all([
+      this.mysql.query<{ ID: number }>('es', `SELECT ID FROM wpgn_users WHERE user_url = ? LIMIT 1`, [marker]),
+      this.mysql.query<{ ID: number }>('en', `SELECT ID FROM wpgn_users WHERE user_url = ? LIMIT 1`, [marker]),
+    ]);
+    if (es[0] || en[0]) return;
+    await this.prisma.user.update({
+      where: { id: account.id },
+      data: { role: UserRole.user },
+    });
+  }
+
+  private async lockAuthor(body: UpsertNewsPostDto, actor: NewsActor | undefined, isCreate: boolean) {
+    if (!this.isFullNewsAdmin(actor)) {
+      if (!actor?.id) throw new ForbiddenException('Inicia sesión para publicar.');
+      body.authorUserId = String(actor.id);
+      const locale = this.mysql.locale(body.locale);
+      const linked = await this.scopedWpAuthorIds(locale, actor);
+      if (!linked?.length) {
+        throw new ForbiddenException('Tu cuenta no está vinculada a un autor. Pide a un admin que te vincule en Autores.');
+      }
+      body.wpAuthorId = linked[0];
       return;
     }
-    if (isCreate && !String(body.authorUserId || '').trim()) {
+    if (isCreate && !String(body.authorUserId || '').trim() && !String(body.wpAuthorId || '').trim()) {
       body.authorUserId = actor?.id ? String(actor.id) : undefined;
     }
   }

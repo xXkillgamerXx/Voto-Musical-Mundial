@@ -596,8 +596,12 @@ const avatarFailed = ref(false)
 let stopAuthWatch: (() => void) | null = null
 
 const ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
+const STAFF_ROLES = new Set(['admin', 'superadmin', 'owner', 'author'])
 const isSignedIn = computed(() => Boolean(currentUser.value))
 const isAdmin = computed(() => ADMIN_ROLES.has(String(currentUser.value?.role || '').toLowerCase()) || isStoredAdminUser())
+const isNewsStaff = computed(
+  () => STAFF_ROLES.has(String(currentUser.value?.role || '').toLowerCase()) || isStoredAdminUser(),
+)
 
 watch(
   () => newsPage.value.name === 'admin' || isAdmin.value,
@@ -775,7 +779,7 @@ onUnmounted(() => {
         <template v-else>
           <a class="nav-auth" :href="profileHref()" @click="closeMenu">{{ txt('navProfile') }}</a>
           <a class="nav-auth" :href="profileEditHref()" @click="closeMenu">{{ txt('navSettings') }}</a>
-          <a v-if="isAdmin" class="nav-auth" :href="adminHref()" @click="closeMenu">{{ txt('navAdmin') }}</a>
+          <a v-if="isNewsStaff" class="nav-auth" :href="adminHref()" @click="closeMenu">{{ txt('navAdmin') }}</a>
           <button class="nav-auth" type="button" @click="handleLogout">{{ txt('navLogout') }}</button>
         </template>
       </nav>
@@ -902,7 +906,7 @@ onUnmounted(() => {
             <p class="account-name">{{ userLabel }}</p>
             <a :href="profileHref()" @click="accountOpen = false">{{ txt('navProfile') }}</a>
             <a :href="profileEditHref()" @click="accountOpen = false">{{ txt('navSettings') }}</a>
-            <a v-if="isAdmin" :href="adminHref()" @click="accountOpen = false">{{ txt('navAdmin') }}</a>
+            <a v-if="isNewsStaff" :href="adminHref()" @click="accountOpen = false">{{ txt('navAdmin') }}</a>
             <button type="button" @click="handleLogout">{{ txt('navLogout') }}</button>
           </div>
         </div>

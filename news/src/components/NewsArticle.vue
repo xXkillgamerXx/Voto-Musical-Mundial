@@ -54,36 +54,6 @@ const crumbCategory = computed(() => {
 })
 const crumbHref = computed(() => categoryHref(loc.value, crumbCategory.value.slug))
 const bodyHtml = computed(() => expandNewsEmbeds(post.value?.content || ''))
-
-const splitArticleBody = (html: string) => {
-  const raw = String(html || '').trim()
-  if (!raw || typeof DOMParser === 'undefined') {
-    return { before: raw, after: '', canInsert: false }
-  }
-  const doc = new DOMParser().parseFromString(`<div id="nmm-split">${raw}</div>`, 'text/html')
-  const root = doc.getElementById('nmm-split')
-  if (!root) return { before: raw, after: '', canInsert: false }
-  const blocks = Array.from(root.children)
-  if (blocks.length < 4) return { before: raw, after: '', canInsert: false }
-  const mid = Math.floor(blocks.length / 2)
-  const beforeNodes = blocks.slice(0, mid)
-  const afterNodes = blocks.slice(mid)
-  return {
-    before: beforeNodes.map((node) => node.outerHTML).join(''),
-    after: afterNodes.map((node) => node.outerHTML).join(''),
-    canInsert: beforeNodes.length > 0 && afterNodes.length > 0,
-  }
-}
-
-const bodyParts = computed(() => splitArticleBody(bodyHtml.value))
-const midReadItems = computed(() => {
-  const related = (post.value?.related || []).filter((item) => item.slug !== props.slug)
-  if (related.length) return related.slice(0, 4)
-  return (popular.value || []).filter((item) => item.slug !== props.slug).slice(0, 4)
-})
-const showMidMostRead = computed(
-  () => Boolean(bodyParts.value.canInsert && midReadItems.value.length),
-)
 const copiedShare = ref('')
 const shareUrl = () => window.location.href
 const markCopied = (network: string) => {
@@ -325,47 +295,7 @@ watch(bodyHtml, async () => {
             </a>
           </div>
         </aside>
-        <template v-if="showMidMostRead">
-          <div class="article-body" v-html="bodyParts.before"></div>
-          <aside class="article-mid-read" :aria-label="t(loc, 'midMostRead')">
-            <div class="article-mid-read-head">
-              <div class="cats-eyebrow">{{ t(loc, 'midMostRead') }}</div>
-              <p>{{ t(loc, 'midMostReadLead') }}</p>
-              <div v-if="post.tags?.length" class="article-mid-read-tags">
-                <a
-                  v-for="tag in post.tags.slice(0, 4)"
-                  :key="tag.slug || tag.name"
-                  :href="tagHref(loc, tag.slug || tag.name)"
-                >#{{ tag.name.replace(/^#/, '') }}</a>
-              </div>
-            </div>
-            <div class="article-mid-read-grid">
-              <a
-                v-for="(item, index) in midReadItems"
-                :key="item.id"
-                class="article-mid-read-card"
-                :href="item.href"
-              >
-                <div class="article-mid-read-photo">
-                  <img
-                    :src="coverOf(item, '/images/jungkook-hero.jpg', 'card')"
-                    :alt="item.title"
-                    loading="lazy"
-                    decoding="async"
-                    @error="coverErrorFallback"
-                  />
-                  <span class="article-mid-read-num">{{ String(index + 1).padStart(2, '0') }}</span>
-                </div>
-                <div class="article-mid-read-copy">
-                  <span class="chip">{{ item.category }}</span>
-                  <h3>{{ item.title }}</h3>
-                </div>
-              </a>
-            </div>
-          </aside>
-          <div class="article-body" v-html="bodyParts.after"></div>
-        </template>
-        <div v-else class="article-body" v-html="bodyHtml"></div>
+        <div class="article-body" v-html="bodyHtml"></div>
         <div v-if="post.tags?.length" class="article-post-tags">
           <a v-for="tag in post.tags" :key="tag.slug || tag.name" :href="tagHref(loc, tag.slug || tag.name)">#{{ tag.name.replace(/^#/, '') }}</a>
         </div>

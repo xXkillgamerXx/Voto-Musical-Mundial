@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch, type ComputedRef, type Ref } from 'vue'
+import type { AuthorPreview } from '../lib/authorPreview'
 import {
   createAdminNewsPost,
   deleteAdminNewsComment,
@@ -191,7 +192,15 @@ const onCaptureNavClick = (event: MouseEvent) => {
   event.stopImmediatePropagation()
   requestLeave(`${url.pathname}${url.search}${url.hash}`)
 }
-const canChangeAuthor = computed(() => ['admin', 'superadmin', 'owner'].includes(String(me.value?.role || '').toLowerCase()))
+const authorPreview = inject<Ref<AuthorPreview | null>>('authorPreview', ref(null))
+const isAuthorView = inject<ComputedRef<boolean>>(
+  'isAuthorView',
+  computed(() => false),
+)
+const canChangeAuthor = computed(() => {
+  if (authorPreview.value || isAuthorView.value) return false
+  return ['admin', 'superadmin', 'owner'].includes(String(me.value?.role || '').toLowerCase())
+})
 const selectedAuthor = computed(
   () => wpAuthors.value.find((item) => String(item.id) === String(form.value.wpAuthorId)) || null,
 )
@@ -235,6 +244,10 @@ const toAccount = (user: Record<string, any>): Account => ({
 })
 
 const ensureDefaultAuthor = () => {
+  if (authorPreview.value?.authorId) {
+    form.value.wpAuthorId = String(authorPreview.value.authorId)
+    return
+  }
   if (form.value.wpAuthorId) return
   const linkedToMe = me.value
     ? wpAuthors.value.find((item) => String(item.linkedUserId || '') === String(me.value?.id || ''))
@@ -832,7 +845,7 @@ onUnmounted(() => {
               </option>
             </select>
           </label>
-          <a class="na-btn" href="/es/admin/autores">Gestionar autores</a>
+          <a v-if="canChangeAuthor" class="na-btn" href="/es/admin/autores">Gestionar autores</a>
         </article>
 
         <article class="na-card">

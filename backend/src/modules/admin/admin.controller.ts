@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PollStatus, Prisma, RoundType, UserRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -226,6 +226,7 @@ export class AdminController {
   }
 
   @Post('uploads/:type')
+  @Roles(UserRole.admin, UserRole.superadmin, UserRole.owner, UserRole.author)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -278,8 +279,21 @@ export class AdminController {
       },
     }),
   )
-  async uploadImage(@Param('type') typeValue: string, @UploadedFile() file: any) {
+  async uploadImage(
+    @Param('type') typeValue: string,
+    @UploadedFile() file: any,
+    @CurrentUser() user?: { role?: string },
+  ) {
     const type = uploadTypeFor(typeValue);
+    const role = String(user?.role || '').toLowerCase();
+    if (
+      role === 'author' &&
+      type !== 'news-file' &&
+      type !== 'news-cover' &&
+      type !== 'news-image'
+    ) {
+      throw new ForbiddenException('Los autores solo pueden subir archivos de noticias.');
+    }
 
     if (!file) {
       throw new BadRequestException('No se recibio ninguna imagen.');

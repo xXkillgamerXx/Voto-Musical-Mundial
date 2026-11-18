@@ -6,6 +6,7 @@ import {
   updateAdminNewsAuthor,
   uploadAdminImage,
 } from '../../../src/services/api/adminApi'
+import { writeAuthorPreview } from '../lib/authorPreview'
 import { compressImageFile } from '../lib/compressImage'
 
 type Author = {
@@ -148,6 +149,19 @@ const unlinkAccount = () => {
   linkedAccount.value = null
 }
 
+const viewAsAuthor = () => {
+  if (!selected.value || !form.value.linkedUserId) return
+  writeAuthorPreview({
+    authorId: String(selected.value.id),
+    authorName: form.value.name || selected.value.name || 'Autor',
+    authorSlug: selected.value.slug || '',
+    linkedUserId: form.value.linkedUserId,
+    locale: locale.value,
+    accountLabel: accountLabel(linkedAccount.value),
+  })
+  window.location.assign('/es/admin/noticias')
+}
+
 const onPhotoPick = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const [file] = input.files || []
@@ -260,46 +274,60 @@ onUnmounted(() => {
 
     <form v-if="selected" class="na-card na-form na-authors-editor" @submit.prevent="save">
       <div class="na-authors-editor-top">
-        <div>
+        <div class="na-authors-editor-id">
           <b>{{ selected.name }}</b>
           <small>{{ selected.href }}</small>
         </div>
-        <button class="na-btn" type="button" @click="closeEditor">Cerrar</button>
+        <button class="na-btn na-authors-close" type="button" @click="closeEditor">Cerrar</button>
       </div>
 
-      <div class="na-author-photo-box">
-        <img v-if="form.photoUrl" :src="form.photoUrl" :alt="form.name || 'Foto'" />
-        <span v-else class="ph">{{ (form.name || 'A').slice(0, 1) }}</span>
-        <div class="na-author-photo-actions">
-          <button class="na-btn solid" type="button" :disabled="uploadingPhoto" @click="photoInput?.click()">
-            {{ uploadingPhoto ? 'Subiendo…' : form.photoUrl ? 'Cambiar foto' : 'Elegir foto' }}
-          </button>
-          <button v-if="form.photoUrl" class="na-btn" type="button" @click="form.photoUrl = ''">Quitar</button>
+      <div class="na-authors-section">
+        <div class="na-author-photo-box">
+          <img v-if="form.photoUrl" :src="form.photoUrl" :alt="form.name || 'Foto'" />
+          <span v-else class="ph">{{ (form.name || 'A').slice(0, 1) }}</span>
+          <div class="na-author-photo-copy">
+            <strong>Foto del autor</strong>
+            <span>Se muestra en el perfil y en las noticias.</span>
+            <div class="na-author-photo-actions">
+              <button class="na-btn solid" type="button" :disabled="uploadingPhoto" @click="photoInput?.click()">
+                {{ uploadingPhoto ? 'Subiendo…' : form.photoUrl ? 'Cambiar' : 'Elegir foto' }}
+              </button>
+              <button v-if="form.photoUrl" class="na-btn" type="button" @click="form.photoUrl = ''">Quitar</button>
+            </div>
+          </div>
+          <input
+            ref="photoInput"
+            class="na-hidden-file"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            @change="onPhotoPick"
+          />
         </div>
-        <input
-          ref="photoInput"
-          class="na-hidden-file"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          @change="onPhotoPick"
-        />
+
+        <label class="na-field">
+          <span>Nombre público</span>
+          <input v-model="form.name" type="text" maxlength="250" />
+        </label>
+        <label class="na-field">
+          <span>Bio</span>
+          <textarea v-model="form.bio" rows="5" maxlength="2000"></textarea>
+        </label>
+        <label class="na-field">
+          <span>Web</span>
+          <input v-model="form.website" type="url" maxlength="300" placeholder="https://" />
+        </label>
       </div>
 
-      <label class="na-field">
-        <span>Nombre público</span>
-        <input v-model="form.name" type="text" maxlength="250" />
-      </label>
-      <label class="na-field">
-        <span>Bio</span>
-        <textarea v-model="form.bio" rows="4" maxlength="2000"></textarea>
-      </label>
-      <label class="na-field">
-        <span>Web</span>
-        <input v-model="form.website" type="url" maxlength="300" placeholder="https://" />
-      </label>
-
-      <div class="na-field">
-        <span>Cuenta Vote Music Mundial</span>
+      <div class="na-authors-section na-authors-vmm">
+        <div class="na-authors-section-head">
+          <strong>Cuenta Music Mundial</strong>
+          <span class="na-chip" :class="{ on: Boolean(form.linkedUserId) }">
+            {{ form.linkedUserId ? 'Vinculada' : 'Sin vínculo' }}
+          </span>
+        </div>
+        <p class="na-help">
+          Login para redactar. La noticia firma con el nombre del autor de arriba, no con el de la cuenta.
+        </p>
         <div v-if="form.linkedUserId" class="na-author-chip na-vmm-linked">
           <img v-if="linkedAccount?.photoUrl" :src="linkedAccount.photoUrl" alt="" />
           <span v-else class="ph">V</span>
@@ -308,18 +336,26 @@ onUnmounted(() => {
             <small>{{ linkedAccount?.email || `ID ${form.linkedUserId}` }}</small>
           </div>
         </div>
-        <p v-else class="na-help">Sin vincular. Abre el buscador para elegir una cuenta VMM.</p>
-        <div class="na-author-photo-actions">
+        <div class="na-author-photo-actions na-authors-vmm-actions">
           <button class="na-btn solid" type="button" @click="openVmmModal">
-            {{ form.linkedUserId ? 'Cambiar cuenta VMM' : 'Buscar cuenta VMM' }}
+            {{ form.linkedUserId ? 'Cambiar cuenta' : 'Vincular cuenta' }}
           </button>
           <button v-if="form.linkedUserId" class="na-btn" type="button" @click="unlinkAccount">Quitar vínculo</button>
+          <button
+            v-if="form.linkedUserId"
+            class="na-btn"
+            type="button"
+            title="Ver el panel solo con Noticias, como esa cuenta"
+            @click="viewAsAuthor"
+          >
+            Ver como redactor
+          </button>
         </div>
       </div>
 
-      <div class="na-actions">
+      <div class="na-authors-footer">
         <button class="na-btn solid" type="submit" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
-        <a v-if="selected.href" class="na-btn" :href="selected.href" target="_blank">Ver perfil</a>
+        <a v-if="selected.href" class="na-btn" :href="selected.href" target="_blank" rel="noopener">Ver perfil</a>
       </div>
       <p v-if="notice" class="na-count">{{ notice }}</p>
       <p v-if="errorMessage" class="na-error">{{ errorMessage }}</p>
@@ -331,7 +367,7 @@ onUnmounted(() => {
           <h2 id="na-vmm-title">Buscar cuenta VMM</h2>
           <button class="na-modal-close" type="button" aria-label="Cerrar" @click="closeVmmModal">×</button>
         </div>
-        <p class="na-help">Escribe nombre, usuario o correo de una cuenta Vote Music Mundial.</p>
+        <p class="na-help">Elige la cuenta de login. El nombre público del autor no se cambia.</p>
         <input
           v-model="userQuery"
           class="na-search"

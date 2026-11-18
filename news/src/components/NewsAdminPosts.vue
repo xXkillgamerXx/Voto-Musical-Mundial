@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { inject, onMounted, ref, type Ref, watch } from 'vue'
 import { deleteAdminNewsPost, getAdminNewsPosts, restoreAdminNewsPost } from '../../../src/services/api/adminApi'
+import type { AuthorPreview } from '../lib/authorPreview'
 
 type Post = {
   id: string
@@ -16,6 +17,7 @@ type Post = {
   authorName?: string
 }
 
+const authorPreview = inject<Ref<AuthorPreview | null>>('authorPreview', ref(null))
 const posts = ref<Post[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -29,6 +31,7 @@ const loading = ref(true)
 const errorMessage = ref('')
 const busyId = ref('')
 const limit = 20
+const authorLocked = () => Boolean(authorPreview.value?.authorName)
 
 const formatDate = (value?: string) => {
   if (!value) return ''
@@ -56,7 +59,7 @@ const load = async () => {
       page: page.value,
       limit,
       q: q.value,
-      author: author.value,
+      author: authorLocked() ? authorPreview.value?.authorName || author.value : author.value,
       from: from.value,
       to: to.value,
       status: status.value,
@@ -130,6 +133,10 @@ const setPage = (next: number) => {
 
 watch(page, () => window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }))
 onMounted(() => {
+  if (authorPreview.value?.locale === 'en' || authorPreview.value?.locale === 'es') {
+    locale.value = authorPreview.value.locale
+  }
+  if (authorPreview.value?.authorName) author.value = authorPreview.value.authorName
   emit('localeChange', locale.value)
   load()
 })
@@ -168,7 +175,15 @@ onMounted(() => {
           placeholder="Buscar título o slug"
           @keydown.enter="search"
         />
-        <input v-model="author" class="na-search na-search-author" type="search" placeholder="Autor" @keydown.enter="search" />
+        <input
+          v-model="author"
+          class="na-search na-search-author"
+          type="search"
+          placeholder="Autor"
+          :readonly="authorLocked()"
+          :title="authorLocked() ? 'Fijado por la vista redactor' : ''"
+          @keydown.enter="search"
+        />
         <label class="na-date-field">
           <span>Desde</span>
           <input v-model="from" type="date" />

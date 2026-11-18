@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import AuthDialog from './AuthDialog.vue'
 import NewsAdminAuthors from './NewsAdminAuthors.vue'
 import NewsAdminCategories from './NewsAdminCategories.vue'
@@ -12,9 +12,15 @@ import NewsAdminApiKeys from './NewsAdminApiKeys.vue'
 import NewsAdminCharts from './NewsAdminCharts.vue'
 import NewsAdminPostForm from './NewsAdminPostForm.vue'
 import NewsAdminPosts from './NewsAdminPosts.vue'
-import { getAdminNewsOverview } from '../../../src/services/api/adminApi'
+import { getAdminNewsAuthors, getAdminNewsOverview } from '../../../src/services/api/adminApi'
 import { getCurrentApiAuth, getMe, logout } from '../../../src/services/api/authApi'
 import { onStoredAuthChange } from '../../../src/services/api/client'
+import {
+  clearAuthorPreview,
+  readAuthorPreview,
+  writeAuthorPreview,
+  type AuthorPreview,
+} from '../lib/authorPreview'
 import { getTheme, toggleTheme as flipTheme, type SiteTheme } from '../lib/theme'
 
 type AdminUser = {
@@ -76,11 +82,94 @@ const props = defineProps<{
 }>()
 const section = computed(() => props.section || 'dashboard')
 
-const ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
+const FULL_ADMIN_ROLES = new Set(['admin', 'superadmin', 'owner'])
+const STAFF_ROLES = new Set(['admin', 'superadmin', 'owner', 'author'])
+const AUTHOR_SECTIONS = new Set(['posts', 'post-form'])
+const user = ref<AdminUser>(null)
 const postsLocale = ref<'es' | 'en'>('es')
 const newPostHref = computed(() =>
   postsLocale.value === 'en' ? '/es/admin/noticias/en/nueva' : '/es/admin/noticias/nueva',
 )
+const userRole = computed(() => String(user.value?.role || '').trim().toLowerCase())
+const isFullAdmin = computed(() => FULL_ADMIN_ROLES.has(userRole.value))
+const isAuthorOnly = computed(() => userRole.value === 'author')
+type LinkedAuthorOption = {
+  id: string
+  name: string
+  slug?: string
+  linkedUserId: string
+  locale: 'es' | 'en'
+}
+
+const authorPreview = ref<AuthorPreview | null>(readAuthorPreview())
+const linkedAuthorOptions = ref<LinkedAuthorOption[]>([])
+const isAuthorView = computed(() => isAuthorOnly.value || Boolean(authorPreview.value && isFullAdmin.value))
+provide('authorPreview', authorPreview)
+provide('isAuthorView', isAuthorView)
+
+const viewModeValue = computed(() => {
+  if (!authorPreview.value) return 'admin'
+  return `author:${authorPreview.value.locale}:${authorPreview.value.authorId}`
+})
+
+const loadLinkedAuthorOptions = async () => {
+  if (!isFullAdmin.value) {
+    linkedAuthorOptions.value = []
+    return
+  }
+  try {
+    const [es, en] = await Promise.all([getAdminNewsAuthors('es'), getAdminNewsAuthors('en')])
+    const rows = [...(Array.isArray(es) ? es : []), ...(Array.isArray(en) ? en : [])]
+    const seen = new Set<string>()
+    linkedAuthorOptions.value = rows
+      .filter((row: any) => String(row?.linkedUserId || '').trim())
+      .map((row: any) => ({
+        id: String(row.id),
+        name: String(row.name || 'Autor'),
+        slug: String(row.slug || ''),
+        linkedUserId: String(row.linkedUserId),
+        locale: (row.locale === 'en' ? 'en' : 'es') as 'es' | 'en',
+      }))
+      .filter((row) => {
+        const key = `${row.locale}:${row.id}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+  } catch {
+    linkedAuthorOptions.value = []
+  }
+}
+
+const exitAuthorPreview = (href = '/es/admin') => {
+  clearAuthorPreview()
+  authorPreview.value = null
+  window.location.assign(href)
+}
+
+const onViewModeChange = (event: Event) => {
+  const value = String((event.target as HTMLSelectElement | null)?.value || 'admin')
+  if (value === 'admin') {
+    exitAuthorPreview('/es/admin')
+    return
+  }
+  const match = /^author:(es|en):(.+)$/.exec(value)
+  if (!match) return
+  const locale = match[1] as 'es' | 'en'
+  const authorId = match[2]
+  const option = linkedAuthorOptions.value.find((row) => row.locale === locale && row.id === authorId)
+  if (!option) return
+  writeAuthorPreview({
+    authorId: option.id,
+    authorName: option.name,
+    authorSlug: option.slug || '',
+    linkedUserId: option.linkedUserId,
+    locale: option.locale,
+    accountLabel: userName.value,
+  })
+  window.location.assign('/es/admin/noticias')
+}
 
 const pageTitle = computed(() => {
   if (section.value === 'post-form') {
@@ -105,9 +194,16 @@ const pageLead = computed(() => {
       ? 'English only · saves to musicmundial_en. Independent from Spanish.'
       : 'Solo español · se guarda en musicmundial_es. Independiente del inglés.'
   }
+  if (isAuthorView.value && (section.value === 'posts' || section.value === 'post-form')) {
+    return authorPreview.value
+      ? `Vista redactor · solo noticias de ${authorPreview.value.authorName}.`
+      : 'Solo puedes crear y editar noticias bajo tu autor vinculado.'
+  }
   if (section.value === 'posts') return 'Español e inglés son bases distintas. El tab decide dónde se crea la nota.'
   if (section.value === 'categories') return 'Categorías por base: musicmundial_es y musicmundial_en.'
-  if (section.value === 'authors') return 'Autores por idioma. Edítalos y vincula una cuenta Vote Music Mundial.'
+  if (section.value === 'authors') {
+    return 'Vincula cada autor a una cuenta Music Mundial. La noticia firma con el nombre del autor, no el de la cuenta.'
+  }
   if (section.value === 'tags') return 'Cada etiqueta tiene su página. Aquí se configura la ficha.'
   if (section.value === 'forum') return 'Salas del foro, textos ES/EN, VIP y temas (fijar, cerrar u ocultar).'
   if (section.value === 'pages') return 'About, términos, cookies, privacidad, DMCA y contacto. Editable por idioma.'
@@ -124,7 +220,6 @@ const pageLead = computed(() => {
 
 const checking = ref(true)
 const allowed = ref(false)
-const user = ref<AdminUser>(null)
 const authOpen = ref(false)
 const navOpen = ref(false)
 const loading = ref(false)
@@ -235,16 +330,27 @@ const refreshAccess = async () => {
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
     ])
     user.value = me ? { ...current, ...me } : current
-    allowed.value = ADMIN_ROLES.has(String(me?.role || current?.role || '').trim().toLowerCase())
-    if (allowed.value && section.value === 'dashboard') await loadOverview()
+    const role = String(me?.role || current?.role || '').trim().toLowerCase()
+    allowed.value = STAFF_ROLES.has(role)
+    authorPreview.value = FULL_ADMIN_ROLES.has(role) ? readAuthorPreview() : null
+    if (allowed.value && (role === 'author' || authorPreview.value) && !AUTHOR_SECTIONS.has(section.value)) {
+      window.location.replace('/es/admin/noticias')
+      return
+    }
+    if (allowed.value && FULL_ADMIN_ROLES.has(role)) {
+      await loadLinkedAuthorOptions()
+      if (!authorPreview.value && section.value === 'dashboard') await loadOverview()
+    }
   } catch {
-    allowed.value = ADMIN_ROLES.has(String(current?.role || '').trim().toLowerCase())
+    allowed.value = STAFF_ROLES.has(String(current?.role || '').trim().toLowerCase())
   } finally {
     checking.value = false
   }
 }
 
 const handleLogout = () => {
+  clearAuthorPreview()
+  authorPreview.value = null
   logout()
   overview.value = null
   allowed.value = false
@@ -254,11 +360,18 @@ const handleLogout = () => {
 
 watch(section, (next) => {
   document.title = `${pageTitle.value} — Panel Music Mundial`
-  if (next === 'dashboard' && allowed.value && !overview.value) loadOverview()
+  if (isAuthorView.value && !AUTHOR_SECTIONS.has(next)) {
+    window.location.replace('/es/admin/noticias')
+    return
+  }
+  if (next === 'dashboard' && allowed.value && isFullAdmin.value && !authorPreview.value && !overview.value) {
+    loadOverview()
+  }
 })
 
 onMounted(() => {
   document.title = `${pageTitle.value} — Panel Music Mundial`
+  authorPreview.value = readAuthorPreview()
   refreshAccess()
   stopAuthWatch = onStoredAuthChange(() => {
     checking.value = true
@@ -292,9 +405,9 @@ onUnmounted(() => {
       </p>
       <h1>{{ user ? 'Sin permiso' : 'Entra al panel' }}</h1>
       <p v-if="user">
-        Esta cuenta no es de administración. Cierra sesión e inicia con un usuario admin.
+        Esta cuenta no tiene acceso al panel. Si eres redactor, pide a un admin que vincule tu cuenta en Autores.
       </p>
-      <p v-else>Este panel es aparte del de votaciones. Entra con una cuenta admin para ver el dashboard de noticias.</p>
+      <p v-else>Entra con una cuenta admin o con una cuenta de autor vinculada para redactar noticias.</p>
       <div class="na-actions">
         <button v-if="!user" type="button" @click="authOpen = true">Iniciar sesión</button>
         <button v-else type="button" @click="handleLogout">Cerrar sesión</button>
@@ -317,7 +430,12 @@ onUnmounted(() => {
         <span>Panel de noticias</span>
       </p>
       <nav class="na-nav" aria-label="Panel de noticias">
-        <a :class="{ on: section === 'dashboard' }" href="/es/admin" @click="closeNav">
+        <a
+          v-if="isFullAdmin && !authorPreview"
+          :class="{ on: section === 'dashboard' }"
+          href="/es/admin"
+          @click="closeNav"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13V5h7v8H4zm9-8h7v5h-7V5zM4 19v-4h7v4H4zm9 0v-8h7v8h-7z" /></svg>
           Dashboard
         </a>
@@ -325,42 +443,44 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 5v14M4 9h16" /></svg>
           Noticias
         </a>
-        <a :class="{ on: section === 'categories' }" href="/es/admin/categorias" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h10" /></svg>
-          Categorías
-        </a>
-        <a :class="{ on: section === 'tags' }" href="/es/admin/etiquetas" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l8-8h7v7l-8 8a2 2 0 0 1-2.8 0L4 14.8A2 2 0 0 1 4 12zm11.5-4.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z" /></svg>
-          Etiquetas
-        </a>
-        <a :class="{ on: section === 'authors' }" href="/es/admin/autores" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-7 8a7 7 0 0 1 14 0" /></svg>
-          Autores
-        </a>
-        <a :class="{ on: section === 'users' }" href="/es/admin/usuarios" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zM8 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm8 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4zM8 15c-.3 0-.7 0-1 .1C4.5 15.6 2 16.8 2 19v2h6v-2c0-1.5.7-2.7 2-3.5-.6-.3-1.3-.5-2-.5z" /></svg>
-          Usuarios
-        </a>
-        <a :class="{ on: section === 'api-keys' }" href="/es/admin/api-keys" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14a5 5 0 1 1 4.9-6H21v3h-2v2h-2v2h-3.1A5 5 0 0 1 7 14zm0-2a3 3 0 1 0-3-3 3 3 0 0 0 3 3z" /></svg>
-          API keys
-        </a>
-        <a :class="{ on: section === 'charts' }" href="/es/admin/charts" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5h2v14H4zm5 0V9h2v10H9zm5 0v-6h2v6h-2zm5 0V7h2v12h-2z" /></svg>
-          Charts
-        </a>
-        <a :class="{ on: section === 'forum' }" href="/es/admin/foro" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
-          Foro
-        </a>
-        <a :class="{ on: section === 'pages' }" href="/es/admin/paginas" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5" /></svg>
-          Páginas
-        </a>
-        <a :class="{ on: section === 'reports' }" href="/es/admin/reportes" @click="closeNav">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3L12 3zm0 5v5m0 3h.01" /></svg>
-          Reportes
-        </a>
+        <template v-if="isFullAdmin && !authorPreview">
+          <a :class="{ on: section === 'categories' }" href="/es/admin/categorias" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h10" /></svg>
+            Categorías
+          </a>
+          <a :class="{ on: section === 'tags' }" href="/es/admin/etiquetas" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l8-8h7v7l-8 8a2 2 0 0 1-2.8 0L4 14.8A2 2 0 0 1 4 12zm11.5-4.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z" /></svg>
+            Etiquetas
+          </a>
+          <a :class="{ on: section === 'authors' }" href="/es/admin/autores" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-7 8a7 7 0 0 1 14 0" /></svg>
+            Autores
+          </a>
+          <a :class="{ on: section === 'users' }" href="/es/admin/usuarios" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zM8 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm8 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4zM8 15c-.3 0-.7 0-1 .1C4.5 15.6 2 16.8 2 19v2h6v-2c0-1.5.7-2.7 2-3.5-.6-.3-1.3-.5-2-.5z" /></svg>
+            Usuarios
+          </a>
+          <a :class="{ on: section === 'api-keys' }" href="/es/admin/api-keys" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14a5 5 0 1 1 4.9-6H21v3h-2v2h-2v2h-3.1A5 5 0 0 1 7 14zm0-2a3 3 0 1 0-3-3 3 3 0 0 0 3 3z" /></svg>
+            API keys
+          </a>
+          <a :class="{ on: section === 'charts' }" href="/es/admin/charts" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5h2v14H4zm5 0V9h2v10H9zm5 0v-6h2v6h-2zm5 0V7h2v12h-2z" /></svg>
+            Charts
+          </a>
+          <a :class="{ on: section === 'forum' }" href="/es/admin/foro" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zm0 8h10v4H4zm12 0h4v4h-4z" /></svg>
+            Foro
+          </a>
+          <a :class="{ on: section === 'pages' }" href="/es/admin/paginas" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5" /></svg>
+            Páginas
+          </a>
+          <a :class="{ on: section === 'reports' }" href="/es/admin/reportes" @click="closeNav">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3L12 3zm0 5v5m0 3h.01" /></svg>
+            Reportes
+          </a>
+        </template>
       </nav>
       <div class="na-user">
         <div class="na-user-row">
@@ -373,6 +493,24 @@ onUnmounted(() => {
             <small>{{ userEmail }}</small>
           </span>
         </div>
+        <label v-if="isFullAdmin" class="na-view-switch">
+          <span>Vista del panel</span>
+          <select :value="viewModeValue" @change="onViewModeChange">
+            <option value="admin">Admin</option>
+            <optgroup v-if="linkedAuthorOptions.length" label="Autores vinculados">
+              <option
+                v-for="option in linkedAuthorOptions"
+                :key="`${option.locale}-${option.id}`"
+                :value="`author:${option.locale}:${option.id}`"
+              >
+                {{ option.name }} ({{ option.locale.toUpperCase() }})
+              </option>
+            </optgroup>
+          </select>
+        </label>
+        <p v-if="isFullAdmin && !linkedAuthorOptions.length" class="na-view-switch-hint">
+          Vincula un autor en Autores para ver el panel como redactor.
+        </p>
         <div class="na-user-actions">
           <a href="/" @click="closeNav">Ver sitio</a>
           <button class="danger" type="button" @click="handleLogout">Cerrar sesión</button>
@@ -418,6 +556,17 @@ onUnmounted(() => {
       </header>
 
       <main class="na-body">
+        <div v-if="authorPreview" class="na-author-preview-banner">
+          <div>
+            <strong>Vista redactor</strong>
+            <span>
+              Así ve el panel la cuenta vinculada a
+              <b>{{ authorPreview.authorName }}</b>
+              <template v-if="authorPreview.accountLabel"> ({{ authorPreview.accountLabel }})</template>.
+            </span>
+          </div>
+          <button class="na-btn solid" type="button" @click="exitAuthorPreview('/es/admin')">Volver a admin</button>
+        </div>
         <NewsAdminPostForm v-if="section === 'post-form'" :post-id="postId" :news-locale="newsLocale" />
         <NewsAdminPosts v-else-if="section === 'posts'" @locale-change="postsLocale = $event" />
         <NewsAdminCategories v-else-if="section === 'categories'" />

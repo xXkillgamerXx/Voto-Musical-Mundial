@@ -19,6 +19,9 @@ LOCAL_PG = 5432
 # Prod nmm-api uses host Postgres vote_db on 5434 (not empty nmm-postgres:5433).
 REMOTE_PG = ("127.0.0.1", 5434)
 LOCAL_REDIS = 6379
+# News WordPress MySQL on the host (nmm-mysql-proxy also exposes 3309 in Docker).
+LOCAL_MYSQL = 3306
+REMOTE_MYSQL = ("127.0.0.1", 3306)
 
 
 def load_password() -> str:
@@ -124,6 +127,7 @@ def main() -> None:
     password = load_password()
     ensure_local_free(LOCAL_PG)
     ensure_local_free(LOCAL_REDIS)
+    ensure_local_free(LOCAL_MYSQL)
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -145,7 +149,11 @@ def main() -> None:
     transport.set_keepalive(30)
 
     listeners: list[socket.socket] = []
-    for local_port, remote in ((LOCAL_PG, REMOTE_PG), (LOCAL_REDIS, remote_redis)):
+    for local_port, remote in (
+        (LOCAL_PG, REMOTE_PG),
+        (LOCAL_REDIS, remote_redis),
+        (LOCAL_MYSQL, REMOTE_MYSQL),
+    ):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", local_port))

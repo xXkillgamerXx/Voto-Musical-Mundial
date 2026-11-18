@@ -58,6 +58,7 @@ const blocking = ref(false)
 
 const roleOptions = [
   { value: 'user', label: 'Usuario' },
+  { value: 'author', label: 'Autor (noticias)' },
   { value: 'admin', label: 'Admin' },
   { value: 'superadmin', label: 'Super Admin' },
   { value: 'owner', label: 'Owner' },
